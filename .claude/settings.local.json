@@ -26,7 +26,12 @@
       "Bash(cat:*)",
       "Bash(supabase:*)",
       "Bash(psql:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(gh repo create:*)",
+      "Bash(ssh:*)",
+      "Bash(git remote remove:*)",
+      "Bash(git remote add:*)"
     ],
     "deny": []
   }
