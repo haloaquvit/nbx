@@ -36,6 +36,30 @@ const toDb = (appRetasi: CreateRetasiData | UpdateRetasiData) => {
   return dbData;
 };
 
+// Hook to check if a driver has any retasi records
+export const useDriverHasRetasi = (driverName?: string) => {
+  return useQuery<boolean>({
+    queryKey: ['driver-has-retasi', driverName],
+    queryFn: async () => {
+      if (!driverName) return false;
+      
+      const { data, error } = await supabase
+        .from('retasi')
+        .select('id')
+        .eq('driver_name', driverName)
+        .limit(1);
+      
+      if (error) {
+        console.error('[useDriverHasRetasi] Error checking driver retasi:', error);
+        return false;
+      }
+      
+      return (data && data.length > 0) || false;
+    },
+    enabled: !!driverName,
+  });
+};
+
 export const useRetasi = (filters?: {
   is_returned?: boolean;
   driver_name?: string;

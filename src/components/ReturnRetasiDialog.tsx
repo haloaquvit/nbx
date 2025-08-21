@@ -124,20 +124,25 @@ export function ReturnRetasiDialog({
 
           <div className="text-sm space-y-2 p-3 bg-gray-50 rounded-lg">
             <div className="flex justify-between">
+              <span>Total dibawa:</span>
+              <span className="font-medium">{totalItems}</span>
+            </div>
+            <div className="flex justify-between">
               <span>Total diinput:</span>
-              <span className="font-medium">{returnedItems + errorItems + barangLaku} / {totalItems}</span>
+              <span className="font-medium">{returnedItems + errorItems + barangLaku}</span>
             </div>
             <div className="flex justify-between text-blue-600">
-              <span>Selisih (Kembali - Error - Laku):</span>
-              <span className="font-bold">{returnedItems - errorItems - barangLaku}</span>
-            </div>
-            <div className="flex justify-between text-orange-600">
-              <span>Sisa/Belum diinput:</span>
-              <span className="font-medium">{totalItems - (returnedItems + errorItems + barangLaku)}</span>
+              <span>Selisih (Bawa - Kembali - Error - Laku):</span>
+              <span className="font-bold">{totalItems - (returnedItems + errorItems + barangLaku)}</span>
             </div>
             {(returnedItems + errorItems + barangLaku) > totalItems && (
               <div className="text-red-600 font-medium text-center">
-                ⚠️ Total melebihi jumlah barang!
+                ⚠️ Total melebihi jumlah barang yang dibawa!
+              </div>
+            )}
+            {totalItems - (returnedItems + errorItems + barangLaku) > 0 && (
+              <div className="text-orange-600 font-medium text-center">
+                💡 Masih ada {totalItems - (returnedItems + errorItems + barangLaku)} barang belum diinput
               </div>
             )}
           </div>

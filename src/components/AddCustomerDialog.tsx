@@ -19,7 +19,8 @@ import { useCustomers } from "@/hooks/useCustomers"
 import { useToast } from "./ui/use-toast"
 import { Customer } from "@/types/customer"
 import { MapPin, Upload, ExternalLink } from "lucide-react"
-import { googleDriveService } from "@/services/googleDriveService"
+import { compressImage, formatFileSize, isImageFile } from "@/utils/imageCompression"
+import { uploadToGoogleDrive } from "@/utils/googleDriveInit"
 import { useState, useRef } from "react"
 
 const customerSchema = z.object({
@@ -86,9 +87,11 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
         const { latitude, longitude } = position.coords
         setValue('latitude', latitude)
         setValue('longitude', longitude)
+        // Auto-fill alamat lengkap dengan koordinat GPS
+        setValue('full_address', `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`)
         toast({
           title: "Sukses!",
-          description: "Lokasi berhasil diambil.",
+          description: "Lokasi berhasil diambil dan alamat lengkap terisi otomatis.",
         })
       },
       (error) => {
@@ -105,7 +108,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (!file.type.startsWith('image/')) {
+    if (!isImageFile(file)) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -114,20 +117,38 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
       return
     }
 
-    setStorePhoto(file)
     setIsUploading(true)
-
+    
     try {
-      const fileName = `store-${Date.now()}-${file.name}`
-      const driveId = await googleDriveService.uploadFile(file, fileName)
-      const viewUrl = await googleDriveService.getFileUrl(driveId)
+      // Show original file size
+      console.log(`Original file size: ${formatFileSize(file.size)}`)
+      
+      // Compress image to max 100KB
+      const compressedFile = await compressImage(file, 100)
+      console.log(`Compressed file size: ${formatFileSize(compressedFile.size)}`)
+      
+      setStorePhoto(compressedFile)
+
+      // Get customer name from form, fallback to timestamp if empty
+      const customerName = watch('name')?.trim() || `customer-${Date.now()}`
+      // Clean filename: replace special characters with spaces, then with hyphens
+      const cleanName = customerName.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-').toLowerCase()
+      const fileName = `${cleanName}.jpg`
+      const result = await uploadToGoogleDrive(compressedFile, fileName)
+      
+      if (!result) {
+        throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.')
+      }
+      
+      const driveId = result.id
+      const viewUrl = result.webViewLink
       
       setStorePhotoDriveId(driveId)
       setStorePhotoUrl(viewUrl)
       
       toast({
         title: "Sukses!",
-        description: "Foto toko berhasil diupload ke Google Drive.",
+        description: `Foto toko berhasil diupload ke Google Drive (${formatFileSize(compressedFile.size)}).`,
       })
     } catch (error) {
       toast({
@@ -180,7 +201,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit(onSubmit)}>
           <DialogHeader>
             <DialogTitle>Tambah Pelanggan Baru</DialogTitle>
@@ -189,40 +210,57 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="name" className="text-right">Nama</Label>
-              <Input id="name" {...register("name")} className="col-span-3" />
-              {errors.name && <p className="col-span-4 text-red-500 text-sm text-right">{errors.name.message}</p>}
+            {/* Mobile-first form layout */}
+            <div className="space-y-2">
+              <Label htmlFor="name">Nama</Label>
+              <Input id="name" {...register("name")} placeholder="Masukkan nama pelanggan" />
+              {errors.name && <p className="text-red-500 text-sm">{errors.name.message}</p>}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="phone" className="text-right">Telepon</Label>
-              <Input id="phone" {...register("phone")} className="col-span-3" />
-              {errors.phone && <p className="col-span-4 text-red-500 text-sm text-right">{errors.phone.message}</p>}
+            <div className="space-y-2">
+              <Label htmlFor="phone">Telepon</Label>
+              <Input id="phone" {...register("phone")} placeholder="Masukkan nomor telepon" />
+              {errors.phone && <p className="text-red-500 text-sm">{errors.phone.message}</p>}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="address" className="text-right">Alamat</Label>
-              <Textarea id="address" {...register("address")} className="col-span-3" />
-              {errors.address && <p className="col-span-4 text-red-500 text-sm text-right">{errors.address.message}</p>}
+            <div className="space-y-2">
+              <Label htmlFor="address">Alamat</Label>
+              <Textarea id="address" {...register("address")} placeholder="Masukkan alamat pelanggan" />
+              {errors.address && <p className="text-red-500 text-sm">{errors.address.message}</p>}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="full_address" className="text-right">Alamat Lengkap</Label>
-              <Textarea id="full_address" {...register("full_address")} className="col-span-3" placeholder="Alamat lengkap untuk Google Maps" />
+            <div className="space-y-2">
+              <Label htmlFor="full_address">Koordinat GPS</Label>
+              <Textarea 
+                id="full_address" 
+                {...register("full_address")} 
+                placeholder="Koordinat GPS akan terisi otomatis saat ambil lokasi"
+                readOnly
+                className="bg-gray-50"
+              />
+              {latitude && longitude && watch('full_address') && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="p-0 h-auto text-blue-600"
+                  onClick={() => window.open(`https://www.google.com/maps/dir//${latitude},${longitude}`, '_blank')}
+                >
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  Lihat Lokasi di Google Maps
+                </Button>
+              )}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="jumlah_galon_titip" className="text-right">Galon Titip</Label>
+            <div className="space-y-2">
+              <Label htmlFor="jumlah_galon_titip">Galon Titip</Label>
               <Input 
                 id="jumlah_galon_titip" 
                 type="number" 
                 min="0"
                 {...register("jumlah_galon_titip")} 
-                className="col-span-3" 
                 placeholder="Jumlah galon yang dititip di pelanggan"
               />
-              {errors.jumlah_galon_titip && <p className="col-span-4 text-red-500 text-sm text-right">{errors.jumlah_galon_titip.message}</p>}
+              {errors.jumlah_galon_titip && <p className="text-red-500 text-sm">{errors.jumlah_galon_titip.message}</p>}
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Lokasi</Label>
-              <div className="col-span-3 space-y-2">
+            <div className="space-y-2">
+              <Label>Lokasi</Label>
+              <div className="space-y-2">
                 <Button 
                   type="button" 
                   onClick={handleGetCurrentLocation}
@@ -240,7 +278,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
                       type="button"
                       variant="link"
                       className="p-0 h-auto text-blue-600"
-                      onClick={() => window.open(`https://maps.google.com/?q=${latitude},${longitude}`, '_blank')}
+                      onClick={() => window.open(`https://www.google.com/maps/dir//${latitude},${longitude}`, '_blank')}
                     >
                       <ExternalLink className="w-3 h-3 mr-1" />
                       Lihat di Google Maps
@@ -249,9 +287,9 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
                 )}
               </div>
             </div>
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Foto Toko</Label>
-              <div className="col-span-3 space-y-2">
+            <div className="space-y-2">
+              <Label>Foto Toko</Label>
+              <div className="space-y-2">
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -288,8 +326,11 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
               </div>
             </div>
           </div>
-          <DialogFooter>
-            <Button type="submit" disabled={isLoading}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="order-2 sm:order-1">
+              Batal
+            </Button>
+            <Button type="submit" disabled={isLoading} className="order-1 sm:order-2">
               {isLoading ? "Menyimpan..." : "Simpan Pelanggan"}
             </Button>
           </DialogFooter>

@@ -82,7 +82,7 @@ export default function CustomerDetailPage() {
               <Button
                 variant="link"
                 className="p-0 h-auto text-blue-600"
-                onClick={() => window.open(`https://maps.google.com/?q=${customer.latitude},${customer.longitude}`, '_blank')}
+                onClick={() => window.open(`https://www.google.com/maps/dir//${customer.latitude},${customer.longitude}`, '_blank')}
               >
                 <ExternalLink className="w-4 h-4 mr-2" />
                 Buka di Google Maps

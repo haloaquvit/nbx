@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
@@ -15,6 +15,10 @@ const MobileLayout = () => {
   const location = useLocation()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
+  // Filter menu based on user role
+  const allowedRoles = ['supir', 'helper', 'admin', 'owner']
+  const canAccessDriverPOS = user?.role && allowedRoles.includes(user.role)
+
   const menuItems = [
     {
       title: 'Point of Sale',
@@ -24,6 +28,14 @@ const MobileLayout = () => {
       color: 'bg-blue-500 hover:bg-blue-600',
       textColor: 'text-white'
     },
+    ...(canAccessDriverPOS ? [{
+      title: 'POS Supir',
+      icon: Truck,
+      path: '/driver-pos',
+      description: 'POS khusus Supir & Helper',
+      color: 'bg-orange-500 hover:bg-orange-600',
+      textColor: 'text-white'
+    }] : []),
     {
       title: 'Data Transaksi',
       icon: List,

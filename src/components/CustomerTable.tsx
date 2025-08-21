@@ -10,7 +10,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, ArrowUpDown, MapPin, Camera } from "lucide-react"
+import { MoreHorizontal, ArrowUpDown, MapPin, Camera, Search } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
@@ -64,6 +64,17 @@ export const getColumns = (
   {
     accessorKey: "address",
     header: "Alamat",
+    cell: ({ row }) => {
+      const address = row.getValue("address") as string;
+      
+      if (!address) return null;
+      
+      return (
+        <div className="max-w-[200px] truncate" title={address}>
+          {address}
+        </div>
+      );
+    }
   },
   {
     accessorKey: "orderCount",
@@ -85,23 +96,35 @@ export const getColumns = (
   },
   {
     id: "location",
-    header: "Lokasi",
+    header: "Lokasi GPS",
     cell: ({ row }) => {
       const customer = row.original;
-      if (!customer.latitude || !customer.longitude) return null;
+      if (!customer.latitude || !customer.longitude) {
+        return (
+          <div className="text-xs text-muted-foreground">
+            Tidak ada koordinat
+          </div>
+        );
+      }
       
       return (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(`https://maps.google.com/?q=${customer.latitude},${customer.longitude}`, '_blank');
-          }}
-        >
-          <MapPin className="h-4 w-4 mr-1" />
-          Maps
-        </Button>
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">
+            {customer.latitude.toFixed(6)}, {customer.longitude.toFixed(6)}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(`https://www.google.com/maps/dir//${customer.latitude},${customer.longitude}`, '_blank');
+            }}
+            className="h-6 text-xs"
+          >
+            <MapPin className="h-3 w-3 mr-1" />
+            Buka Maps
+          </Button>
+        </div>
       );
     }
   },
@@ -110,20 +133,39 @@ export const getColumns = (
     header: "Foto",
     cell: ({ row }) => {
       const customer = row.original;
-      if (!customer.store_photo_url) return null;
+      if (!customer.store_photo_url) return (
+        <div className="w-12 h-12 bg-gray-100 rounded-md flex items-center justify-center">
+          <Camera className="h-4 w-4 text-gray-400" />
+        </div>
+      );
       
       return (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={(e) => {
-            e.stopPropagation();
-            window.open(customer.store_photo_url!, '_blank');
-          }}
-        >
-          <Camera className="h-4 w-4 mr-1" />
-          Lihat
-        </Button>
+        <div className="flex items-center gap-2">
+          <img
+            src={customer.store_photo_url}
+            alt={`Foto toko ${customer.name}`}
+            className="w-12 h-12 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(customer.store_photo_url!, '_blank');
+            }}
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              const parent = target.parentElement;
+              if (parent) {
+                parent.innerHTML = `
+                  <div class="w-12 h-12 bg-gray-100 rounded-md flex items-center justify-center">
+                    <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                `;
+              }
+            }}
+          />
+        </div>
       );
     }
   },
@@ -177,6 +219,7 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
   const { customers, isLoading, deleteCustomer } = useCustomers()
   const { user } = useAuthContext()
   const [sorting, setSorting] = React.useState<SortingState>([])
+  const [globalFilter, setGlobalFilter] = React.useState('')
   const navigate = useNavigate()
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false)
@@ -213,89 +256,119 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
     data: customers || [],
     columns,
     onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    globalFilterFn: 'includesString',
     state: {
       sorting,
+      globalFilter,
     },
   })
 
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between py-4">
-        <div className="flex items-center gap-4">
+      {/* Search and filters - Mobile responsive */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 px-4 sm:px-0">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 flex-1">
+          {/* Search input */}
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Cari nama pelanggan..."
+              value={globalFilter ?? ''}
+              onChange={(event) => setGlobalFilter(event.target.value)}
+              className="pl-10"
+            />
+          </div>
           <div className="text-sm text-muted-foreground">
-            Total: {customers?.length || 0} pelanggan
+            {table.getRowModel().rows.length} dari {customers?.length || 0} pelanggan
           </div>
         </div>
       </div>
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell colSpan={columns.length}><Skeleton className="h-6 w-full" /></TableCell>
-                </TableRow>
-              ))
-            ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow 
-                  key={row.id}
-                  onClick={() => navigate(`/customers/${row.original.id}`)}
-                  className="cursor-pointer hover:bg-muted"
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+      {/* Mobile-responsive table wrapper */}
+      <div className="rounded-md border overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[600px]">
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id} className="text-xs sm:text-sm">
+                      {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  Tidak ada data pelanggan.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex items-center justify-between space-x-2 py-4">
-        <div className="text-sm text-muted-foreground">
-          Halaman {table.getState().pagination.pageIndex + 1} dari{" "}
-          {table.getPageCount()} ({table.getRowModel().rows.length} dari {customers?.length || 0} ditampilkan)
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i}>
+                    <TableCell colSpan={columns.length}><Skeleton className="h-6 w-full" /></TableCell>
+                  </TableRow>
+                ))
+              ) : table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow 
+                    key={row.id}
+                    onClick={() => navigate(`/customers/${row.original.id}`)}
+                    className="cursor-pointer hover:bg-muted"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="text-xs sm:text-sm">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center text-sm">
+                    {globalFilter ? 'Tidak ada pelanggan yang cocok dengan pencarian' : 'Tidak ada data pelanggan.'}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
-        <div className="flex items-center space-x-2">
+      </div>
+      {/* Mobile-friendly pagination */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 px-4 sm:px-0">
+        <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+          <div className="sm:hidden">
+            {table.getRowModel().rows.length} dari {customers?.length || 0}
+          </div>
+          <div className="hidden sm:block">
+            Halaman {table.getState().pagination.pageIndex + 1} dari{" "}
+            {table.getPageCount()} ({table.getRowModel().rows.length} dari {customers?.length || 0} ditampilkan)
+          </div>
+        </div>
+        <div className="flex items-center justify-center space-x-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
+            className="text-xs sm:text-sm"
           >
-            Sebelumnya
+            <span className="hidden sm:inline">Sebelumnya</span>
+            <span className="sm:hidden">‹</span>
           </Button>
+          <div className="text-xs text-muted-foreground px-2">
+            {table.getState().pagination.pageIndex + 1}/{table.getPageCount()}
+          </div>
           <Button
             variant="outline"
             size="sm"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
+            className="text-xs sm:text-sm"
           >
-            Selanjutnya
+            <span className="hidden sm:inline">Selanjutnya</span>
+            <span className="sm:hidden">›</span>
           </Button>
         </div>
       </div>

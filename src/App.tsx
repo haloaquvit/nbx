@@ -42,6 +42,7 @@ const CashFlowPage = lazy(() => import("@/pages/CashFlowPage"));
 const RolesPage = lazy(() => import("@/pages/RolesPage"));
 const RetasiPage = lazy(() => import("@/pages/RetasiPage"));
 const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
+const DriverPosPage = lazy(() => import("@/pages/DriverPosPage"));
 
 function App() {
   // Handle chunk loading errors
@@ -66,6 +67,7 @@ function App() {
                 <Route element={<ProtectedRoute><MobileLayout /></ProtectedRoute>}>
                   <Route path="/" element={<PosPage />} />
                   <Route path="/pos" element={<PosPage />} />
+                  <Route path="/driver-pos" element={<DriverPosPage />} />
                   <Route path="/attendance" element={<AttendancePage />} />
                   <Route path="/transactions" element={<TransactionListPage />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
@@ -104,6 +106,7 @@ function App() {
                   <Route path="/roles" element={<RolesPage />} />
                   <Route path="/retasi" element={<RetasiPage />} />
                   <Route path="/delivery" element={<DeliveryPage />} />
+                  <Route path="/driver-pos" element={<DriverPosPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

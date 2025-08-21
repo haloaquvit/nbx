@@ -149,7 +149,7 @@ export function DeliveryManagement({ transaction, onClose }: DeliveryManagementP
 
       const result = await createDelivery.mutateAsync({
         transactionId: formData.transactionId,
-        deliveryDate: new Date(formData.deliveryDate),
+        deliveryDate: new Date(), // Use current time instead of input
         notes: formData.notes,
         driverId: formData.driverId,
         helperId: formData.helperId || undefined,

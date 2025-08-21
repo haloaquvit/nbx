@@ -9,16 +9,16 @@ export function Layout() {
   const [isCollapsed, setIsCollapsed] = useState(true) // Default minimize
 
   return (
-    <div className="grid min-h-screen w-full md:grid-cols-[220px_1fr] lg:grid-cols-[280px_1fr]">
+    <div className="grid min-h-screen w-full grid-cols-[auto_1fr]">
       <div className={cn(
-        "hidden border-r bg-muted/40 md:block",
-        isCollapsed && "md:w-[60px] lg:w-[60px]"
+        "hidden border-r bg-muted/40 md:block transition-all duration-300",
+        isCollapsed ? "w-[60px]" : "w-[220px] lg:w-[280px]"
       )}>
         <Sidebar isCollapsed={isCollapsed} setCollapsed={setIsCollapsed} />
       </div>
-      <div className="flex flex-col">
+      <div className="flex flex-col min-w-0">
         <Header />
-        <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto">
+        <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6 overflow-auto min-w-0">
           <Outlet />
         </main>
       </div>

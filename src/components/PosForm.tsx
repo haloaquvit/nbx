@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { PlusCircle, Trash2, Search, UserPlus, Wallet, FileText, Check, ChevronsUpDown, Percent, AlertTriangle, Plus, ChevronDown, User as UserIcon } from 'lucide-react'
+import { PlusCircle, Trash2, Search, UserPlus, Wallet, FileText, Check, ChevronsUpDown, Percent, AlertTriangle, Plus, ChevronDown, User as UserIcon, Phone, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/use-toast'
@@ -355,12 +355,45 @@ export const PosForm = () => {
                 </div>
                 
                 {selectedCustomer && (
-                  <div className="text-xs md:text-sm text-gray-600 space-y-1 bg-gray-50 p-2 rounded">
+                  <div className="text-xs md:text-sm text-gray-600 space-y-2 bg-gray-50 p-3 rounded">
                     <div>
                       <strong>Alamat:</strong> <span className="break-words">{selectedCustomer.address}</span>
                     </div>
                     <div>
                       <strong>Telp:</strong> {selectedCustomer.phone}
+                    </div>
+                    {selectedCustomer.jumlah_galon_titip !== undefined && selectedCustomer.jumlah_galon_titip > 0 && (
+                      <div className="text-green-600 font-medium">
+                        <strong>🥤 Galon Titip:</strong> {selectedCustomer.jumlah_galon_titip} galon
+                      </div>
+                    )}
+                    <div className="flex gap-2 mt-2">
+                      {selectedCustomer.phone && (
+                        <Button 
+                          type="button"
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => window.location.href = `tel:${selectedCustomer.phone}`}
+                          className="flex items-center gap-1 text-xs"
+                        >
+                          <Phone className="h-3 w-3" />
+                          <span>Telepon</span>
+                        </Button>
+                      )}
+                      {selectedCustomer.latitude && selectedCustomer.longitude && (
+                        <Button 
+                          type="button"
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            window.open(`https://www.google.com/maps/dir//${selectedCustomer.latitude},${selectedCustomer.longitude}`, '_blank');
+                          }}
+                          className="flex items-center gap-1 text-xs"
+                        >
+                          <MapPin className="h-3 w-3" />
+                          <span>Lokasi GPS</span>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 )}

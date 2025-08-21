@@ -13,8 +13,7 @@ export interface TransactionItem {
 }
 
 export type TransactionStatus = 
-  | 'Pesanan Masuk'     // Order baru dibuat
-  | 'Siap Antar'        // Produksi selesai, siap diantar
+  | 'Pesanan Masuk'     // Order baru dibuat, siap diantar
   | 'Diantar Sebagian'  // Sebagian sudah diantar
   | 'Selesai'           // Semua sudah berhasil diantar
   | 'Dibatalkan';       // Order dibatalkan

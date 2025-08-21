@@ -35,6 +35,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useState } from "react";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
+import { useAuth } from "@/hooks/useAuth";
 
 /*
  * Sidebar menu configuration.
@@ -47,17 +48,24 @@ import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
  * simply modify the data structure below – the rendering logic will adapt
  * automatically.
  */
-const getMenuItems = (hasPermission: (permission: string) => boolean) => [
+const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?: string) => [
   {
     title: "Utama",
     items: [
       { href: "/", label: "Dashboard", icon: Home },
       { href: "/pos", label: "Kasir (POS)", icon: ShoppingCart, permission: PERMISSIONS.TRANSACTIONS },
+      { href: "/driver-pos", label: "POS Supir", icon: Truck, permission: PERMISSIONS.DELIVERIES, roles: ['supir', 'helper', 'admin', 'owner'] },
       { href: "/transactions", label: "Data Transaksi", icon: List, permission: PERMISSIONS.TRANSACTIONS },
       { href: "/delivery", label: "Pengantaran", icon: Truck, permission: PERMISSIONS.DELIVERIES },
       { href: "/retasi", label: "Retasi", icon: Package, permission: PERMISSIONS.DELIVERIES },
       { href: "/attendance", label: "Absensi", icon: Fingerprint, permission: PERMISSIONS.EMPLOYEES },
-    ].filter(item => !item.permission || hasPermission(item.permission)),
+    ].filter(item => {
+      // Check permission first
+      if (item.permission && !hasPermission(item.permission)) return false;
+      // Check role if specified
+      if (item.roles && userRole && !item.roles.includes(userRole)) return false;
+      return true;
+    }),
   },
   {
     title: "Manajemen Data",
@@ -116,9 +124,10 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   const location = useLocation();
   const { settings } = useCompanySettings();
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
   
-  // Get filtered menu items based on user permissions
-  const menuItems = getMenuItems(hasPermission);
+  // Get filtered menu items based on user permissions and role
+  const menuItems = getMenuItems(hasPermission, user?.role);
   
   // Track expanded/collapsed state for each top‑level menu section. When
   // `true` the section's links are visible, otherwise they are hidden. Use

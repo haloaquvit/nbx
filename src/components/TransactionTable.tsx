@@ -60,7 +60,6 @@ import { isOwner } from '@/utils/roleUtils'
 
 const statusOptions: TransactionStatus[] = [
   'Pesanan Masuk',
-  'Siap Antar',
   'Diantar Sebagian',
   'Selesai',
   'Dibatalkan'
@@ -68,8 +67,7 @@ const statusOptions: TransactionStatus[] = [
 
 const getStatusVariant = (status: TransactionStatus) => {
   switch (status) {
-    case 'Pesanan Masuk': return 'secondary';
-    case 'Siap Antar': return 'default';
+    case 'Pesanan Masuk': return 'default';
     case 'Diantar Sebagian': return 'secondary';
     case 'Selesai': return 'success';
     case 'Dibatalkan': return 'destructive';
@@ -78,13 +76,10 @@ const getStatusVariant = (status: TransactionStatus) => {
 }
 
 const getAvailableStatusOptions = (currentStatus: TransactionStatus, userRole: UserRole): TransactionStatus[] => {
-  // Simplified workflow
+  // Simplified workflow - orders go directly from "Pesanan Masuk" to delivery
   switch (currentStatus) {
     case 'Pesanan Masuk':
-      return ['Pesanan Masuk', 'Siap Antar', 'Dibatalkan'];
-      
-    case 'Siap Antar':
-      return ['Siap Antar']; // Auto-updated by delivery system
+      return ['Pesanan Masuk', 'Dibatalkan']; // Can only cancel, delivery system auto-updates status
       
     case 'Diantar Sebagian':
       return ['Diantar Sebagian']; // Auto-updated by delivery system
@@ -511,7 +506,7 @@ export function TransactionTable() {
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full max-w-none">
       {/* Filter Controls */}
       <div className="flex flex-col gap-4 p-4 border rounded-lg mb-4 bg-background">
         <div className="flex items-center justify-between">
@@ -530,7 +525,7 @@ export function TransactionTable() {
             Reset Filter
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Status Transaksi</label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -585,9 +580,9 @@ export function TransactionTable() {
         )}
       </div>
       
-      <div className="flex items-center justify-between py-4">
-        <div className="flex gap-4 items-center">
-          <div className="max-w-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+          <div className="w-full sm:max-w-sm">
             <Select
               value={(table.getColumn("ppnStatus")?.getFilterValue() as string) ?? "all"}
               onValueChange={(value) => {
@@ -621,14 +616,26 @@ export function TransactionTable() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleExportExcel}><FileDown className="mr-2 h-4 w-4" /> Ekspor Excel</Button>
-          <Button variant="outline" onClick={handleExportPdf}><FileDown className="mr-2 h-4 w-4" /> Ekspor PDF</Button>
-          <Button asChild><Link to="/pos"><PlusCircle className="mr-2 h-4 w-4" /> Tambah Transaksi</Link></Button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <Button variant="outline" onClick={handleExportExcel} className="text-xs sm:text-sm">
+            <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
+            <span className="hidden sm:inline">Ekspor </span>Excel
+          </Button>
+          <Button variant="outline" onClick={handleExportPdf} className="text-xs sm:text-sm">
+            <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
+            <span className="hidden sm:inline">Ekspor </span>PDF
+          </Button>
+          <Button asChild>
+            <Link to="/pos" className="text-xs sm:text-sm">
+              <PlusCircle className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
+              <span className="hidden sm:inline">Tambah </span>Transaksi
+            </Link>
+          </Button>
         </div>
       </div>
-      <div className="rounded-md border">
-        <Table>
+      <div className="rounded-md border overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[1200px]">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => (<TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>))}</TableRow>
@@ -653,7 +660,8 @@ export function TransactionTable() {
               <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No results.</TableCell></TableRow>
             )}
           </TableBody>
-        </Table>
+          </Table>
+        </div>
       </div>
       <div className="flex items-center justify-end space-x-2 py-4">
         <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>Previous</Button>

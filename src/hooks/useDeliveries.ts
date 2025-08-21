@@ -47,7 +47,7 @@ export function useTransactionsReadyForDelivery() {
       const { data: transactions, error } = await supabase
         .from('transactions')
         .select('*')
-        .in('status', ['Siap Antar', 'Diantar Sebagian'])
+        .in('status', ['Pesanan Masuk', 'Diantar Sebagian'])
         .neq('is_office_sale', true)
         .order('order_date', { ascending: true })
       
@@ -531,6 +531,81 @@ export function useDeliveries() {
         // This maintains the delivery functionality while adding stock tracking
       }
 
+      // Update transaction status automatically based on delivery completion
+      try {
+        // Get transaction details to check if all items are delivered
+        const { data: updatedTransaction, error: transactionError } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('id', request.transactionId)
+          .single()
+        
+        if (transactionError) {
+          console.error('Failed to fetch transaction for status update:', transactionError)
+        } else if (updatedTransaction) {
+          // Calculate total ordered vs delivered quantities
+          const transactionItems = updatedTransaction.items || []
+          const deliveryItemsForThisTransaction = request.items.filter(item => item.quantityDelivered > 0)
+          
+          let allItemsDelivered = true
+          let anyItemsDelivered = false
+          
+          for (const transactionItem of transactionItems) {
+            const productId = transactionItem.product?.id
+            if (!productId) continue
+            
+            const orderedQuantity = transactionItem.quantity || 0
+            
+            // Calculate total delivered quantity for this product across all deliveries
+            const { data: allDeliveries, error: deliveryError } = await supabase
+              .from('deliveries')
+              .select(`
+                items:delivery_items(*)
+              `)
+              .eq('transaction_id', request.transactionId)
+            
+            let totalDelivered = 0
+            if (allDeliveries && !deliveryError) {
+              for (const delivery of allDeliveries) {
+                for (const deliveryItem of (delivery.items || [])) {
+                  if (deliveryItem.product_id === productId) {
+                    totalDelivered += deliveryItem.quantity_delivered
+                  }
+                }
+              }
+            }
+            
+            if (totalDelivered > 0) anyItemsDelivered = true
+            if (totalDelivered < orderedQuantity) allItemsDelivered = false
+          }
+          
+          // Determine new status
+          let newStatus = updatedTransaction.status
+          if (allItemsDelivered && anyItemsDelivered) {
+            newStatus = 'Selesai'
+          } else if (anyItemsDelivered) {
+            newStatus = 'Diantar Sebagian'
+          }
+          
+          // Update status if changed
+          if (newStatus !== updatedTransaction.status) {
+            const { error: statusUpdateError } = await supabase
+              .from('transactions')
+              .update({ status: newStatus })
+              .eq('id', request.transactionId)
+              
+            if (statusUpdateError) {
+              console.error('Failed to update transaction status:', statusUpdateError)
+            } else {
+              console.log(`Transaction ${request.transactionId} status updated to: ${newStatus}`)
+            }
+          }
+        }
+      } catch (statusError) {
+        console.error('Error updating transaction status after delivery:', statusError)
+        // Don't fail delivery creation if status update fails
+      }
+
       // Return complete delivery object
       const result = {
         id: deliveryData.id,
@@ -576,4 +651,68 @@ export function useDeliveries() {
   return {
     createDelivery,
   }
+}
+
+// Fetch all delivery history for admin/owner
+export function useDeliveryHistory() {
+  return useQuery({
+    queryKey: ['delivery-history'],
+    queryFn: async (): Promise<Delivery[]> => {
+      const { data, error } = await supabase
+        .from('deliveries')
+        .select(`
+          *,
+          items:delivery_items(*),
+          driver:profiles!driver_id(id, full_name),
+          helper:profiles!helper_id(id, full_name),
+          transaction:transactions!transaction_id(id, customer_name, total, order_date)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(100) // Limit for performance
+      
+      if (error) {
+        console.error('[useDeliveryHistory] Error fetching delivery history:', error)
+        throw error
+      }
+
+      return (data || []).map((d: any) => ({
+        id: d.id,
+        transactionId: d.transaction_id,
+        deliveryNumber: d.delivery_number,
+        deliveryDate: new Date(d.delivery_date),
+        photoUrl: d.photo_url,
+        photoDriveId: d.photo_drive_id,
+        notes: d.notes,
+        driverId: d.driver_id,
+        driverName: d.driver?.full_name || undefined,
+        helperId: d.helper_id,
+        helperName: d.helper?.full_name || undefined,
+        customerName: d.transaction?.customer_name || 'Unknown',
+        customerAddress: d.customer_address || '',
+        customerPhone: d.customer_phone || '',
+        transactionTotal: d.transaction?.total || 0,
+        transactionDate: d.transaction?.order_date ? new Date(d.transaction.order_date) : new Date(),
+        items: (d.items || []).map((item: any) => ({
+          id: item.id,
+          deliveryId: item.delivery_id,
+          productId: item.product_id,
+          productName: item.product_name,
+          quantityDelivered: item.quantity_delivered,
+          unit: item.unit,
+          width: item.width,
+          height: item.height,
+          notes: item.notes,
+          createdAt: new Date(item.created_at),
+        })),
+        createdAt: new Date(d.created_at),
+        updatedAt: new Date(d.updated_at),
+      } as Delivery & {
+        customerName: string
+        customerAddress: string
+        customerPhone: string
+        transactionTotal: number
+        transactionDate: Date
+      }))
+    },
+  })
 }

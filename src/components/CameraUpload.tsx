@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { Camera, Upload, X, Loader2, CheckCircle } from 'lucide-react';
 import { compressImage, captureFromCamera, validateImageFile, CompressedImage } from '@/utils/imageUtils';
-import { googleDriveService } from '@/services/googleDriveService';
+import { uploadToGoogleDrive as uploadToDrive } from '@/utils/googleDriveInit';
 
 interface CameraUploadProps {
   onPhotoUploaded: (photoUrl: string, fileName: string) => void;
@@ -97,8 +97,24 @@ export function CameraUpload({
         // Compress image
         const compressed = await compressImage(file, 100);
         
+        // Generate unique filename
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const fileName = `delivery-${timestamp}-${file.name}`;
+        
         // Upload to Google Drive
-        await uploadToGoogleDrive(compressed);
+        const result = await uploadToDrive(compressed.file, fileName);
+        
+        if (!result) {
+          throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.');
+        }
+        
+        // Notify parent component
+        onPhotoUploaded(result.webViewLink, fileName);
+        
+        toast({
+          title: "Upload berhasil!",
+          description: `Foto tersimpan di Google Drive (${compressed.size.toFixed(1)}KB)`
+        });
 
       } catch (error) {
         console.error('File upload failed:', error);
@@ -118,49 +134,6 @@ export function CameraUpload({
     }
   };
 
-  const uploadToGoogleDrive = async (compressed: CompressedImage) => {
-    try {
-      // Check if Google Drive is configured
-      const config = localStorage.getItem('googleDriveConfig');
-      if (!config) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Google Drive belum dikonfigurasi. Silakan ke Settings."
-        });
-        return;
-      }
-
-      const { apiKey, clientId, folderId } = JSON.parse(config);
-      
-      // Initialize Google Drive if needed
-      await googleDriveService.initialize({ apiKey, clientId, folderId });
-
-      // Generate unique filename
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const fileName = `delivery-${timestamp}.jpg`;
-
-      // Upload to Google Drive
-      const fileId = await googleDriveService.uploadFile(compressed.file, fileName);
-      const photoUrl = await googleDriveService.getFileUrl(fileId);
-
-      // Notify parent component
-      onPhotoUploaded(photoUrl, fileName);
-
-      toast({
-        title: "Upload berhasil!",
-        description: `Foto tersimpan di Google Drive (${compressed.size.toFixed(1)}KB)`
-      });
-
-    } catch (error) {
-      console.error('Google Drive upload failed:', error);
-      toast({
-        variant: "destructive",
-        title: "Upload gagal",
-        description: "Pastikan Google Drive sudah dikonfigurasi dengan benar"
-      });
-    }
-  };
 
   const handleRemovePhoto = (fileName: string) => {
     onPhotoRemoved(fileName);
