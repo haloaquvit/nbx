@@ -12,6 +12,7 @@ import { ResetPasswordDialog } from "@/components/ResetPasswordDialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
+import { isOwner } from "@/utils/roleUtils"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +32,9 @@ export default function EmployeePage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const { employees, isLoading, deleteEmployee, isError, error } = useEmployees()
-  const isOwner = user?.role === 'owner';
+  
+  // Check for owner role (case insensitive)
+  const userIsOwnerRole = isOwner(user);
 
   const handleOpenDialog = (employee: Employee | null) => {
     setSelectedEmployee(employee)
@@ -89,7 +92,7 @@ export default function EmployeePage() {
               <CardTitle>Manajemen Karyawan</CardTitle>
               <CardDescription>Kelola data semua karyawan di perusahaan Anda.</CardDescription>
             </div>
-            {isOwner && (
+            {userIsOwnerRole && (
               <Button onClick={() => handleOpenDialog(null)}>
                 <UserPlus className="mr-2 h-4 w-4" /> Tambah Karyawan Baru
               </Button>
@@ -127,7 +130,7 @@ export default function EmployeePage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        {isOwner ? (
+                        {userIsOwnerRole ? (
                           <>
                             <Button variant="ghost" size="icon" onClick={() => handleOpenResetPasswordDialog(employee)} title="Reset Password">
                               <KeyRound className="h-4 w-4 text-muted-foreground" />

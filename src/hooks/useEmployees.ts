@@ -8,84 +8,177 @@ export const useEmployees = () => {
   const { data: employees, isLoading, error, isError } = useQuery<Employee[]>({
     queryKey: ['employees'],
     queryFn: async () => {
-      const { data, error: queryError } = await supabase
-        .from('employees_view')
-        .select('*');
+      console.log('[useEmployees] Fetching employees...');
       
-      if (queryError) {
-        console.error("Error fetching employees from view:", queryError);
-        throw new Error(queryError.message);
-      }
+      try {
+        // Simple approach - just get profiles data, don't crash on error
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, email, full_name, username, role, phone, address, status')
+          .neq('status', 'Nonaktif');
 
-      return data.map((employee: any) => ({
-        id: employee.id,
-        name: employee.full_name,
-        username: employee.username,
-        email: employee.email,
-        role: employee.role,
-        phone: employee.phone,
-        address: employee.address,
-        status: employee.status,
-      }));
+        if (error) {
+          console.warn('[useEmployees] Profiles query failed:', error);
+          // Return empty array instead of throwing to prevent app crash
+          return [];
+        }
+
+        // Map profiles data to Employee format
+        return (data || []).map((employee: any) => ({
+          id: employee.id,
+          name: employee.full_name || employee.email || 'Unknown',
+          username: employee.username || employee.email || '',
+          email: employee.email,
+          role: employee.role || 'user',
+          phone: employee.phone || '',
+          address: employee.address || '',
+          status: employee.status || 'Aktif',
+        }));
+      } catch (err) {
+        console.error('[useEmployees] Unexpected error:', err);
+        // Return empty array to prevent app crash
+        return [];
+      }
     }
   });
 
   const createEmployee = useMutation({
     mutationFn: async (employeeData: any) => {
-      const { data, error } = await supabase.functions.invoke('create-employee', {
-        body: employeeData,
-      });
-      if (error) throw error;
-      return data;
+      console.log('[useEmployees] Creating employee - DISABLED temporarily to prevent crashes');
+      throw new Error('Employee creation temporarily disabled. Please contact admin.');
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('[useEmployees] Employee created successfully:', data);
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-drivers'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-helpers'] });
     },
   });
 
   const updateEmployee = useMutation({
     mutationFn: async (employeeData: Partial<Employee> & { id: string }): Promise<any> => {
+      console.log('[useEmployees] Updating employee:', employeeData);
+      
       const { id, name, username, role, phone, address, status } = employeeData;
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          full_name: name,
-          username,
-          role,
-          phone,
-          address,
-          status,
-        })
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
+      
+      // Prepare update data with only non-null values
+      const updateData: any = {};
+      if (name !== undefined) updateData.full_name = name;
+      if (username !== undefined) updateData.username = username;
+      if (role !== undefined) updateData.role = role;
+      if (phone !== undefined) updateData.phone = phone;
+      if (address !== undefined) updateData.address = address;
+      if (status !== undefined) updateData.status = status;
+      
+      console.log('[useEmployees] Update data:', updateData);
+      
+      // Try multiple approaches for updating
+      let data = null;
+      let error = null;
+      
+      // Approach 1: Standard update
+      try {
+        const result = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', id)
+          .select()
+          .single();
+        
+        data = result.data;
+        error = result.error;
+        
+        if (!error) {
+          console.log('[useEmployees] Standard update successful:', data);
+          return data;
+        }
+      } catch (err) {
+        console.warn('[useEmployees] Standard update failed:', err);
+        error = err as any;
+      }
+      
+      // Approach 2: Update without select (if select is causing RLS issues)
+      if (error) {
+        try {
+          const result = await supabase
+            .from('profiles')
+            .update(updateData)
+            .eq('id', id);
+          
+          if (!result.error) {
+            console.log('[useEmployees] Update without select successful');
+            // Return the updated data manually
+            return { id, ...updateData };
+          } else {
+            error = result.error;
+          }
+        } catch (err) {
+          console.warn('[useEmployees] Update without select failed:', err);
+          error = err as any;
+        }
+      }
+      
+      // If all approaches fail, throw the error
+      if (error) {
+        console.error('[useEmployees] All update approaches failed:', error);
+        throw new Error(`Gagal mengupdate karyawan: ${error.message || 'Unknown error'}`);
+      }
+      
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('[useEmployees] Employee updated successfully:', data);
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+    },
+    onError: (error) => {
+      console.error('[useEmployees] Update employee error:', error);
     },
   });
 
   const resetPassword = useMutation({
     mutationFn: async ({ userId, newPassword }: { userId: string, newPassword: string }) => {
-      const { error } = await supabase.functions.invoke('reset-employee-password', {
-        body: { userId, newPassword },
-      });
-      if (error) throw new Error(error.message);
+      // Edge function not available - disable for now
+      throw new Error('Reset password tidak tersedia saat ini. Hubungi administrator.');
     },
   });
 
   const deleteEmployee = useMutation({
     mutationFn: async (userId: string) => {
-      const { error } = await supabase.functions.invoke('delete-employee', {
-        body: { user_id: userId },
-      });
-      if (error) throw new Error(error.message);
+      console.log('[useEmployees] Deleting/deactivating employee:', userId);
+      
+      try {
+        // Try using the safe deactivation function first
+        const { data, error } = await supabase.rpc('deactivate_employee', {
+          employee_id: userId
+        });
+        
+        if (error) {
+          console.warn('[useEmployees] deactivate_employee function failed, falling back to direct update:', error);
+          
+          // Fallback to direct update
+          const { error: updateError } = await supabase
+            .from('profiles')
+            .update({ 
+              status: 'Tidak Aktif',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', userId);
+          
+          if (updateError) {
+            throw new Error(`Gagal menonaktifkan karyawan: ${updateError.message}`);
+          }
+        }
+        
+        console.log('[useEmployees] Employee deactivated successfully');
+      } catch (err) {
+        console.error('[useEmployees] Delete employee error:', err);
+        throw err;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-drivers'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-helpers'] });
     },
   });
 

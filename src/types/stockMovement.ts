@@ -1,5 +1,5 @@
 export type StockMovementType = 'IN' | 'OUT' | 'ADJUSTMENT';
-export type StockMovementReason = 'PURCHASE' | 'PRODUCTION' | 'SALES' | 'ADJUSTMENT' | 'RETURN';
+export type StockMovementReason = 'PURCHASE' | 'PRODUCTION_CONSUMPTION' | 'PRODUCTION_ACQUISITION' | 'ADJUSTMENT' | 'RETURN';
 
 export interface StockMovement {
   id: string;

@@ -5,19 +5,28 @@ import { Button } from "@/components/ui/button";
 import { PlusCircle, FileDown, Upload } from "lucide-react";
 import { CustomerTable } from "@/components/CustomerTable";
 import { AddCustomerDialog } from "@/components/AddCustomerDialog";
+import { EditCustomerDialog } from "@/components/EditCustomerDialog";
 import * as XLSX from "xlsx";
 import { useCustomers } from "@/hooks/useCustomers";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
+import { Customer } from "@/types/customer";
 
 export default function CustomerPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const { customers } = useCustomers();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleEditCustomer = (customer: Customer) => {
+    setSelectedCustomer(customer);
+    setIsEditDialogOpen(true);
+  };
 
   const handleExportExcel = () => {
     if (customers) {
@@ -75,6 +84,11 @@ export default function CustomerPage() {
   return (
     <>
       <AddCustomerDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} />
+      <EditCustomerDialog
+        open={isEditDialogOpen}
+        onOpenChange={setIsEditDialogOpen}
+        customer={selectedCustomer}
+      />
       <input
         type="file"
         ref={fileInputRef}
@@ -105,7 +119,7 @@ export default function CustomerPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <CustomerTable />
+          <CustomerTable onEditCustomer={handleEditCustomer} />
         </CardContent>
       </Card>
     </>

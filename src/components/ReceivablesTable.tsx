@@ -11,10 +11,14 @@ import { id } from "date-fns/locale/id"
 import { PayReceivableDialog } from "./PayReceivableDialog"
 // import { PaymentHistoryRow } from "./PaymentHistoryRow" // Removed
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
-import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle } from "lucide-react"
+import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer } from "lucide-react"
+import { Input } from "./ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
+import { Badge } from "./ui/badge"
 import { useAuthContext } from "@/contexts/AuthContext"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog"
 import { showSuccess, showError } from "@/utils/toast"
+import { isOwner } from '@/utils/roleUtils'
 
 export function ReceivablesTable() {
   const { transactions, isLoading, writeOffReceivable } = useTransactions()
@@ -23,12 +27,36 @@ export function ReceivablesTable() {
   const [isWriteOffDialogOpen, setIsWriteOffDialogOpen] = React.useState(false)
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null)
   const [expandedRows, setExpandedRows] = React.useState<Set<string>>(new Set())
+  const [filterStatus, setFilterStatus] = React.useState<string>('all')
+
+  const getDueStatus = (transaction: Transaction) => {
+    if (!transaction.dueDate) return 'no-due-date'
+    
+    const today = new Date()
+    const dueDate = new Date(transaction.dueDate)
+    const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    
+    if (diffDays < 0) return 'overdue'
+    if (diffDays <= 3) return 'due-soon'
+    return 'normal'
+  }
 
   const receivables = React.useMemo(() => {
-    return transactions?.filter(t => 
+    let filtered = transactions?.filter(t => 
       t.paymentStatus === 'Belum Lunas' || t.paymentStatus === 'Partial'
     ) || []
-  }, [transactions])
+
+
+    // Filter by status
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter(t => {
+        const status = getDueStatus(t)
+        return status === filterStatus
+      })
+    }
+
+    return filtered
+  }, [transactions, filterStatus])
 
   const receivableIds = React.useMemo(() => {
     return receivables.map(r => r.id)
@@ -73,6 +101,83 @@ export function ReceivablesTable() {
     }
   }
 
+  const handlePrintOverdue = () => {
+    const overdueTransactions = receivables.filter(t => getDueStatus(t) === 'overdue')
+    if (overdueTransactions.length === 0) {
+      showError('Tidak ada transaksi yang jatuh tempo untuk dicetak.')
+      return
+    }
+
+    // Create printable content
+    const printContent = `
+      <html>
+        <head>
+          <title>Laporan Nota Jatuh Tempo</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            h1 { text-align: center; margin-bottom: 30px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            .overdue { color: #dc2626; font-weight: bold; }
+            .total { font-weight: bold; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <h1>Laporan Nota Jatuh Tempo</h1>
+          <p>Tanggal Cetak: ${format(new Date(), 'd MMMM yyyy', { locale: id })}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>No. Order</th>
+                <th>Pelanggan</th>
+                <th>Tgl Order</th>
+                <th>Tgl Jatuh Tempo</th>
+                <th>Total Tagihan</th>
+                <th>Telah Dibayar</th>
+                <th>Sisa Tagihan</th>
+                <th>Hari Terlambat</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${overdueTransactions.map(t => {
+                const overdueDays = Math.abs(Math.ceil((new Date(t.dueDate!).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))
+                const remaining = t.total - (t.paidAmount || 0)
+                return `
+                  <tr>
+                    <td>${t.id}</td>
+                    <td>${t.customerName}</td>
+                    <td>${format(new Date(t.orderDate), 'd MMM yyyy', { locale: id })}</td>
+                    <td class="overdue">${format(new Date(t.dueDate!), 'd MMM yyyy', { locale: id })}</td>
+                    <td>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(t.total)}</td>
+                    <td>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(t.paidAmount || 0)}</td>
+                    <td class="overdue">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(remaining)}</td>
+                    <td class="overdue">${overdueDays} hari</td>
+                  </tr>
+                `
+              }).join('')}
+            </tbody>
+          </table>
+          <div class="total">
+            <p>Total Transaksi Jatuh Tempo: ${overdueTransactions.length}</p>
+            <p>Total Sisa Tagihan: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
+              overdueTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0)
+            )}</p>
+          </div>
+        </body>
+      </html>
+    `
+
+    // Open print window
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(printContent)
+      printWindow.document.close()
+      printWindow.focus()
+      printWindow.print()
+    }
+  }
+
   const columns: ColumnDef<Transaction>[] = [
     {
       id: "expand",
@@ -100,6 +205,37 @@ export function ReceivablesTable() {
     { accessorKey: "id", header: "No. Order" },
     { accessorKey: "customerName", header: "Pelanggan" },
     { accessorKey: "orderDate", header: "Tgl Order", cell: ({ row }) => format(new Date(row.getValue("orderDate")), "d MMM yyyy", { locale: id }) },
+    {
+      id: "dueDate",
+      header: "Tgl Jatuh Tempo",
+      cell: ({ row }) => {
+        const dueDate = row.original.dueDate
+        if (!dueDate) return <span className="text-gray-400">-</span>
+        
+        const status = getDueStatus(row.original)
+        let colorClass = ''
+        
+        if (status === 'overdue') colorClass = 'text-red-600 font-bold'
+        else if (status === 'due-soon') colorClass = 'text-orange-600 font-medium'
+        else colorClass = 'text-gray-700'
+        
+        return (
+          <div className={colorClass}>
+            {format(new Date(dueDate), "d MMM yyyy", { locale: id })}
+            {status === 'overdue' && (
+              <Badge variant="destructive" className="ml-2 text-xs">
+                Terlambat
+              </Badge>
+            )}
+            {status === 'due-soon' && (
+              <Badge variant="secondary" className="ml-2 text-xs bg-orange-100 text-orange-700">
+                Segera
+              </Badge>
+            )}
+          </div>
+        )
+      }
+    },
     { accessorKey: "total", header: "Total Tagihan", cell: ({ row }) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(row.getValue("total")) },
     { accessorKey: "paidAmount", header: "Telah Dibayar", cell: ({ row }) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(row.getValue("paidAmount") || 0) },
     {
@@ -160,7 +296,7 @@ export function ReceivablesTable() {
             <DropdownMenuItem onClick={() => handlePayClick(row.original)}>
               Bayar
             </DropdownMenuItem>
-            {user?.role === 'owner' && (
+            {isOwner(user) && (
               <DropdownMenuItem
                 className="text-orange-600 focus:text-orange-600 focus:bg-orange-50"
                 onClick={() => handleWriteOffClick(row.original)}
@@ -180,8 +316,71 @@ export function ReceivablesTable() {
     getCoreRowModel: getCoreRowModel(),
   })
 
+  const overdueCount = React.useMemo(() => {
+    return receivables.filter(t => getDueStatus(t) === 'overdue').length
+  }, [receivables])
+
+  const dueSoonCount = React.useMemo(() => {
+    return receivables.filter(t => getDueStatus(t) === 'due-soon').length
+  }, [receivables])
+
   return (
     <>
+      {/* Filter Controls */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+        <div className="flex gap-2">
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Filter Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              <SelectItem value="overdue">Jatuh Tempo ({overdueCount})</SelectItem>
+              <SelectItem value="due-soon">Segera Jatuh Tempo ({dueSoonCount})</SelectItem>
+              <SelectItem value="normal">Normal</SelectItem>
+              <SelectItem value="no-due-date">Tanpa Jatuh Tempo</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button 
+            onClick={handlePrintOverdue}
+            variant="outline"
+            className="shrink-0"
+            disabled={overdueCount === 0}
+          >
+            <Printer className="w-4 h-4 mr-2" />
+            Cetak Jatuh Tempo ({overdueCount})
+          </Button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+            <h3 className="font-medium text-red-900">Jatuh Tempo</h3>
+          </div>
+          <p className="text-2xl font-bold text-red-600">{overdueCount}</p>
+          <p className="text-sm text-red-700">Transaksi terlambat</p>
+        </div>
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <Clock className="w-5 h-5 text-orange-600" />
+            <h3 className="font-medium text-orange-900">Segera Jatuh Tempo</h3>
+          </div>
+          <p className="text-2xl font-bold text-orange-600">{dueSoonCount}</p>
+          <p className="text-sm text-orange-700">≤ 3 hari lagi</p>
+        </div>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-blue-600" />
+            <h3 className="font-medium text-blue-900">Total Piutang</h3>
+          </div>
+          <p className="text-2xl font-bold text-blue-600">{receivables.length}</p>
+          <p className="text-sm text-blue-700">Belum lunas</p>
+        </div>
+      </div>
+
       <PayReceivableDialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen} transaction={selectedTransaction} />
       <AlertDialog open={isWriteOffDialogOpen} onOpenChange={setIsWriteOffDialogOpen}>
         <AlertDialogContent>

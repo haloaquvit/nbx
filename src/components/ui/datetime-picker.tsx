@@ -19,9 +19,10 @@ import { ToggleGroup, ToggleGroupItem } from "./toggle-group"
 interface DateTimePickerProps {
   date: Date | undefined;
   setDate: (date: Date | undefined) => void;
+  disabled?: boolean;
 }
 
-export function DateTimePicker({ date, setDate }: DateTimePickerProps) {
+export function DateTimePicker({ date, setDate, disabled = false }: DateTimePickerProps) {
   const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(date);
   const [hour, setHour] = React.useState(date ? parseInt(format(date, "hh"), 10) : 12);
   const [minute, setMinute] = React.useState(date ? date.getMinutes() : 0);
@@ -93,6 +94,7 @@ export function DateTimePicker({ date, setDate }: DateTimePickerProps) {
             "w-full justify-start text-left font-normal h-9",
             !date && "text-muted-foreground"
           )}
+          disabled={disabled}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
           {date ? format(date, "dd/MM/yyyy hh:mm aa") : <span>Pilih tanggal & waktu</span>}

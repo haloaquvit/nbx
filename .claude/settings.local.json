@@ -31,8 +31,18 @@
       "Bash(gh repo create:*)",
       "Bash(ssh:*)",
       "Bash(git remote remove:*)",
-      "Bash(git remote add:*)"
+      "Bash(git remote add:*)",
+      "Bash(touch:*)",
+      "Bash(git restore:*)",
+      "Bash(git stash:*)",
+      "Bash(docker run:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(grep:*)",
+      "Bash(del *.sql)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }

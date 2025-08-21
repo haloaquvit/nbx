@@ -28,6 +28,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { useAuth } from '@/hooks/useAuth'
+import { isUserRole } from '@/utils/roleUtils'
 import { useNavigate } from 'react-router-dom'
 
 interface ProductManagementProps {
@@ -37,11 +38,11 @@ interface ProductManagementProps {
 const EMPTY_FORM_DATA: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
   name: '',
   category: 'indoor',
-  type: 'Stock',
+  type: 'Stock', // Keep for UI, but won't be saved to DB
   basePrice: 0,
   unit: 'pcs',
-  currentStock: 0,
-  minStock: 1,
+  currentStock: 0, // Keep for UI, but won't be saved to DB
+  minStock: 1, // Keep for UI, but won't be saved to DB
   minOrder: 1,
   description: '',
   specifications: [],
@@ -54,7 +55,6 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [formData, setFormData] = useState(EMPTY_FORM_DATA)
   const [isProductListOpen, setIsProductListOpen] = useState(true)
-  const [searchQuery, setSearchQuery] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<'indoor' | 'outdoor' | ''>('')
   const { user } = useAuth()
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
@@ -64,22 +64,19 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
   const canManageProducts = user && ['admin', 'owner', 'supervisor', 'cashier', 'designer'].includes(user.role)
   const canDeleteProducts = user && ['admin', 'owner'].includes(user.role)
   const canEditAllProducts = user && ['admin', 'owner', 'supervisor', 'cashier'].includes(user.role)
-  const isDesigner = user?.role === 'designer'
+  const isDesigner = isUserRole(user, 'designer')
 
 
   // Filter products based on search query and filters
   const filteredProducts = products?.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         product.description?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesCategory = !categoryFilter || product.category === categoryFilter
     
-    return matchesSearch && matchesCategory
+    return matchesCategory
   }) || []
 
-  const hasActiveFilters = searchQuery || categoryFilter
+  const hasActiveFilters = categoryFilter
 
   const clearAllFilters = () => {
-    setSearchQuery("")
     setCategoryFilter("")
   }
 
@@ -257,17 +254,18 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
               <Label htmlFor="unit">Satuan</Label>
               <Input id="unit" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} placeholder="pcs, lembar, m²" required />
             </div>
-            <div className="space-y-2">
+            {/* Stock fields hidden until database migration is complete */}
+            {/* <div className="space-y-2">
               <Label htmlFor="currentStock">Stock Saat Ini</Label>
               <Input id="currentStock" type="number" value={formData.currentStock} onChange={(e) => setFormData({...formData, currentStock: Number(e.target.value)})} required />
-            </div>
+            </div> */}
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="space-y-2">
+            {/* <div className="space-y-2">
               <Label htmlFor="minStock">Stock Minimal</Label>
               <Input id="minStock" type="number" value={formData.minStock} onChange={(e) => setFormData({...formData, minStock: Number(e.target.value)})} required />
-            </div>
+            </div> */}
             <div className="space-y-2">
               <Label htmlFor="minOrder">Min. Order</Label>
               <Input id="minOrder" type="number" value={formData.minOrder} onChange={(e) => setFormData({...formData, minOrder: Number(e.target.value)})} required />
@@ -361,18 +359,9 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                 </div>
               )}
               
-              {/* Search and Filter Controls */}
+              {/* Filter Controls */}
               <div className="mb-6 space-y-4">
                 <div className="flex gap-4 items-center flex-wrap">
-                  <div className="relative max-w-sm">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="Cari produk berdasarkan nama..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
                   <Select value={categoryFilter || "all"} onValueChange={(value) => setCategoryFilter(value === "all" ? "" : value as 'indoor' | 'outdoor' | '')}>
                     <SelectTrigger className="w-[180px]">
                       <SelectValue placeholder="Semua Kategori" />
@@ -403,11 +392,11 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
               </div>
               
               <Table>
-                <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>Kategori</TableHead><TableHead>Harga Dasar</TableHead><TableHead>Stock</TableHead><TableHead>Satuan</TableHead>{canManageProducts && <TableHead>Aksi</TableHead>}</TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>Kategori</TableHead><TableHead>Harga Dasar</TableHead>{/* <TableHead>Stock</TableHead> */}<TableHead>Satuan</TableHead>{canManageProducts && <TableHead>Aksi</TableHead>}</TableRow></TableHeader>
                 <TableBody>
                   {isLoading ? (
                     Array.from({ length: 3 }).map((_, i) => (
-                      <TableRow key={i}><TableCell colSpan={canManageProducts ? 6 : 5}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
+                      <TableRow key={i}><TableCell colSpan={canManageProducts ? 5 : 4}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
                     ))
                   ) : filteredProducts?.map((product) => (
                     <TableRow key={product.id} onClick={() => handleRowClick(product)} className="cursor-pointer hover:bg-muted">
@@ -418,11 +407,11 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                         </Badge>
                       </TableCell>
                       <TableCell>Rp{product.basePrice.toLocaleString()}</TableCell>
-                      <TableCell>
+                      {/* <TableCell>
                         <Badge variant={product.currentStock < product.minStock ? "destructive" : "secondary"}>
                           {product.currentStock}
                         </Badge>
-                      </TableCell>
+                      </TableCell> */}
                       <TableCell>{product.unit}</TableCell>
                       {canManageProducts && (
                         <TableCell>

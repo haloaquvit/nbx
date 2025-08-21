@@ -4,7 +4,7 @@ import { useCustomerById } from "@/hooks/useCustomers" // Perbaikan: Mengimpor h
 import { useTransactionsByCustomer } from "@/hooks/useTransactions"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Mail, Phone, MapPin } from "lucide-react"
+import { ArrowLeft, Mail, Phone, MapPin, ExternalLink, Camera } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CustomerTransactionHistoryTable } from "@/components/CustomerTransactionHistoryTable"
 
@@ -70,6 +70,38 @@ export default function CustomerDetailPage() {
             <MapPin className="h-5 w-5 text-muted-foreground" />
             <span>{customer.address}</span>
           </div>
+          {customer.full_address && (
+            <div className="flex items-center gap-4 md:col-span-2">
+              <MapPin className="h-5 w-5 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Alamat Lengkap: {customer.full_address}</span>
+            </div>
+          )}
+          {customer.latitude && customer.longitude && (
+            <div className="flex items-center gap-4">
+              <MapPin className="h-5 w-5 text-muted-foreground" />
+              <Button
+                variant="link"
+                className="p-0 h-auto text-blue-600"
+                onClick={() => window.open(`https://maps.google.com/?q=${customer.latitude},${customer.longitude}`, '_blank')}
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Buka di Google Maps
+              </Button>
+            </div>
+          )}
+          {customer.store_photo_url && (
+            <div className="flex items-center gap-4">
+              <Camera className="h-5 w-5 text-muted-foreground" />
+              <Button
+                variant="link"
+                className="p-0 h-auto text-blue-600"
+                onClick={() => window.open(customer.store_photo_url!, '_blank')}
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Lihat Foto Toko
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

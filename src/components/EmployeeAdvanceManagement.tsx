@@ -15,6 +15,7 @@ import { useToast } from "./ui/use-toast"
 import { useAuth } from "@/hooks/useAuth"
 import { useUsers } from "@/hooks/useUsers"
 import { useEmployeeAdvances } from "@/hooks/useEmployeeAdvances"
+import { canManageCash, isOwner } from '@/utils/roleUtils'
 import { EmployeeAdvance } from "@/types/employeeAdvance"
 import { RepayAdvanceDialog } from "./RepayAdvanceDialog"
 import { format } from "date-fns"
@@ -52,6 +53,10 @@ export function EmployeeAdvanceManagement() {
   const { advances, isLoading: loadingAdvances, addAdvance, deleteAdvance, isError, error: advancesError } = useEmployeeAdvances()
   const [isRepayDialogOpen, setIsRepayDialogOpen] = useState(false)
   const [selectedAdvance, setSelectedAdvance] = useState<EmployeeAdvance | null>(null)
+
+  // Check if user has management privileges (kasir, admin, owner)
+  const canManageAdvances = canManageCash(user)
+  const isViewOnly = !canManageAdvances
 
   const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<AdvanceFormData>({
     resolver: zodResolver(advanceSchema),
@@ -106,8 +111,8 @@ export function EmployeeAdvanceManagement() {
     });
   };
 
-  const isAdminOrOwnerOrCashier = user?.role === 'admin' || user?.role === 'owner' || user?.role === 'cashier';
-  const isOwner = user?.role === 'owner';
+  const isAdminOrOwnerOrCashier = canManageCash(user);
+  const isOwnerRole = isOwner(user);
 
   // Filter hanya panjar yang belum lunas
   const advancesUnpaid = advances?.filter(adv => adv.remainingAmount > 0) || [];
@@ -194,15 +199,30 @@ export function EmployeeAdvanceManagement() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Riwayat Panjar Karyawan</CardTitle>
-          <CardDescription>Klik nama karyawan untuk melihat detail panjar</CardDescription>
+          <CardTitle>
+            {isViewOnly ? 'Data Panjar Saya' : 'Riwayat Panjar Karyawan'}
+          </CardTitle>
+          <CardDescription>
+            {isViewOnly 
+              ? 'Berikut adalah data panjar yang pernah Anda terima' 
+              : 'Klik nama karyawan untuk melihat detail panjar'
+            }
+          </CardDescription>
+          {isViewOnly && (
+            <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <span className="font-medium">Info:</span> Anda hanya dapat melihat data panjar pribadi Anda. 
+                Untuk mengelola panjar karyawan lain, hubungi Admin/Owner/Kasir.
+              </p>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {loadingAdvances ? (
             <div className="text-center py-4">Memuat...</div>
           ) : Object.keys(groupedAdvances).length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              Belum ada data panjar karyawan
+              {isViewOnly ? 'Anda belum pernah menerima panjar' : 'Belum ada data panjar karyawan'}
             </div>
           ) : (
             <Accordion type="multiple" className="w-full">
@@ -253,15 +273,17 @@ export function EmployeeAdvanceManagement() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={() => handleOpenRepayDialog(adv)} 
-                                  disabled={adv.remainingAmount <= 0}
-                                >
-                                  Bayar Cicilan
-                                </Button>
-                                {isOwner && (
+                                {isAdminOrOwnerOrCashier && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm" 
+                                    onClick={() => handleOpenRepayDialog(adv)} 
+                                    disabled={adv.remainingAmount <= 0}
+                                  >
+                                    Bayar Cicilan
+                                  </Button>
+                                )}
+                                {isOwnerRole && (
                                   <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                       <Button variant="ghost" size="icon">

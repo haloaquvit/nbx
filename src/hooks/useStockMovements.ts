@@ -4,10 +4,11 @@ import { supabase } from '@/integrations/supabase/client'
 import { startOfMonth, endOfMonth } from 'date-fns'
 
 // Helper to map from DB (snake_case) to App (camelCase)
+// Note: Now using material_stock_movements table
 const fromDbToApp = (dbMovement: any): StockMovement => ({
   id: dbMovement.id,
-  productId: dbMovement.product_id,
-  productName: dbMovement.product_name,
+  productId: dbMovement.material_id, // material_id maps to productId for compatibility
+  productName: dbMovement.material_name, // material_name maps to productName
   type: dbMovement.type,
   reason: dbMovement.reason,
   quantity: Number(dbMovement.quantity),
@@ -22,9 +23,10 @@ const fromDbToApp = (dbMovement: any): StockMovement => ({
 });
 
 // Helper to map from App (camelCase) to DB (snake_case)
+// Note: Now using material_stock_movements table schema
 const fromAppToDb = (appMovement: CreateStockMovementData) => ({
-  product_id: appMovement.productId,
-  product_name: appMovement.productName,
+  material_id: appMovement.productId, // productId maps to material_id
+  material_name: appMovement.productName, // productName maps to material_name
   type: appMovement.type,
   reason: appMovement.reason,
   quantity: appMovement.quantity,
@@ -44,15 +46,15 @@ export const useStockMovements = () => {
     queryKey: ['stockMovements'],
     queryFn: async (): Promise<StockMovement[]> => {
       const { data, error } = await supabase
-        .from('stock_movements')
+        .from('material_stock_movements')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching stock movements:', error);
         // If table doesn't exist, return empty array instead of throwing
-        if (error.code === '42P01') {
-          console.warn('stock_movements table does not exist, returning empty array');
+        if (error.code === '42P01' || error.code === 'PGRST205') {
+          console.warn('material_stock_movements table does not exist, returning empty array');
           return [];
         }
         throw new Error(error.message);
@@ -65,7 +67,7 @@ export const useStockMovements = () => {
     mutationFn: async (movementData: CreateStockMovementData): Promise<StockMovement> => {
       const dbData = fromAppToDb(movementData);
       const { data, error } = await supabase
-        .from('stock_movements')
+        .from('material_stock_movements')
         .insert(dbData)
         .select()
         .single();
@@ -84,24 +86,34 @@ export const useStockMovements = () => {
 
   const getMovementsByProduct = async (productId: string): Promise<StockMovement[]> => {
     const { data, error } = await supabase
-      .from('stock_movements')
+      .from('material_stock_movements')
       .select('*')
-      .eq('product_id', productId)
+      .eq('material_id', productId) // Updated to material_id
       .order('created_at', { ascending: false });
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.code === '42P01' || error.code === 'PGRST205') {
+        return [];
+      }
+      throw new Error(error.message);
+    }
     return data ? data.map(fromDbToApp) : [];
   };
 
   const getMovementsByDateRange = async (from: Date, to: Date): Promise<StockMovement[]> => {
     const { data, error } = await supabase
-      .from('stock_movements')
+      .from('material_stock_movements')
       .select('*')
       .gte('created_at', from.toISOString())
       .lte('created_at', to.toISOString())
       .order('created_at', { ascending: false });
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.code === '42P01' || error.code === 'PGRST205') {
+        return [];
+      }
+      throw new Error(error.message);
+    }
     return data ? data.map(fromDbToApp) : [];
   };
 
@@ -112,52 +124,52 @@ export const useStockMovements = () => {
     // Get all movements for the month
     const movements = await getMovementsByDateRange(startDate, endDate);
 
-    // Get all products
-    const { data: products, error: productsError } = await supabase
-      .from('products')
-      .select('id, name, type, unit, current_stock');
+    // Get all materials (since we're now using material_stock_movements)
+    const { data: materials, error: materialsError } = await supabase
+      .from('materials')
+      .select('id, name, type, unit, stock');
 
-    if (productsError) throw new Error(productsError.message);
+    if (materialsError) throw new Error(materialsError.message);
 
-    // Group movements by product
-    const productMovements = movements.reduce((acc, movement) => {
-      if (!acc[movement.productId]) {
+    // Group movements by material
+    const materialMovements = movements.reduce((acc, movement) => {
+      if (!acc[movement.productId]) { // productId is actually materialId now
         acc[movement.productId] = [];
       }
       acc[movement.productId].push(movement);
       return acc;
     }, {} as Record<string, StockMovement[]>);
 
-    // Create report for each product that had movements
+    // Create report for each material that had movements
     const reports: StockConsumptionReport[] = [];
 
-    for (const product of products || []) {
-      const productMovs = productMovements[product.id] || [];
+    for (const material of materials || []) {
+      const materialMovs = materialMovements[material.id] || [];
       
-      if (productMovs.length > 0 || product.type !== 'Jasa') {
-        const totalIn = productMovs
+      if (materialMovs.length > 0 || material.type !== 'Jasa') {
+        const totalIn = materialMovs
           .filter(m => m.type === 'IN')
           .reduce((sum, m) => sum + m.quantity, 0);
           
-        const totalOut = productMovs
+        const totalOut = materialMovs
           .filter(m => m.type === 'OUT')
           .reduce((sum, m) => sum + m.quantity, 0);
 
         const netMovement = totalIn - totalOut;
-        const endingStock = Number(product.current_stock) || 0;
+        const endingStock = Number(material.stock) || 0;
         const startingStock = endingStock - netMovement;
 
         reports.push({
-          productId: product.id,
-          productName: product.name,
-          productType: product.type || 'Stock',
-          unit: product.unit || 'pcs',
+          productId: material.id,
+          productName: material.name,
+          productType: material.type || 'Stock',
+          unit: material.unit || 'pcs',
           totalIn,
           totalOut,
           netMovement,
           startingStock,
           endingStock,
-          movements: productMovs
+          movements: materialMovs
         });
       }
     }

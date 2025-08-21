@@ -21,11 +21,54 @@ export const useCustomers = () => {
 
   const addCustomer = useMutation({
     mutationFn: async (newCustomerData: Omit<Customer, 'id' | 'createdAt' | 'orderCount'>): Promise<Customer> => {
+      const customerToInsert = {
+        name: newCustomerData.name,
+        phone: newCustomerData.phone,
+        address: newCustomerData.address,
+        // TODO: Add after migration is applied
+        // latitude: newCustomerData.latitude,
+        // longitude: newCustomerData.longitude,
+        // full_address: newCustomerData.full_address,
+        // store_photo_url: newCustomerData.store_photo_url,
+        // store_photo_drive_id: newCustomerData.store_photo_drive_id,
+      };
+      
       const { data, error } = await supabase
         .from('customers')
-        .insert([newCustomerData])
+        .insert([customerToInsert])
         .select()
         .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+    },
+  });
+
+  const updateCustomer = useMutation({
+    mutationFn: async (customerData: Partial<Customer> & { id: string }): Promise<Customer> => {
+      const { id, ...updateData } = customerData;
+      
+      const customerToUpdate = {
+        name: updateData.name,
+        phone: updateData.phone,
+        address: updateData.address,
+        // TODO: Add after migration is applied
+        // latitude: updateData.latitude,
+        // longitude: updateData.longitude,
+        // full_address: updateData.full_address,
+        // store_photo_url: updateData.store_photo_url,
+        // store_photo_drive_id: updateData.store_photo_drive_id,
+      };
+      
+      const { data, error } = await supabase
+        .from('customers')
+        .update(customerToUpdate)
+        .eq('id', id)
+        .select()
+        .single();
+
       if (error) throw new Error(error.message);
       return data;
     },
@@ -57,6 +100,7 @@ export const useCustomers = () => {
     customers,
     isLoading,
     addCustomer,
+    updateCustomer,
     deleteCustomer,
   };
 }

@@ -9,6 +9,7 @@ import { useAccounts } from "@/hooks/useAccounts"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "@/hooks/useAuth"
 import { ArrowLeft } from "lucide-react"
+import { userIsOwner, userIsAdminOrOwner } from "@/utils/roleUtils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useEffect } from "react"
 
@@ -19,8 +20,8 @@ export default function AccountDetailPage() {
   const { user } = useAuth()
   
   const account = accounts?.find(a => a.id === accountId)
-  const isOwner = user?.role === 'owner'
-  const isAdminOrOwner = user?.role === 'admin' || user?.role === 'owner'
+  const userIsOwner = userIsOwner(user)
+  const userIsAdminOrOwner = userIsAdminOrOwner(user)
 
   const [initialBalance, setInitialBalance] = useState(account?.initialBalance || 0)
   const [isPaymentAccount, setIsPaymentAccount] = useState(account?.isPaymentAccount || false)
@@ -122,7 +123,7 @@ export default function AccountDetailPage() {
             </div>
           </div>
 
-          {isAdminOrOwner && (
+          {userIsAdminOrOwner && (
             <>
               <div className="pt-4 border-t">
                 <div className="flex items-center space-x-2">
@@ -140,7 +141,7 @@ export default function AccountDetailPage() {
                 </CardDescription>
               </div>
 
-              {isOwner && (
+              {userIsOwner && (
                 <div className="pt-4 border-t">
                   <h3 className="font-semibold mb-2">Update Saldo Awal (Owner Only)</h3>
                   <CardDescription className="mb-2">

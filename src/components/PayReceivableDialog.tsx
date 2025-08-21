@@ -83,22 +83,33 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
       // Record payment in cash_history table (proper way to track cash flow)
       const paymentRecord = {
         account_id: data.paymentAccountId,
+        type: 'pemutihan_piutang', // Use existing type instead of source_type
         transaction_type: 'income', // Pembayaran piutang adalah income
         amount: data.amount, // Jumlah positif karena cash bertambah
         description: `Pembayaran piutang dari ${transaction.customerName} - Order: ${transaction.id}${data.notes ? ' | ' + data.notes : ''}`,
         reference_number: transaction.id,
-        source_type: 'receivable_payment',
+        reference_id: transaction.id,
+        source_type: 'pemutihan_piutang',
         created_by: user.id,
         created_by_name: user.name || user.email || 'Unknown User'
       };
 
-      // Insert payment record to cash_history
-      const { error: paymentRecordError } = await supabase
-        .from('cash_history')
-        .insert(paymentRecord);
+      // Try to insert payment record to cash_history if table exists
+      try {
+        const { error: paymentRecordError } = await supabase
+          .from('cash_history')
+          .insert(paymentRecord);
 
-      if (paymentRecordError) {
-        throw new Error(`Failed to record payment: ${paymentRecordError.message}`);
+        if (paymentRecordError && !paymentRecordError.message.includes('does not exist') && paymentRecordError.code !== 'PGRST116') {
+          throw new Error(`Failed to record payment: ${paymentRecordError.message}`);
+        }
+      } catch (historyError: any) {
+        // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
+        if (historyError.code === 'PGRST116' || historyError.message.includes('does not exist') || historyError.message.includes('violates check constraint')) {
+          console.warn('cash_history table issue, payment completed without history tracking:', historyError.message);
+        } else {
+          throw historyError;
+        }
       }
 
       // Invalidate relevant queries

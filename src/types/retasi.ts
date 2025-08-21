@@ -1,0 +1,70 @@
+export interface Retasi {
+  id: string;
+  retasi_number: string;
+  truck_number?: string;
+  driver_name?: string;
+  helper_name?: string;
+  departure_date: Date;
+  departure_time?: string;
+  route?: string;
+  total_items: number;
+  total_weight?: number;
+  notes?: string;
+  retasi_ke: number;
+  is_returned: boolean;
+  returned_items_count?: number;
+  error_items_count?: number;
+  barang_laku?: number; // Jumlah barang yang laku terjual
+  return_notes?: string;
+  created_by?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface RetasiItem {
+  id: string;
+  retasi_id: string;
+  delivery_id?: string;
+  product_name: string;
+  quantity: number;
+  weight?: number;
+  volume?: number;
+  notes?: string;
+  created_at: Date;
+}
+
+export interface CreateRetasiData {
+  truck_number?: string;
+  driver_name?: string;
+  helper_name?: string;
+  departure_date: Date;
+  departure_time?: string;
+  route?: string;
+  total_items?: number;
+  notes?: string;
+  items?: Omit<RetasiItem, 'id' | 'retasi_id' | 'created_at'>[];
+}
+
+export interface UpdateRetasiData {
+  truck_number?: string;
+  driver_name?: string;
+  helper_name?: string;
+  departure_date?: Date;
+  departure_time?: string;
+  route?: string;
+  total_items?: number;
+  total_weight?: number;
+  notes?: string;
+  is_returned?: boolean;
+  returned_items_count?: number;
+  error_items_count?: number;
+  barang_laku?: number;
+  return_notes?: string;
+}
+
+export interface ReturnItemsData {
+  returned_items_count: number;
+  error_items_count: number;
+  barang_laku: number;
+  return_notes?: string;
+}

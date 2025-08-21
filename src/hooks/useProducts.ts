@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { Product } from '@/types/product'
 import { supabase } from '@/integrations/supabase/client'
 import { logError, logDebug } from '@/utils/debugUtils'
@@ -7,12 +8,11 @@ import { logError, logDebug } from '@/utils/debugUtils'
 const fromDb = (dbProduct: any): Product => ({
   id: dbProduct.id,
   name: dbProduct.name,
-  category: dbProduct.category,
-  type: dbProduct.type || 'Stock',
+  type: dbProduct.type || 'Produksi', // Use type from database or default
   basePrice: Number(dbProduct.base_price) || 0,
   unit: dbProduct.unit || 'pcs',
-  currentStock: Number(dbProduct.current_stock) || 0,
-  minStock: Number(dbProduct.min_stock) || 0,
+  currentStock: Number(dbProduct.current_stock || 0),
+  minStock: Number(dbProduct.min_stock || 0),
   minOrder: Number(dbProduct.min_order) || 1,
   description: dbProduct.description || '',
   specifications: dbProduct.specifications || [],
@@ -21,7 +21,7 @@ const fromDb = (dbProduct: any): Product => ({
   updatedAt: new Date(dbProduct.updated_at),
 });
 
-// App to DB mapping
+// App to DB mapping - only include columns that exist in the database
 const toDb = (appProduct: Partial<Product>) => {
   const { id, createdAt, updatedAt, basePrice, minOrder, currentStock, minStock, ...rest } = appProduct;
   const dbData: any = { ...rest };
@@ -29,6 +29,11 @@ const toDb = (appProduct: Partial<Product>) => {
   if (minOrder !== undefined) dbData.min_order = minOrder;
   if (currentStock !== undefined) dbData.current_stock = currentStock;
   if (minStock !== undefined) dbData.min_stock = minStock;
+  
+  // Don't send category since it's not used in the system
+  // Remove category from the data to avoid constraint issues
+  delete dbData.category;
+  
   return dbData;
 };
 
@@ -127,6 +132,19 @@ export const useProducts = () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
     }
   });
+
+  // Listen for production completion events to refresh products
+  useEffect(() => {
+    const handleProductionComplete = () => {
+      console.log('Production completed, refreshing products...');
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    };
+
+    window.addEventListener('production-completed', handleProductionComplete);
+    return () => {
+      window.removeEventListener('production-completed', handleProductionComplete);
+    };
+  }, [queryClient]);
 
   return {
     products,

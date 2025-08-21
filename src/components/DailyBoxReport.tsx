@@ -12,10 +12,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
+import { useCompanySettings } from "@/hooks/useCompanySettings"
 
 export function DailyBoxReport() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const { data: dailyReport, isLoading } = useDailyReport(selectedDate)
+  const { settings } = useCompanySettings()
   const { user } = useAuth()
 
   const handlePrint = () => {
@@ -180,7 +182,7 @@ export function DailyBoxReport() {
       printWindow.document.write(`
         <html>
           <head>
-            <title>Laporan Harian - ${format(selectedDate, 'dd-MM-yyyy')}</title>
+            <title>Laporan Harian ${settings?.name || 'Aquvit POS'} - ${format(selectedDate, 'dd-MM-yyyy')}</title>
             <style>
               @media print {
                 body { margin: 0; }
@@ -202,7 +204,7 @@ export function DailyBoxReport() {
     if (!dailyReport) return
 
     const csvContent = [
-      ['Laporan Harian - Matahari Digital Printing'],
+      [`Laporan Harian - ${settings?.name || 'Aquvit POS'}`],
       ['Tanggal', format(selectedDate, 'dd/MM/yyyy')],
       [''],
       ['RINGKASAN'],
@@ -244,7 +246,7 @@ export function DailyBoxReport() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CalendarDays className="h-5 w-5" />
-            Laporan Harian Box View
+            Laporan Harian
           </CardTitle>
           <CardDescription>
             Pilih tanggal untuk melihat laporan harian

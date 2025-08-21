@@ -92,40 +92,50 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
       // Generate unique reference for this transfer
       const transferRef = `TRANSFER-${Date.now()}`;
 
-      // Record outbound cash history for source account (expense for this account)
-      const { error: outboundError } = await supabase
-        .from('cash_history')
-        .insert({
-          account_id: data.fromAccountId,
-          transaction_type: 'expense', // Transfer keluar adalah expense
-          amount: data.amount,
-          description: `Transfer ke ${toAccount.name}: ${data.description}`,
-          reference_number: transferRef,
-          source_type: 'transfer_keluar',
-          created_by: user.id,
-          created_by_name: user.name || user.email || "Unknown User"
-        })
+      // Try to record cash history if table exists
+      try {
+        // Record outbound cash history for source account (expense for this account)
+        const { error: outboundError } = await supabase
+          .from('cash_history')
+          .insert({
+            account_id: data.fromAccountId,
+            transaction_type: 'expense', // Transfer keluar adalah expense
+            amount: data.amount,
+            description: `Transfer ke ${toAccount.name}: ${data.description}`,
+            reference_number: transferRef,
+            source_type: 'transfer_keluar',
+            created_by: user.id,
+            created_by_name: user.name || user.email || "Unknown User"
+          })
 
-      if (outboundError) {
-        throw new Error(`Failed to record outbound transfer: ${outboundError.message}`)
-      }
+        if (outboundError && !outboundError.message.includes('does not exist') && outboundError.code !== 'PGRST116') {
+          throw new Error(`Failed to record outbound transfer: ${outboundError.message}`)
+        }
 
-      // Record inbound cash history for destination account (income for this account)
-      const { error: inboundError } = await supabase
-        .from('cash_history')
-        .insert({
-          account_id: data.toAccountId,
-          transaction_type: 'income', // Transfer masuk adalah income
-          amount: data.amount,
-          description: `Transfer dari ${fromAccount.name}: ${data.description}`,
-          reference_number: transferRef,
-          source_type: 'transfer_masuk',
-          created_by: user.id,
-          created_by_name: user.name || user.email || "Unknown User"
-        })
+        // Record inbound cash history for destination account (income for this account)
+        const { error: inboundError } = await supabase
+          .from('cash_history')
+          .insert({
+            account_id: data.toAccountId,
+            transaction_type: 'income', // Transfer masuk adalah income
+            amount: data.amount,
+            description: `Transfer dari ${fromAccount.name}: ${data.description}`,
+            reference_number: transferRef,
+            source_type: 'transfer_masuk',
+            created_by: user.id,
+            created_by_name: user.name || user.email || "Unknown User"
+          })
 
-      if (inboundError) {
-        throw new Error(`Failed to record inbound transfer: ${inboundError.message}`)
+        if (inboundError && !inboundError.message.includes('does not exist') && inboundError.code !== 'PGRST116') {
+          throw new Error(`Failed to record inbound transfer: ${inboundError.message}`)
+        }
+      } catch (historyError: any) {
+        // If cash_history table doesn't exist, just log a warning but continue
+        if (historyError.code === 'PGRST116' || historyError.message.includes('does not exist')) {
+          console.warn('cash_history table does not exist, transfer completed without history tracking');
+        } else {
+          throw historyError;
+        }
       }
       
       // Invalidate cash flow queries

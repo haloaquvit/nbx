@@ -43,9 +43,17 @@ export const useEmployeeAdvances = () => {
   const { user } = useAuth();
 
   const { data: advances, isLoading, isError, error } = useQuery<EmployeeAdvance[]>({
-    queryKey: ['employeeAdvances'],
+    queryKey: ['employeeAdvances', user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('employee_advances').select('*, advance_repayments:advance_repayments(*)');
+      let query = supabase.from('employee_advances').select('*, advance_repayments:advance_repayments(*)');
+      
+      // Role-based filtering: only kasir, admin, owner can see all data
+      // Other users can only see their own advances
+      if (user && !['kasir', 'admin', 'owner'].includes(user.role || '')) {
+        query = query.eq('employee_id', user.id);
+      }
+      
+      const { data, error } = await query;
       if (error) {
         console.error("❌ Gagal mengambil data panjar:", error.message);
         throw new Error(error.message);

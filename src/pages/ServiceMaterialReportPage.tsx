@@ -7,7 +7,7 @@ export default function ServiceMaterialReportPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Laporan Penggunaan Material Jasa/Kontrak</h1>
         <p className="text-muted-foreground">
-          Laporan khusus untuk tracking penggunaan dan estimasi tagihan material jasa seperti Astragraphia
+          Laporan khusus untuk tracking penggunaan dan estimasi tagihan material jasa
         </p>
       </div>
       <ServiceMaterialUsageReport />

@@ -1,5 +1,5 @@
 "use client"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -12,7 +12,9 @@ import { Textarea } from "./ui/textarea"
 import { useToast } from "./ui/use-toast"
 import { Employee, UserRole, EmployeeStatus } from "@/types/employee"
 import { useEmployees } from "@/hooks/useEmployees"
+import { useRoles } from "@/hooks/useRoles"
 import { PasswordInput } from "./PasswordInput"
+import { supabase } from "@/integrations/supabase/client"
 
 const baseSchema = {
   name: z.string().min(3, "Nama minimal 3 karakter.").transform(val => val.trim()),
@@ -20,7 +22,7 @@ const baseSchema = {
   email: z.string().email("Email tidak valid.").transform(val => val.trim().toLowerCase()),
   phone: z.string().min(10, "Nomor telepon tidak valid.").transform(val => val.trim()),
   address: z.string().min(5, "Alamat minimal 5 karakter.").transform(val => val.trim()),
-  role: z.enum(['cashier', 'designer', 'operator', 'admin', 'supervisor', 'owner', 'me', 'ceo']),
+  role: z.string().min(1, "Role harus dipilih"),
   status: z.enum(['Aktif', 'Tidak Aktif']),
 };
 
@@ -34,8 +36,9 @@ const updateEmployeeSchema = z.object(baseSchema);
 type CreateEmployeeFormData = z.infer<typeof createEmployeeSchema>;
 type UpdateEmployeeFormData = z.infer<typeof updateEmployeeSchema>;
 
-const roles: UserRole[] = ['cashier', 'designer', 'operator', 'admin', 'supervisor', 'owner'];
 const statuses: EmployeeStatus[] = ['Aktif', 'Tidak Aktif'];
+
+// Role interface is now imported from types/role.ts
 
 interface EmployeeDialogProps {
   open: boolean
@@ -47,10 +50,15 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
   const { toast } = useToast()
   const { createEmployee, updateEmployee } = useEmployees()
   const isEditing = !!employee;
+  const { roles, isLoading: rolesLoading } = useRoles();
 
   const form = useForm<CreateEmployeeFormData | UpdateEmployeeFormData>({
     resolver: zodResolver(isEditing ? updateEmployeeSchema : createEmployeeSchema),
   })
+
+  // Roles are now loaded via useRoles hook
+
+  // Initialize form when dialog opens
 
   useEffect(() => {
     if (open) {
@@ -65,27 +73,52 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
           status: employee.status,
         })
       } else {
+        // Set default role to first available role when creating new employee
+        const defaultRole = roles && roles.length > 0 ? roles[0].name : '';
         form.reset({
-          name: '', username: '', email: '', phone: '', address: '', role: 'cashier', status: 'Aktif', password: ''
+          name: '', username: '', email: '', phone: '', address: '', role: defaultRole, status: 'Aktif', password: ''
         })
       }
     }
-  }, [employee, open, form])
+  }, [employee, open, form, roles])
 
   const onSubmit = async (data: CreateEmployeeFormData | UpdateEmployeeFormData) => {
+    console.log('[EmployeeDialog] Form submitted:', { isEditing, data });
+    
     if (isEditing) {
-      // Update logic
+      // Update logic with better error handling
+      console.log('[EmployeeDialog] Updating employee:', employee.id, data);
+      
       updateEmployee.mutate({ ...(data as UpdateEmployeeFormData), id: employee.id }, {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          console.log('[EmployeeDialog] Update successful:', result);
           toast({ title: "Sukses!", description: `Data karyawan "${data.name}" berhasil diperbarui.` })
           onOpenChange(false)
         },
         onError: (error: any) => {
-          toast({ variant: "destructive", title: "Gagal!", description: error.message })
+          console.error('[EmployeeDialog] Update error:', error);
+          const errorMessage = error?.message || 'Terjadi kesalahan saat mengupdate karyawan';
+          
+          // Provide more specific error messages
+          let userMessage = errorMessage;
+          if (errorMessage.includes('RLS') || errorMessage.includes('policy')) {
+            userMessage = 'Tidak dapat mengupdate karyawan. Periksa permissions di database.';
+          } else if (errorMessage.includes('permission denied')) {
+            userMessage = 'Akses ditolak. Hubungi administrator untuk mengatur permissions.';
+          }
+          
+          toast({ 
+            variant: "destructive", 
+            title: "Gagal Update!", 
+            description: userMessage,
+            duration: 5000
+          });
         },
       })
     } else {
-      // Create logic
+      // Create logic with better error handling
+      console.log('[EmployeeDialog] Creating employee:', data);
+      
       const createData = data as CreateEmployeeFormData;
       createEmployee.mutate({
         email: createData.email,
@@ -97,12 +130,31 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
         address: createData.address,
         status: createData.status,
       }, {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          console.log('[EmployeeDialog] Create successful:', result);
           toast({ title: "Sukses!", description: `Karyawan "${data.name}" berhasil dibuat.` })
           onOpenChange(false)
         },
         onError: (error: any) => {
-          toast({ variant: "destructive", title: "Gagal!", description: error.message })
+          console.error('[EmployeeDialog] Create error:', error);
+          const errorMessage = error?.message || 'Terjadi kesalahan saat membuat karyawan';
+          
+          // Provide more specific error messages
+          let userMessage = errorMessage;
+          if (errorMessage.includes('already exists') || errorMessage.includes('sudah digunakan')) {
+            userMessage = 'Email sudah terdaftar. Gunakan email lain.';
+          } else if (errorMessage.includes('RLS') || errorMessage.includes('policy')) {
+            userMessage = 'Tidak dapat membuat karyawan. Periksa permissions di database.';
+          } else if (errorMessage.includes('permission denied')) {
+            userMessage = 'Akses ditolak. Hubungi administrator untuk mengatur permissions.';
+          }
+          
+          toast({ 
+            variant: "destructive", 
+            title: "Gagal Buat Karyawan!", 
+            description: userMessage,
+            duration: 5000
+          });
         },
       })
     }
@@ -133,8 +185,9 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email (untuk login)</Label>
-              <Input id="email" type="email" {...form.register("email")} disabled={isEditing} />
+              <Input id="email" type="email" {...form.register("email")} disabled={isEditing} placeholder="contoh: nama@perusahaan.com" />
               {form.formState.errors.email && <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>}
+              {!isEditing && <p className="text-xs text-muted-foreground">Gunakan email yang unik, belum pernah digunakan sebelumnya</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">No. Telepon</Label>
@@ -155,10 +208,27 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
             </div>
             <div className="space-y-2">
               <Label htmlFor="role">Jabatan (Role)</Label>
-              <Select onValueChange={(value: UserRole) => form.setValue("role", value)} defaultValue={employee?.role || 'cashier'}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{roles.map(r => <SelectItem key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>)}</SelectContent>
+              <Select 
+                onValueChange={(value) => form.setValue("role", value)} 
+                defaultValue={employee?.role || (roles && roles.length > 0 ? roles[0].name : '')}
+                disabled={rolesLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={rolesLoading ? "Loading roles..." : "Pilih role..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles?.map(role => (
+                    <SelectItem key={role.id} value={role.name}>
+                      {role.displayName} - {role.description}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
+              {roles && roles.length === 0 && !rolesLoading && (
+                <p className="text-sm text-muted-foreground">
+                  Tidak ada role tersedia. Tambahkan role di menu Manajemen Roles.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>

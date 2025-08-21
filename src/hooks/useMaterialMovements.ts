@@ -50,7 +50,7 @@ export const useMaterialMovements = () => {
       if (error) {
         console.error('Error fetching material movements:', error);
         // If table doesn't exist, return empty array for now
-        if (error.code === '42P01') {
+        if (error.code === '42P01' || error.code === 'PGRST205') {
           console.warn('material_stock_movements table does not exist, returning empty array');
           return [];
         }
@@ -89,7 +89,7 @@ export const useMaterialMovements = () => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      if (error.code === '42P01') {
+      if (error.code === '42P01' || error.code === 'PGRST205') {
         return [];
       }
       throw new Error(error.message);
@@ -106,7 +106,7 @@ export const useMaterialMovements = () => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      if (error.code === '42P01') {
+      if (error.code === '42P01' || error.code === 'PGRST205') {
         return [];
       }
       throw new Error(error.message);

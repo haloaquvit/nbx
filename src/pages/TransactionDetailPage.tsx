@@ -7,15 +7,18 @@ import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ArrowLeft, Printer, FileDown, Calendar, User, Package, CreditCard } from "lucide-react"
 import { useTransactions } from "@/hooks/useTransactions"
+import { useTransactionDeliveryInfo } from "@/hooks/useDeliveries"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { PrintReceiptDialog } from "@/components/PrintReceiptDialog"
+import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { useState } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function TransactionDetailPage() {
   const { id: transactionId } = useParams<{ id: string }>()
   const { transactions, isLoading } = useTransactions()
+  const { data: deliveryInfo, isLoading: isLoadingDelivery } = useTransactionDeliveryInfo(transactionId || '')
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
   const [printTemplate, setPrintTemplate] = useState<'receipt' | 'invoice'>('receipt')
 
@@ -79,10 +82,9 @@ export default function TransactionDetailPage() {
   const getStatusVariant = (status: string) => {
     switch (status) {
       case 'Pesanan Masuk': return 'secondary';
-      case 'Proses Design': return 'default';
-      case 'ACC Costumer': return 'info';
-      case 'Proses Produksi': return 'warning';
-      case 'Pesanan Selesai': return 'success';
+      case 'Siap Antar': return 'default';
+      case 'Diantar Sebagian': return 'secondary';
+      case 'Selesai': return 'success';
       case 'Dibatalkan': return 'destructive';
       default: return 'outline';
     }
@@ -452,6 +454,22 @@ export default function TransactionDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Delivery Management Section */}
+      {deliveryInfo && !transaction?.isOfficeSale && (
+        transaction?.status === 'Siap Antar' || 
+        transaction?.status === 'Diantar Sebagian'
+      ) && (
+        <div className="mt-6">
+          <DeliveryManagement 
+            transaction={deliveryInfo}
+            onClose={() => {
+              // Refresh data when delivery is updated
+              window.location.reload()
+            }}
+          />
+        </div>
+      )}
 
       {/* Mobile Floating Print Button - Alternative option */}
       <div className="md:hidden fixed bottom-6 right-4 z-20">

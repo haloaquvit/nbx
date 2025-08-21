@@ -509,28 +509,6 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       {/* Filters and Actions */}
       <div className="flex items-center justify-between">
         <div className="flex gap-4 items-center">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Cari deskripsi..."
-              value={(table.getColumn("description")?.getFilterValue() as string) ?? ""}
-              onChange={(event) =>
-                table.getColumn("description")?.setFilterValue(event.target.value)
-              }
-              className="pl-10"
-            />
-          </div>
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Cari akun keuangan..."
-              value={(table.getColumn("account_name")?.getFilterValue() as string) ?? ""}
-              onChange={(event) =>
-                table.getColumn("account_name")?.setFilterValue(event.target.value)
-              }
-              className="pl-10"
-            />
-          </div>
           {(table.getState().columnFilters.length > 0) && (
             <div className="flex items-center gap-2">
               <div className="text-sm text-muted-foreground">
@@ -590,18 +568,21 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
                 </TableRow>
               ))
             ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map((row) => {
+                console.log('Rendering row:', row.id, row.original);
+                return (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                );
+              })
             ) : (
               <TableRow>
                 <TableCell colSpan={columns.length} className="h-24 text-center">

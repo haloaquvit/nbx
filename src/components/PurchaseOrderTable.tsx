@@ -13,6 +13,7 @@ import { PurchaseOrder, PurchaseOrderStatus } from "@/types/purchaseOrder"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { useAuth } from "@/hooks/useAuth"
 import { Skeleton } from "./ui/skeleton"
+import { isAdminOrOwner, isOwner } from '@/utils/roleUtils'
 import { PayPoDialog } from "./PayPoDialog"
 import { Trash2 } from "lucide-react"
 import {
@@ -84,7 +85,7 @@ export function PurchaseOrderTable() {
       header: "Status",
       cell: ({ row }) => {
         const po = row.original;
-        const isAdmin = user?.role === 'admin' || user?.role === 'owner';
+        const isAdmin = isAdminOrOwner(user);
         
         if (isAdmin && po.status !== 'Selesai' && po.status !== 'Rejected') {
           return (
@@ -112,13 +113,13 @@ export function PurchaseOrderTable() {
       header: "Aksi",
       cell: ({ row }) => {
         const po = row.original;
-        const isOwner = user?.role === 'owner';
+        const isOwnerRole = isOwner(user);
         return (
           <div className="flex items-center gap-1">
             {po.status === 'Dibayar' && (
               <Button size="sm" onClick={() => handleReceiveGoods(po)} disabled={receivePurchaseOrder.isPending}>Terima Barang</Button>
             )}
-            {isOwner && (
+            {isOwnerRole && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="ghost" size="icon" title="Hapus PO">

@@ -35,6 +35,44 @@ export const useCashBalance = () => {
         .order('created_at', { ascending: true });
 
       if (cashFlowError) {
+        // If table doesn't exist, return basic balance data from accounts only
+        if (cashFlowError.code === 'PGRST116' || cashFlowError.message.includes('does not exist')) {
+          console.warn('cash_history table does not exist, calculating balance from accounts only');
+          
+          // Get account balances
+          const { data: accounts, error: accountsError } = await supabase
+            .from('accounts')
+            .select('id, name, balance')
+            .order('name');
+
+          if (accountsError) {
+            throw new Error(`Failed to fetch accounts: ${accountsError.message}`);
+          }
+
+          let totalBalance = 0;
+          const accountBalances = (accounts || []).map(account => {
+            totalBalance += account.balance || 0;
+            return {
+              accountId: account.id,
+              accountName: account.name,
+              currentBalance: account.balance || 0,
+              previousBalance: account.balance || 0,
+              todayIncome: 0,
+              todayExpense: 0,
+              todayNet: 0,
+              todayChange: 0
+            };
+          });
+
+          return {
+            currentBalance: totalBalance,
+            todayIncome: 0,
+            todayExpense: 0,
+            todayNet: 0,
+            previousBalance: totalBalance,
+            accountBalances
+          };
+        }
         throw new Error(`Failed to fetch cash history: ${cashFlowError.message}`);
       }
 

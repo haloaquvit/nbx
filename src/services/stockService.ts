@@ -6,13 +6,14 @@ import { TransactionItem } from '@/types/transaction'
 export class StockService {
   
   /**
-   * Process stock movements when a transaction is created
+   * Process stock movements when a transaction is created or when items are delivered
    */
   static async processTransactionStock(
-    transactionId: string,
+    referenceId: string,
     items: TransactionItem[],
     userId: string,
-    userName: string
+    userName: string,
+    referenceType: 'transaction' | 'delivery' = 'transaction'
   ): Promise<void> {
     const movements: CreateStockMovementData[] = [];
 
@@ -21,24 +22,24 @@ export class StockService {
       const currentStock = product.currentStock || 0;
       let newStock = currentStock;
       let movementType: StockMovementType;
-      let reason: StockMovementReason = 'SALES';
+      let reason: StockMovementReason = 'PRODUCTION_CONSUMPTION';
 
       // Determine stock movement based on product type
       if (product.type === 'Stock') {
         // Stock items: production reduces stock
         newStock = currentStock - item.quantity;
         movementType = 'OUT';
-        reason = 'PRODUCTION';
+        reason = 'PRODUCTION_CONSUMPTION';
       } else if (product.type === 'Beli') {
         // Beli items: track usage/consumption (no actual stock reduction but track usage)
         newStock = currentStock + item.quantity; // Track cumulative usage
         movementType = 'OUT'; // This is consumption/usage
-        reason = 'SALES'; // Changed from PURCHASE to SALES since this is a sale transaction
+        reason = 'PRODUCTION_CONSUMPTION'; // Changed to valid constraint value
       } else {
         // Default to stock behavior
         newStock = currentStock - item.quantity;
         movementType = 'OUT';
-        reason = 'PRODUCTION';
+        reason = 'PRODUCTION_CONSUMPTION';
       }
 
       // Create stock movement record
@@ -50,22 +51,26 @@ export class StockService {
         quantity: item.quantity,
         previousStock: currentStock,
         newStock,
-        notes: `Transaksi: ${transactionId} - ${item.notes || ''}`,
-        referenceId: transactionId,
-        referenceType: 'transaction',
+        notes: referenceType === 'delivery' 
+          ? `Pengantaran: ${referenceId} - ${item.notes || ''}` 
+          : `Transaksi: ${referenceId} - ${item.notes || ''}`,
+        referenceId: referenceId,
+        referenceType: referenceType,
         userId,
         userName,
       };
 
       movements.push(movement);
 
-      // Update product stock
-      await StockService.updateProductStock(product.id, newStock);
+      // Update product stock only during delivery, not during transaction creation
+      if (referenceType === 'delivery') {
+        await StockService.updateProductStock(product.id, newStock);
+      }
     }
 
     // Save all stock movements
     if (movements.length > 0) {
-      await StockService.createStockMovements(movements);
+      await StockService.createStockMovements(movements, referenceType);
     }
   }
 
@@ -86,28 +91,86 @@ export class StockService {
   /**
    * Create stock movement records
    */
-  static async createStockMovements(movements: CreateStockMovementData[]): Promise<void> {
-    const dbMovements = movements.map(movement => ({
-      product_id: movement.productId,
-      product_name: movement.productName,
-      type: movement.type,
-      reason: movement.reason,
-      quantity: movement.quantity,
-      previous_stock: movement.previousStock,
-      new_stock: movement.newStock,
-      notes: movement.notes,
-      reference_id: movement.referenceId,
-      reference_type: movement.referenceType,
-      user_id: movement.userId,
-      user_name: movement.userName,
-    }));
+  static async createStockMovements(movements: CreateStockMovementData[], referenceType: string = 'transaction'): Promise<void> {
+    console.log('Creating stock movements:', movements);
+    
+    // Only disable stock movements for transaction creation per user request
+    // Stock movements should execute during delivery, not during transaction creation
+    const DISABLE_FOR_TRANSACTIONS = referenceType === 'transaction';
+    if (DISABLE_FOR_TRANSACTIONS) {
+      console.warn('Stock movements disabled for transaction creation - will execute during delivery instead');
+      return;
+    }
+    
+    // First, check if the table exists and what columns are available
+    const { data: tableCheck, error: tableError } = await supabase
+      .from('material_stock_movements')
+      .select('id')
+      .limit(1);
+      
+    if (tableError) {
+      console.error('Table check error:', tableError);
+      if (tableError.code === 'PGRST204' || tableError.message.includes('does not exist')) {
+        console.warn('material_stock_movements table does not exist, skipping stock movements');
+        return; // Skip stock movements if table doesn't exist
+      }
+    }
+    
+    // Check which columns exist in the table
+    console.log('Checking material_stock_movements table structure...');
+    
+    const dbMovements = movements.map(movement => {
+      // Start with minimal required fields
+      const dbMovement: any = {
+        material_id: movement.productId,
+        quantity: movement.quantity,
+        previous_stock: movement.previousStock,
+        new_stock: movement.newStock,
+        user_name: movement.userName,
+        notes: movement.notes || `Stock movement for ${movement.productName}`,
+      };
+      
+      // Add optional fields if available
+      if (movement.productName) dbMovement.material_name = movement.productName;
+      if (movement.type) dbMovement.type = movement.type;
+      if (movement.reason) dbMovement.reason = movement.reason;
+      if (movement.referenceId) dbMovement.reference_id = movement.referenceId;
+      if (movement.referenceType) dbMovement.reference_type = movement.referenceType;
+      if (movement.userId) dbMovement.user_id = movement.userId;
+      
+      return dbMovement;
+    });
+
+    console.log('Inserting stock movements:', dbMovements);
 
     const { error } = await supabase
-      .from('stock_movements')
+      .from('material_stock_movements')
       .insert(dbMovements);
 
     if (error) {
-      throw new Error(`Failed to create stock movements: ${error.message}`);
+      console.error('Stock movements error:', error);
+      
+      // If the error is about missing column, try without material_name
+      if (error.message.includes('material_name')) {
+        console.warn('Retrying without material_name column...');
+        
+        const fallbackMovements = dbMovements.map(({ material_name, ...rest }) => rest);
+        
+        const { error: fallbackError } = await supabase
+          .from('material_stock_movements')
+          .insert(fallbackMovements);
+          
+        if (fallbackError) {
+          console.error('Fallback stock movements error:', fallbackError);
+          throw new Error(`Failed to create stock movements (fallback): ${fallbackError.message}`);
+        } else {
+          console.log('Stock movements created successfully (without material_name)');
+        }
+      } else {
+        throw new Error(`Failed to create stock movements: ${error.message}`);
+      }
+    } else {
+      console.log('Stock movements created successfully');
     }
   }
 

@@ -93,7 +93,9 @@ export const useAccounts = () => {
       return fromDbToApp(data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      // Force refresh accounts cache
+      queryClient.removeQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     }
   })
 
@@ -140,7 +142,13 @@ export const useAccounts = () => {
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
+      // Force complete cache refresh for accounts
+      queryClient.removeQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      
+      // Also invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['cashBalance'] });
     },
   });
 

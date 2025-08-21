@@ -28,9 +28,13 @@ import {
   Package2,
   Shield,
   TrendingUp,
+  Factory,
+  Truck,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState } from "react";
+import { useCompanySettings } from "@/hooks/useCompanySettings";
+import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
 
 /*
  * Sidebar menu configuration.
@@ -43,56 +47,56 @@ import { useState } from "react";
  * simply modify the data structure below – the rendering logic will adapt
  * automatically.
  */
-const menuItems = [
+const getMenuItems = (hasPermission: (permission: string) => boolean) => [
   {
     title: "Utama",
     items: [
       { href: "/", label: "Dashboard", icon: Home },
-      { href: "/pos", label: "Kasir (POS)", icon: ShoppingCart },
-      { href: "/transactions", label: "Data Transaksi", icon: List },
-      { href: "/quotations", label: "Penawaran", icon: FileText },
-      { href: "/attendance", label: "Absensi", icon: Fingerprint },
-    ],
+      { href: "/pos", label: "Kasir (POS)", icon: ShoppingCart, permission: PERMISSIONS.TRANSACTIONS },
+      { href: "/transactions", label: "Data Transaksi", icon: List, permission: PERMISSIONS.TRANSACTIONS },
+      { href: "/delivery", label: "Pengantaran", icon: Truck, permission: PERMISSIONS.DELIVERIES },
+      { href: "/retasi", label: "Retasi", icon: Package, permission: PERMISSIONS.DELIVERIES },
+      { href: "/attendance", label: "Absensi", icon: Fingerprint, permission: PERMISSIONS.EMPLOYEES },
+    ].filter(item => !item.permission || hasPermission(item.permission)),
   },
   {
     title: "Manajemen Data",
     items: [
-      { href: "/products", label: "Produk", icon: Package },
-      { href: "/materials", label: "Bahan & Stok", icon: Box },
-      { href: "/customers", label: "Pelanggan", icon: Users },
-      { href: "/employees", label: "Karyawan", icon: IdCard },
-      { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList },
-    ],
+      { href: "/products", label: "Produk", icon: Package, permission: PERMISSIONS.PRODUCTS },
+      { href: "/materials", label: "Bahan & Stok", icon: Box, permission: PERMISSIONS.MATERIALS },
+      { href: "/production", label: "Produksi", icon: Factory, permission: PERMISSIONS.PRODUCTS },
+      { href: "/customers", label: "Pelanggan", icon: Users, permission: PERMISSIONS.CUSTOMERS },
+      { href: "/employees", label: "Karyawan", icon: IdCard, permission: PERMISSIONS.EMPLOYEES },
+      { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList, permission: PERMISSIONS.MATERIALS },
+    ].filter(item => hasPermission(item.permission)),
   },
   {
     title: "Keuangan",
     items: [
-      { href: "/accounts", label: "Akun Keuangan", icon: Landmark },
-      { href: "/cash-flow", label: "Arus Kas", icon: TrendingUp },
-      { href: "/receivables", label: "Piutang", icon: ReceiptText },
-      { href: "/expenses", label: "Pengeluaran", icon: FileText },
-      { href: "/advances", label: "Panjar Karyawan", icon: HandCoins },
-    ],
+      { href: "/accounts", label: "Akun Keuangan", icon: Landmark, permission: PERMISSIONS.FINANCIAL },
+      { href: "/cash-flow", label: "Arus Kas", icon: TrendingUp, permission: PERMISSIONS.FINANCIAL },
+      { href: "/receivables", label: "Piutang", icon: ReceiptText, permission: PERMISSIONS.FINANCIAL },
+      { href: "/expenses", label: "Pengeluaran", icon: FileText, permission: PERMISSIONS.FINANCIAL },
+      { href: "/advances", label: "Panjar Karyawan", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
+    ].filter(item => hasPermission(item.permission)),
   },
   {
-    // All reporting pages are grouped here. Previously these lived under
-    // different top‑level sections which made the navigation cluttered.
     title: "Laporan",
     items: [
-      { href: "/stock-report", label: "Laporan Stock", icon: BarChart3 },
-      { href: "/material-movements", label: "Pergerakan Penggunaan Bahan", icon: Package2 },
-      { href: "/transaction-items-report", label: "Laporan Item Keluar", icon: PackageOpen },
-      { href: "/attendance/report", label: "Laporan Absensi", icon: BookCheck },
-    ],
+      { href: "/stock-report", label: "Laporan Stock", icon: BarChart3, permission: PERMISSIONS.REPORTS },
+      { href: "/material-movements", label: "Pergerakan Penggunaan Bahan", icon: Package2, permission: PERMISSIONS.REPORTS },
+      { href: "/transaction-items-report", label: "Laporan Item Keluar", icon: PackageOpen, permission: PERMISSIONS.REPORTS },
+      { href: "/attendance/report", label: "Laporan Absensi", icon: BookCheck, permission: PERMISSIONS.REPORTS },
+    ].filter(item => hasPermission(item.permission)),
   },
   {
     title: "Pengaturan",
     items: [
-      { href: "/settings", label: "Info Perusahaan", icon: Settings },
-      { href: "/role-permissions", label: "Kelola Role & Permission", icon: Shield },
-    ],
+      { href: "/settings", label: "Info Perusahaan", icon: Settings, permission: PERMISSIONS.SETTINGS },
+      { href: "/roles", label: "Manajemen Roles", icon: Shield, permission: PERMISSIONS.ROLES },
+    ].filter(item => hasPermission(item.permission)),
   },
-];
+].filter(section => section.items.length > 0);
 
 interface SidebarProps {
   /**
@@ -110,6 +114,12 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   const location = useLocation();
+  const { settings } = useCompanySettings();
+  const { hasPermission } = usePermissions();
+  
+  // Get filtered menu items based on user permissions
+  const menuItems = getMenuItems(hasPermission);
+  
   // Track expanded/collapsed state for each top‑level menu section. When
   // `true` the section's links are visible, otherwise they are hidden. Use
   // section titles as keys since they are stable.
@@ -137,7 +147,7 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
           >
             <Link to="/" className="flex items-center gap-2 font-semibold">
               <Package className="h-6 w-6 text-primary" />
-              <span className={cn(isCollapsed && "hidden")}>Matahari Digital Printing</span>
+              <span className={cn(isCollapsed && "hidden")}>{settings?.name || 'Aquvit POS'}</span>
             </Link>
           </div>
           <nav className="flex-1 space-y-2 overflow-auto py-4 px-2">

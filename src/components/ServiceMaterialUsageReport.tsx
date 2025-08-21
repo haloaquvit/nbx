@@ -282,7 +282,7 @@ export function ServiceMaterialUsageReport() {
             Laporan Penggunaan Material Jasa/Kontrak
           </CardTitle>
           <CardDescription>
-            Laporan khusus untuk material jasa seperti Astragraphia dengan estimasi tagihan
+            Laporan khusus untuk material jasa dengan estimasi tagihan
           </CardDescription>
         </CardHeader>
         <CardContent>

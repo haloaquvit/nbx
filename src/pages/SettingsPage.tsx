@@ -10,6 +10,12 @@ import { Upload, Image as ImageIcon, MapPin } from 'lucide-react'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
+import { GoogleDriveSettings } from '@/components/GoogleDriveSettings'
+import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog'
+import { AuditLogViewer } from '@/components/AuditLogViewer'
+import { SystemHealthCheck } from '@/components/SystemHealthCheck'
+import { isOwner } from '@/utils/roleUtils'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 export default function SettingsPage() {
   const { settings, isLoading, updateSettings } = useCompanySettings();
@@ -74,7 +80,7 @@ export default function SettingsPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (user?.role !== 'owner') {
+    if (!isOwner(user)) {
       toast({ variant: "destructive", title: "Akses Ditolak", description: "Hanya Owner yang dapat mengubah info perusahaan." });
       return;
     }
@@ -93,8 +99,18 @@ export default function SettingsPage() {
   }
 
   return (
-    <form onSubmit={handleSubmit}>
-      <Card>
+    <div className="space-y-6">
+      <Tabs defaultValue="company" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="company">Company</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="audit">Audit Logs</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="company">
+          <form onSubmit={handleSubmit}>
+            <Card>
         <CardHeader>
           <CardTitle>Pengaturan Perusahaan</CardTitle>
           <CardDescription>
@@ -170,7 +186,78 @@ export default function SettingsPage() {
             </Button>
           </div>
         </CardContent>
-      </Card>
-    </form>
+            </Card>
+          </form>
+          
+          {/* Reset Database Section - Only for Owner */}
+          {isOwner(user) && (
+            <Card className="border-red-200">
+              <CardHeader>
+                <CardTitle className="text-red-600">Reset Database</CardTitle>
+                <CardDescription>
+                  Hapus semua data transaksi dan master data. Data karyawan dan login tidak akan terhapus.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col space-y-4">
+                  <div className="text-sm text-muted-foreground">
+                    Gunakan fitur ini dengan hati-hati. Semua data bisnis akan dihapus secara permanen.
+                  </div>
+                  <div className="flex justify-start">
+                    <ResetDatabaseDialog />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="integrations">
+          <GoogleDriveSettings />
+        </TabsContent>
+        
+        <TabsContent value="audit">
+          {isOwner(user) ? (
+            <AuditLogViewer />
+          ) : (
+            <Card>
+              <CardContent className="p-6">
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold mb-2">Access Restricted</h3>
+                  <p className="text-muted-foreground">
+                    Only owners can view audit logs for security purposes.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="system" className="space-y-6">
+          <SystemHealthCheck />
+          
+          {isOwner(user) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-red-600">Reset Database</CardTitle>
+                <CardDescription>
+                  Hapus semua data bisnis dan mulai dari awal (hanya untuk testing).
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="text-sm text-muted-foreground">
+                    Gunakan fitur ini dengan hati-hati. Semua data bisnis akan dihapus secara permanen.
+                  </div>
+                  <div className="flex justify-start">
+                    <ResetDatabaseDialog />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

@@ -16,10 +16,10 @@ import { Material } from '@/types/material'
 import { useMaterials } from '@/hooks/useMaterials'
 import { useAuth } from '@/hooks/useAuth'
 import { RequestPoDialog } from './RequestPoDialog'
-import { AstragraphiaReport } from './AstragraphiaReport'
 import { Badge } from './ui/badge'
 import { useToast } from './ui/use-toast'
 import { Trash2, ChevronDown, ChevronUp, Package, Search, X, FileText } from 'lucide-react'
+import { canManageEmployees, isOwner } from '@/utils/roleUtils'
 
 const materialSchema = z.object({
   name: z.string().min(3, { message: "Nama bahan minimal 3 karakter." }),
@@ -59,13 +59,11 @@ export const MaterialManagement = () => {
   const { toast } = useToast()
 
   // Permission checks
-  const canManageMaterials = user && ['admin', 'owner', 'supervisor'].includes(user.role)
+  const canManageMaterials = canManageEmployees(user) || (user && user.role?.toLowerCase() === 'supervisor')
   const [isRequestPoOpen, setIsRequestPoOpen] = useState(false)
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null)
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null)
   const [isMaterialListOpen, setIsMaterialListOpen] = useState(true)
-  const [showAstragraphiaReport, setShowAstragraphiaReport] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("")
   const [lowStockFilter, setLowStockFilter] = useState(false)
 
@@ -78,18 +76,15 @@ export const MaterialManagement = () => {
 
   // Filter materials based on search query and filters
   const filteredMaterials = materials?.filter(material => {
-    const matchesSearch = material.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         material.description?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesType = !typeFilter || material.type === typeFilter
     const matchesLowStock = !lowStockFilter || (material.type === 'Stock' && material.stock <= (material.minStock || 0))
     
-    return matchesSearch && matchesType && matchesLowStock
+    return matchesType && matchesLowStock
   }) || []
 
-  const hasActiveFilters = searchQuery || typeFilter || lowStockFilter
+  const hasActiveFilters = typeFilter || lowStockFilter
 
   const clearAllFilters = () => {
-    setSearchQuery("")
     setTypeFilter("")
     setLowStockFilter(false)
   }
@@ -260,7 +255,7 @@ export const MaterialManagement = () => {
                   <CardDescription>
                     {canManageMaterials 
                       ? 'Kelola semua bahan baku dan stok yang tersedia.'
-                      : user?.role === 'designer' 
+                      : user?.role?.toLowerCase() === 'designer' 
                         ? 'Lihat informasi bahan baku dan request Purchase Order (PO).'
                         : 'Lihat informasi bahan baku dan stok (hanya baca).'}
                   </CardDescription>
@@ -272,18 +267,9 @@ export const MaterialManagement = () => {
           <CollapsibleContent>
             <CardContent>
               
-              {/* Search and Filter Controls */}
+              {/* Filter Controls */}
               <div className="mb-6 space-y-4">
                 <div className="flex gap-4 items-center flex-wrap">
-                  <div className="relative max-w-sm">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="Cari bahan berdasarkan nama..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
                   <Select value={typeFilter || "all"} onValueChange={(value) => setTypeFilter(value === "all" ? "" : value)}>
                     <SelectTrigger className="w-[150px]">
                       <SelectValue placeholder="Jenis" />
@@ -301,15 +287,6 @@ export const MaterialManagement = () => {
                     onClick={() => setLowStockFilter(!lowStockFilter)}
                   >
                     Stok Rendah
-                  </Button>
-                  <Button
-                    variant={showAstragraphiaReport ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setShowAstragraphiaReport(!showAstragraphiaReport)}
-                    className="bg-blue-50 text-blue-700 hover:bg-blue-100"
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Laporan Astragraphia
                   </Button>
                   {hasActiveFilters && (
                     <div className="flex items-center gap-2">
@@ -394,7 +371,7 @@ export const MaterialManagement = () => {
                           <Button variant="secondary" size="sm" onClick={() => handleOpenRequestPo(material)}>
                             Request PO
                           </Button>
-                          {user?.role === 'owner' && (
+                          {isOwner(user) && (
                             <Button 
                               variant="destructive" 
                               size="sm" 
@@ -416,34 +393,6 @@ export const MaterialManagement = () => {
       </Collapsible>
 
 
-      {/* Astragraphia Report */}
-      {showAstragraphiaReport && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  Laporan Kontrak Astragraphia
-                </CardTitle>
-                <CardDescription>
-                  Monitoring penggunaan mesin xerox dan estimasi tagihan bulanan
-                </CardDescription>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowAstragraphiaReport(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <AstragraphiaReport />
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

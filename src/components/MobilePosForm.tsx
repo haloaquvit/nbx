@@ -27,7 +27,6 @@ import { PrintReceiptDialog } from './PrintReceiptDialog'
 import { DateTimePicker } from './ui/datetime-picker'
 import { useAuth } from '@/hooks/useAuth'
 import { User } from '@/types/user'
-import { Quotation } from '@/types/quotation'
 import { useCustomers } from '@/hooks/useCustomers'
 
 interface FormTransactionItem {
@@ -64,40 +63,17 @@ export const MobilePosForm = () => {
   const [isCustomerAddOpen, setIsCustomerAddOpen] = useState(false)
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
   const [savedTransaction, setSavedTransaction] = useState<Transaction | null>(null)
-  const [sourceQuotationId, setSourceQuotationId] = useState<string | null>(null)
-  const [isQuotationProcessed, setIsQuotationProcessed] = useState(false);
   const [openProductDropdowns, setOpenProductDropdowns] = useState<{[key: number]: boolean}>({});
   const [isItemsSheetOpen, setIsItemsSheetOpen] = useState(false);
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
 
-  useEffect(() => {
-    const quotationData = location.state?.quotationData as Quotation | undefined;
-    if (quotationData && !isQuotationProcessed && customers) {
-      const customer = customers.find(c => c.id === quotationData.customerId);
-      if (customer) setSelectedCustomer(customer);
-
-      const transactionItems: FormTransactionItem[] = quotationData.items.map(item => ({
-        id: Math.random(),
-        product: item.product,
-        keterangan: item.notes || '',
-        qty: item.quantity,
-        harga: item.price,
-        unit: item.unit,
-      }));
-      setItems(transactionItems);
-      setSourceQuotationId(quotationData.id);
-      
-      setIsQuotationProcessed(true);
-      navigate(location.pathname, { replace: true, state: {} });
-    }
-  }, [location.state, customers, isQuotationProcessed]);
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
   const totalTagihan = useMemo(() => subTotal - diskon, [subTotal, diskon]);
   const sisaTagihan = useMemo(() => totalTagihan - paidAmount, [totalTagihan, paidAmount]);
 
-  const designers = useMemo(() => users?.filter(u => u.role === 'designer'), [users]);
-  const operators = useMemo(() => users?.filter(u => u.role === 'operator'), [users]);
+  const designers = useMemo(() => users?.filter(u => u.role?.toLowerCase() === 'designer'), [users]);
+  const operators = useMemo(() => users?.filter(u => u.role?.toLowerCase() === 'operator'), [users]);
 
   useEffect(() => {
     setPaidAmount(totalTagihan);
@@ -171,7 +147,7 @@ export const MobilePosForm = () => {
       status: 'Pesanan Masuk',
     };
 
-    addTransaction.mutate({ newTransaction, quotationId: sourceQuotationId }, {
+    addTransaction.mutate({ newTransaction }, {
       onSuccess: (savedData) => {
         if (paidAmount > 0 && paymentAccountId) {
           updateAccountBalance.mutate({ accountId: paymentAccountId, amount: paidAmount });
@@ -189,7 +165,6 @@ export const MobilePosForm = () => {
         setDiskon(0);
         setPaidAmount(0);
         setPaymentAccountId('');
-        setSourceQuotationId(null);
       },
       onError: (error) => {
         toast({ variant: "destructive", title: "Gagal Menyimpan", description: error.message });
@@ -210,12 +185,6 @@ export const MobilePosForm = () => {
             <ShoppingCart className="h-5 w-5" />
             Point of Sale
           </CardTitle>
-          {sourceQuotationId && (
-            <CardDescription className="text-blue-600 dark:text-blue-400">
-              <FileText className="inline-block w-4 h-4 mr-2" />
-              Dari penawaran: {sourceQuotationId}
-            </CardDescription>
-          )}
         </CardHeader>
       </Card>
 

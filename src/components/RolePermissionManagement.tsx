@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { Shield, Save, RotateCcw, Users, Settings, Eye, Plus, Edit, Trash2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { isOwner } from '@/utils/roleUtils'
 
 // Define all roles in the system
 const ROLES = [
@@ -184,7 +185,7 @@ export const RolePermissionManagement = () => {
   const [isSaving, setIsSaving] = useState(false)
 
   // Only owner can access this component
-  const canManageRoles = user && user.role === 'owner'
+  const canManageRoles = isOwner(user)
 
   useEffect(() => {
     // Load permissions from localStorage or API

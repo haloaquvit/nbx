@@ -17,9 +17,10 @@ import { useNavigate } from "react-router-dom"
 import { Skeleton } from "./ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
 import { supabase } from "@/integrations/supabase/client"
+import { isOwner, isAdmin, isAdminOrOwner, canManageCash } from "@/utils/roleUtils"
 import { TransferAccountDialog } from "./TransferAccountDialog"
 import { CashInOutDialog } from "./CashInOutDialog"
-import { Trash2, ArrowRightLeft, TrendingUp, TrendingDown } from "lucide-react"
+import { Trash2, ArrowRightLeft, TrendingUp, TrendingDown, Edit2, Check, X } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,13 +46,15 @@ type AccountFormData = z.infer<typeof accountSchema>
 const accountTypes: AccountType[] = ['Aset', 'Kewajiban', 'Modal', 'Pendapatan', 'Beban'];
 
 export function AccountManagement() {
-  const { accounts, isLoading, addAccount, deleteAccount } = useAccounts()
+  const { accounts, isLoading, addAccount, deleteAccount, updateAccount } = useAccounts()
   const { toast } = useToast()
   const navigate = useNavigate()
   const { user } = useAuth()
   const [isTransferDialogOpen, setIsTransferDialogOpen] = useState(false)
   const [isCashInDialogOpen, setIsCashInDialogOpen] = useState(false)
   const [isCashOutDialogOpen, setIsCashOutDialogOpen] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<string | null>(null)
+  const [editFormData, setEditFormData] = useState<{[key: string]: any}>({})
 
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<AccountFormData>({
     resolver: zodResolver(accountSchema),
@@ -100,8 +103,54 @@ export function AccountManagement() {
     })
   }
 
-  const isAdminOrOwner = user?.role === 'admin' || user?.role === 'owner';
-  const canManageCash = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'cashier';
+  const handleUpdateAccount = async (accountId: string, field: string, value: any) => {
+    try {
+      await updateAccount.mutateAsync({ 
+        accountId, 
+        newData: { [field]: value } 
+      });
+      toast({ title: "Sukses", description: "Akun berhasil diperbarui." });
+      setEditingAccount(null);
+      setEditFormData({});
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Gagal", description: error.message });
+    }
+  }
+
+  const handleStartEdit = (account: any) => {
+    setEditingAccount(account.id);
+    setEditFormData({
+      name: account.name,
+      type: account.type,
+      balance: account.balance,
+      isPaymentAccount: account.isPaymentAccount
+    });
+  }
+
+  const handleSaveEdit = async (accountId: string) => {
+    try {
+      await updateAccount.mutateAsync({ 
+        accountId, 
+        newData: editFormData 
+      });
+      toast({ title: "Sukses", description: "Akun berhasil diperbarui." });
+      setEditingAccount(null);
+      setEditFormData({});
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Gagal", description: error.message });
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditingAccount(null);
+    setEditFormData({});
+  }
+
+  // Use role utility functions
+  const userIsOwner = isOwner(user);
+  const userIsAdmin = isAdmin(user);
+  const userIsAdminOrOwner = isAdminOrOwner(user);
+  const userCanManageCash = canManageCash(user);
 
   return (
     <div className="space-y-6">
@@ -170,7 +219,7 @@ export function AccountManagement() {
                 <CardTitle>Daftar Akun</CardTitle>
                 <CardDescription>Kelola semua akun keuangan perusahaan</CardDescription>
               </div>
-              {canManageCash && (
+              {userCanManageCash && (
                 <div className="flex gap-2">
                   <Button 
                     onClick={() => setIsCashInDialogOpen(true)} 
@@ -209,55 +258,142 @@ export function AccountManagement() {
                     <TableRow>
                       <TableHead>Nama Akun</TableHead>
                       <TableHead>Tipe</TableHead>
+                      <TableHead className="text-center">Akun Pembayaran</TableHead>
                       <TableHead className="text-right">Saldo</TableHead>
-                      {user?.role === 'owner' && <TableHead className="text-right">Edit Saldo</TableHead>}
-                      {isAdminOrOwner && <TableHead className="text-right">Aksi</TableHead>}
+                      {userIsOwner && <TableHead className="text-right">Edit Saldo</TableHead>}
+                      {userIsAdminOrOwner && <TableHead className="text-right">Aksi</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {isLoading ? 
                       Array.from({ length: 3 }).map((_, i) => (
                         <TableRow key={i}>
-                          <TableCell colSpan={user?.role === 'owner' ? (isAdminOrOwner ? 5 : 4) : (isAdminOrOwner ? 4 : 3)}><Skeleton className="h-6 w-full" /></TableCell>
+                          <TableCell colSpan={userIsOwner ? (userIsAdminOrOwner ? 6 : 5) : (userIsAdminOrOwner ? 5 : 4)}><Skeleton className="h-6 w-full" /></TableCell>
                         </TableRow>
                       )) :
                       accounts?.map(account => (
                         <TableRow key={account.id} className="hover:bg-muted/50">
-                          <TableCell className="font-medium cursor-pointer" onClick={() => navigate(`/accounts/${account.id}`)}>{account.name}</TableCell>
-                          <TableCell className="cursor-pointer" onClick={() => navigate(`/accounts/${account.id}`)}>{account.type}</TableCell>
-                          <TableCell className="text-right cursor-pointer" onClick={() => navigate(`/accounts/${account.id}`)}>
-                            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(account.balance)}
-                          </TableCell>
-                          {user?.role === 'owner' && (
-                            <TableCell className="text-right">
-                              <Input
-                                type="number"
-                                defaultValue={account.balance}
-                                className="w-32 text-right"
-                                onBlur={async (e) => {
-                                  const newBalance = parseFloat(e.target.value);
-                                  if (newBalance !== account.balance && !isNaN(newBalance)) {
-                                    try {
-                                      const { error } = await supabase
-                                        .from('accounts')
-                                        .update({ balance: newBalance })
-                                        .eq('id', account.id);
-                                      
-                                      if (error) throw error;
-                                      
-                                      toast({ title: "Sukses", description: `Saldo akun ${account.name} berhasil diubah ke ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(newBalance)}` });
-                                      window.location.reload(); // Refresh to show new balance
-                                    } catch (error: any) {
-                                      toast({ variant: "destructive", title: "Gagal", description: error.message });
-                                      e.target.value = account.balance.toString(); // Reset to original value
-                                    }
-                                  }
-                                }}
-                              />
-                            </TableCell>
-                          )}
-                          {isAdminOrOwner && (
-                            <TableCell className="text-right">
+                          {editingAccount === account.id ? (
+                            <>
+                              {/* Edit Mode - Nama */}
+                              <TableCell className="font-medium">
+                                <Input 
+                                  value={editFormData.name || account.name}
+                                  onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                                  className="w-40"
+                                  placeholder="Nama akun"
+                                />
+                              </TableCell>
+                              {/* Edit Mode - Type */}
+                              <TableCell>
+                                <Select value={editFormData.type || account.type} onValueChange={(value) => setEditFormData({...editFormData, type: value})}>
+                                  <SelectTrigger className="w-32">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {accountTypes.map(type => (
+                                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              {/* Edit Mode - Payment Account */}
+                              <TableCell className="text-center">
+                                <Checkbox 
+                                  checked={editFormData.isPaymentAccount ?? account.isPaymentAccount} 
+                                  onCheckedChange={(checked) => setEditFormData({...editFormData, isPaymentAccount: !!checked})}
+                                />
+                              </TableCell>
+                              {/* Edit Mode - Balance */}
+                              <TableCell className="text-right">
+                                <Input 
+                                  type="number"
+                                  value={editFormData.balance ?? account.balance}
+                                  onChange={(e) => setEditFormData({...editFormData, balance: parseFloat(e.target.value)})}
+                                  className="w-32 text-right"
+                                  placeholder="Saldo"
+                                />
+                              </TableCell>
+                              {/* Edit Mode - Quick Balance Edit (hidden saat edit mode) */}
+                              {userIsOwner && (
+                                <TableCell className="text-right">
+                                  <span className="text-sm text-gray-500">Edit di kolom saldo</span>
+                                </TableCell>
+                              )}
+                              {/* Edit Mode - Actions */}
+                              <TableCell className="text-right">
+                                <div className="flex gap-1">
+                                  <Button size="sm" variant="default" onClick={() => handleSaveEdit(account.id)}>
+                                    <Check className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={handleCancelEdit}>
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </>
+                          ) : (
+                            <>
+                              {/* View Mode - Nama */}
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <span className="cursor-pointer" onClick={() => navigate(`/accounts/${account.id}`)}>{account.name}</span>
+                                  {userIsAdminOrOwner && (
+                                    <Button size="sm" variant="ghost" onClick={() => handleStartEdit(account)}>
+                                      <Edit2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                              {/* View Mode - Type */}
+                              <TableCell className="cursor-pointer" onClick={() => navigate(`/accounts/${account.id}`)}>{account.type}</TableCell>
+                              {/* View Mode - Payment Account */}
+                              <TableCell className="text-center">
+                                {userIsAdminOrOwner ? (
+                                  <Checkbox 
+                                    checked={account.isPaymentAccount} 
+                                    onCheckedChange={(checked) => handleUpdateAccount(account.id, 'isPaymentAccount', !!checked)}
+                                  />
+                                ) : (
+                                  account.isPaymentAccount ? '✓' : '✗'
+                                )}
+                              </TableCell>
+                              {/* View Mode - Balance */}
+                              <TableCell className="text-right cursor-pointer" onClick={() => navigate(`/accounts/${account.id}`)}>
+                                {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(account.balance)}
+                              </TableCell>
+                              {/* View Mode - Quick Balance Edit */}
+                              {userIsOwner && (
+                                <TableCell className="text-right">
+                                  <Input
+                                    type="number"
+                                    defaultValue={account.balance}
+                                    className="w-32 text-right"
+                                    onBlur={async (e) => {
+                                      const newBalance = parseFloat(e.target.value);
+                                      if (newBalance !== account.balance && !isNaN(newBalance)) {
+                                        try {
+                                          const { error } = await supabase
+                                            .from('accounts')
+                                            .update({ balance: newBalance })
+                                            .eq('id', account.id);
+                                          
+                                          if (error) throw error;
+                                          
+                                          toast({ title: "Sukses", description: `Saldo akun ${account.name} berhasil diubah ke ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(newBalance)}` });
+                                          window.location.reload(); // Refresh to show new balance
+                                        } catch (error: any) {
+                                          toast({ variant: "destructive", title: "Gagal", description: error.message });
+                                          e.target.value = account.balance.toString(); // Reset to original value
+                                        }
+                                      }
+                                    }}
+                                  />
+                                </TableCell>
+                              )}
+                              {/* View Mode - Actions */}
+                              {userIsAdminOrOwner && (
+                                <TableCell className="text-right">
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                   <Button variant="ghost" size="icon" disabled={deleteAccount.isPending}>
@@ -281,8 +417,10 @@ export function AccountManagement() {
                                     </AlertDialogAction>
                                   </AlertDialogFooter>
                                 </AlertDialogContent>
-                              </AlertDialog>
-                            </TableCell>
+                                  </AlertDialog>
+                                </TableCell>
+                              )}
+                            </>
                           )}
                         </TableRow>
                       ))

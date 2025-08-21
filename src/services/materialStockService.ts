@@ -54,7 +54,7 @@ export class MaterialStockService {
           }
         } else if (materialType === 'Beli' || materialType === 'Jasa') {
           // Beli/Jasa type: Track usage/consumption (like service contracts, outsourced materials)
-          // For service contracts like Astragraphia, we track consumption via stock field
+          // For service contracts, we track consumption via stock field
           // Stock represents cumulative consumption/usage, always increasing
           newStock = currentStock + quantity;
           movementType = 'OUT'; // This represents usage/consumption

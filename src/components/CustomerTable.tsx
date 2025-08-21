@@ -10,7 +10,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, ArrowUpDown } from "lucide-react"
+import { MoreHorizontal, ArrowUpDown, MapPin, Camera } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
@@ -45,8 +45,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { showSuccess, showError } from "@/utils/toast"
+import { EditCustomerDialog } from "@/components/EditCustomerDialog"
+import { isOwner } from '@/utils/roleUtils'
 
 export const getColumns = (
+  onEditClick: (customer: Customer) => void,
   onDeleteClick: (customer: Customer) => void,
   userRole?: string
 ): ColumnDef<Customer>[] => [
@@ -81,6 +84,50 @@ export const getColumns = (
     cell: ({ row }) => <div className="text-center">{row.getValue("orderCount")}</div>
   },
   {
+    id: "location",
+    header: "Lokasi",
+    cell: ({ row }) => {
+      const customer = row.original;
+      if (!customer.latitude || !customer.longitude) return null;
+      
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.open(`https://maps.google.com/?q=${customer.latitude},${customer.longitude}`, '_blank');
+          }}
+        >
+          <MapPin className="h-4 w-4 mr-1" />
+          Maps
+        </Button>
+      );
+    }
+  },
+  {
+    id: "photo",
+    header: "Foto",
+    cell: ({ row }) => {
+      const customer = row.original;
+      if (!customer.store_photo_url) return null;
+      
+      return (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.open(customer.store_photo_url!, '_blank');
+          }}
+        >
+          <Camera className="h-4 w-4 mr-1" />
+          Lihat
+        </Button>
+      );
+    }
+  },
+  {
     id: "actions",
     cell: ({ row }) => {
       const customer = row.original;
@@ -103,8 +150,10 @@ export const getColumns = (
               onClick={(e) => e.stopPropagation()} // Mencegah klik baris
             >
               <DropdownMenuLabel>Aksi</DropdownMenuLabel>
-              <DropdownMenuItem>Edit</DropdownMenuItem>
-              {userRole === 'owner' && (
+              <DropdownMenuItem onClick={() => onEditClick(customer)}>
+                Edit
+              </DropdownMenuItem>
+              {userRole?.toLowerCase() === 'owner' && (
                 <DropdownMenuItem 
                   className="text-red-500 hover:!text-red-500 hover:!bg-red-100"
                   onClick={() => onDeleteClick(customer)}
@@ -120,7 +169,11 @@ export const getColumns = (
   },
 ]
 
-export function CustomerTable() {
+interface CustomerTableProps {
+  onEditCustomer?: (customer: Customer) => void
+}
+
+export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
   const { customers, isLoading, deleteCustomer } = useCustomers()
   const { user } = useAuthContext()
   const [sorting, setSorting] = React.useState<SortingState>([])
@@ -128,6 +181,12 @@ export function CustomerTable() {
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false)
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | null>(null)
+
+  const handleEditClick = (customer: Customer) => {
+    if (onEditCustomer) {
+      onEditCustomer(customer)
+    }
+  }
 
   const handleDeleteClick = (customer: Customer) => {
     setSelectedCustomer(customer)
@@ -148,7 +207,7 @@ export function CustomerTable() {
     }
   };
 
-  const columns = React.useMemo(() => getColumns(handleDeleteClick, user?.role), [user?.role]);
+  const columns = React.useMemo(() => getColumns(handleEditClick, handleDeleteClick, user?.role), [user?.role]);
 
   const table = useReactTable({
     data: customers || [],
@@ -167,14 +226,6 @@ export function CustomerTable() {
     <div className="w-full">
       <div className="flex items-center justify-between py-4">
         <div className="flex items-center gap-4">
-          <Input
-            placeholder="Cari berdasarkan nama pelanggan..."
-            value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-            onChange={(event) =>
-              table.getColumn("name")?.setFilterValue(event.target.value)
-            }
-            className="max-w-sm"
-          />
           <div className="text-sm text-muted-foreground">
             Total: {customers?.length || 0} pelanggan
           </div>

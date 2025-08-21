@@ -69,22 +69,31 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
         amount: adjustmentAmount
       })
 
-      // Create cash history record
-      const { error: cashHistoryError } = await supabase
-        .from('cash_history')
-        .insert({
-          account_id: data.accountId,
-          transaction_type: type === "in" ? "income" : "expense",
-          amount: data.amount,
-          description: data.description,
-          reference_number: `MANUAL-${Date.now()}`,
-          source_type: type === "in" ? "kas_masuk_manual" : "kas_keluar_manual",
-          created_by: user.id,
-          created_by_name: user.name || user.email || "Unknown User"
-        })
+      // Try to create cash history record if table exists
+      try {
+        const { error: cashHistoryError } = await supabase
+          .from('cash_history')
+          .insert({
+            account_id: data.accountId,
+            transaction_type: type === "in" ? "income" : "expense",
+            amount: data.amount,
+            description: data.description,
+            reference_number: `MANUAL-${Date.now()}`,
+            source_type: type === "in" ? "kas_masuk_manual" : "kas_keluar_manual",
+            created_by: user.id,
+            created_by_name: user.name || user.email || "Unknown User"
+          })
 
-      if (cashHistoryError) {
-        throw new Error(`Failed to record cash transaction: ${cashHistoryError.message}`)
+        if (cashHistoryError && !cashHistoryError.message.includes('does not exist') && cashHistoryError.code !== 'PGRST116') {
+          throw new Error(`Failed to record cash transaction: ${cashHistoryError.message}`)
+        }
+      } catch (historyError: any) {
+        // If cash_history table doesn't exist, just log a warning but continue
+        if (historyError.code === 'PGRST116' || historyError.message.includes('does not exist')) {
+          console.warn('cash_history table does not exist, cash transaction completed without history tracking');
+        } else {
+          throw historyError;
+        }
       }
       
       // Invalidate cash flow queries

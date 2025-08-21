@@ -111,7 +111,7 @@ export default function LoginPage() {
           ) : (
             <Package className="mx-auto h-12 w-12 text-primary" />
           )}
-          <CardTitle className="text-2xl font-bold mt-4">{settings?.name || 'Matahari Digital Printing'}</CardTitle>
+          <CardTitle className="text-2xl font-bold mt-4">{settings?.name || 'Aquvit POS'}</CardTitle>
           <CardDescription>Silakan masuk untuk melanjutkan</CardDescription>
         </CardHeader>
         <CardContent>

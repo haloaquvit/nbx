@@ -16,6 +16,7 @@ import { DateTimePicker } from "./ui/datetime-picker"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
+import { canManageCash } from '@/utils/roleUtils'
 import { Trash2 } from "lucide-react"
 import {
   AlertDialog,
@@ -56,7 +57,7 @@ export function ExpenseManagement() {
   })
 
   const watchDate = watch("date")
-  const canDeleteExpense = user?.role === 'admin' || user?.role === 'owner' || user?.role === 'cashier';
+  const canDeleteExpense = canManageCash(user);
 
   const onSubmit = (data: ExpenseFormData) => {
     const account = accounts?.find(a => a.id === data.accountId)

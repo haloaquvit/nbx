@@ -14,11 +14,9 @@ const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const PosPage = lazy(() => import("@/pages/PosPage"));
 const TransactionListPage = lazy(() => import("@/pages/TransactionListPage"));
 const TransactionDetailPage = lazy(() => import("@/pages/TransactionDetailPage"));
-const QuotationListPage = lazy(() => import("@/pages/QuotationListPage"));
-const NewQuotationPage = lazy(() => import("@/pages/NewQuotationPage"));
-const QuotationDetailPage = lazy(() => import("@/pages/QuotationDetailPage"));
 const ProductPage = lazy(() => import("@/pages/ProductPage"));
 const MaterialPage = lazy(() => import("@/pages/MaterialPage"));
+const ProductionPage = lazy(() => import("@/pages/ProductionPage"));
 const MaterialDetailPage = lazy(() => import("@/pages/MaterialDetailPage"));
 const CustomerPage = lazy(() => import("@/pages/CustomerPage"));
 const CustomerDetailPage = lazy(() => import("@/pages/CustomerDetailPage"));
@@ -37,11 +35,13 @@ const AttendancePage = lazy(() => import("@/pages/AttendancePage"));
 const AttendanceReportPage = lazy(() => import("@/pages/AttendanceReportPage"));
 const StockReportPage = lazy(() => import("@/pages/StockReportPage"));
 const TransactionItemsReportPage = lazy(() => import("@/pages/TransactionItemsReportPage"));
-const RolePermissionPage = lazy(() => import("@/pages/RolePermissionPage"));
 const ProductAnalyticsDebugPage = lazy(() => import("@/pages/ProductAnalyticsDebugPage"));
 const MaterialMovementReportPage = lazy(() => import("@/pages/MaterialMovementReportPage"));
 const ServiceMaterialReportPage = lazy(() => import("@/pages/ServiceMaterialReportPage"));
 const CashFlowPage = lazy(() => import("@/pages/CashFlowPage"));
+const RolesPage = lazy(() => import("@/pages/RolesPage"));
+const RetasiPage = lazy(() => import("@/pages/RetasiPage"));
+const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
 
 function App() {
   // Handle chunk loading errors
@@ -53,7 +53,10 @@ function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" storageKey="vite-ui-theme">
       <AuthProvider>
-        <BrowserRouter future={{ v7_startTransition: true }}>
+        <BrowserRouter future={{ 
+          v7_startTransition: true, 
+          v7_relativeSplatPath: true 
+        }}>
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
@@ -75,11 +78,9 @@ function App() {
                   <Route path="/pos" element={<PosPage />} />
                   <Route path="/transactions" element={<TransactionListPage />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
-                  <Route path="/quotations" element={<QuotationListPage />} />
-                  <Route path="/quotations/new" element={<NewQuotationPage />} />
-                  <Route path="/quotations/:id" element={<QuotationDetailPage />} />
                   <Route path="/products" element={<ProductPage />} />
                   <Route path="/materials" element={<MaterialPage />} />
+                  <Route path="/production" element={<ProductionPage />} />
                   <Route path="/materials/:materialId" element={<MaterialDetailPage />} />
                   <Route path="/customers" element={<CustomerPage />} />
                   <Route path="/customers/:id" element={<CustomerDetailPage />} />
@@ -96,11 +97,13 @@ function App() {
                   <Route path="/attendance/report" element={<AttendanceReportPage />} />
                   <Route path="/stock-report" element={<StockReportPage />} />
                   <Route path="/transaction-items-report" element={<TransactionItemsReportPage />} />
-                  <Route path="/role-permissions" element={<RolePermissionPage />} />
                   <Route path="/debug/product-analytics" element={<ProductAnalyticsDebugPage />} />
                   <Route path="/material-movements" element={<MaterialMovementReportPage />} />
                   <Route path="/service-material-report" element={<ServiceMaterialReportPage />} />
                   <Route path="/cash-flow" element={<CashFlowPage />} />
+                  <Route path="/roles" element={<RolesPage />} />
+                  <Route path="/retasi" element={<RetasiPage />} />
+                  <Route path="/delivery" element={<DeliveryPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

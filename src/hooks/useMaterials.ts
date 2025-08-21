@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { Material } from '@/types/material'
 import { supabase } from '@/integrations/supabase/client'
 
 const fromDbToApp = (dbMaterial: any): Material => ({
   id: dbMaterial.id,
   name: dbMaterial.name,
-  type: dbMaterial.type || 'Stock', // Default to Stock if not set
+  type: dbMaterial.type || 'Stock', // Default to Stock if not set (field may not exist yet)
   unit: dbMaterial.unit,
   pricePerUnit: dbMaterial.price_per_unit,
   stock: dbMaterial.stock,
@@ -24,9 +25,10 @@ const fromAppToDb = (appMaterial: Partial<Omit<Material, 'id' | 'createdAt' | 'u
   if (minStock !== undefined) {
     dbData.min_stock = minStock;
   }
-  if (type !== undefined) {
-    dbData.type = type;
-  }
+  // Skip type field as it doesn't exist in database yet
+  // if (type !== undefined) {
+  //   dbData.type = type;
+  // }
   return dbData;
 };
 
@@ -46,32 +48,13 @@ export const useMaterials = () => {
 
   const addStock = useMutation({
     mutationFn: async ({ materialId, quantity }: { materialId: string, quantity: number }): Promise<Material> => {
-      // Get material data to determine how to handle the operation
-      const { data: material, error: materialError } = await supabase
-        .from('materials')
-        .select('type, current_stock')
-        .eq('id', materialId)
-        .single();
-      
-      if (materialError) throw new Error(materialError.message);
-      
-      // For 'Stock' type: add to stock (purchase received)
-      // For 'Beli'/'Jasa' type: track usage/consumption (increase usage counter)
-      if (material.type === 'Stock') {
-        // Regular stock addition for Stock type materials
-        const { error } = await supabase.rpc('add_material_stock', {
-          material_id: materialId,
-          quantity_to_add: quantity
-        });
-        if (error) throw new Error(error.message);
-      } else {
-        // For Beli/Jasa: track usage by adding to stock field (used as usage counter)
-        const { error } = await supabase.rpc('add_material_stock', {
-          material_id: materialId,
-          quantity_to_add: quantity
-        });
-        if (error) throw new Error(error.message);
-      }
+      // Simplified: just add stock using the RPC function
+      // Type handling will be implemented when database migration is complete
+      const { error } = await supabase.rpc('add_material_stock', {
+        material_id: materialId,
+        quantity_to_add: quantity
+      });
+      if (error) throw new Error(error.message);
       
       return {} as Material;
     },
@@ -108,6 +91,19 @@ export const useMaterials = () => {
       queryClient.invalidateQueries({ queryKey: ['materials'] });
     },
   });
+
+  // Listen for production completion events to refresh materials
+  useEffect(() => {
+    const handleProductionComplete = () => {
+      console.log('Production completed, refreshing materials...');
+      queryClient.invalidateQueries({ queryKey: ['materials'] });
+    };
+
+    window.addEventListener('production-completed', handleProductionComplete);
+    return () => {
+      window.removeEventListener('production-completed', handleProductionComplete);
+    };
+  }, [queryClient]);
 
   return {
     materials,
