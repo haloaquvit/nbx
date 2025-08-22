@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { ProductionRecord, ProductionInput, BOMItem } from '@/types/production';
+import { ProductionRecord, ProductionInput, BOMItem, ErrorInput } from '@/types/production';
 import { Product } from '@/types/product';
 import { Material } from '@/types/material';
 import { useToast } from '@/components/ui/use-toast';
@@ -33,7 +33,7 @@ export const useProduction = () => {
         id: record.id,
         ref: record.ref,
         productId: record.product_id,
-        productName: record.products?.name || 'Unknown Product',
+        productName: record.product_id ? (record.products?.name || 'Unknown Product') : 'Bahan Rusak',
         quantity: record.quantity,
         note: record.note,
         consumeBOM: record.consume_bom,
@@ -108,7 +108,9 @@ export const useProduction = () => {
           quantity: input.quantity,
           note: input.note,
           consume_bom: input.consumeBOM,
-          created_by: input.createdBy
+          created_by: input.createdBy,
+          user_input_id: input.createdBy,
+          user_input_name: user?.name || user?.email || 'Unknown User'
         })
         .select()
         .single();
@@ -243,6 +245,199 @@ export const useProduction = () => {
     }
   }, [toast, user, getBOM]); // Dependencies: toast for error messages, user for created_by, getBOM function
 
+
+  // Process error input
+  const processError = useCallback(async (input: ErrorInput): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+
+      // Generate error reference
+      const ref = `ERR-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+
+      // Get material details
+      const { data: material, error: materialError } = await supabase
+        .from('materials')
+        .select('*')
+        .eq('id', input.materialId)
+        .single();
+
+      if (materialError) throw materialError;
+
+      // Record error entry directly in production_records table
+      const { data: productionRecord, error: errorInsertError } = await supabase
+        .from('production_records')
+        .insert({
+          ref: ref,
+          product_id: null, // No product for damaged materials
+          quantity: -input.quantity, // Negative quantity to indicate loss/damage
+          note: `BAHAN RUSAK: ${material.name} - ${input.note || 'Tidak ada catatan'}`,
+          consume_bom: false,
+          created_by: input.createdBy,
+          user_input_id: input.createdBy,
+          user_input_name: user?.name || user?.email || 'Unknown User',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (errorInsertError) {
+        throw errorInsertError;
+      }
+
+      // Reduce material stock
+      const newStock = Math.max(0, material.stock - input.quantity);
+      const { error: stockUpdateError } = await supabase
+        .from('materials')
+        .update({
+          stock: newStock,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', input.materialId);
+
+      if (stockUpdateError) throw stockUpdateError;
+
+      // Record material movement
+      const { error: movementError } = await supabase
+        .from('material_stock_movements')
+        .insert({
+          material_id: input.materialId,
+          material_name: material.name,
+          type: 'OUT',
+          reason: 'PRODUCTION_ERROR',
+          quantity: input.quantity,
+          previous_stock: material.stock,
+          new_stock: newStock,
+          notes: `Bahan rusak: ${ref} (${material.name})`,
+          reference_id: productionRecord.id,
+          reference_type: 'production',
+          user_id: input.createdBy,
+          user_name: user?.name || user?.email || 'Unknown User'
+        });
+
+      if (movementError) throw movementError;
+
+
+      toast({
+        title: "Sukses",
+        description: `Bahan rusak ${ref} berhasil dicatat`
+      });
+
+      fetchProductions();
+      
+      return true;
+    } catch (error: any) {
+      console.error('Error processing error input:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Gagal mencatat bahan rusak"
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast, fetchProductions]);
+
+  // Delete production record (admin/owner only)
+  const deleteProduction = useCallback(async (recordId: string): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+
+      const { data: record, error: fetchError } = await supabase
+        .from('production_records')
+        .select('*')
+        .eq('id', recordId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // If normal production, restore stock
+      if (record.quantity > 0 && record.product_id) {
+        const bom = await getBOM(record.product_id);
+        
+        for (const bomItem of bom) {
+          const requiredQty = bomItem.quantity * record.quantity;
+          
+          const { data: material, error: materialError } = await supabase
+            .from('materials')
+            .select('stock')
+            .eq('id', bomItem.materialId)
+            .single();
+
+          if (!materialError && material) {
+            const restoredStock = material.stock + requiredQty;
+            await supabase
+              .from('materials')
+              .update({
+                stock: restoredStock,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', bomItem.materialId);
+
+            await supabase
+              .from('material_stock_movements')
+              .insert({
+                material_id: bomItem.materialId,
+                material_name: bomItem.materialName,
+                type: 'IN',
+                reason: 'PRODUCTION_DELETE_RESTORE',
+                quantity: requiredQty,
+                previous_stock: material.stock,
+                new_stock: restoredStock,
+                reference: record.ref,
+                created_by: user?.id,
+                created_at: new Date().toISOString()
+              });
+          }
+        }
+
+        const { data: product, error: productError } = await supabase
+          .from('products')
+          .select('currentStock')
+          .eq('id', record.product_id)
+          .single();
+
+        if (!productError && product) {
+          const newProductStock = Math.max(0, product.currentStock - record.quantity);
+          await supabase
+            .from('products')
+            .update({
+              currentStock: newProductStock,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', record.product_id);
+        }
+      }
+
+      const { error: deleteError } = await supabase
+        .from('production_records')
+        .delete()
+        .eq('id', recordId);
+
+      if (deleteError) throw deleteError;
+
+      toast({
+        title: "Sukses",
+        description: "Data produksi dihapus dan stock dikembalikan"
+      });
+
+      fetchProductions();
+      
+      return true;
+    } catch (error: any) {
+      console.error('Error deleting production:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Gagal menghapus data produksi"
+      });
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, getBOM, toast, fetchProductions]);
+
   useEffect(() => {
     fetchProductions();
   }, [fetchProductions]);
@@ -252,6 +447,8 @@ export const useProduction = () => {
     isLoading,
     getBOM,
     processProduction,
+    processError,
+    deleteProduction,
     refreshProductions: fetchProductions
   };
 };

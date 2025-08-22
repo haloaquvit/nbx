@@ -99,13 +99,14 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
           .from('cash_history')
           .insert({
             account_id: data.fromAccountId,
-            transaction_type: 'expense', // Transfer keluar adalah expense
+            account_name: fromAccount.name,
+            type: 'transfer_keluar',
             amount: data.amount,
             description: `Transfer ke ${toAccount.name}: ${data.description}`,
-            reference_number: transferRef,
-            source_type: 'transfer_keluar',
-            created_by: user.id,
-            created_by_name: user.name || user.email || "Unknown User"
+            reference_id: transferRef,
+            reference_name: `Transfer ${transferRef}`,
+            user_id: user.id,
+            user_name: user.name || user.email || "Unknown User"
           })
 
         if (outboundError && !outboundError.message.includes('does not exist') && outboundError.code !== 'PGRST116') {
@@ -117,22 +118,25 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
           .from('cash_history')
           .insert({
             account_id: data.toAccountId,
-            transaction_type: 'income', // Transfer masuk adalah income
+            account_name: toAccount.name,
+            type: 'transfer_masuk',
             amount: data.amount,
             description: `Transfer dari ${fromAccount.name}: ${data.description}`,
-            reference_number: transferRef,
-            source_type: 'transfer_masuk',
-            created_by: user.id,
-            created_by_name: user.name || user.email || "Unknown User"
+            reference_id: transferRef,
+            reference_name: `Transfer ${transferRef}`,
+            user_id: user.id,
+            user_name: user.name || user.email || "Unknown User"
           })
 
         if (inboundError && !inboundError.message.includes('does not exist') && inboundError.code !== 'PGRST116') {
           throw new Error(`Failed to record inbound transfer: ${inboundError.message}`)
         }
       } catch (historyError: any) {
-        // If cash_history table doesn't exist, just log a warning but continue
-        if (historyError.code === 'PGRST116' || historyError.message.includes('does not exist')) {
-          console.warn('cash_history table does not exist, transfer completed without history tracking');
+        // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
+        if (historyError.code === 'PGRST116' || historyError.code === '42P01' || historyError.code === 'PGRST205' || 
+            historyError.code === '23502' || historyError.message.includes('does not exist') || 
+            historyError.message.includes('violates check constraint') || historyError.message.includes('violates not-null constraint')) {
+          console.warn('cash_history table issue, transfer completed without history tracking:', historyError.message);
         } else {
           throw historyError;
         }

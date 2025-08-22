@@ -23,6 +23,7 @@ import { id } from "date-fns/locale/id"
 import { Badge } from "./ui/badge"
 import { useAccounts } from "@/hooks/useAccounts"
 import { Trash2 } from "lucide-react"
+import { PanjarReceiptPDF } from "./PanjarReceiptPDF"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -273,6 +274,7 @@ export function EmployeeAdvanceManagement() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
+                                <PanjarReceiptPDF advance={adv} />
                                 {isAdminOrOwnerOrCashier && (
                                   <Button 
                                     variant="outline" 

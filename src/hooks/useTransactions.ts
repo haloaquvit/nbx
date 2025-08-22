@@ -171,7 +171,12 @@ export const useTransactions = (filters?: {
             .insert(cashFlowRecord);
 
           if (cashFlowError) {
-            console.error('Failed to record cash flow:', cashFlowError.message);
+            // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
+            if (cashFlowError.code === '42P01' || cashFlowError.code === 'PGRST116' || cashFlowError.code === 'PGRST205') {
+              console.warn('cash_history table does not exist, transaction completed without history tracking');
+            } else {
+              console.error('Failed to record cash flow:', cashFlowError.message);
+            }
           }
         } catch (error) {
           console.error('Error recording cash flow:', error);
@@ -250,37 +255,21 @@ export const useTransactions = (filters?: {
     }
   });
 
-  const writeOffReceivable = useMutation({
-    mutationFn: async (transaction: Transaction) => {
-      const amountToWriteOff = transaction.total - (transaction.paidAmount || 0);
-      if (amountToWriteOff <= 0) {
-        throw new Error("Piutang ini sudah lunas atau tidak ada sisa tagihan.");
-      }
-
-      // Step 1: Create an expense for the written-off amount
-      await addExpense.mutateAsync({
-        description: `Penghapusan Piutang No. Order ${transaction.id}`,
-        amount: amountToWriteOff,
-        date: new Date(),
-        category: 'Penghapusan Piutang',
-      });
-
-      // Step 2: Update the transaction to mark it as fully paid
-      const { error: updateError } = await supabase
+  const deleteReceivable = useMutation({
+    mutationFn: async (transactionId: string) => {
+      // Delete the receivable by marking it as cancelled/deleted
+      const { error: deleteError } = await supabase
         .from('transactions')
-        .update({
-          paid_amount: transaction.total,
-          payment_status: 'Lunas'
-        })
-        .eq('id', transaction.id);
+        .delete()
+        .eq('id', transactionId);
 
-      if (updateError) {
-        throw new Error(`Gagal memperbarui transaksi: ${updateError.message}`);
+      if (deleteError) {
+        throw new Error(`Gagal menghapus piutang: ${deleteError.message}`);
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
     }
   });
 
@@ -594,7 +583,7 @@ export const useTransactions = (filters?: {
     },
   });
 
-  return { transactions, isLoading, addTransaction, updateTransaction, payReceivable, writeOffReceivable, updateTransactionStatus, deductMaterials, deleteTransaction }
+  return { transactions, isLoading, addTransaction, updateTransaction, payReceivable, deleteReceivable, updateTransactionStatus, deductMaterials, deleteTransaction }
 }
 
 export const useTransactionById = (id: string) => {

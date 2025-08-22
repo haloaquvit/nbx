@@ -36,3 +36,23 @@ export interface ProductionResult {
   ref: string;
   message: string;
 }
+
+export interface ErrorRecord {
+  id: string;
+  ref: string;
+  materialId: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  note?: string;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ErrorInput {
+  materialId: string;
+  quantity: number;
+  note?: string;
+  createdBy: string;
+}

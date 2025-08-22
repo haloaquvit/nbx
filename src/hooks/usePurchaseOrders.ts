@@ -111,13 +111,13 @@ export const usePurchaseOrders = () => {
       // Get current material data including type
       const { data: material, error: materialError } = await supabase
         .from('materials')
-        .select('current_stock, name, type')
+        .select('stock, name, type')
         .eq('id', po.materialId)
         .single();
       
       if (materialError) throw materialError;
 
-      const previousStock = Number(material.current_stock) || 0;
+      const previousStock = Number(material.stock) || 0;
       const newStock = previousStock + po.quantity;
 
       // Determine movement type based on material type

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, Printer, FileDown, Calendar, User, Package, CreditCard } from "lucide-react"
+import { ArrowLeft, Printer, FileDown, Calendar, User, Package, CreditCard, Truck } from "lucide-react"
 import { useTransactions } from "@/hooks/useTransactions"
 import { useTransactionDeliveryInfo } from "@/hooks/useDeliveries"
 import { format } from "date-fns"
@@ -21,6 +21,7 @@ export default function TransactionDetailPage() {
   const { data: deliveryInfo, isLoading: isLoadingDelivery } = useTransactionDeliveryInfo(transactionId || '')
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
   const [printTemplate, setPrintTemplate] = useState<'receipt' | 'invoice'>('receipt')
+  const [showDeliveryForm, setShowDeliveryForm] = useState(false)
 
   const transaction = transactions?.find(t => t.id === transactionId)
 
@@ -133,8 +134,22 @@ export default function TransactionDetailPage() {
           </div>
         </div>
         
-        {/* Print Buttons - Hidden on mobile, shown on desktop */}
+        {/* Action Buttons - Hidden on mobile, shown on desktop */}
         <div className="hidden md:flex gap-2">
+          {/* Show delivery button if transaction is ready for delivery and not office sale */}
+          {deliveryInfo && !transaction?.isOfficeSale && (
+            transaction?.status === 'Siap Antar' || 
+            transaction?.status === 'Diantar Sebagian'
+          ) && (
+            <Button 
+              variant="outline" 
+              className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+              onClick={() => setShowDeliveryForm(true)}
+            >
+              <Truck className="mr-2 h-4 w-4" />
+              Input Pengantaran
+            </Button>
+          )}
           <Button variant="outline" onClick={() => handlePrintClick('receipt')}>
             <Printer className="mr-2 h-4 w-4" />
             Cetak Thermal
@@ -146,9 +161,24 @@ export default function TransactionDetailPage() {
         </div>
       </div>
 
-      {/* Mobile Print Actions - Sticky at top */}
+      {/* Mobile Actions - Sticky at top */}
       <div className="md:hidden sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40 -mx-6 px-6 py-3">
         <div className="flex gap-2">
+          {/* Show delivery button if transaction is ready for delivery and not office sale */}
+          {deliveryInfo && !transaction?.isOfficeSale && (
+            transaction?.status === 'Siap Antar' || 
+            transaction?.status === 'Diantar Sebagian'
+          ) && (
+            <Button 
+              variant="outline"
+              size="sm" 
+              className="flex-1 bg-green-50 border-green-200 text-green-700"
+              onClick={() => setShowDeliveryForm(true)}
+            >
+              <Truck className="mr-2 h-4 w-4" />
+              Antar
+            </Button>
+          )}
           <Button 
             variant="outline" 
             size="sm" 
@@ -156,7 +186,7 @@ export default function TransactionDetailPage() {
             onClick={() => handlePrintClick('receipt')}
           >
             <Printer className="mr-2 h-4 w-4" />
-            Cetak Thermal
+            Thermal
           </Button>
           <Button 
             size="sm" 
@@ -164,7 +194,7 @@ export default function TransactionDetailPage() {
             onClick={() => handlePrintClick('invoice')}
           >
             <FileDown className="mr-2 h-4 w-4" />
-            Cetak Invoice
+            Invoice
           </Button>
         </div>
       </div>
@@ -456,18 +486,32 @@ export default function TransactionDetailPage() {
       </div>
 
       {/* Delivery Management Section */}
-      {deliveryInfo && !transaction?.isOfficeSale && (
-        transaction?.status === 'Siap Antar' || 
-        transaction?.status === 'Diantar Sebagian'
-      ) && (
+      {showDeliveryForm && deliveryInfo && (
         <div className="mt-6">
-          <DeliveryManagement 
-            transaction={deliveryInfo}
-            onClose={() => {
-              // Refresh data when delivery is updated
-              window.location.reload()
-            }}
-          />
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Input Pengantaran</CardTitle>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => setShowDeliveryForm(false)}
+                >
+                  Tutup
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <DeliveryManagement 
+                transaction={deliveryInfo}
+                onClose={() => {
+                  setShowDeliveryForm(false)
+                  // Refresh data when delivery is updated
+                  window.location.reload()
+                }}
+              />
+            </CardContent>
+          </Card>
         </div>
       )}
 

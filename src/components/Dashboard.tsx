@@ -28,8 +28,9 @@ export function Dashboard() {
   // Helper function to calculate production cost based on BOM and material prices
   const calculateProductionCost = (product: any, quantity: number, materials: Material[] | undefined): number => {
     if (!materials || !product.materials || product.materials.length === 0) {
-      // Fallback to basePrice if no materials data
-      return product.basePrice * quantity;
+      // Fallback: Estimate cost as 70% of base price if no materials data
+      // This provides more realistic profit margins for analysis
+      return product.basePrice * quantity * 0.7;
     }
 
     let totalCost = 0;

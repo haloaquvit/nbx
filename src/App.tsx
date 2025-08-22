@@ -43,6 +43,8 @@ const RolesPage = lazy(() => import("@/pages/RolesPage"));
 const RetasiPage = lazy(() => import("@/pages/RetasiPage"));
 const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
 const DriverPosPage = lazy(() => import("@/pages/DriverPosPage"));
+const CommissionManagePage = lazy(() => import("@/pages/CommissionManagePage"));
+const CommissionReportPage = lazy(() => import("@/pages/CommissionReportPage"));
 
 function App() {
   // Handle chunk loading errors
@@ -107,6 +109,8 @@ function App() {
                   <Route path="/retasi" element={<RetasiPage />} />
                   <Route path="/delivery" element={<DeliveryPage />} />
                   <Route path="/driver-pos" element={<DriverPosPage />} />
+                  <Route path="/commission-manage" element={<CommissionManagePage />} />
+                  <Route path="/commission-report" element={<CommissionReportPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

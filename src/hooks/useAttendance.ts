@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/integrations/supabase/client'
 import { Attendance } from '@/types/attendance'
 import { useAuth } from './useAuth'
-import { startOfToday, endOfToday } from 'date-fns'
+import { startOfDay, endOfDay } from 'date-fns'
 
 export const useAttendance = () => {
   const queryClient = useQueryClient()
@@ -12,13 +12,17 @@ export const useAttendance = () => {
     queryKey: ['todayAttendance', user?.id],
     queryFn: async () => {
       if (!user) return null;
+      const today = new Date();
+      const startOfToday = startOfDay(today).toISOString();
+      const endOfToday = endOfDay(today).toISOString();
+      
       const { data, error } = await supabase
         .from('attendance')
         .select('*')
         .eq('user_id', user.id)
-        .gte('check_in_time', startOfToday().toISOString())
-        .lte('check_in_time', endOfToday().toISOString())
-        .single();
+        .gte('check_in_time', startOfToday)
+        .lte('check_in_time', endOfToday)
+        .maybeSingle();
       if (error && error.code !== 'PGRST116') { // Ignore 'single row not found' error
         throw new Error(error.message);
       }

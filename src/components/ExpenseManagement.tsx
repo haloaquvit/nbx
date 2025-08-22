@@ -18,6 +18,7 @@ import { id } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
 import { canManageCash } from '@/utils/roleUtils'
 import { Trash2 } from "lucide-react"
+import { ExpenseReceiptPDF } from "./ExpenseReceiptPDF"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -153,9 +154,9 @@ export function ExpenseManagement() {
         </CardHeader>
         <CardContent>
           <Table>
-            <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Deskripsi</TableHead><TableHead>Kategori</TableHead><TableHead>Sumber Dana</TableHead><TableHead className="text-right">Jumlah</TableHead>{canDeleteExpense && <TableHead className="text-right">Aksi</TableHead>}</TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Deskripsi</TableHead><TableHead>Kategori</TableHead><TableHead>Sumber Dana</TableHead><TableHead className="text-right">Jumlah</TableHead><TableHead className="text-center">Kwitansi</TableHead>{canDeleteExpense && <TableHead className="text-right">Aksi</TableHead>}</TableRow></TableHeader>
             <TableBody>
-              {isLoadingExpenses ? <TableRow><TableCell colSpan={canDeleteExpense ? 6 : 5}>Memuat...</TableCell></TableRow> :
+              {isLoadingExpenses ? <TableRow><TableCell colSpan={canDeleteExpense ? 7 : 6}>Memuat...</TableCell></TableRow> :
                 expenses?.map(exp => (
                   <TableRow key={exp.id}>
                     <TableCell>{format(new Date(exp.date), "d MMM yyyy", { locale: id })}</TableCell>
@@ -163,6 +164,9 @@ export function ExpenseManagement() {
                     <TableCell>{exp.category}</TableCell>
                     <TableCell>{exp.accountName}</TableCell>
                     <TableCell className="text-right">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(exp.amount)}</TableCell>
+                    <TableCell className="text-center">
+                      <ExpenseReceiptPDF expense={exp} />
+                    </TableCell>
                     {canDeleteExpense && (
                       <TableCell className="text-right">
                         <AlertDialog>

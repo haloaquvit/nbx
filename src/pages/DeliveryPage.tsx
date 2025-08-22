@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera } from "lucide-react"
+import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { useTransactionsReadyForDelivery, useDeliveryHistory } from "@/hooks/useDeliveries"
@@ -23,7 +23,10 @@ import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { DeliveryDetailModal } from "@/components/DeliveryDetailModal"
 import { TransactionDeliveryInfo } from "@/types/delivery"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/hooks/useAuth"
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 export default function DeliveryPage() {
   const { toast } = useToast()
@@ -36,6 +39,15 @@ export default function DeliveryPage() {
   const [selectedDelivery, setSelectedDelivery] = useState<any>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("active")
+  const [showDeliveryForm, setShowDeliveryForm] = useState(false)
+  const [deliveryFormTransaction, setDeliveryFormTransaction] = useState<TransactionDeliveryInfo | null>(null)
+  
+  // New filter states for history
+  const [startDate, setStartDate] = useState("")
+  const [endDate, setEndDate] = useState("")
+  const [selectedDriver, setSelectedDriver] = useState("all")
+  const [selectedHelper, setSelectedHelper] = useState("all")
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   
   // Check if user has access to history tab
   const canAccessHistory = user?.role && ['admin', 'owner'].includes(user.role)
@@ -45,11 +57,44 @@ export default function DeliveryPage() {
     transaction.id.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
   
-  const filteredDeliveryHistory = deliveryHistory?.filter(delivery =>
-    delivery.customerName.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
-    delivery.transactionId.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
-    delivery.driverName?.toLowerCase().includes(historySearchQuery.toLowerCase())
-  ) || []
+  // Get unique drivers and helpers for filter options
+  const uniqueDrivers = Array.from(new Set(
+    deliveryHistory?.map(d => d.driverName).filter(Boolean) || []
+  )).sort()
+  
+  const uniqueHelpers = Array.from(new Set(
+    deliveryHistory?.map(d => d.helperName).filter(Boolean) || []
+  )).sort()
+
+  const filteredDeliveryHistory = deliveryHistory?.filter(delivery => {
+    // Text search filter
+    const matchesSearch = !historySearchQuery || (
+      delivery.customerName.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
+      delivery.transactionId.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
+      delivery.driverName?.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
+      delivery.helperName?.toLowerCase().includes(historySearchQuery.toLowerCase())
+    )
+    
+    // Date range filter
+    const deliveryDate = new Date(delivery.deliveryDate)
+    const startDateObj = startDate ? new Date(startDate + "T00:00:00") : null
+    const endDateObj = endDate ? new Date(endDate + "T23:59:59") : null
+    
+    const matchesDateRange = (!startDateObj || deliveryDate >= startDateObj) &&
+                            (!endDateObj || deliveryDate <= endDateObj)
+    
+    // Driver filter
+    const matchesDriver = selectedDriver === "all" || 
+                         (selectedDriver === "no-driver" && !delivery.driverName) ||
+                         delivery.driverName === selectedDriver
+    
+    // Helper filter  
+    const matchesHelper = selectedHelper === "all" || 
+                         (selectedHelper === "no-helper" && !delivery.helperName) ||
+                         delivery.helperName === selectedHelper
+    
+    return matchesSearch && matchesDateRange && matchesDriver && matchesHelper
+  }) || []
 
   const getOverallStatus = (transaction: TransactionDeliveryInfo) => {
     const totalItems = transaction.deliverySummary.reduce((sum, item) => sum + item.orderedQuantity, 0)
@@ -58,6 +103,130 @@ export default function DeliveryPage() {
     if (deliveredItems === 0) return { status: "Belum Diantar", variant: "secondary" as const, icon: Clock }
     if (deliveredItems >= totalItems) return { status: "Selesai", variant: "success" as const, icon: CheckCircle }
     return { status: "Sebagian", variant: "default" as const, icon: AlertCircle }
+  }
+
+  const generateHistoryPDF = async () => {
+    setIsGeneratingPDF(true)
+    
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      })
+
+      const pageWidth = 297
+      const margin = 15
+
+      // Header
+      doc.setFontSize(18)
+      doc.setFont(undefined, 'bold')
+      doc.text('LAPORAN HISTORY PENGANTARAN', pageWidth/2, 20, { align: 'center' })
+      
+      // Filter info
+      doc.setFontSize(10)
+      doc.setFont(undefined, 'normal')
+      let yPos = 35
+      
+      let filterInfo = []
+      if (startDate || endDate) {
+        const dateRange = `${startDate ? format(new Date(startDate), 'dd/MM/yyyy') : 'Awal'} - ${endDate ? format(new Date(endDate), 'dd/MM/yyyy') : 'Akhir'}`
+        filterInfo.push(`Periode: ${dateRange}`)
+      }
+      if (selectedDriver !== "all") {
+        filterInfo.push(`Driver: ${selectedDriver === "no-driver" ? "Tanpa Driver" : selectedDriver}`)
+      }
+      if (selectedHelper !== "all") {
+        filterInfo.push(`Helper: ${selectedHelper === "no-helper" ? "Tanpa Helper" : selectedHelper}`)
+      }
+      if (historySearchQuery) {
+        filterInfo.push(`Pencarian: "${historySearchQuery}"`)
+      }
+      
+      if (filterInfo.length > 0) {
+        doc.text(`Filter: ${filterInfo.join(' | ')}`, margin, yPos)
+        yPos += 10
+      }
+
+      // Summary
+      const totalDeliveries = filteredDeliveryHistory.length
+      const totalItems = filteredDeliveryHistory.reduce((sum, d) => sum + (d.items?.reduce((itemSum: number, item: any) => itemSum + item.quantityDelivered, 0) || 0), 0)
+      
+      doc.text(`Total Pengantaran: ${totalDeliveries} | Total Item Diantar: ${totalItems}`, margin, yPos)
+      yPos += 15
+
+      // Table data
+      const tableData = filteredDeliveryHistory.map((delivery, index) => [
+        (index + 1).toString(),
+        delivery.deliveryNumber?.toString() || delivery.id.slice(-6),
+        delivery.transactionId,
+        delivery.customerName,
+        format(new Date(delivery.deliveryDate), 'dd/MM/yyyy HH:mm'),
+        delivery.driverName || '-',
+        delivery.helperName || '-',
+        delivery.items?.length?.toString() || '0',
+        delivery.items?.reduce((sum: number, item: any) => sum + item.quantityDelivered, 0)?.toString() || '0',
+        new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(delivery.transactionTotal || 0),
+        delivery.photoUrl ? 'Ya' : 'Tidak'
+      ])
+
+      // Table
+      autoTable(doc, {
+        head: [['No', 'ID#', 'Order ID', 'Pelanggan', 'Tanggal Antar', 'Driver', 'Helper', 'Jenis', 'Total', 'Nilai Order', 'Foto']],
+        body: tableData,
+        startY: yPos,
+        styles: {
+          fontSize: 8,
+          cellPadding: 2
+        },
+        headStyles: {
+          fillColor: [79, 70, 229],
+          textColor: 255,
+          fontSize: 8,
+          fontStyle: 'bold'
+        },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 15 },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 25 },
+          3: { cellWidth: 40 },
+          4: { cellWidth: 35 },
+          5: { cellWidth: 30 },
+          6: { cellWidth: 30 },
+          7: { halign: 'center', cellWidth: 20 },
+          8: { halign: 'center', cellWidth: 20 },
+          9: { halign: 'right', cellWidth: 30 },
+          10: { halign: 'center', cellWidth: 20 }
+        },
+        didDrawPage: (data) => {
+          // Footer with print info
+          const pageHeight = doc.internal.pageSize.height
+          doc.setFontSize(8)
+          doc.setTextColor(128, 128, 128)
+          doc.text(`Dicetak oleh: ${user?.name || user?.email || 'System'} pada ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}`, margin, pageHeight - 10)
+          doc.text(`Halaman ${data.pageNumber}`, pageWidth - margin, pageHeight - 10, { align: 'right' })
+        }
+      })
+
+      // Save PDF
+      const fileName = `laporan-history-pengantaran-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`
+      doc.save(fileName)
+
+      toast({
+        title: "PDF Berhasil Dibuat",
+        description: `Laporan history pengantaran berhasil diunduh sebagai ${fileName}`
+      })
+
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Gagal membuat PDF. Silakan coba lagi."
+      })
+    } finally {
+      setIsGeneratingPDF(false)
+    }
   }
 
   if (selectedTransaction) {
@@ -211,7 +380,10 @@ export default function DeliveryPage() {
                         <TableRow 
                           key={transaction.id} 
                           className="cursor-pointer hover:bg-muted"
-                          onClick={() => setSelectedTransaction(transaction)}
+                          onClick={() => {
+                            setDeliveryFormTransaction(transaction)
+                            setShowDeliveryForm(true)
+                          }}
                         >
                           <TableCell>
                             <Badge variant="outline" className="text-xs">#{transaction.id}</Badge>
@@ -255,7 +427,8 @@ export default function DeliveryPage() {
                             <Button 
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setSelectedTransaction(transaction)
+                                setDeliveryFormTransaction(transaction)
+                                setShowDeliveryForm(true)
                               }}
                               size="sm"
                               className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
@@ -274,6 +447,45 @@ export default function DeliveryPage() {
           </CardContent>
         </Card>
           </div>
+
+          {/* Delivery Form Box - Appears when showDeliveryForm is true */}
+          {showDeliveryForm && deliveryFormTransaction && (
+            <div className="mt-6">
+              <Card className="border-2 border-green-200 bg-green-50/50">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-green-800">
+                      <Truck className="inline h-5 w-5 mr-2" />
+                      Form Input Pengantaran
+                    </CardTitle>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        setShowDeliveryForm(false)
+                        setDeliveryFormTransaction(null)
+                      }}
+                    >
+                      Tutup
+                    </Button>
+                  </div>
+                  <p className="text-sm text-green-700">
+                    Transaksi #{deliveryFormTransaction.id} - {deliveryFormTransaction.customerName}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <DeliveryManagement
+                    transaction={deliveryFormTransaction}
+                    onClose={() => {
+                      setShowDeliveryForm(false)
+                      setDeliveryFormTransaction(null)
+                      refetch()
+                    }}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
 
         {/* History Tab - Only visible to admin/owner */}
@@ -283,30 +495,138 @@ export default function DeliveryPage() {
               {/* History Search and Filters */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Filter History Pengantaran</CardTitle>
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <Filter className="h-5 w-5" />
+                    Filter History Pengantaran
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex items-center gap-4">
-                    <div className="relative flex-1 max-w-md">
+                  <div className="space-y-4">
+                    {/* Search */}
+                    <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                       <Input
-                        placeholder="Cari berdasarkan pelanggan, order ID, atau driver..."
+                        placeholder="Cari berdasarkan pelanggan, order ID, driver, atau helper..."
                         value={historySearchQuery}
                         onChange={(e) => setHistorySearchQuery(e.target.value)}
                         className="pl-10"
                       />
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      {filteredDeliveryHistory.length} dari {deliveryHistory?.length || 0} pengantaran
+                    
+                    {/* Filter Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* Date Range */}
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 mb-1 block">
+                          <Calendar className="inline h-4 w-4 mr-1" />
+                          Dari Tanggal
+                        </label>
+                        <Input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 mb-1 block">
+                          <Calendar className="inline h-4 w-4 mr-1" />
+                          Sampai Tanggal
+                        </label>
+                        <Input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          className="text-sm"
+                        />
+                      </div>
+                      
+                      {/* Driver Filter */}
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 mb-1 block">
+                          Driver
+                        </label>
+                        <Select value={selectedDriver} onValueChange={setSelectedDriver}>
+                          <SelectTrigger className="text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Semua Driver</SelectItem>
+                            <SelectItem value="no-driver">Tanpa Driver</SelectItem>
+                            {uniqueDrivers.map(driver => (
+                              <SelectItem key={driver} value={driver}>
+                                {driver}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      {/* Helper Filter */}
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 mb-1 block">
+                          Helper
+                        </label>
+                        <Select value={selectedHelper} onValueChange={setSelectedHelper}>
+                          <SelectTrigger className="text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Semua Helper</SelectItem>
+                            <SelectItem value="no-helper">Tanpa Helper</SelectItem>
+                            {uniqueHelpers.map(helper => (
+                              <SelectItem key={helper} value={helper}>
+                                {helper}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
-                    <Button 
-                      onClick={() => refetchHistory()} 
-                      variant="outline" 
-                      size="sm"
-                    >
-                      <RefreshCw className="h-4 w-4 sm:mr-2" />
-                      <span className="hidden sm:inline">Refresh</span>
-                    </Button>
+                    
+                    {/* Summary and Actions */}
+                    <div className="flex items-center justify-between pt-4 border-t">
+                      <div className="text-sm text-muted-foreground">
+                        Menampilkan {filteredDeliveryHistory.length} dari {deliveryHistory?.length || 0} pengantaran
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button 
+                          onClick={() => {
+                            setHistorySearchQuery("")
+                            setStartDate("")
+                            setEndDate("")
+                            setSelectedDriver("all")
+                            setSelectedHelper("all")
+                          }}
+                          variant="outline" 
+                          size="sm"
+                        >
+                          Reset Filter
+                        </Button>
+                        <Button 
+                          onClick={generateHistoryPDF}
+                          disabled={isGeneratingPDF}
+                          variant="outline" 
+                          size="sm"
+                        >
+                          {isGeneratingPDF ? (
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                          )}
+                          {isGeneratingPDF ? "Generating..." : "Export PDF"}
+                        </Button>
+                        <Button 
+                          onClick={() => refetchHistory()} 
+                          variant="outline" 
+                          size="sm"
+                        >
+                          <RefreshCw className="h-4 w-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Refresh</span>
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

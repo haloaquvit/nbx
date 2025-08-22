@@ -21,10 +21,10 @@ import { showSuccess, showError } from "@/utils/toast"
 import { isOwner } from '@/utils/roleUtils'
 
 export function ReceivablesTable() {
-  const { transactions, isLoading, writeOffReceivable } = useTransactions()
+  const { transactions, isLoading, deleteReceivable } = useTransactions()
   const { user } = useAuthContext()
   const [isPayDialogOpen, setIsPayDialogOpen] = React.useState(false)
-  const [isWriteOffDialogOpen, setIsWriteOffDialogOpen] = React.useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false)
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null)
   const [expandedRows, setExpandedRows] = React.useState<Set<string>>(new Set())
   const [filterStatus, setFilterStatus] = React.useState<string>('all')
@@ -71,9 +71,9 @@ export function ReceivablesTable() {
     setIsPayDialogOpen(true)
   }
 
-  const handleWriteOffClick = (transaction: Transaction) => {
+  const handleDeleteClick = (transaction: Transaction) => {
     setSelectedTransaction(transaction)
-    setIsWriteOffDialogOpen(true)
+    setIsDeleteDialogOpen(true)
   }
 
   const toggleRowExpansion = (transactionId: string) => {
@@ -86,17 +86,17 @@ export function ReceivablesTable() {
     setExpandedRows(newExpanded)
   }
 
-  const handleConfirmWriteOff = async () => {
+  const handleConfirmDelete = async () => {
     if (!selectedTransaction) return
 
     try {
-      await writeOffReceivable.mutateAsync(selectedTransaction)
-      showSuccess(`Piutang untuk No. Order ${selectedTransaction.id} berhasil diputihkan.`)
+      await deleteReceivable.mutateAsync(selectedTransaction.id)
+      showSuccess(`Piutang untuk No. Order ${selectedTransaction.id} berhasil dihapus.`)
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Gagal memutihkan piutang."
+      const errorMessage = error instanceof Error ? error.message : "Gagal menghapus piutang."
       showError(errorMessage)
     } finally {
-      setIsWriteOffDialogOpen(false)
+      setIsDeleteDialogOpen(false)
       setSelectedTransaction(null)
     }
   }
@@ -296,12 +296,12 @@ export function ReceivablesTable() {
             <DropdownMenuItem onClick={() => handlePayClick(row.original)}>
               Bayar
             </DropdownMenuItem>
-            {isOwner(user) && (
+            {(user?.role === 'admin' || user?.role === 'owner') && (
               <DropdownMenuItem
-                className="text-orange-600 focus:text-orange-600 focus:bg-orange-50"
-                onClick={() => handleWriteOffClick(row.original)}
+                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                onClick={() => handleDeleteClick(row.original)}
               >
-                Putihkan Piutang
+                Hapus Piutang
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -382,23 +382,23 @@ export function ReceivablesTable() {
       </div>
 
       <PayReceivableDialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen} transaction={selectedTransaction} />
-      <AlertDialog open={isWriteOffDialogOpen} onOpenChange={setIsWriteOffDialogOpen}>
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Anda yakin ingin memutihkan piutang ini?</AlertDialogTitle>
+            <AlertDialogTitle>Anda yakin ingin menghapus piutang ini?</AlertDialogTitle>
             <AlertDialogDescription>
-              Tindakan ini akan menghapus sisa tagihan untuk <strong>No. Order {selectedTransaction?.id}</strong> sebesar <strong>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(selectedTransaction ? selectedTransaction.total - (selectedTransaction.paidAmount || 0) : 0)}</strong>.
+              Tindakan ini akan menghapus piutang untuk <strong>No. Order {selectedTransaction?.id}</strong> sebesar <strong>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(selectedTransaction ? selectedTransaction.total - (selectedTransaction.paidAmount || 0) : 0)}</strong>.
               <br /><br />
-              Sebuah catatan pengeluaran akan dibuat secara otomatis untuk menyeimbangkan pembukuan. Tindakan ini tidak dapat dibatalkan.
+              <span className="text-red-600 font-medium">Tindakan ini tidak dapat dibatalkan.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Batal</AlertDialogCancel>
             <AlertDialogAction
-              onClick={handleConfirmWriteOff}
-              className="bg-orange-600 hover:bg-orange-700"
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700"
             >
-              Ya, Putihkan
+              Ya, Hapus
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

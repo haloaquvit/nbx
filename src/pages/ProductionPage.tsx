@@ -8,16 +8,20 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { useProduction } from "@/hooks/useProduction"
 import { useProducts } from "@/hooks/useProducts"
+import { useMaterials } from "@/hooks/useMaterials"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
 import { BOMItem } from "@/types/production"
 import { format } from 'date-fns'
 import { validateProductForProduction } from "@/utils/productValidation"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
+import { Trash2, Package, AlertTriangle } from "lucide-react"
 
 export default function ProductionPage() {
   const { user } = useAuth()
   const { products, isLoading: isLoadingProducts } = useProducts()
-  const { productions, isLoading, getBOM, processProduction } = useProduction()
+  const { materials, isLoading: isLoadingMaterials } = useMaterials()
+  const { productions, isLoading, getBOM, processProduction, processError, deleteProduction } = useProduction()
   const { toast } = useToast()
   
   const [selectedProductId, setSelectedProductId] = useState<string>("")
@@ -25,6 +29,11 @@ export default function ProductionPage() {
   const [consumeBOM, setConsumeBOM] = useState<boolean>(true)
   const [note, setNote] = useState<string>("")
   const [bom, setBom] = useState<BOMItem[]>([])
+  
+  // Error input states
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>("")
+  const [errorQuantity, setErrorQuantity] = useState<number>(1)
+  const [errorNote, setErrorNote] = useState<string>("")
 
   // Filter only Produksi type products (finished goods)
   const finishedGoods = useMemo(() => 
@@ -98,6 +107,43 @@ export default function ProductionPage() {
       setQuantity(1)
       setNote("")
     }
+  }
+
+  const handleError = async () => {
+    if (!selectedMaterialId || errorQuantity <= 0 || !user) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Lengkapi data bahan rusak"
+      })
+      return
+    }
+
+    const success = await processError({
+      materialId: selectedMaterialId,
+      quantity: errorQuantity,
+      note: errorNote || undefined,
+      createdBy: user.id
+    })
+
+    if (success) {
+      setSelectedMaterialId("")
+      setErrorQuantity(1)
+      setErrorNote("")
+    }
+  }
+
+  const handleDeleteProduction = async (recordId: string) => {
+    if (!user || !['owner', 'admin'].includes(user.role || '')) {
+      toast({
+        variant: "destructive",
+        title: "Access Denied",
+        description: "Hanya owner dan admin yang bisa menghapus data produksi"
+      })
+      return
+    }
+
+    await deleteProduction(recordId)
   }
 
   if (isLoadingProducts) {
@@ -220,6 +266,71 @@ export default function ProductionPage() {
         )}
       </section>
 
+      {/* Error Input Section */}
+      <section className="bg-white border border-slate-200 rounded-xl p-4 mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <AlertTriangle className="h-5 w-5 text-red-500" />
+          <div className="text-lg font-semibold text-red-600">Input Bahan Rusak</div>
+        </div>
+        <div className="text-sm text-slate-600 mb-4">
+          Input bahan yang rusak/cacat dalam produksi. Stock akan berkurang dan tercatat di riwayat produksi.
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-3">
+          <div>
+            <div className="text-xs text-slate-600 mb-1">Nama Bahan *</div>
+            <Select value={selectedMaterialId} onValueChange={setSelectedMaterialId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih bahan..." />
+              </SelectTrigger>
+              <SelectContent>
+                {materials?.length === 0 ? (
+                  <SelectItem value="no-materials" disabled>Tidak ada bahan tersedia</SelectItem>
+                ) : (
+                  materials?.map((material) => (
+                    <SelectItem key={material.id} value={material.id}>
+                      {material.name} (Stock: {material.stock} {material.unit})
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <div className="text-xs text-slate-600 mb-1">Jumlah Bahan Rusak *</div>
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={errorQuantity}
+              onChange={(e) => setErrorQuantity(Number(e.target.value || 0))}
+              placeholder="0"
+              min="1"
+            />
+          </div>
+          <div>
+            <div className="text-xs text-slate-600 mb-1">Catatan Kerusakan</div>
+            <Input 
+              value={errorNote} 
+              onChange={(e) => setErrorNote(e.target.value)} 
+              placeholder="Deskripsi kerusakan/cacat" 
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex justify-between items-center">
+          <div className="text-xs text-slate-500">
+            Tanggal input: {format(new Date(), 'dd/MM/yyyy HH:mm')} | Yang mencatat: {user?.name || 'Unknown'}
+          </div>
+          <Button 
+            className="bg-red-600 hover:bg-red-700 text-white" 
+            onClick={handleError}
+            disabled={isLoading || !selectedMaterialId || errorQuantity <= 0}
+          >
+            {isLoading ? "Processing..." : "Catat Bahan Rusak"}
+          </Button>
+        </div>
+      </section>
+
       <section className="bg-white border border-slate-200 rounded-xl">
         <div className="px-4 py-3 font-medium">Riwayat Produksi Terakhir</div>
         <div className="overflow-x-auto">
@@ -232,6 +343,9 @@ export default function ProductionPage() {
                 <th className="text-left px-3 py-2">Qty</th>
                 <th className="text-left px-3 py-2">BOM</th>
                 <th className="text-left px-3 py-2">Catatan</th>
+                {user && ['owner', 'admin'].includes(user.role || '') && (
+                  <th className="text-left px-3 py-2">Action</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -257,11 +371,44 @@ export default function ProductionPage() {
                   <td className="px-3 py-2 text-gray-600">
                     {record.note || '-'}
                   </td>
+                  {user && ['owner', 'admin'].includes(user.role || '') && (
+                    <td className="px-3 py-2">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Hapus Data Produksi?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Data produksi <strong>{record.ref}</strong> akan dihapus dan stock bahan akan dikembalikan. 
+                              Tindakan ini tidak dapat dibatalkan.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Batal</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={() => handleDeleteProduction(record.id)}
+                              className="bg-red-600 hover:bg-red-700"
+                            >
+                              Hapus
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </td>
+                  )}
                 </tr>
               ))}
               {productions.length === 0 && (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
+                  <td className="px-3 py-6 text-center text-slate-500" colSpan={user && ['owner', 'admin'].includes(user.role || '') ? 7 : 6}>
                     {isLoading ? 'Loading...' : 'Belum ada produksi'}
                   </td>
                 </tr>

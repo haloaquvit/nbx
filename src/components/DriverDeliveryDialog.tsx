@@ -43,8 +43,6 @@ export function DriverDeliveryDialog({
 
   const [driverId, setDriverId] = useState("")
   const [helperId, setHelperId] = useState("")
-  const [truckNumber, setTruckNumber] = useState("")
-  const [deliveryAddress, setDeliveryAddress] = useState("")
   const [notes, setNotes] = useState("")
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -73,15 +71,6 @@ export function DriverDeliveryDialog({
         variant: "destructive",
         title: "Error",
         description: "Pilih supir terlebih dahulu"
-      })
-      return
-    }
-
-    if (!deliveryAddress.trim()) {
-      toast({
-        variant: "destructive", 
-        title: "Error",
-        description: "Alamat pengantaran harus diisi"
       })
       return
     }
@@ -236,31 +225,6 @@ export function DriverDeliveryDialog({
               </Select>
             </div>
 
-            <div>
-              <Label className="flex items-center gap-2">
-                <Truck className="h-4 w-4" />
-                Nomor Kendaraan
-              </Label>
-              <Input
-                value={truckNumber}
-                onChange={(e) => setTruckNumber(e.target.value)}
-                placeholder="Contoh: B 1234 ABC"
-              />
-            </div>
-          </div>
-
-          {/* Delivery Address */}
-          <div>
-            <Label className="flex items-center gap-2">
-              <MapPin className="h-4 w-4" />
-              Alamat Pengantaran *
-            </Label>
-            <Textarea
-              value={deliveryAddress}
-              onChange={(e) => setDeliveryAddress(e.target.value)}
-              placeholder="Masukkan alamat lengkap pengantaran..."
-              rows={2}
-            />
           </div>
 
           {/* Items to Deliver */}
@@ -339,7 +303,7 @@ export function DriverDeliveryDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || !driverId || !deliveryAddress.trim()}
+            disabled={isSubmitting || !driverId}
             className="bg-green-600 hover:bg-green-700"
           >
             <Check className="h-4 w-4 mr-2" />

@@ -80,18 +80,24 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
       // Update account balance (increase cash)
       await updateAccountBalance.mutateAsync({ accountId: data.paymentAccountId, amount: data.amount });
 
+      // Get account name for cash_history record
+      const { data: accountData } = await supabase
+        .from('accounts')
+        .select('name')
+        .eq('id', data.paymentAccountId)
+        .single();
+
       // Record payment in cash_history table (proper way to track cash flow)
       const paymentRecord = {
         account_id: data.paymentAccountId,
-        type: 'pemutihan_piutang', // Use existing type instead of source_type
-        transaction_type: 'income', // Pembayaran piutang adalah income
-        amount: data.amount, // Jumlah positif karena cash bertambah
+        account_name: accountData?.name || 'Unknown Account',
+        type: 'pemutihan_piutang',
+        amount: data.amount,
         description: `Pembayaran piutang dari ${transaction.customerName} - Order: ${transaction.id}${data.notes ? ' | ' + data.notes : ''}`,
-        reference_number: transaction.id,
         reference_id: transaction.id,
-        source_type: 'pemutihan_piutang',
-        created_by: user.id,
-        created_by_name: user.name || user.email || 'Unknown User'
+        reference_name: `Piutang ${transaction.id}`,
+        user_id: user.id,
+        user_name: user.name || user.email || 'Unknown User'
       };
 
       // Try to insert payment record to cash_history if table exists
@@ -105,7 +111,9 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         }
       } catch (historyError: any) {
         // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
-        if (historyError.code === 'PGRST116' || historyError.message.includes('does not exist') || historyError.message.includes('violates check constraint')) {
+        if (historyError.code === 'PGRST116' || historyError.code === '42P01' || historyError.code === 'PGRST205' || 
+            historyError.code === '23502' || historyError.message.includes('does not exist') || 
+            historyError.message.includes('violates check constraint') || historyError.message.includes('violates not-null constraint')) {
           console.warn('cash_history table issue, payment completed without history tracking:', historyError.message);
         } else {
           throw historyError;

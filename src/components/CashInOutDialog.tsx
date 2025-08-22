@@ -75,22 +75,25 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
           .from('cash_history')
           .insert({
             account_id: data.accountId,
-            transaction_type: type === "in" ? "income" : "expense",
+            account_name: selectedAccount.name,
+            type: type === "in" ? "kas_masuk_manual" : "kas_keluar_manual",
             amount: data.amount,
             description: data.description,
-            reference_number: `MANUAL-${Date.now()}`,
-            source_type: type === "in" ? "kas_masuk_manual" : "kas_keluar_manual",
-            created_by: user.id,
-            created_by_name: user.name || user.email || "Unknown User"
+            reference_id: `MANUAL-${Date.now()}`,
+            reference_name: `Manual ${type === "in" ? "Kas Masuk" : "Kas Keluar"} ${Date.now()}`,
+            user_id: user.id,
+            user_name: user.name || user.email || "Unknown User"
           })
 
         if (cashHistoryError && !cashHistoryError.message.includes('does not exist') && cashHistoryError.code !== 'PGRST116') {
           throw new Error(`Failed to record cash transaction: ${cashHistoryError.message}`)
         }
       } catch (historyError: any) {
-        // If cash_history table doesn't exist, just log a warning but continue
-        if (historyError.code === 'PGRST116' || historyError.message.includes('does not exist')) {
-          console.warn('cash_history table does not exist, cash transaction completed without history tracking');
+        // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
+        if (historyError.code === 'PGRST116' || historyError.code === '42P01' || historyError.code === 'PGRST205' || 
+            historyError.code === '23502' || historyError.message.includes('does not exist') || 
+            historyError.message.includes('violates check constraint') || historyError.message.includes('violates not-null constraint')) {
+          console.warn('cash_history table issue, cash transaction completed without history tracking:', historyError.message);
         } else {
           throw historyError;
         }

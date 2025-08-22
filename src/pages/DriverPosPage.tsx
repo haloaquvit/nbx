@@ -109,6 +109,8 @@ export default function DriverPosPage() {
 
   // Form state
   const [selectedCustomer, setSelectedCustomer] = useState("")
+  const [selectedProduct, setSelectedProduct] = useState("")
+  const [quantity, setQuantity] = useState("1")
   const [items, setItems] = useState<TransactionItem[]>([])
   const [notes, setNotes] = useState("")
   const [paymentAccount, setPaymentAccount] = useState("")
@@ -122,17 +124,13 @@ export default function DriverPosPage() {
   // Loading state
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Product selection
-  const [selectedProduct, setSelectedProduct] = useState("")
-  const [quantity, setQuantity] = useState(1)
-  const [itemNotes, setItemNotes] = useState("")
-
   const selectedProductData = products?.find(p => p.id === selectedProduct)
   const selectedCustomerData = customers?.find(c => c.id === selectedCustomer)
-
-  // Calculate totals
+  
+  // Calculate totals from items
+  const quantityNum = parseInt(quantity) || 0
   const subtotal = items.reduce((sum, item) => sum + (item.product.basePrice * item.quantity), 0)
-  const total = subtotal // No PPN for driver POS
+  const total = subtotal
 
   const addItem = () => {
     if (!selectedProductData) {
@@ -144,7 +142,7 @@ export default function DriverPosPage() {
       return
     }
 
-    if (quantity <= 0) {
+    if (quantityNum <= 0) {
       toast({
         variant: "destructive",
         title: "Error", 
@@ -155,7 +153,7 @@ export default function DriverPosPage() {
 
     // Check stock availability
     const currentStock = selectedProductData.currentStock || 0
-    if (quantity > currentStock) {
+    if (quantityNum > currentStock) {
       toast({
         variant: "destructive",
         title: "Stock Tidak Cukup",
@@ -171,23 +169,23 @@ export default function DriverPosPage() {
       product: selectedProductData,
       width: 0,
       height: 0,
-      quantity,
-      notes: itemNotes,
+      quantity: quantityNum,
+      notes: "",
       price,
       unit
     }
 
     setItems([...items, newItem])
     
-    // Reset form
+    // Reset product selection
     setSelectedProduct("")
-    setQuantity(1)
-    setItemNotes("")
+    setQuantity("1")
   }
 
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index))
   }
+
 
   const handleSubmit = async () => {
     if (!selectedCustomerData) {
@@ -203,7 +201,7 @@ export default function DriverPosPage() {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Tambahkan minimal satu item"
+        description: "Tambahkan minimal satu produk"
       })
       return
     }
@@ -217,19 +215,29 @@ export default function DriverPosPage() {
       return
     }
 
+    // Validate payment account when there's a payment
+    if (paidAmount > 0 && (!paymentAccount || paymentAccount === "")) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Pilih akun pembayaran ketika ada pembayaran"
+      })
+      return
+    }
+
     setIsSubmitting(true)
     
     try {
       const transactionId = `TXN-${Date.now()}`
       const orderDate = new Date()
-
+      
       const newTransaction: Omit<Transaction, 'createdAt'> = {
         id: transactionId,
         customerId: selectedCustomerData.id,
         customerName: selectedCustomerData.name,
         cashierId: user.id,
         cashierName: user.name || user.email || 'Driver POS',
-        paymentAccountId: paymentAccount && paymentAccount !== "no-payment" ? paymentAccount : undefined,
+        paymentAccountId: paidAmount > 0 && paymentAccount ? paymentAccount : undefined,
         orderDate,
         items,
         subtotal: total,
@@ -253,6 +261,8 @@ export default function DriverPosPage() {
       
       // Clear form
       setSelectedCustomer("")
+      setSelectedProduct("")
+      setQuantity("1")
       setItems([])
       setNotes("")
       setPaymentAccount("")
@@ -378,7 +388,7 @@ export default function DriverPosPage() {
           </CardContent>
         </Card>
 
-        {/* Product Addition */}
+        {/* Product Selection */}
         <Card>
           <CardHeader className="py-4 px-6">
             <CardTitle className="flex items-center gap-3 text-xl">
@@ -441,11 +451,19 @@ export default function DriverPosPage() {
               <div>
                 <Label className="text-base font-medium">Jumlah</Label>
                 <Input
-                  type="number"
                   value={quantity}
-                  onChange={(e) => setQuantity(parseInt(e.target.value) || 1)}
-                  min="1"
-                  max={selectedProductData?.currentStock || 999}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^0-9]/g, '')
+                    if (value === '') {
+                      setQuantity('')
+                    } else {
+                      const num = parseInt(value)
+                      if (num > 0 && num <= (selectedProductData?.currentStock || 999)) {
+                        setQuantity(value)
+                      }
+                    }
+                  }}
+                  placeholder="Masukkan jumlah"
                   className="h-12 text-base"
                 />
               </div>
@@ -457,16 +475,6 @@ export default function DriverPosPage() {
                   className="bg-gray-100 h-12 text-base"
                 />
               </div>
-            </div>
-
-            <div>
-              <Label className="text-base font-medium">Catatan Item</Label>
-              <Input
-                value={itemNotes}
-                onChange={(e) => setItemNotes(e.target.value)}
-                placeholder="Catatan untuk item ini..."
-                className="h-12 text-base"
-              />
             </div>
 
             {/* Product Info */}
@@ -483,16 +491,37 @@ export default function DriverPosPage() {
                     Stock: {selectedProductData.currentStock || 0} {selectedProductData.unit || 'pcs'}
                   </span>
                 </div>
+                {quantityNum > 0 && (
+                  <div className="bg-white p-3 rounded mt-3 border">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium">Harga Item:</span>
+                      <span className="text-lg font-bold text-green-600">
+                        {new Intl.NumberFormat("id-ID", {
+                          style: "currency",
+                          currency: "IDR",
+                          minimumFractionDigits: 0
+                        }).format(selectedProductData.basePrice * quantityNum)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {quantityNum} {selectedProductData.unit} × {new Intl.NumberFormat("id-ID", {
+                        style: "currency",
+                        currency: "IDR",
+                        minimumFractionDigits: 0
+                      }).format(selectedProductData.basePrice)}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
-
+            
             <Button 
               onClick={addItem} 
               className="w-full h-14 text-lg font-medium"
-              disabled={!selectedProduct || (selectedProductData?.currentStock || 0) === 0}
+              disabled={!selectedProduct || quantityNum <= 0 || (selectedProductData?.currentStock || 0) === 0}
             >
               <Plus className="h-5 w-5 mr-3" />
-              {(selectedProductData?.currentStock || 0) === 0 ? 'Stock Kosong' : 'Tambah ke Keranjang'}
+              {(selectedProductData?.currentStock || 0) === 0 ? 'Stock Kosong' : 'Tambah Produk'}
             </Button>
           </CardContent>
         </Card>
@@ -503,7 +532,7 @@ export default function DriverPosPage() {
             <CardHeader className="py-4 px-6">
               <CardTitle className="flex items-center gap-3 text-xl">
                 <ShoppingCart className="h-5 w-5" />
-                Keranjang ({items.length} item)
+                Daftar Produk ({items.length} item)
               </CardTitle>
             </CardHeader>
             <CardContent className="px-6 pb-6 space-y-4">
@@ -550,13 +579,14 @@ export default function DriverPosPage() {
             </CardHeader>
             <CardContent className="px-6 pb-6 space-y-4">
               <div>
-                <Label className="text-base font-medium">Akun Pembayaran (Opsional)</Label>
+                <Label className="text-base font-medium">
+                  Akun Pembayaran {paidAmount > 0 ? '*' : '(Kosongkan jika kredit)'}
+                </Label>
                 <Select value={paymentAccount} onValueChange={setPaymentAccount}>
                   <SelectTrigger className="h-12 text-base">
-                    <SelectValue placeholder="Pilih akun atau kosongkan jika kredit" />
+                    <SelectValue placeholder={paidAmount > 0 ? "Pilih akun pembayaran" : "Kosongkan jika kredit"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="no-payment">Tanpa Pembayaran (Kredit)</SelectItem>
                     {accounts?.map((account) => (
                       <SelectItem key={account.id} value={account.id}>
                         {account.name} - {new Intl.NumberFormat("id-ID", {
@@ -612,19 +642,19 @@ export default function DriverPosPage() {
                     }).format(Math.max(0, total - paidAmount))}
                   </span>
                 </div>
-                {total - paidAmount > 0 && (
-                  <Badge variant="secondary" className="w-full justify-center">
-                    Status: Kredit
+                <div className="flex justify-center">
+                  <Badge variant={paidAmount === 0 ? "secondary" : total - paidAmount > 0 ? "secondary" : "default"} className="w-full justify-center">
+                    Status: {paidAmount === 0 ? 'Piutang' : paidAmount >= total ? 'Lunas' : 'Kredit'}
                   </Badge>
-                )}
+                </div>
               </div>
 
               <div>
-                <Label className="text-base font-medium">Catatan Transaksi</Label>
+                <Label className="text-base font-medium">Catatan</Label>
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Catatan tambahan..."
+                  placeholder="Catatan untuk pesanan ini..."
                   rows={3}
                   className="text-base"
                 />
@@ -638,7 +668,7 @@ export default function DriverPosPage() {
           <Button 
             onClick={handleSubmit} 
             className="w-full h-16 text-xl font-bold bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 shadow-lg"
-            disabled={isSubmitting || !selectedCustomer}
+            disabled={isSubmitting || !selectedCustomer || items.length === 0}
           >
             <Truck className="h-6 w-6 mr-3" />
             {isSubmitting ? "Memproses..." : "Simpan & Antar"}

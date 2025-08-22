@@ -30,6 +30,7 @@ import {
   TrendingUp,
   Factory,
   Truck,
+  Calculator,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState } from "react";
@@ -86,6 +87,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/receivables", label: "Piutang", icon: ReceiptText, permission: PERMISSIONS.FINANCIAL },
       { href: "/expenses", label: "Pengeluaran", icon: FileText, permission: PERMISSIONS.FINANCIAL },
       { href: "/advances", label: "Panjar Karyawan", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
+      { href: "/commission-manage", label: "Pengaturan Komisi", icon: Calculator, permission: PERMISSIONS.FINANCIAL },
     ].filter(item => hasPermission(item.permission)),
   },
   {
@@ -95,6 +97,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/material-movements", label: "Pergerakan Penggunaan Bahan", icon: Package2, permission: PERMISSIONS.REPORTS },
       { href: "/transaction-items-report", label: "Laporan Item Keluar", icon: PackageOpen, permission: PERMISSIONS.REPORTS },
       { href: "/attendance/report", label: "Laporan Absensi", icon: BookCheck, permission: PERMISSIONS.REPORTS },
+      { href: "/commission-report", label: "Laporan Komisi", icon: Calculator, permission: PERMISSIONS.REPORTS },
     ].filter(item => hasPermission(item.permission)),
   },
   {
