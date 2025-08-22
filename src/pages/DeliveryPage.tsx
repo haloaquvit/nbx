@@ -141,41 +141,6 @@ export default function DeliveryPage() {
 
         <TabsContent value="active" className="space-y-6">
           <div className="grid gap-6">
-        {/* Quick Actions */}
-        <Card className="bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-green-800">Aksi Cepat Pengantaran</h3>
-                <p className="text-sm text-green-600">Buat pengantaran baru atau kelola pengantaran yang ada</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="text-right text-sm text-muted-foreground">
-                  <div>{filteredTransactions.length} transaksi siap antar</div>
-                  <div className="text-xs">{transactions?.reduce((sum, t) => sum + t.deliverySummary.reduce((itemSum, item) => itemSum + item.remainingQuantity, 0), 0) || 0} item menunggu</div>
-                </div>
-                <Button 
-                  onClick={() => {
-                    if (filteredTransactions.length > 0) {
-                      setSelectedTransaction(filteredTransactions[0])
-                    } else {
-                      toast({
-                        variant: "destructive",
-                        title: "Tidak Ada Transaksi",
-                        description: "Tidak ada transaksi yang siap untuk diantar."
-                      })
-                    }
-                  }}
-                  className="bg-green-600 hover:bg-green-700 text-white"
-                  disabled={filteredTransactions.length === 0}
-                >
-                  <Truck className="h-4 w-4 mr-2" />
-                  Mulai Pengantaran
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Search and Filters */}
         <Card>
@@ -203,26 +168,7 @@ export default function DeliveryPage() {
         {/* Transactions Table */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Daftar Pengantaran</span>
-              <Button 
-                onClick={() => {
-                  if (filteredTransactions.length > 0) {
-                    setSelectedTransaction(filteredTransactions[0])
-                  } else {
-                    toast({
-                      variant: "destructive",
-                      title: "Tidak Ada Transaksi",
-                      description: "Tidak ada transaksi yang siap untuk diantar."
-                    })
-                  }
-                }}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Tambah Pengantaran
-              </Button>
-            </CardTitle>
+            <CardTitle>Daftar Pengantaran</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
