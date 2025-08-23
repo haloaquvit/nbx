@@ -3,14 +3,16 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 
 const MobileLayout = () => {
   const { user, logout } = useAuth()
+  const { settings } = useCompanySettings()
   const navigate = useNavigate()
   const location = useLocation()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -74,11 +76,18 @@ const MobileLayout = () => {
             <Button variant="ghost" size="icon" onClick={toggleSidebar}>
               {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900 dark:text-white">MDI POS</h1>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                {format(new Date(), "eeee, d MMM yyyy", { locale: id })}
-              </p>
+            <div className="flex items-center space-x-2">
+              {settings?.logo ? (
+                <img src={settings.logo} alt="Company Logo" className="h-6 w-6 object-contain" />
+              ) : (
+                <Package className="h-6 w-6 text-primary" />
+              )}
+              <div>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-white">{settings?.name || 'Aquvit POS'}</h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {format(new Date(), "eeee, d MMM yyyy", { locale: id })}
+                </p>
+              </div>
             </div>
           </div>
           

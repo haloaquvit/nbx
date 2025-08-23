@@ -79,7 +79,11 @@ export function Header() {
 
         {/* Logo */}
         <div className="flex items-center gap-2 mr-4 md:mr-8 flex-shrink-0">
-          <Package className="h-6 w-6 text-primary" />
+          {settings?.logo ? (
+            <img src={settings.logo} alt="Company Logo" className="h-6 w-6 object-contain" />
+          ) : (
+            <Package className="h-6 w-6 text-primary" />
+          )}
           <span className="font-semibold text-sm md:text-base truncate">{settings?.name || 'Aquvit POS'}</span>
         </div>
 

@@ -99,6 +99,43 @@ export const MobilePosForm = () => {
     setItems(newItems);
   };
 
+  const handleNumberInputChange = (index: number, field: 'qty' | 'harga', e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Allow empty string to enable complete deletion
+    if (value === '') {
+      handleItemChange(index, field, 0);
+    } else {
+      const numValue = Number(value);
+      if (!isNaN(numValue) && numValue >= 0) {
+        handleItemChange(index, field, numValue);
+      }
+    }
+  };
+
+  const handleDiskonChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value === '') {
+      setDiskon(0);
+    } else {
+      const numValue = Number(value);
+      if (!isNaN(numValue) && numValue >= 0) {
+        setDiskon(numValue);
+      }
+    }
+  };
+
+  const handlePaidAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value === '') {
+      setPaidAmount(0);
+    } else {
+      const numValue = Number(value);
+      if (!isNaN(numValue) && numValue >= 0) {
+        setPaidAmount(numValue);
+      }
+    }
+  };
+
   const handleRemoveItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index));
   };
@@ -322,8 +359,11 @@ export const MobilePosForm = () => {
                             <Label className="text-sm">Qty</Label>
                             <Input 
                               type="number" 
-                              value={item.qty} 
-                              onChange={(e) => handleItemChange(index, 'qty', Number(e.target.value))} 
+                              value={item.qty || ''} 
+                              onChange={(e) => handleNumberInputChange(index, 'qty', e)} 
+                              placeholder="0"
+                              min="0"
+                              step="1"
                             />
                           </div>
                           <div>
@@ -340,8 +380,11 @@ export const MobilePosForm = () => {
                           <Label className="text-sm">Harga Satuan</Label>
                           <Input 
                             type="number" 
-                            value={item.harga} 
-                            onChange={(e) => handleItemChange(index, 'harga', Number(e.target.value))} 
+                            value={item.harga || ''} 
+                            onChange={(e) => handleNumberInputChange(index, 'harga', e)} 
+                            placeholder="0"
+                            min="0"
+                            step="1"
                           />
                         </div>
 
@@ -437,9 +480,11 @@ export const MobilePosForm = () => {
                       <Input 
                         id="diskon" 
                         type="number" 
-                        value={diskon} 
-                        onChange={e => setDiskon(Number(e.target.value))} 
+                        value={diskon || ''} 
+                        onChange={handleDiskonChange} 
                         placeholder="Misal: 50000"
+                        min="0"
+                        step="1"
                       />
                     </div>
 
@@ -474,9 +519,12 @@ export const MobilePosForm = () => {
                       <Input 
                         id="paidAmount" 
                         type="number" 
-                        value={paidAmount} 
-                        onChange={e => setPaidAmount(Number(e.target.value))} 
+                        value={paidAmount || ''} 
+                        onChange={handlePaidAmountChange} 
                         className="font-bold"
+                        placeholder="0"
+                        min="0"
+                        step="1"
                       />
                     </div>
 
