@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Package, User, MapPin, Check } from "lucide-react"
+import { Truck, Package, User, MapPin, Check, Camera, Image } from "lucide-react"
 import { Transaction } from "@/types/transaction"
 import { useDrivers, Driver } from "@/hooks/useDrivers"
 import { useDeliveries } from "@/hooks/useDeliveries"
@@ -45,6 +45,8 @@ export function DriverDeliveryDialog({
   const [helperId, setHelperId] = useState("")
   const [notes, setNotes] = useState("")
   const [itemQuantities, setItemQuantities] = useState<Record<string, number>>({})
+  const [deliveryPhoto, setDeliveryPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Initialize item quantities
@@ -68,12 +70,60 @@ export function DriverDeliveryDialog({
     }))
   }
 
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "File harus berupa gambar"
+        })
+        return
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          variant: "destructive", 
+          title: "Error",
+          description: "Ukuran file maksimal 5MB"
+        })
+        return
+      }
+
+      setDeliveryPhoto(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setPhotoPreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const removePhoto = () => {
+    setDeliveryPhoto(null)
+    setPhotoPreview(null)
+  }
+
   const handleSubmit = async () => {
     if (!driverId) {
       toast({
         variant: "destructive",
         title: "Error",
         description: "Pilih supir terlebih dahulu"
+      })
+      return
+    }
+
+    if (!deliveryPhoto) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Foto pengantaran wajib diambil"
       })
       return
     }
@@ -139,7 +189,8 @@ export function DriverDeliveryDialog({
         helperId: selectedHelper?.id || undefined,
         deliveryDate: new Date(),
         items: deliveryItems,
-        notes: notes.trim() || undefined
+        notes: notes.trim() || undefined,
+        photo: deliveryPhoto
       }
 
       await createDelivery.mutateAsync(deliveryRequest)
@@ -315,6 +366,74 @@ export function DriverDeliveryDialog({
               rows={2}
             />
           </div>
+
+          {/* Photo Upload */}
+          <div>
+            <Label className="flex items-center gap-2 mb-3">
+              <Camera className="h-4 w-4" />
+              Foto Pengantaran *
+            </Label>
+            
+            {!photoPreview ? (
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                <Camera className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+                <p className="text-sm text-gray-600 mb-4">Ambil foto bukti pengantaran</p>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                  id="photo-upload"
+                />
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  onClick={() => document.getElementById('photo-upload')?.click()}
+                  className="w-full"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Ambil Foto
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="relative">
+                  <img
+                    src={photoPreview}
+                    alt="Preview foto pengantaran"
+                    className="w-full h-48 object-cover rounded-lg border"
+                  />
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={removePhoto}
+                    className="absolute top-2 right-2"
+                  >
+                    ✕
+                  </Button>
+                </div>
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  onClick={() => document.getElementById('photo-upload')?.click()}
+                  className="w-full"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Ganti Foto
+                </Button>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoChange}
+                  className="hidden"
+                  id="photo-upload"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="gap-2">
@@ -327,7 +446,7 @@ export function DriverDeliveryDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || !driverId}
+            disabled={isSubmitting || !driverId || !deliveryPhoto}
             className="bg-green-600 hover:bg-green-700"
           >
             <Check className="h-4 w-4 mr-2" />
