@@ -24,8 +24,8 @@ import {
 
 export default function CommissionReportPage() {
   const { user } = useAuth()
-  const { entries, isLoading, fetchEntries } = useCommissionEntries()
-  const { users } = useUsers()
+  const { entries, isLoading, fetchEntries, error } = useCommissionEntries()
+  const { users, isLoading: usersLoading } = useUsers()
   
   // Date filters
   const [startDate, setStartDate] = useState(() => {
@@ -80,7 +80,7 @@ export default function CommissionReportPage() {
         const employee = users?.find(u => u.id === entry.userId)
         acc[entry.userId] = {
           userName: employee?.name || entry.userName,
-          role: entry.role,
+          role: employee?.role || entry.role,
           amount: 0,
           quantity: 0,
           count: 0
@@ -95,28 +95,40 @@ export default function CommissionReportPage() {
     return { total, quantity, byRole, byUser }
   }, [filteredEntries])
 
-  // Get unique users for filter
+  // Get users for filter - use all employees from profiles table
   const uniqueUsers = useMemo(() => {
+    // If we have users data, use it directly
+    if (users && users.length > 0) {
+      return users
+        .filter(user => user.name && user.name.trim() !== '')
+        .map(user => ({
+          id: user.id,
+          name: user.name, // useUsers already maps full_name to name
+          role: user.role
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
+    
+    // Fallback: get from entries if users not available
     const userIds = Array.from(new Set(entries.map(entry => entry.userId)))
     return userIds
       .map(userId => {
-        const employee = users?.find(u => u.id === userId)
         const entry = entries.find(e => e.userId === userId)
         return { 
           id: userId, 
-          name: employee?.name || entry?.userName || userId, 
+          name: entry?.userName || userId, 
           role: entry?.role 
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [entries, users])
+  }, [users, entries])
 
   const exportToPDF = () => {
     // TODO: Implement PDF export
     console.log("Export to PDF")
   }
 
-  if (isLoading) {
+  if (isLoading || usersLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-4 flex items-center justify-center">
         <Card className="max-w-md mx-auto">
@@ -125,6 +137,44 @@ export default function CommissionReportPage() {
             <p className="text-lg font-medium">Memuat laporan komisi...</p>
           </CardContent>
         </Card>
+      </div>
+    )
+  }
+
+  // Show error message if table doesn't exist
+  if (error && error.includes('Tabel komisi belum dibuat')) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 lg:p-8">
+        <div className="max-w-7xl mx-auto space-y-6">
+          <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+            <CardHeader className="py-6 px-6">
+              <CardTitle className="flex items-center gap-3 text-2xl font-bold">
+                <BarChart3 className="h-8 w-8" />
+                Laporan Komisi
+              </CardTitle>
+            </CardHeader>
+          </Card>
+
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="p-6">
+              <div className="text-center space-y-4">
+                <div className="text-orange-600 text-6xl">⚠️</div>
+                <h2 className="text-xl font-bold text-orange-800">Tabel Komisi Belum Dibuat</h2>
+                <p className="text-orange-700">
+                  Sistem komisi belum diaktifkan. Tabel database belum dibuat.
+                </p>
+                <div className="bg-white p-4 rounded-lg border border-orange-200">
+                  <p className="text-sm text-gray-600 mb-2">
+                    Untuk mengaktifkan sistem komisi, jalankan migration berikut:
+                  </p>
+                  <code className="text-xs bg-gray-100 p-2 rounded block">
+                    supabase/migrations/0031_add_commission_tables.sql
+                  </code>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     )
   }
@@ -186,9 +236,9 @@ export default function CommissionReportPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua Karyawan</SelectItem>
-                    {uniqueUsers.map(user => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.name} ({user.role?.toUpperCase()})
+                    {uniqueUsers.map(userItem => (
+                      <SelectItem key={userItem.id} value={userItem.id}>
+                        {userItem.name} ({userItem.role?.toUpperCase()})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -335,7 +385,10 @@ export default function CommissionReportPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 font-medium">
-                        {users?.find(u => u.id === entry.userId)?.name || entry.userName}
+                        {(() => {
+                          const employee = users?.find(u => u.id === entry.userId)
+                          return employee?.name || entry.userName
+                        })()}
                       </td>
                       <td className="px-4 py-3">
                         <div>

@@ -132,11 +132,15 @@ export const useCashBalance = () => {
 
           // Determine if this is income or expense (exclude transfers)
           const isIncome = record.transaction_type === 'income' || 
-            (record.type && ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pemutihan_piutang'].includes(record.type));
+            (record.type && ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(record.type));
+            
+          // All other types should be considered expenses
+          const isExpense = record.transaction_type === 'expense' ||
+            (record.type && ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual'].includes(record.type));
 
           if (isIncome) {
             todayIncome += record.amount;
-          } else {
+          } else if (isExpense) {
             todayExpense += record.amount;
           }
 
@@ -145,7 +149,7 @@ export const useCashBalance = () => {
             const current = accountBalances.get(record.account_id);
             if (isIncome) {
               current.todayIncome += record.amount;
-            } else {
+            } else if (isExpense) {
               current.todayExpense += record.amount;
             }
             current.todayNet = current.todayIncome - current.todayExpense;

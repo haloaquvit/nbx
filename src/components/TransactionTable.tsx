@@ -9,7 +9,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit } from "lucide-react"
+import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -17,14 +17,6 @@ import { useNavigate } from "react-router-dom"
 
 import { Badge, badgeVariants } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,42 +50,6 @@ import { UserRole } from "@/types/user"
 import { EditTransactionDialog } from "./EditTransactionDialog"
 import { isOwner } from '@/utils/roleUtils'
 
-const statusOptions: TransactionStatus[] = [
-  'Pesanan Masuk',
-  'Diantar Sebagian',
-  'Selesai',
-  'Dibatalkan'
-];
-
-const getStatusVariant = (status: TransactionStatus) => {
-  switch (status) {
-    case 'Pesanan Masuk': return 'default';
-    case 'Diantar Sebagian': return 'secondary';
-    case 'Selesai': return 'success';
-    case 'Dibatalkan': return 'destructive';
-    default: return 'outline';
-  }
-}
-
-const getAvailableStatusOptions = (currentStatus: TransactionStatus, userRole: UserRole): TransactionStatus[] => {
-  // Simplified workflow - orders go directly from "Pesanan Masuk" to delivery
-  switch (currentStatus) {
-    case 'Pesanan Masuk':
-      return ['Pesanan Masuk', 'Dibatalkan']; // Can only cancel, delivery system auto-updates status
-      
-    case 'Diantar Sebagian':
-      return ['Diantar Sebagian']; // Auto-updated by delivery system
-    
-    case 'Selesai':
-      return ['Selesai']; // Cannot change from completed
-    
-    case 'Dibatalkan':
-      return ['Dibatalkan']; // Cannot change from canceled
-    
-    default:
-      return [currentStatus];
-  }
-};
 
 export function TransactionTable() {
   const { toast } = useToast();
@@ -101,70 +57,24 @@ export function TransactionTable() {
   const { user } = useAuth();
   
   // Filter state
-  const [statusFilter, setStatusFilter] = React.useState('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = React.useState('all');
   const [dateFrom, setDateFrom] = React.useState('');
   const [dateTo, setDateTo] = React.useState('');
   
   // Create filters object for useTransactions
   const filters = React.useMemo(() => ({
-    status: statusFilter !== 'all' ? statusFilter : undefined,
     payment_status: paymentStatusFilter !== 'all' ? paymentStatusFilter : undefined,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
-  }), [statusFilter, paymentStatusFilter, dateFrom, dateTo]);
+  }), [paymentStatusFilter, dateFrom, dateTo]);
   
-  const { transactions, isLoading, updateTransactionStatus, deductMaterials, deleteTransaction } = useTransactions(filters);
+  const { transactions, isLoading, deleteTransaction } = useTransactions(filters);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [transactionToEdit, setTransactionToEdit] = React.useState<Transaction | null>(null);
   
-  // State preservation for better UX when updating status
-  const [savedScrollPosition, setSavedScrollPosition] = React.useState(0);
-  const [savedTableState, setSavedTableState] = React.useState<{
-    pagination: any;
-    columnFilters: any;
-    sorting: any;
-  } | null>(null);
 
-  const handleStatusChange = (transactionId: string, newStatus: TransactionStatus) => {
-    // Save current state before making changes
-    setSavedScrollPosition(window.pageYOffset);
-    setSavedTableState({
-      pagination: table.getState().pagination,
-      columnFilters: table.getState().columnFilters,
-      sorting: table.getState().sorting,
-    });
-
-    // Simplified cancellation logic - no special warnings needed
-    // since we removed production status
-
-    // Proceed with normal status update
-    updateTransactionStatus.mutate({ transactionId, status: newStatus }, {
-      onSuccess: () => {
-        toast({
-          title: "Status Diperbarui",
-          description: `Status untuk pesanan ${transactionId} diubah menjadi "${newStatus}".`,
-        });
-        
-        // Restore table state after successful update
-        setTimeout(() => {
-          if (savedTableState) {
-            table.setPageIndex(savedTableState.pagination.pageIndex);
-            table.setColumnFilters(savedTableState.columnFilters);
-            table.setSorting(savedTableState.sorting);
-          }
-          window.scrollTo(0, savedScrollPosition);
-        }, 100);
-        
-        // Material deduction logic removed since 'Proses Produksi' status is removed
-      },
-      onError: (error) => {
-        toast({ variant: "destructive", title: "Gagal", description: error.message });
-      }
-    });
-  };
 
   // confirmCancelProduction function removed - no longer needed
 
@@ -192,6 +102,157 @@ export function TransactionTable() {
     }
   };
 
+  const generateDeliveryNote = (transaction: Transaction) => {
+    const doc = new jsPDF('p', 'mm', 'a4');
+    
+    // Header
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SURAT JALAN', 105, 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'normal');
+    doc.text('AQUVIT', 105, 30, { align: 'center' });
+    
+    // Line separator
+    doc.setLineWidth(0.5);
+    doc.line(20, 35, 190, 35);
+    
+    // Transaction info
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Informasi Pesanan:', 20, 50);
+    
+    doc.setFont('helvetica', 'normal');
+    doc.text(`No. Order: ${transaction.id}`, 20, 58);
+    doc.text(`Pelanggan: ${transaction.customerName}`, 20, 66);
+    doc.text(`Tanggal: ${format(new Date(transaction.orderDate), 'dd MMMM yyyy', { locale: id })}`, 20, 74);
+    doc.text(`Kasir: ${transaction.cashierName}`, 20, 82);
+    
+    // Calculate delivery summary for each item
+    const getDeliveryInfo = (productId: string) => {
+      // If transaction has deliveries, calculate delivered amount
+      if (transaction.deliveries && transaction.deliveries.length > 0) {
+        let totalDelivered = 0;
+        transaction.deliveries.forEach(delivery => {
+          const deliveredItem = delivery.items?.find(item => item.productId === productId);
+          if (deliveredItem) {
+            totalDelivered += deliveredItem.quantityDelivered || 0;
+          }
+        });
+        return totalDelivered;
+      }
+      return 0;
+    };
+    
+    // Items table with delivery info
+    const tableData = transaction.items.map((item, index) => {
+      const deliveredQty = getDeliveryInfo(item.product.id);
+      const remainingQty = item.quantity - deliveredQty;
+      
+      return [
+        (index + 1).toString(),
+        item.product.name,
+        `${item.quantity} ${item.unit}`,
+        `${deliveredQty} ${item.unit}`,
+        `${remainingQty} ${item.unit}`,
+        '___________'
+      ];
+    });
+    
+    autoTable(doc, {
+      startY: 95,
+      head: [['No', 'Produk', 'Pesan', 'Dikirim', 'Sisa', 'Diterima']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { 
+        fillColor: [71, 85, 105], 
+        textColor: [255, 255, 255],
+        fontSize: 12,
+        fontStyle: 'bold'
+      },
+      bodyStyles: {
+        fontSize: 11
+      },
+      columnStyles: {
+        0: { cellWidth: 15, halign: 'center' },
+        1: { cellWidth: 70 },
+        2: { cellWidth: 25, halign: 'center' },
+        3: { cellWidth: 25, halign: 'center' },
+        4: { cellWidth: 25, halign: 'center' },
+        5: { cellWidth: 30, halign: 'center' }
+      }
+    });
+    
+    // Notes section (show transaction notes if exists)
+    let currentY = (doc as any).lastAutoTable.finalY + 15;
+    
+    if (transaction.notes && transaction.notes.trim()) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Catatan:', 20, currentY);
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const notesLines = doc.splitTextToSize(transaction.notes, 150);
+      doc.text(notesLines, 20, currentY + 8);
+      
+      currentY += 8 + (notesLines.length * 5) + 10;
+    }
+    
+    // Individual item notes (if any item has notes)
+    const itemsWithNotes = transaction.items.filter(item => item.notes && item.notes.trim());
+    if (itemsWithNotes.length > 0) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Keterangan Item:', 20, currentY);
+      currentY += 8;
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      itemsWithNotes.forEach((item, index) => {
+        const text = `${index + 1}. ${item.product.name}: ${item.notes}`;
+        const textLines = doc.splitTextToSize(text, 150);
+        doc.text(textLines, 25, currentY);
+        currentY += textLines.length * 5 + 2;
+      });
+      currentY += 10;
+    }
+    
+    // Signature section
+    const finalY = currentY;
+    
+    doc.setFontSize(10);
+    doc.text('Yang Mengirim:', 30, finalY);
+    doc.text('Yang Menerima:', 130, finalY);
+    
+    // Signature boxes (smaller)
+    doc.rect(30, finalY + 5, 45, 18);
+    doc.rect(125, finalY + 5, 45, 18);
+    
+    doc.setFontSize(8);
+    doc.text('Nama:', 32, finalY + 28);
+    doc.text('Tanggal:', 32, finalY + 34);
+    doc.text('TTD:', 32, finalY + 40);
+    
+    doc.text('Nama:', 127, finalY + 28);
+    doc.text('Tanggal:', 127, finalY + 34);
+    doc.text('TTD:', 127, finalY + 40);
+    
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(128, 128, 128);
+    doc.text(`Dicetak pada: ${format(new Date(), 'dd MMMM yyyy HH:mm')}`, 105, 280, { align: 'center' });
+    
+    // Save PDF
+    doc.save(`surat-jalan-${transaction.id}.pdf`);
+    
+    toast({
+      title: "Surat Jalan Dicetak",
+      description: `Surat jalan untuk order ${transaction.id} berhasil dibuat`
+    });
+  };
+
   const columns: ColumnDef<Transaction>[] = [
     {
       accessorKey: "id",
@@ -201,6 +262,11 @@ export function TransactionTable() {
     {
       accessorKey: "customerName",
       header: "Pelanggan",
+      cell: ({ row }) => (
+        <div className="max-w-[150px] truncate font-medium" title={row.getValue("customerName")}>
+          {row.getValue("customerName")}
+        </div>
+      ),
     },
     {
       accessorKey: "orderDate",
@@ -209,29 +275,14 @@ export function TransactionTable() {
         const dateValue = row.getValue("orderDate");
         if (!dateValue) return "N/A";
         const date = new Date(dateValue as string | number | Date);
-        return format(date, "d MMM yyyy, HH:mm", { locale: id });
-      },
-    },
-    {
-      accessorKey: "cashierName",
-      header: "Kasir",
-    },
-    {
-      id: "products",
-      header: "Produk",
-      cell: ({ row }) => {
-        const transaction = row.original;
-        const productNames = transaction.items.map(item => item.product.name).join(", ");
         return (
-          <div className="max-w-[200px] truncate" title={productNames}>
-            {productNames}
+          <div className="min-w-[100px]">
+            <div className="font-medium">{format(date, "d MMM yyyy", { locale: id })}</div>
+            <div className="text-xs text-muted-foreground">
+              {format(date, "HH:mm")}
+            </div>
           </div>
         );
-      },
-      filterFn: (row, id, value) => {
-        const transaction = row.original;
-        const productNames = transaction.items.map(item => item.product.name.toLowerCase()).join(" ");
-        return productNames.includes(value.toLowerCase());
       },
     },
     {
@@ -318,63 +369,51 @@ export function TransactionTable() {
       },
     },
     {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => {
-        const transaction = row.original;
-        const availableOptions = user ? getAvailableStatusOptions(transaction.status, user.role) : [transaction.status];
-        
-        return (
-          <Select
-            value={transaction.status}
-            onValueChange={(value: TransactionStatus) => handleStatusChange(transaction.id, value)}
-            disabled={availableOptions.length <= 1 || updateTransactionStatus.isPending}
-          >
-            <SelectTrigger className={cn("w-[180px] border-0 focus:ring-0 focus:ring-offset-0", badgeVariants({ variant: getStatusVariant(transaction.status) }))}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {availableOptions.map(status => (
-                <SelectItem key={status} value={status}>{status}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )
-      },
-    },
-    {
       id: "actions",
+      header: "Aksi",
       cell: ({ row }) => {
         const transaction = row.original;
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button aria-haspopup="true" size="icon" variant="ghost" onClick={(e) => e.stopPropagation()}>
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">Toggle menu</span>
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => navigate(`/transactions/${transaction.id}`)}
+              title="Lihat Detail"
+              className="hover-glow"
+            >
+              <Eye className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleEditClick(transaction)}
+              title="Edit Transaksi"
+              className="hover-glow"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => generateDeliveryNote(transaction)}
+              title="Cetak Surat Jalan"
+              className="hover-glow"
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+            {isOwner(user) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => handleDeleteClick(transaction)}
+                title="Hapus Transaksi"
+                className="text-red-500 hover:text-red-700 hover-glow"
+              >
+                <Trash2 className="h-4 w-4" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuLabel>Aksi</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => navigate(`/transactions/${transaction.id}`)}>Lihat Detail</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleEditClick(transaction)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit Transaksi
-              </DropdownMenuItem>
-              {isOwner(user) && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-red-500 focus:text-red-500"
-                    onClick={() => handleDeleteClick(transaction)}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Hapus Transaksi
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            )}
+          </div>
         )
       },
     },
@@ -410,7 +449,6 @@ export function TransactionTable() {
       'Sisa': t.total - (t.paidAmount || 0),
       'Status Pembayaran': (t.paidAmount || 0) === 0 ? 'Belum Lunas' : 
                           (t.paidAmount || 0) >= t.total ? 'Lunas' : 'Sebagian',
-      'Status Order': t.status,
       'Status PPN': t.ppnEnabled ? (t.ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude') : 'Non PPN'
     }));
     
@@ -425,7 +463,6 @@ export function TransactionTable() {
       'Dibayar': paidSum,
       'Sisa': remainingSum,
       'Status Pembayaran': '',
-      'Status Order': '',
       'Status PPN': ''
     });
     
@@ -515,7 +552,6 @@ export function TransactionTable() {
             variant="ghost" 
             size="sm" 
             onClick={() => {
-              setStatusFilter('all');
               setPaymentStatusFilter('all');
               setDateFrom('');
               setDateTo('');
@@ -525,21 +561,7 @@ export function TransactionTable() {
             Reset Filter
           </Button>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Status Transaksi</label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                {statusOptions.map(status => (
-                  <SelectItem key={status} value={status}>{status}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="space-y-2">
             <label className="text-sm font-medium">Status Pembayaran</label>
             <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
@@ -560,7 +582,7 @@ export function TransactionTable() {
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className=""
+              className="input-glow"
             />
           </div>
           <div className="space-y-2">
@@ -569,11 +591,11 @@ export function TransactionTable() {
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className=""
+              className="input-glow"
             />
           </div>
         </div>
-        {(statusFilter !== 'all' || paymentStatusFilter !== 'all' || dateFrom || dateTo) && (
+        {(paymentStatusFilter !== 'all' || dateFrom || dateTo) && (
           <div className="text-sm text-muted-foreground">
             Menampilkan {transactions?.length || 0} transaksi yang difilter
           </div>
@@ -617,11 +639,11 @@ export function TransactionTable() {
           )}
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <Button variant="outline" onClick={handleExportExcel} className="text-xs sm:text-sm">
+          <Button variant="outline" onClick={handleExportExcel} className="text-xs sm:text-sm hover-glow">
             <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
             <span className="hidden sm:inline">Ekspor </span>Excel
           </Button>
-          <Button variant="outline" onClick={handleExportPdf} className="text-xs sm:text-sm">
+          <Button variant="outline" onClick={handleExportPdf} className="text-xs sm:text-sm hover-glow">
             <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
             <span className="hidden sm:inline">Ekspor </span>PDF
           </Button>
@@ -635,7 +657,7 @@ export function TransactionTable() {
       </div>
       <div className="rounded-md border overflow-hidden">
         <div className="overflow-x-auto">
-          <Table className="min-w-[1200px]">
+          <Table className="min-w-[800px]">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => (<TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>))}</TableRow>
@@ -649,7 +671,7 @@ export function TransactionTable() {
                 <TableRow
                   key={row.id}
                   onClick={() => navigate(`/transactions/${row.original.id}`)}
-                  className="cursor-pointer hover:bg-muted"
+                  className="cursor-pointer table-row-hover"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
@@ -664,8 +686,8 @@ export function TransactionTable() {
         </div>
       </div>
       <div className="flex items-center justify-end space-x-2 py-4">
-        <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>Previous</Button>
-        <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>Next</Button>
+        <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="hover-glow">Previous</Button>
+        <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="hover-glow">Next</Button>
       </div>
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>

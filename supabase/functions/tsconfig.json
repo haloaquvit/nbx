@@ -1,10 +1,17 @@
 {
   "compilerOptions": {
-    "lib": ["deno.ns", "esnext"],
+    "target": "esnext",
+    "lib": ["esnext", "webworker"],
+    "moduleResolution": "node",
+    "module": "esnext",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "allowJs": true,
+    "allowSyntheticDefaultImports": true,
+    "types": []
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules"]
 }

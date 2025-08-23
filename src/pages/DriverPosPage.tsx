@@ -25,7 +25,7 @@ export default function DriverPosPage() {
   const { user } = useAuth()
   const { customers } = useCustomers()
   const { products } = useProducts()
-  const { accounts } = useAccounts()
+  const { accounts, updateAccountBalance } = useAccounts()
   const { addTransaction } = useTransactions()
 
   // Check if driver has retasi records
@@ -225,6 +225,16 @@ export default function DriverPosPage() {
       return
     }
 
+    // Validate payment amount doesn't exceed total
+    if (paidAmount > total) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Jumlah dibayar tidak boleh melebihi total tagihan"
+      })
+      return
+    }
+
     setIsSubmitting(true)
     
     try {
@@ -237,7 +247,7 @@ export default function DriverPosPage() {
         customerName: selectedCustomerData.name,
         cashierId: user.id,
         cashierName: user.name || user.email || 'Driver POS',
-        paymentAccountId: paidAmount > 0 && paymentAccount ? paymentAccount : undefined,
+        paymentAccountId: paymentAccount || null,
         orderDate,
         items,
         subtotal: total,
@@ -256,6 +266,20 @@ export default function DriverPosPage() {
       const savedTransaction = await addTransaction.mutateAsync({ 
         newTransaction 
       })
+
+      // Update account balance if there's a payment (same as main POS)
+      if (paidAmount > 0 && paymentAccount) {
+        try {
+          await updateAccountBalance.mutateAsync({ accountId: paymentAccount, amount: paidAmount });
+        } catch (paymentError) {
+          console.error('Error updating account balance:', paymentError);
+          toast({ 
+            variant: "destructive", 
+            title: "Warning", 
+            description: "Transaksi berhasil disimpan tetapi ada masalah dalam update saldo akun." 
+          });
+        }
+      }
 
       setCreatedTransaction(savedTransaction)
       
@@ -406,6 +430,7 @@ export default function DriverPosPage() {
                 <SelectContent>
                   {products
                     ?.filter(product => product?.id && product.id.trim() !== '') // Only include products with valid IDs
+                    ?.filter(product => !items.some(item => item.product.id === product.id)) // Hide already added products
                     ?.sort((a, b) => (b.currentStock || 0) - (a.currentStock || 0)) // Sort by stock descending
                     ?.map((product) => {
                       // Ensure we have a valid product ID
@@ -587,7 +612,7 @@ export default function DriverPosPage() {
                     <SelectValue placeholder={paidAmount > 0 ? "Pilih akun pembayaran" : "Kosongkan jika kredit"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {accounts?.map((account) => (
+                    {accounts?.filter(account => account.isPaymentAccount).map((account) => (
                       <SelectItem key={account.id} value={account.id}>
                         {account.name} - {new Intl.NumberFormat("id-ID", {
                           style: "currency",
@@ -601,14 +626,37 @@ export default function DriverPosPage() {
               </div>
 
               <div>
-                <Label className="text-base font-medium">Jumlah Dibayar</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-medium">Jumlah Dibayar</Label>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setPaidAmount(total)}
+                    className="text-xs h-6 px-2"
+                  >
+                    Bayar Lunas
+                  </Button>
+                </div>
                 <Input
                   type="number"
+                  min="0"
+                  max={total}
                   value={paidAmount}
-                  onChange={(e) => setPaidAmount(parseInt(e.target.value) || 0)}
-                  placeholder="0"
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value) || 0
+                    if (value <= total) {
+                      setPaidAmount(value)
+                    }
+                  }}
+                  placeholder={`Maksimal: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(total)}`}
                   className="h-12 text-base"
                 />
+                {paidAmount > total && (
+                  <p className="text-sm text-red-600 mt-1">
+                    Jumlah dibayar tidak boleh melebihi total tagihan
+                  </p>
+                )}
               </div>
 
               <div className="bg-blue-50 p-4 rounded-lg space-y-3">

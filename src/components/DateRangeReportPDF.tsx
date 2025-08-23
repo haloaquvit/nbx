@@ -31,7 +31,7 @@ const isIncomeType = (item: CashHistory) => {
   }
   
   if (item.type) {
-    return ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pemutihan_piutang'].includes(item.type);
+    return ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(item.type);
   }
   if (item.transaction_type) {
     return item.transaction_type === 'income';
@@ -57,7 +57,7 @@ const getTypeLabel = (item: CashHistory) => {
       'panjar_pelunasan': 'Panjar Pelunasan',
       'pengeluaran': 'Pengeluaran',
       'pembayaran_po': 'Pembayaran PO',
-      'pemutihan_piutang': 'Pembayaran Piutang',
+      'pembayaran_piutang': 'Pembayaran Piutang',
       'transfer_masuk': 'Transfer Masuk',
       'transfer_keluar': 'Transfer Keluar'
     };

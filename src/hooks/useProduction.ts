@@ -263,81 +263,152 @@ export const useProduction = () => {
 
       if (materialError) throw materialError;
 
-      // Record error entry directly in production_records table
-      const { data: productionRecord, error: errorInsertError } = await supabase
-        .from('production_records')
-        .insert({
-          ref: ref,
-          product_id: null, // No product for damaged materials
-          quantity: -input.quantity, // Negative quantity to indicate loss/damage
-          note: `BAHAN RUSAK: ${material.name} - ${input.note || 'Tidak ada catatan'}`,
-          consume_bom: false,
-          created_by: input.createdBy,
-          user_input_id: input.createdBy,
-          user_input_name: user?.name || user?.email || 'Unknown User',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+      // Calculate new stock first
+      const newStock = Math.max(0, material.stock - input.quantity);
 
-      if (errorInsertError) {
-        throw errorInsertError;
+      // Use a transaction-like approach: batch the operations
+      const operations = [];
+
+      // 1. Record error entry directly in production_records table
+      operations.push(
+        supabase
+          .from('production_records')
+          .insert({
+            ref: ref,
+            product_id: null,
+            quantity: -input.quantity,
+            note: `BAHAN RUSAK: ${material.name} - ${input.note || 'Tidak ada catatan'}`,
+            consume_bom: false,
+            created_by: input.createdBy,
+            user_input_id: input.createdBy,
+            user_input_name: user?.name || user?.email || 'Unknown User'
+          })
+          .select('id')
+          .single()
+      );
+
+      // 2. Reduce material stock
+      operations.push(
+        supabase
+          .from('materials')
+          .update({
+            stock: newStock,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', input.materialId)
+      );
+
+      // Execute the first two critical operations
+      const [productionResult, stockResult] = await Promise.allSettled(operations);
+
+      if (productionResult.status === 'rejected') {
+        throw productionResult.reason;
+      }
+      if (stockResult.status === 'rejected') {
+        throw stockResult.reason;
       }
 
-      // Reduce material stock
-      const newStock = Math.max(0, material.stock - input.quantity);
-      const { error: stockUpdateError } = await supabase
-        .from('materials')
-        .update({
-          stock: newStock,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', input.materialId);
+      const productionRecord = productionResult.value.data;
+      if (productionResult.value.error) throw productionResult.value.error;
+      if (stockResult.value.error) throw stockResult.value.error;
 
-      if (stockUpdateError) throw stockUpdateError;
+      // 3. Record material movement (non-critical - can fail without breaking the process)
+      try {
+        const { error: movementError } = await supabase
+          .from('material_stock_movements')
+          .insert({
+            material_id: input.materialId,
+            material_name: material.name,
+            type: 'OUT',
+            reason: 'ADJUSTMENT', // Use existing reason until migration is applied
+            quantity: input.quantity,
+            previous_stock: material.stock,
+            new_stock: newStock,
+            notes: `PRODUCTION_ERROR: Bahan rusak: ${ref} (${material.name})`,
+            reference_id: productionRecord.id,
+            reference_type: 'production',
+            user_id: input.createdBy,
+            user_name: user?.name || user?.email || 'Unknown User'
+          });
 
-      // Record material movement
-      const { error: movementError } = await supabase
-        .from('material_stock_movements')
-        .insert({
-          material_id: input.materialId,
-          material_name: material.name,
-          type: 'OUT',
-          reason: 'PRODUCTION_ERROR',
-          quantity: input.quantity,
-          previous_stock: material.stock,
-          new_stock: newStock,
-          notes: `Bahan rusak: ${ref} (${material.name})`,
-          reference_id: productionRecord.id,
-          reference_type: 'production',
-          user_id: input.createdBy,
-          user_name: user?.name || user?.email || 'Unknown User'
-        });
-
-      if (movementError) throw movementError;
+        if (movementError) {
+          console.warn('Failed to record material movement:', movementError);
+          // Don't throw - the main operation (stock update) succeeded
+        }
+      } catch (movementErr) {
+        console.warn('Error recording material movement:', movementErr);
+        // Continue - main operation succeeded
+      }
 
 
       toast({
         title: "Sukses",
-        description: `Bahan rusak ${ref} berhasil dicatat`
+        description: `Bahan rusak ${ref} berhasil dicatat. Stock ${material.name} berkurang ${input.quantity}.`
       });
 
-      fetchProductions();
+      // Refresh productions in background - don't wait for it
+      setTimeout(() => {
+        fetchProductions().catch(err => 
+          console.warn('Failed to refresh productions after error input:', err)
+        );
+      }, 100);
       
       return true;
     } catch (error: any) {
       console.error('Error processing error input:', error);
+      
+      // Handle different types of errors
+      let errorMessage = "Gagal mencatat bahan rusak";
+      let errorTitle = "Error";
+      
+      if (error.message && error.message.includes('Failed to fetch')) {
+        // Network error - data might still be saved
+        errorTitle = "Peringatan Jaringan";
+        errorMessage = "Koneksi terputus. Periksa apakah data sudah tersimpan dengan memuat ulang halaman.";
+      } else if (error.code === '23514') {
+        // Check constraint error
+        errorMessage = "Error validasi data. Periksa constraint database.";
+      } else if (error.code === '42P01') {
+        // Table doesn't exist
+        errorMessage = "Tabel tidak ditemukan. Jalankan migrasi database.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error.message || "Gagal mencatat bahan rusak"
+        title: errorTitle,
+        description: errorMessage
       });
+      
+      // Even if there's an error, the data might have been saved
+      // Return false only for critical errors
+      if (error.message && error.message.includes('Failed to fetch')) {
+        // For network errors, still refresh to see if data was saved
+        setTimeout(() => {
+          fetchProductions().catch(console.warn);
+        }, 1000);
+      }
+      
       return false;
     } finally {
       setIsLoading(false);
     }
-  }, [toast, fetchProductions]);
+  }, [toast, user]);
+
+  // Helper function to get appropriate reason for material movement
+  const getMaterialMovementReason = (intendedReason: string) => {
+    // For now, use ADJUSTMENT as fallback until migration is applied
+    // TODO: Remove this when constraint is updated in production
+    const supportedReasons = ['PURCHASE', 'PRODUCTION_CONSUMPTION', 'PRODUCTION_ACQUISITION', 'ADJUSTMENT', 'RETURN'];
+    
+    if (supportedReasons.includes(intendedReason)) {
+      return intendedReason;
+    }
+    
+    // Use ADJUSTMENT as fallback and add the intended reason to notes
+    return 'ADJUSTMENT';
+  };
 
   // Delete production record (admin/owner only)
   const deleteProduction = useCallback(async (recordId: string): Promise<boolean> => {
@@ -381,29 +452,31 @@ export const useProduction = () => {
                 material_id: bomItem.materialId,
                 material_name: bomItem.materialName,
                 type: 'IN',
-                reason: 'PRODUCTION_DELETE_RESTORE',
+                reason: 'ADJUSTMENT', // Use existing reason until migration is applied
                 quantity: requiredQty,
                 previous_stock: material.stock,
                 new_stock: restoredStock,
-                reference: record.ref,
-                created_by: user?.id,
-                created_at: new Date().toISOString()
+                notes: `PRODUCTION_DELETE_RESTORE: Production delete restore: ${record.ref}`,
+                reference_id: record.id,
+                reference_type: 'production',
+                user_id: user?.id,
+                user_name: user?.name || user?.email || 'Unknown User'
               });
           }
         }
 
         const { data: product, error: productError } = await supabase
           .from('products')
-          .select('currentStock')
+          .select('current_stock')
           .eq('id', record.product_id)
           .single();
 
         if (!productError && product) {
-          const newProductStock = Math.max(0, product.currentStock - record.quantity);
+          const newProductStock = Math.max(0, product.current_stock - record.quantity);
           await supabase
             .from('products')
             .update({
-              currentStock: newProductStock,
+              current_stock: newProductStock,
               updated_at: new Date().toISOString()
             })
             .eq('id', record.product_id);

@@ -13,12 +13,7 @@ export function useCashFlow() {
     queryFn: async (): Promise<CashHistory[]> => {
       const { data, error } = await supabase
         .from('cash_history')
-        .select(`
-          *,
-          accounts (
-            name
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -30,13 +25,8 @@ export function useCashFlow() {
         throw new Error(`Failed to fetch cash history: ${error.message}`);
       }
 
-      // Map the data to include account_name from the join, prioritizing the joined data
-      const mappedData = (data || []).map(item => ({
-        ...item,
-        account_name: (item.accounts?.name) || item.account_name || 'Unknown Account'
-      }));
-
-      return mappedData;
+      // Return the data directly since account_name is already in cash_history table
+      return data || [];
     }
   });
 

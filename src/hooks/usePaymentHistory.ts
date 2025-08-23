@@ -26,7 +26,7 @@ export const usePaymentHistory = (filters?: {
       let query = supabase
         .from('cash_history')
         .select('*')
-        .eq('type', 'pemutihan_piutang')
+        .eq('type', 'pembayaran_piutang')
         .order('created_at', { ascending: false })
 
       // Apply filters

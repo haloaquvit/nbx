@@ -66,7 +66,7 @@ export function Header() {
         {/* Mobile Menu */}
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="outline" size="icon" className="shrink-0 md:hidden mr-4">
+            <Button variant="outline" size="icon" className="shrink-0 md:hidden mr-4 hover-glow">
               <Menu className="h-5 w-5" />
               <span className="sr-only">Toggle navigation menu</span>
             </Button>
@@ -93,7 +93,7 @@ export function Header() {
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                  "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors menu-item-hover",
                   isActive 
                     ? "bg-primary text-primary-foreground" 
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -109,7 +109,7 @@ export function Header() {
           {adminMenuItems.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" className="hover-glow">
                   <Settings className="h-4 w-4 mr-2" />
                   Admin
                 </Button>
@@ -118,7 +118,7 @@ export function Header() {
                 {adminMenuItems.map((item) => {
                   const Icon = item.icon;
                   return (
-                    <DropdownMenuItem key={item.href} asChild>
+                    <DropdownMenuItem key={item.href} asChild className="dropdown-item-hover">
                       <Link to={item.href} className="flex items-center">
                         <Icon className="h-4 w-4 mr-2" />
                         {item.label}
@@ -136,7 +136,7 @@ export function Header() {
           <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="secondary" size="icon" className="rounded-full">
+              <Button variant="secondary" size="icon" className="rounded-full hover-glow">
                 <CircleUser className="h-5 w-5" />
                 <span className="sr-only">Toggle user menu</span>
               </Button>
@@ -144,14 +144,14 @@ export function Header() {
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{user?.name || 'Akun Saya'}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
+              <DropdownMenuItem asChild className="dropdown-item-hover">
                 <Link to="/account-settings">Pengaturan Akun</Link>
               </DropdownMenuItem>
-              <DropdownMenuItem asChild>
+              <DropdownMenuItem asChild className="dropdown-item-hover">
                 <Link to="/settings">Info Perusahaan</Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+              <DropdownMenuItem onClick={handleLogout} className="text-destructive dropdown-item-hover">
                 <LogOut className="mr-2 h-4 w-4" />
                 Keluar
               </DropdownMenuItem>

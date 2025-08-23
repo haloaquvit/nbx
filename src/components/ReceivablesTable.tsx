@@ -9,6 +9,7 @@ import { useTransactions } from "@/hooks/useTransactions"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { PayReceivableDialog } from "./PayReceivableDialog"
+import { ReceivablesReportPDF } from "./ReceivablesReportPDF"
 // import { PaymentHistoryRow } from "./PaymentHistoryRow" // Removed
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
 import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer } from "lucide-react"
@@ -17,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Badge } from "./ui/badge"
 import { useAuthContext } from "@/contexts/AuthContext"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog"
-import { showSuccess, showError } from "@/utils/toast"
+import { showSuccess } from "@/utils/toast"
 import { isOwner } from '@/utils/roleUtils'
 
 export function ReceivablesTable() {
@@ -101,82 +102,6 @@ export function ReceivablesTable() {
     }
   }
 
-  const handlePrintOverdue = () => {
-    const overdueTransactions = receivables.filter(t => getDueStatus(t) === 'overdue')
-    if (overdueTransactions.length === 0) {
-      showError('Tidak ada transaksi yang jatuh tempo untuk dicetak.')
-      return
-    }
-
-    // Create printable content
-    const printContent = `
-      <html>
-        <head>
-          <title>Laporan Nota Jatuh Tempo</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 20px; }
-            h1 { text-align: center; margin-bottom: 30px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; }
-            .overdue { color: #dc2626; font-weight: bold; }
-            .total { font-weight: bold; margin-top: 20px; }
-          </style>
-        </head>
-        <body>
-          <h1>Laporan Nota Jatuh Tempo</h1>
-          <p>Tanggal Cetak: ${format(new Date(), 'd MMMM yyyy', { locale: id })}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>No. Order</th>
-                <th>Pelanggan</th>
-                <th>Tgl Order</th>
-                <th>Tgl Jatuh Tempo</th>
-                <th>Total Tagihan</th>
-                <th>Telah Dibayar</th>
-                <th>Sisa Tagihan</th>
-                <th>Hari Terlambat</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${overdueTransactions.map(t => {
-                const overdueDays = Math.abs(Math.ceil((new Date(t.dueDate!).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)))
-                const remaining = t.total - (t.paidAmount || 0)
-                return `
-                  <tr>
-                    <td>${t.id}</td>
-                    <td>${t.customerName}</td>
-                    <td>${format(new Date(t.orderDate), 'd MMM yyyy', { locale: id })}</td>
-                    <td class="overdue">${format(new Date(t.dueDate!), 'd MMM yyyy', { locale: id })}</td>
-                    <td>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(t.total)}</td>
-                    <td>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(t.paidAmount || 0)}</td>
-                    <td class="overdue">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(remaining)}</td>
-                    <td class="overdue">${overdueDays} hari</td>
-                  </tr>
-                `
-              }).join('')}
-            </tbody>
-          </table>
-          <div class="total">
-            <p>Total Transaksi Jatuh Tempo: ${overdueTransactions.length}</p>
-            <p>Total Sisa Tagihan: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
-              overdueTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0)
-            )}</p>
-          </div>
-        </body>
-      </html>
-    `
-
-    // Open print window
-    const printWindow = window.open('', '_blank')
-    if (printWindow) {
-      printWindow.document.write(printContent)
-      printWindow.document.close()
-      printWindow.focus()
-      printWindow.print()
-    }
-  }
 
   const columns: ColumnDef<Transaction>[] = [
     {
@@ -341,15 +266,10 @@ export function ReceivablesTable() {
               <SelectItem value="no-due-date">Tanpa Jatuh Tempo</SelectItem>
             </SelectContent>
           </Select>
-          <Button 
-            onClick={handlePrintOverdue}
-            variant="outline"
-            className="shrink-0"
-            disabled={overdueCount === 0}
-          >
-            <Printer className="w-4 h-4 mr-2" />
-            Cetak Jatuh Tempo ({overdueCount})
-          </Button>
+          <ReceivablesReportPDF 
+            receivables={receivables}
+            filterStatus={filterStatus}
+          />
         </div>
       </div>
 

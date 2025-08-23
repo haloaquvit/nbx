@@ -59,9 +59,12 @@ export function DriverDeliveryDialog({
   }, [transaction])
 
   const handleQuantityChange = (itemKey: string, quantity: number) => {
+    const item = transaction.items.find((item, index) => `${item.product.id}_${index}` === itemKey)
+    const maxQuantity = item?.quantity || 0
+    
     setItemQuantities(prev => ({
       ...prev,
-      [itemKey]: Math.max(0, quantity)
+      [itemKey]: Math.max(0, Math.min(quantity, maxQuantity))
     }))
   }
 
@@ -82,6 +85,21 @@ export function DriverDeliveryDialog({
         variant: "destructive",
         title: "Error", 
         description: "Minimal satu item harus diantar"
+      })
+      return
+    }
+
+    // Validate no item exceeds ordered quantity
+    const hasExcessiveQuantity = transaction.items.some((item, index) => {
+      const itemKey = `${item.product.id}_${index}`
+      const quantityToDeliver = itemQuantities[itemKey] || 0
+      return quantityToDeliver > item.quantity
+    })
+    if (hasExcessiveQuantity) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Jumlah antar tidak boleh melebihi jumlah pesanan"
       })
       return
     }
@@ -259,10 +277,16 @@ export function DriverDeliveryDialog({
                         onChange={(e) => handleQuantityChange(itemKey, parseInt(e.target.value) || 0)}
                         min="0"
                         max={item.quantity}
+                        placeholder={`Maks: ${item.quantity}`}
                         className="h-8 text-sm"
                       />
                       <span className="text-xs text-muted-foreground">{item.unit}</span>
                     </div>
+                    {quantityToDeliver > item.quantity && (
+                      <p className="text-xs text-red-600 mt-1">
+                        Jumlah antar tidak boleh melebihi pesanan ({item.quantity} {item.unit})
+                      </p>
+                    )}
                   </div>
                 )
               })}

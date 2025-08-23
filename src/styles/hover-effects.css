@@ -1,0 +1,191 @@
+/* Enhanced Hover Effects with Glossy Appearance */
+
+.hover-glow {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+}
+
+.hover-glow::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, 
+    rgba(255, 255, 255, 0.1) 0%, 
+    rgba(255, 255, 255, 0.3) 50%, 
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  opacity: 0;
+  border-radius: inherit;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.hover-glow:hover::before {
+  opacity: 1;
+}
+
+/* Table Row Hover Effects */
+.table-row-hover {
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.9) 0%, 
+    rgba(248, 250, 252, 0.9) 100%
+  );
+}
+
+.table-row-hover:hover {
+  background: linear-gradient(135deg, 
+    rgba(59, 130, 246, 0.08) 0%, 
+    rgba(147, 197, 253, 0.12) 50%,
+    rgba(219, 234, 254, 0.08) 100%
+  );
+  transform: translateX(4px);
+  box-shadow: 
+    4px 0 0 rgba(59, 130, 246, 0.3),
+    0 4px 12px rgba(59, 130, 246, 0.1);
+}
+
+/* Dark mode table row hover */
+[data-theme="dark"] .table-row-hover:hover {
+  background: linear-gradient(135deg, 
+    rgba(59, 130, 246, 0.12) 0%, 
+    rgba(37, 99, 235, 0.16) 50%,
+    rgba(29, 78, 216, 0.12) 100%
+  );
+  box-shadow: 
+    4px 0 0 rgba(59, 130, 246, 0.4),
+    0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+/* Button Hover Effects */
+.btn-glossy {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--btn-color-start) 0%, var(--btn-color-end) 100%);
+  transition: all 0.3s ease;
+}
+
+.btn-glossy::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(45deg, 
+    transparent 30%, 
+    rgba(255, 255, 255, 0.3) 50%, 
+    transparent 70%
+  );
+  transform: rotate(45deg) translateX(-100%);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+}
+
+.btn-glossy:hover::after {
+  transform: rotate(45deg) translateX(100%);
+}
+
+.btn-glossy:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Card Hover Effects */
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 0.95) 0%, 
+    rgba(248, 250, 252, 0.95) 100%
+  );
+}
+
+.card-hover:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, 
+    rgba(255, 255, 255, 1) 0%, 
+    rgba(248, 250, 252, 1) 100%
+  );
+}
+
+/* Menu Item Hover */
+.menu-item-hover {
+  position: relative;
+  transition: all 0.2s ease;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.menu-item-hover:hover {
+  background: linear-gradient(135deg, 
+    rgba(59, 130, 246, 0.1) 0%, 
+    rgba(147, 197, 253, 0.15) 100%
+  );
+  transform: translateX(8px);
+  box-shadow: 
+    inset 3px 0 0 rgba(59, 130, 246, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Input Focus Effects */
+.input-glow {
+  transition: all 0.3s ease;
+}
+
+.input-glow:focus {
+  box-shadow: 
+    0 0 0 3px rgba(59, 130, 246, 0.1),
+    0 4px 12px rgba(59, 130, 246, 0.15);
+  border-color: rgb(59, 130, 246);
+}
+
+/* Dropdown Item Hover */
+.dropdown-item-hover {
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.dropdown-item-hover:hover {
+  background: linear-gradient(90deg, 
+    rgba(59, 130, 246, 0.1) 0%, 
+    rgba(59, 130, 246, 0.05) 100%
+  );
+  transform: translateX(4px);
+  padding-left: 16px;
+}
+
+/* Loading Shimmer Effect */
+.loading-shimmer {
+  background: linear-gradient(90deg, 
+    rgba(255, 255, 255, 0.1) 0%, 
+    rgba(255, 255, 255, 0.3) 50%, 
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Pulse Effect for Interactive Elements */
+.pulse-hover:hover {
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}

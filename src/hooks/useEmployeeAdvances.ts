@@ -85,14 +85,14 @@ export const useEmployeeAdvances = () => {
         try {
           const cashFlowRecord = {
             account_id: newData.accountId,
-            transaction_type: 'expense',
+            account_name: newData.accountName || 'Unknown Account',
+            type: 'panjar_pengambilan',
             amount: newData.amount,
             description: `Panjar karyawan untuk ${newData.employeeName}: ${newData.notes || 'Tidak ada keterangan'}`,
-            reference_number: `ADV-${data.id.slice(4)}`, // Remove 'adv-' prefix
-            source_type: 'employee_advance',
-            created_by: user.id,
-            created_by_name: user.name || user.email || 'Unknown User',
-            date: newData.date // gunakan tanggal input panjar
+            reference_id: data.id,
+            reference_name: `Panjar ${data.id}`,
+            user_id: user.id,
+            user_name: user.name || user.email || 'Unknown User'
           };
 
           console.log('Recording advance in cash history:', cashFlowRecord);
@@ -121,7 +121,12 @@ export const useEmployeeAdvances = () => {
   });
 
   const addRepayment = useMutation({
-    mutationFn: async ({ advanceId, repaymentData }: { advanceId: string, repaymentData: Omit<AdvanceRepayment, 'id'> }): Promise<void> => {
+    mutationFn: async ({ advanceId, repaymentData, accountId, accountName }: { 
+      advanceId: string, 
+      repaymentData: Omit<AdvanceRepayment, 'id'>,
+      accountId?: string,
+      accountName?: string
+    }): Promise<void> => {
       const newRepayment = {
         id: `rep-${Date.now()}`,
         advance_id: advanceId,
@@ -137,9 +142,53 @@ export const useEmployeeAdvances = () => {
         p_advance_id: advanceId
       });
       if (rpcError) throw new Error(rpcError.message);
+
+      // Record repayment in cash_history as income (panjar pelunasan)
+      if (accountId && user) {
+        try {
+          // Get advance details for the description
+          const { data: advance } = await supabase
+            .from('employee_advances')
+            .select('employee_name')
+            .eq('id', advanceId)
+            .single();
+
+          const cashFlowRecord = {
+            account_id: accountId,
+            account_name: accountName || 'Unknown Account',
+            type: 'panjar_pelunasan',
+            amount: repaymentData.amount,
+            description: `Pelunasan panjar dari ${advance?.employee_name || 'karyawan'} - ${advanceId}`,
+            reference_id: newRepayment.id,
+            reference_name: `Pelunasan Panjar ${newRepayment.id}`,
+            user_id: user.id,
+            user_name: user.name || user.email || 'Unknown User'
+          };
+
+          console.log('Recording repayment in cash history:', cashFlowRecord);
+
+          const { error: cashFlowError } = await supabase
+            .from('cash_history')
+            .insert(cashFlowRecord);
+
+          if (cashFlowError) {
+            console.error('Failed to record repayment in cash flow:', cashFlowError.message);
+          } else {
+            console.log('Successfully recorded repayment in cash history');
+            // Update account balance for the repayment
+            if (accountId) {
+              updateAccountBalance.mutate({ accountId, amount: repaymentData.amount });
+            }
+          }
+        } catch (error) {
+          console.error('Error recording repayment cash flow:', error);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
     }
   });
 
@@ -149,7 +198,7 @@ export const useEmployeeAdvances = () => {
       const { error: cashHistoryError } = await supabase
         .from('cash_history')
         .delete()
-        .eq('reference_number', `ADV-${advanceToDelete.id.slice(4)}`);
+        .eq('reference_id', advanceToDelete.id);
       
       if (cashHistoryError) {
         console.error('Failed to delete related cash history:', cashHistoryError.message);

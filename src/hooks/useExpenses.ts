@@ -67,15 +67,24 @@ export const useExpenses = () => {
             sourceType = 'receivables_writeoff';
           }
 
+          // Determine the new format type based on category 
+          let expenseType = 'pengeluaran';
+          if (newExpenseData.category === 'Panjar Karyawan') {
+            expenseType = 'panjar_pengambilan';
+          } else if (newExpenseData.category === 'Pembayaran PO') {
+            expenseType = 'pembayaran_po';
+          }
+
           const cashFlowRecord = {
             account_id: newExpenseData.accountId,
-            transaction_type: 'expense',
+            account_name: newExpenseData.accountName || 'Unknown Account',
+            type: expenseType,
             amount: newExpenseData.amount,
             description: newExpenseData.description,
-            reference_number: `EXP-${data.id.slice(4)}`, // Remove 'exp-' prefix
-            source_type: sourceType,
-            created_by: user.id,
-            created_by_name: user.name || user.email || 'Unknown User'
+            reference_id: data.id,
+            reference_name: `Pengeluaran ${data.id}`,
+            user_id: user.id,
+            user_name: user.name || user.email || 'Unknown User'
           };
 
           console.log('Recording expense in cash history:', cashFlowRecord);
@@ -114,7 +123,7 @@ export const useExpenses = () => {
       const { error: cashHistoryError } = await supabase
         .from('cash_history')
         .delete()
-        .eq('reference_number', `EXP-${expenseId.slice(4)}`);
+        .eq('reference_id', expenseId);
       
       if (cashHistoryError) {
         console.error('Failed to delete related cash history:', cashHistoryError.message);

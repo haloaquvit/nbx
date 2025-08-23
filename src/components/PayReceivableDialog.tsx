@@ -18,13 +18,20 @@ import { useQueryClient } from "@tanstack/react-query"
 import { supabase } from "@/integrations/supabase/client"
 import { Wallet } from "lucide-react"
 
-const paymentSchema = z.object({
-  amount: z.coerce.number().min(1, "Jumlah pembayaran harus lebih dari 0."),
+// Base payment schema - will be refined per transaction
+const getPaymentSchema = (maxAmount: number) => z.object({
+  amount: z.coerce.number()
+    .min(1, "Jumlah pembayaran harus lebih dari 0.")
+    .max(maxAmount, `Jumlah pembayaran tidak boleh melebihi sisa tagihan (${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(maxAmount)})`),
   paymentAccountId: z.string().min(1, "Akun pembayaran harus dipilih."),
   notes: z.string().optional(),
 })
 
-type PaymentFormData = z.infer<typeof paymentSchema>
+type PaymentFormData = {
+  amount: number;
+  paymentAccountId: string;
+  notes?: string;
+}
 
 interface PayReceivableDialogProps {
   open: boolean
@@ -37,13 +44,22 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const { accounts, updateAccountBalance } = useAccounts()
-  const { register, handleSubmit, reset, setValue, formState: { errors }, watch } = useForm<PaymentFormData>({
-    resolver: zodResolver(paymentSchema),
-  })
   
   const [isSubmitting, setIsSubmitting] = React.useState(false)
-
   const remainingAmount = transaction ? transaction.total - (transaction.paidAmount || 0) : 0
+  
+  const { register, handleSubmit, reset, setValue, formState: { errors }, watch, trigger } = useForm<PaymentFormData>({
+    resolver: zodResolver(getPaymentSchema(remainingAmount)),
+  })
+  
+  const watchedAmount = watch("amount")
+  
+  // Re-trigger validation when remaining amount changes
+  React.useEffect(() => {
+    if (watchedAmount) {
+      trigger("amount");
+    }
+  }, [remainingAmount, watchedAmount, trigger]);
 
   const onSubmit = async (data: PaymentFormData) => {
     if (!transaction || !user) return;
@@ -58,74 +74,85 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
       if (!selectedAccount) {
         throw new Error("Akun pembayaran tidak ditemukan");
       }
-      
-      // Calculate new payment amount
-      const newPaidAmount = (transaction.paidAmount || 0) + data.amount;
-      const newStatus = newPaidAmount >= transaction.total ? 'Lunas' : 'Belum Lunas';
-      
-      // Update transaction with payment
-      const { error: updateError } = await supabase
-        .from('transactions')
-        .update({
-          paid_amount: newPaidAmount,
-          payment_status: newStatus,
-          payment_account_id: data.paymentAccountId
-        })
-        .eq('id', transaction.id);
-      
-      if (updateError) {
-        throw new Error(updateError.message);
+
+      // Use the database function for proper payment tracking
+      const { error: paymentError } = await supabase.rpc('pay_receivable_with_history', {
+        p_transaction_id: transaction.id,
+        p_amount: data.amount,
+        p_account_id: data.paymentAccountId,
+        p_account_name: selectedAccount.name,
+        p_notes: data.notes || null,
+        p_recorded_by: user.id,
+        p_recorded_by_name: user.name || user.email || 'Unknown User'
+      });
+
+      if (paymentError) {
+        throw new Error(paymentError.message);
       }
 
       // Update account balance (increase cash)
       await updateAccountBalance.mutateAsync({ accountId: data.paymentAccountId, amount: data.amount });
 
-      // Get account name for cash_history record
-      const { data: accountData } = await supabase
-        .from('accounts')
-        .select('name')
-        .eq('id', data.paymentAccountId)
-        .single();
-
-      // Record payment in cash_history table (proper way to track cash flow)
+      // Record payment in cash_history table for cash flow tracking
       const paymentRecord = {
         account_id: data.paymentAccountId,
-        account_name: accountData?.name || 'Unknown Account',
-        type: 'pemutihan_piutang',
-        amount: data.amount,
+        account_name: selectedAccount.name.trim(), // Remove extra spaces
+        type: 'pembayaran_piutang',
+        amount: Number(data.amount), // Ensure it's a number
         description: `Pembayaran piutang dari ${transaction.customerName} - Order: ${transaction.id}${data.notes ? ' | ' + data.notes : ''}`,
         reference_id: transaction.id,
         reference_name: `Piutang ${transaction.id}`,
-        user_id: user.id,
+        user_id: user.id || null, // Allow null if user.id is undefined
         user_name: user.name || user.email || 'Unknown User'
       };
 
-      // Try to insert payment record to cash_history if table exists
-      try {
-        const { error: paymentRecordError } = await supabase
-          .from('cash_history')
-          .insert(paymentRecord);
+      console.log('Attempting to insert cash_history record:', paymentRecord);
 
-        if (paymentRecordError && !paymentRecordError.message.includes('does not exist') && paymentRecordError.code !== 'PGRST116') {
-          throw new Error(`Failed to record payment: ${paymentRecordError.message}`);
+      // Insert payment record to cash_history table
+      const { data: insertedRecord, error: paymentRecordError } = await supabase
+        .from('cash_history')
+        .insert(paymentRecord)
+        .select()
+        .single();
+
+      if (paymentRecordError) {
+        console.error('Failed to insert cash_history record:', {
+          error: paymentRecordError,
+          errorCode: paymentRecordError.code,
+          errorMessage: paymentRecordError.message,
+          errorDetails: paymentRecordError.details,
+          errorHint: paymentRecordError.hint,
+          record: paymentRecord
+        });
+        
+        // If it's not a "table doesn't exist" error, show warning to user
+        if (!paymentRecordError.message.includes('does not exist') && paymentRecordError.code !== 'PGRST116') {
+          toast({
+            variant: "destructive",
+            title: "Peringatan", 
+            description: `Pembayaran berhasil tetapi gagal mencatat ke cash flow: ${paymentRecordError.message}`
+          });
         }
-      } catch (historyError: any) {
-        // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
-        if (historyError.code === 'PGRST116' || historyError.code === '42P01' || historyError.code === 'PGRST205' || 
-            historyError.code === '23502' || historyError.message.includes('does not exist') || 
-            historyError.message.includes('violates check constraint') || historyError.message.includes('violates not-null constraint')) {
-          console.warn('cash_history table issue, payment completed without history tracking:', historyError.message);
-        } else {
-          throw historyError;
-        }
+      } else {
+        console.log('Successfully inserted cash_history record:', insertedRecord);
       }
 
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['receivables'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      queryClient.invalidateQueries({ queryKey: ['cashier-recap'] });
-      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      // Invalidate all transaction-related queries to ensure fresh data
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+        queryClient.invalidateQueries({ queryKey: ['payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['cashier-recap'] }),
+        queryClient.invalidateQueries({ queryKey: ['cashFlow'] }),
+        queryClient.invalidateQueries({ queryKey: ['cashBalance'] }),
+        queryClient.invalidateQueries({ queryKey: ['paymentHistory'] }),
+        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+      ]);
+      
+      // Force immediate refetch to update UI without waiting for background refetch
+      await queryClient.refetchQueries({ 
+        queryKey: ['transactions'],
+        type: 'active' // Only refetch currently mounted queries
+      });
 
       toast({ 
         title: "Sukses", 
@@ -157,9 +184,36 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="py-4 space-y-4">
             <div>
-              <Label htmlFor="amount">Jumlah Pembayaran</Label>
-              <Input id="amount" type="number" {...register("amount")} />
+              <div className="flex items-center justify-between">
+                <Label htmlFor="amount">Jumlah Pembayaran</Label>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    setValue("amount", remainingAmount);
+                    trigger("amount");
+                  }}
+                  className="text-xs h-6 px-2"
+                >
+                  Lunas
+                </Button>
+              </div>
+              <Input 
+                id="amount" 
+                type="number" 
+                step="0.01"
+                min="1"
+                max={remainingAmount}
+                placeholder={`Maksimal: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(remainingAmount)}`}
+                {...register("amount")} 
+              />
               {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount.message}</p>}
+              {watchedAmount && watchedAmount > remainingAmount && (
+                <p className="text-sm text-destructive mt-1">
+                  Jumlah melebihi sisa tagihan ({new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(remainingAmount)})
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="paymentAccountId">Setor Ke Akun</Label>

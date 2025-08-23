@@ -40,7 +40,8 @@
       "Bash(docker stop:*)",
       "Bash(docker rm:*)",
       "Bash(grep:*)",
-      "Bash(del *.sql)"
+      "Bash(del *.sql)",
+      "Bash(del test-terbilang.js)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

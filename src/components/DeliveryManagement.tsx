@@ -120,6 +120,19 @@ export function DeliveryManagement({ transaction, onClose }: DeliveryManagementP
       return
     }
 
+    // Validate no item exceeds remaining quantity
+    const hasExcessiveQuantity = formData.items.some(item => 
+      item.quantityToDeliver > item.remainingQuantity
+    )
+    if (hasExcessiveQuantity) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Jumlah antar tidak boleh melebihi sisa pesanan"
+      })
+      return
+    }
+
     setIsSubmitting(true)
     try {
       // Debug: Log the items being delivered
@@ -330,8 +343,14 @@ export function DeliveryManagement({ transaction, onClose }: DeliveryManagementP
                               max={item.remainingQuantity}
                               value={item.quantityToDeliver}
                               onChange={(e) => handleItemQuantityChange(item.productId, parseInt(e.target.value) || 0)}
+                              placeholder={`Maks: ${item.remainingQuantity}`}
                               className="w-20"
                             />
+                            {item.quantityToDeliver > item.remainingQuantity && (
+                              <p className="text-xs text-red-600 mt-1">
+                                Melebihi sisa ({item.remainingQuantity})
+                              </p>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Input

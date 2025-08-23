@@ -8,6 +8,7 @@ import { FileText, Download, Printer, Receipt } from "lucide-react"
 import { ThermalReceiptDialog } from "./ThermalReceiptDialog"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { terbilang } from '@/utils/terbilang'
 
 interface ExpenseReceiptPDFProps {
   expense: Expense
@@ -23,43 +24,38 @@ export function ExpenseReceiptPDF({
   const [isThermalDialogOpen, setIsThermalDialogOpen] = useState(false)
 
   const generatePDF = (action: 'download' | 'print' = 'download') => {
-    // F4 landscape size (210 x 330 mm in landscape = 330 x 210 mm)
-    // Adjusted for better content fit
+    // Custom size: 22cm x 10cm (220mm x 100mm)
     const doc = new jsPDF({
       orientation: 'landscape',
       unit: 'mm',
-      format: [210, 297] // A4 landscape for better compatibility
+      format: [100, 220] // 10cm height x 22cm width
     })
 
-    const pageWidth = 297
-    const pageHeight = 210
+    const pageWidth = 220
+    const pageHeight = 100
     const margin = 20
 
-    // Header Company
-    doc.setFontSize(18)
+    // Header Company - simplified
+    doc.setFontSize(12)
     doc.setFont(undefined, 'bold')
-    doc.text(companyName, pageWidth/2, 25, { align: 'center' })
-    
-    doc.setFontSize(10)
-    doc.setFont(undefined, 'normal')
-    doc.text(companyAddress, pageWidth/2, 32, { align: 'center' })
+    doc.text('AQUVIT', pageWidth/2, 10, { align: 'center' })
 
     // Title
-    doc.setFontSize(16)
+    doc.setFontSize(11)
     doc.setFont(undefined, 'bold')
-    doc.text('KWITANSI PENGELUARAN', pageWidth/2, 45, { align: 'center' })
+    doc.text('KWITANSI PENGELUARAN', pageWidth/2, 18, { align: 'center' })
 
     // Divider line
-    doc.setLineWidth(0.5)
-    doc.line(margin, 50, pageWidth - margin, 50)
+    doc.setLineWidth(0.3)
+    doc.line(margin, 22, pageWidth - margin, 22)
 
     // Receipt details
-    doc.setFontSize(11)
+    doc.setFontSize(10)
     doc.setFont(undefined, 'normal')
     
-    const leftCol = margin + 10
-    const rightCol = pageWidth/2 + 10
-    let yPos = 65
+    const leftCol = margin + 5
+    const rightCol = pageWidth/2 + 5
+    let yPos = 30
 
     // Left column
     doc.setFont(undefined, 'bold')
@@ -80,7 +76,7 @@ export function ExpenseReceiptPDF({
     doc.text(expense.category, leftCol + 35, yPos)
 
     // Right column
-    yPos = 65
+    yPos = 38
     if (expense.accountName) {
       doc.setFont(undefined, 'bold')
       doc.text('Dibayar dari:', rightCol, yPos)
@@ -89,80 +85,81 @@ export function ExpenseReceiptPDF({
       yPos += 8
     }
 
-    // Amount box
-    yPos = 90
+    // Amount box (increased height for terbilang)
+    yPos = 48
     doc.setFillColor(248, 249, 250)
-    doc.rect(leftCol, yPos, pageWidth - (margin * 2) - 20, 25, 'F')
+    doc.rect(leftCol, yPos, pageWidth - (margin * 2) - 10, 25, 'F')
     doc.setDrawColor(200, 200, 200)
-    doc.rect(leftCol, yPos, pageWidth - (margin * 2) - 20, 25, 'S')
+    doc.rect(leftCol, yPos, pageWidth - (margin * 2) - 10, 25, 'S')
 
-    doc.setFontSize(12)
+    doc.setFontSize(10)
     doc.setFont(undefined, 'bold')
-    doc.text('JUMLAH:', leftCol + 5, yPos + 8)
+    doc.text('JUMLAH:', leftCol + 3, yPos + 6)
     
-    doc.setFontSize(16)
+    doc.setFontSize(14)
     doc.setTextColor(220, 38, 127) // Pink color
     const amountText = new Intl.NumberFormat('id-ID', { 
       style: 'currency', 
       currency: 'IDR' 
     }).format(expense.amount)
-    doc.text(amountText, pageWidth - margin - 15, yPos + 12, { align: 'right' })
+    doc.text(amountText, pageWidth - margin - 8, yPos + 9, { align: 'right' })
     doc.setTextColor(0, 0, 0) // Reset to black
-
-    // Description
-    yPos += 35
-    doc.setFontSize(11)
-    doc.setFont(undefined, 'bold')
-    doc.text('KETERANGAN:', leftCol, yPos)
     
-    yPos += 8
+    // Add terbilang (amount in words)
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    const terbilangText = `(Terbilang: ${terbilang(expense.amount)})`
+    const terbilangLines = doc.splitTextToSize(terbilangText, pageWidth - (margin * 2) - 20)
+    doc.text(terbilangLines, leftCol + 3, yPos + 15)
+    doc.setFont(undefined, 'normal')
+
+    // Description  
+    yPos = 76
+    doc.setFontSize(9)
+    doc.setFont(undefined, 'bold')
+    doc.text('DESKRIPSI:', leftCol, yPos)
+    
+    yPos += 5
+    doc.setFontSize(8)
     doc.setFont(undefined, 'normal')
     // Handle long description text
-    const descriptionLines = doc.splitTextToSize(expense.description, pageWidth - (margin * 2) - 20)
+    const descriptionLines = doc.splitTextToSize(expense.description || 'Pengeluaran operasional', pageWidth - (margin * 2) - 20)
     doc.text(descriptionLines, leftCol, yPos)
-    
-    // Calculate next position based on description lines
-    yPos += (descriptionLines.length * 5) + 15
 
     // Signature section
-    const signatureY = Math.max(yPos, 155) // Ensure minimum distance from top
-    const colWidth = (pageWidth - (margin * 2) - 40) / 3
+    const signatureY = 86 // Fixed position for small receipt
+    const colWidth = (pageWidth - (margin * 2) - 20) / 3
     
     // Signature boxes
     doc.setDrawColor(150, 150, 150)
     doc.setLineWidth(0.3)
+    doc.setFontSize(8)
     
     // Disetujui oleh
     const col1X = leftCol
-    doc.text('Disetujui oleh:', col1X, signatureY)
-    doc.rect(col1X, signatureY + 5, colWidth, 30, 'S')
-    doc.setFontSize(9)
-    doc.text('Nama:', col1X + 2, signatureY + 38)
-    doc.text('Tanggal:', col1X + 2, signatureY + 43)
-    doc.line(col1X + 15, signatureY + 39, col1X + colWidth - 5, signatureY + 39)
-    doc.line(col1X + 20, signatureY + 44, col1X + colWidth - 5, signatureY + 44)
+    doc.text('Disetujui:', col1X, signatureY)
+    doc.rect(col1X, signatureY + 2, colWidth, 12, 'S')
+    doc.setFontSize(7)
+    doc.text('Nama:', col1X + 1, signatureY + 16)
+    doc.line(col1X + 12, signatureY + 16, col1X + colWidth - 2, signatureY + 16)
 
     // Diterima oleh  
-    const col2X = leftCol + colWidth + 10
-    doc.setFontSize(11)
-    doc.text('Diterima oleh:', col2X, signatureY)
-    doc.rect(col2X, signatureY + 5, colWidth, 30, 'S')
-    doc.setFontSize(9)
-    doc.text('Nama:', col2X + 2, signatureY + 38)
-    doc.text('Tanggal:', col2X + 2, signatureY + 43)
-    doc.line(col2X + 15, signatureY + 39, col2X + colWidth - 5, signatureY + 39)
-    doc.line(col2X + 20, signatureY + 44, col2X + colWidth - 5, signatureY + 44)
+    const col2X = leftCol + colWidth + 7
+    doc.setFontSize(8)
+    doc.text('Diterima:', col2X, signatureY)
+    doc.rect(col2X, signatureY + 2, colWidth, 12, 'S')
+    doc.setFontSize(7)
+    doc.text('Nama:', col2X + 1, signatureY + 16)
+    doc.line(col2X + 12, signatureY + 16, col2X + colWidth - 2, signatureY + 16)
 
     // Yang mengeluarkan
-    const col3X = leftCol + (colWidth * 2) + 20
-    doc.setFontSize(11)
-    doc.text('Yang Mengeluarkan:', col3X, signatureY)
-    doc.rect(col3X, signatureY + 5, colWidth, 30, 'S')
-    doc.setFontSize(9)
-    doc.text('Nama:', col3X + 2, signatureY + 38)
-    doc.text('Tanggal:', col3X + 2, signatureY + 43)
-    doc.line(col3X + 15, signatureY + 39, col3X + colWidth - 5, signatureY + 39)
-    doc.line(col3X + 20, signatureY + 44, col3X + colWidth - 5, signatureY + 44)
+    const col3X = leftCol + (colWidth * 2) + 14
+    doc.setFontSize(8)
+    doc.text('Yang Keluar:', col3X, signatureY)
+    doc.rect(col3X, signatureY + 2, colWidth, 12, 'S')
+    doc.setFontSize(7)
+    doc.text('Nama:', col3X + 1, signatureY + 16)
+    doc.line(col3X + 12, signatureY + 16, col3X + colWidth - 2, signatureY + 16)
 
     // Footer
     doc.setFontSize(8)

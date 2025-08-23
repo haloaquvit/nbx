@@ -11,7 +11,7 @@ CREATE TABLE cash_history (
     'panjar_pelunasan',
     'pengeluaran',
     'pembayaran_po',
-    'pemutihan_piutang',
+    'pembayaran_piutang',
     'transfer_masuk',
     'transfer_keluar'
   )),

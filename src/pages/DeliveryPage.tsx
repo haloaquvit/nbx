@@ -151,8 +151,13 @@ export default function DeliveryPage() {
       // Summary
       const totalDeliveries = filteredDeliveryHistory.length
       const totalItems = filteredDeliveryHistory.reduce((sum, d) => sum + (d.items?.reduce((itemSum: number, item: any) => itemSum + item.quantityDelivered, 0) || 0), 0)
+      const totalOrderValue = filteredDeliveryHistory.reduce((sum, d) => sum + (d.transactionTotal || 0), 0)
       
-      doc.text(`Total Pengantaran: ${totalDeliveries} | Total Item Diantar: ${totalItems}`, margin, yPos)
+      doc.text(`Total Pengantaran: ${totalDeliveries}`, margin, yPos)
+      yPos += 7
+      doc.text(`Total Item Diantar: ${totalItems}`, margin, yPos)
+      yPos += 7
+      doc.text(`Total Nilai Order: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(totalOrderValue)}`, margin, yPos)
       yPos += 15
 
       // Table data
@@ -170,33 +175,41 @@ export default function DeliveryPage() {
         delivery.photoUrl ? 'Ya' : 'Tidak'
       ])
 
+      // Calculate table width and center it
+      const totalTableWidth = 12 + 18 + 22 + 35 + 30 + 25 + 25 + 15 + 15 + 35 + 15 // Sum of all cellWidths
+      const tableStartX = (pageWidth - totalTableWidth) / 2 // Center the table
+
       // Table
       autoTable(doc, {
         head: [['No', 'ID#', 'Order ID', 'Pelanggan', 'Tanggal Antar', 'Driver', 'Helper', 'Jenis', 'Total', 'Nilai Order', 'Foto']],
         body: tableData,
         startY: yPos,
+        margin: { left: tableStartX, right: tableStartX },
+        tableWidth: totalTableWidth,
         styles: {
           fontSize: 8,
-          cellPadding: 2
+          cellPadding: 2,
+          halign: 'left'
         },
         headStyles: {
           fillColor: [79, 70, 229],
           textColor: 255,
           fontSize: 8,
-          fontStyle: 'bold'
+          fontStyle: 'bold',
+          halign: 'center'
         },
         columnStyles: {
-          0: { halign: 'center', cellWidth: 15 },
-          1: { cellWidth: 20 },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 40 },
-          4: { cellWidth: 35 },
-          5: { cellWidth: 30 },
-          6: { cellWidth: 30 },
-          7: { halign: 'center', cellWidth: 20 },
-          8: { halign: 'center', cellWidth: 20 },
-          9: { halign: 'right', cellWidth: 30 },
-          10: { halign: 'center', cellWidth: 20 }
+          0: { halign: 'center', cellWidth: 12 },    // No
+          1: { halign: 'center', cellWidth: 18 },    // ID#
+          2: { halign: 'center', cellWidth: 22 },    // Order ID
+          3: { halign: 'left', cellWidth: 35 },      // Pelanggan
+          4: { halign: 'center', cellWidth: 30 },    // Tanggal
+          5: { halign: 'left', cellWidth: 25 },      // Driver
+          6: { halign: 'left', cellWidth: 25 },      // Helper
+          7: { halign: 'center', cellWidth: 15 },    // Jenis
+          8: { halign: 'center', cellWidth: 15 },    // Total
+          9: { halign: 'right', cellWidth: 35 },     // Nilai Order
+          10: { halign: 'center', cellWidth: 15 }    // Foto
         },
         didDrawPage: (data) => {
           // Footer with print info

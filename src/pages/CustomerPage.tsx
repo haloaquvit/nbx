@@ -30,10 +30,25 @@ export default function CustomerPage() {
 
   const handleExportExcel = () => {
     if (customers) {
-      const worksheet = XLSX.utils.json_to_sheet(customers);
+      // Format data untuk export dengan kolom yang konsisten
+      const exportData = customers.map(customer => ({
+        "Nama": customer.name || '',
+        "Telepon": customer.phone || '',
+        "Alamat": customer.address || '',
+        "Latitude": customer.latitude || '',
+        "Longitude": customer.longitude || '',
+        "Jumlah Galon Titip": customer.jumlah_galon_titip || 0
+      }));
+      
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Pelanggan");
-      XLSX.writeFile(workbook, "data-pelanggan.xlsx");
+      XLSX.writeFile(workbook, "template-pelanggan.xlsx");
+      
+      toast({
+        title: "Export Berhasil",
+        description: "Template pelanggan berhasil diunduh. File ini bisa digunakan untuk import."
+      });
     }
   };
 
@@ -53,24 +68,42 @@ export default function CustomerPage() {
         const workbook = XLSX.read(data, { type: "array" });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet);
+        const json = XLSX.utils.sheet_to_json(worksheet) as any[];
+        
+        // Transform data ke format yang expected oleh database
+        const transformedData = json.map((row: any) => ({
+          name: row['Nama'] || row['name'] || '',
+          phone: row['Telepon'] || row['phone'] || '',
+          address: row['Alamat'] || row['address'] || '',
+          latitude: parseFloat(row['Latitude'] || row['latitude'] || '0') || null,
+          longitude: parseFloat(row['Longitude'] || row['longitude'] || '0') || null,
+          jumlah_galon_titip: parseInt(row['Jumlah Galon Titip'] || row['jumlah_galon_titip'] || '0') || 0
+        })).filter(customer => customer.name.trim() !== ''); // Filter out empty names
+        
+        if (transformedData.length === 0) {
+          throw new Error('Tidak ada data pelanggan yang valid ditemukan dalam file');
+        }
 
-        const { error } = await supabase.functions.invoke('bulk-upsert-customers', {
-          body: json,
-        });
+        // Use direct database insert instead of edge function to avoid CORS
+        const { error } = await supabase
+          .from('customers')
+          .upsert(transformedData, { 
+            onConflict: 'name', // Upsert based on name
+            ignoreDuplicates: false 
+          });
 
         if (error) throw error;
 
         toast({
-          title: "Sukses!",
-          description: "Data pelanggan berhasil diimpor.",
+          title: "Import Berhasil!",
+          description: `${transformedData.length} data pelanggan berhasil diimpor/diperbarui.`,
         });
         queryClient.invalidateQueries({ queryKey: ['customers'] });
       } catch (error: any) {
         toast({
           variant: "destructive",
           title: "Gagal Impor!",
-          description: `Terjadi kesalahan: ${error.message}. Pastikan kolom Excel adalah 'Nama', 'Telepon', 'Alamat'.`,
+          description: `Terjadi kesalahan: ${error.message || 'Format file tidak sesuai'}. Pastikan kolom Excel sesuai template: 'Nama', 'Telepon', 'Alamat', dll.`,
         });
       } finally {
         setIsImporting(false);
@@ -112,7 +145,7 @@ export default function CustomerPage() {
           <div className="flex-shrink-0">
             <Button 
               onClick={() => setIsAddDialogOpen(true)}
-              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700"
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 btn-glossy"
             >
               <PlusCircle className="mr-2 h-4 w-4" />
               <span className="sm:inline">Tambah Pelanggan</span>
@@ -121,14 +154,14 @@ export default function CustomerPage() {
         </div>
 
         {/* Action buttons - Mobile responsive */}
-        <Card className="mb-6">
+        <Card className="mb-6 card-hover">
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
               <Button 
                 variant="outline" 
                 onClick={handleImportClick} 
                 disabled={isImporting}
-                className="flex-1 sm:flex-initial"
+                className="flex-1 sm:flex-initial hover-glow"
               >
                 <Upload className="mr-2 h-4 w-4" />
                 {isImporting ? 'Mengimpor...' : 'Impor Excel'}
@@ -136,7 +169,7 @@ export default function CustomerPage() {
               <Button 
                 variant="outline" 
                 onClick={handleExportExcel}
-                className="flex-1 sm:flex-initial"
+                className="flex-1 sm:flex-initial hover-glow"
               >
                 <FileDown className="mr-2 h-4 w-4" />
                 Ekspor Excel
@@ -146,7 +179,7 @@ export default function CustomerPage() {
         </Card>
 
         {/* Customer Table */}
-        <Card>
+        <Card className="card-hover">
           <CardHeader>
             <CardTitle className="text-lg sm:text-xl">Daftar Pelanggan</CardTitle>
           </CardHeader>
@@ -158,7 +191,7 @@ export default function CustomerPage() {
         {/* Floating Action Button for Mobile */}
         <Button
           onClick={() => setIsAddDialogOpen(true)}
-          className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl transition-all duration-200 sm:hidden"
+          className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl transition-all duration-200 sm:hidden pulse-hover"
           size="icon"
         >
           <PlusCircle className="h-6 w-6 text-white" />

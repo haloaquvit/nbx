@@ -3,7 +3,7 @@ export interface CashHistory {
   account_id: string;
   account_name?: string;
   // Support both old and new formats
-  type?: 'orderan' | 'kas_masuk_manual' | 'kas_keluar_manual' | 'panjar_pengambilan' | 'panjar_pelunasan' | 'pengeluaran' | 'pembayaran_po' | 'pemutihan_piutang' | 'transfer_masuk' | 'transfer_keluar';
+  type?: 'orderan' | 'kas_masuk_manual' | 'kas_keluar_manual' | 'panjar_pengambilan' | 'panjar_pelunasan' | 'pengeluaran' | 'pembayaran_po' | 'pembayaran_piutang' | 'transfer_masuk' | 'transfer_keluar';
   transaction_type?: 'income' | 'expense';
   source_type?: string;
   amount: number;

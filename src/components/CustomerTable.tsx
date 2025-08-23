@@ -119,7 +119,7 @@ export const getColumns = (
               e.stopPropagation();
               window.open(`https://www.google.com/maps/dir//${customer.latitude},${customer.longitude}`, '_blank');
             }}
-            className="h-6 text-xs"
+            className="h-6 text-xs btn-glossy"
           >
             <MapPin className="h-3 w-3 mr-1" />
             Buka Maps
@@ -182,6 +182,7 @@ export const getColumns = (
                 size="icon" 
                 variant="ghost"
                 onClick={(e) => e.stopPropagation()} // Mencegah klik baris
+                className="hover-glow"
               >
                 <MoreHorizontal className="h-4 w-4" />
                 <span className="sr-only">Toggle menu</span>
@@ -192,12 +193,12 @@ export const getColumns = (
               onClick={(e) => e.stopPropagation()} // Mencegah klik baris
             >
               <DropdownMenuLabel>Aksi</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => onEditClick(customer)}>
+              <DropdownMenuItem onClick={() => onEditClick(customer)} className="dropdown-item-hover">
                 Edit
               </DropdownMenuItem>
               {userRole?.toLowerCase() === 'owner' && (
                 <DropdownMenuItem 
-                  className="text-red-500 hover:!text-red-500 hover:!bg-red-100"
+                  className="text-red-500 hover:!text-red-500 hover:!bg-red-100 dropdown-item-hover"
                   onClick={() => onDeleteClick(customer)}
                 >
                   Hapus
@@ -280,7 +281,7 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
               placeholder="Cari nama pelanggan..."
               value={globalFilter ?? ''}
               onChange={(event) => setGlobalFilter(event.target.value)}
-              className="pl-10"
+              className="pl-10 input-glow"
             />
           </div>
           <div className="text-sm text-muted-foreground">
@@ -315,7 +316,7 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
                   <TableRow 
                     key={row.id}
                     onClick={() => navigate(`/customers/${row.original.id}`)}
-                    className="cursor-pointer hover:bg-muted"
+                    className="cursor-pointer table-row-hover"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell key={cell.id} className="text-xs sm:text-sm">
@@ -352,7 +353,7 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
             size="sm"
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
-            className="text-xs sm:text-sm"
+            className="text-xs sm:text-sm hover-glow"
           >
             <span className="hidden sm:inline">Sebelumnya</span>
             <span className="sm:hidden">‹</span>
@@ -365,7 +366,7 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
             size="sm"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
-            className="text-xs sm:text-sm"
+            className="text-xs sm:text-sm hover-glow"
           >
             <span className="hidden sm:inline">Selanjutnya</span>
             <span className="sm:hidden">›</span>

@@ -66,7 +66,7 @@ const getTypeVariant = (item: CashHistory) => {
       case 'kas_masuk_manual': 
       case 'transfer_masuk':
       case 'panjar_pelunasan':
-      case 'pemutihan_piutang':
+      case 'pembayaran_piutang':
         return 'success';
       case 'kas_keluar_manual':
       case 'pengeluaran':
@@ -105,7 +105,7 @@ const getTypeLabel = (item: CashHistory) => {
       'panjar_pelunasan': 'Panjar Pelunasan',
       'pengeluaran': 'Pengeluaran',
       'pembayaran_po': 'Pembayaran PO',
-      'pemutihan_piutang': 'Pembayaran Piutang',
+      'pembayaran_piutang': 'Pembayaran Piutang',
       'transfer_masuk': 'Transfer Masuk',
       'transfer_keluar': 'Transfer Keluar'
     };
@@ -126,7 +126,7 @@ const getTypeLabel = (item: CashHistory) => {
       case 'po_payment':
         return 'Pembayaran PO';
       case 'receivables_writeoff':
-        return 'Pemutihan Piutang';
+        return 'Pembayaran Piutang';
       case 'transfer_masuk':
         return 'Transfer Masuk';
       case 'transfer_keluar':
@@ -146,12 +146,26 @@ const getTypeLabel = (item: CashHistory) => {
 const isIncomeType = (item: CashHistory) => {
   // Handle new format with 'type' field
   if (item.type) {
-    return ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pemutihan_piutang'].includes(item.type);
+    return ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(item.type);
   }
   
   // Handle format with 'transaction_type' field
   if (item.transaction_type) {
     return item.transaction_type === 'income';
+  }
+  
+  return false;
+}
+
+const isExpenseType = (item: CashHistory) => {
+  // Handle new format with 'type' field
+  if (item.type) {
+    return ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual'].includes(item.type);
+  }
+  
+  // Handle format with 'transaction_type' field
+  if (item.transaction_type) {
+    return item.transaction_type === 'expense';
   }
   
   return false;
@@ -175,7 +189,8 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     try {
       // First, determine the impact on account balance
       const isIncome = isIncomeType(selectedRecord);
-      const balanceChange = isIncome ? -selectedRecord.amount : selectedRecord.amount;
+      const isExpense = isExpenseType(selectedRecord);
+      const balanceChange = isIncome ? -selectedRecord.amount : (isExpense ? selectedRecord.amount : 0);
 
       // Update account balance to reverse the transaction effect
       if (selectedRecord.account_id) {
@@ -323,7 +338,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         const item = row.original;
         const amount = item.amount;
         
-        if (!isIncomeType(item)) {
+        if (isExpenseType(item)) {
           return (
             <div className="text-right font-medium text-red-600">
               {new Intl.NumberFormat("id-ID", {
@@ -401,7 +416,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       'Deskripsi': item.description,
       'Referensi': item.reference_name || item.reference_id || item.reference_number || '-',
       'Kas Masuk': isIncomeType(item) ? item.amount : 0,
-      'Kas Keluar': !isIncomeType(item) ? item.amount : 0,
+      'Kas Keluar': isExpenseType(item) ? item.amount : 0,
       'Dibuat Oleh': item.user_name || item.created_by_name || 'Unknown'
     }));
     
@@ -421,7 +436,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         getTypeLabel(item),
         item.description,
         isIncomeType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
-        !isIncomeType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
+        isExpenseType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
         item.user_name || item.created_by_name || 'Unknown'
       ]),
       styles: { fontSize: 8 },
@@ -449,7 +464,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     
     const totalExpense = data
       .filter(item => {
-        if (!isIncomeType(item)) {
+        if (isExpenseType(item)) {
           // Exclude only internal transfers (transfer antar kas)
           if (item.source_type === 'transfer_masuk' || item.source_type === 'transfer_keluar') {
             return false;
