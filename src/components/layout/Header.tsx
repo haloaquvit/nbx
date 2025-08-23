@@ -1,7 +1,7 @@
 "use client"
 
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { CircleUser, Menu, Package, LogOut, Home, ShoppingCart, List, Users, Box, Settings, Shield, BarChart3, HandCoins, TrendingUp } from "lucide-react";
+import { CircleUser, Menu, Package, LogOut, Home, ShoppingCart, List, Users, Box, Settings, Shield, BarChart3, HandCoins, TrendingUp, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -43,6 +43,7 @@ export function Header() {
   const menuItems = [
     { href: "/", label: "Dashboard", icon: Home },
     { href: "/pos", label: "POS", icon: ShoppingCart, permission: PERMISSIONS.TRANSACTIONS },
+    { href: "/delivery", label: "Pengantaran", icon: Truck, permission: PERMISSIONS.DELIVERIES },
     { href: "/transactions", label: "Transaksi", icon: List, permission: PERMISSIONS.TRANSACTIONS },
     { href: "/products", label: "Produk", icon: Package, permission: PERMISSIONS.PRODUCTS },
     { href: "/materials", label: "Bahan", icon: Box, permission: PERMISSIONS.MATERIALS },
@@ -60,9 +61,9 @@ export function Header() {
   ].filter(item => hasPermission(item.permission));
 
   return (
-    <header className="border-b bg-background">
+    <header className="border-b bg-background w-full">
       {/* Top Row - Logo, Menu, User */}
-      <div className="flex h-16 items-center px-6">
+      <div className="flex h-16 items-center px-6 w-full max-w-none">
         {/* Mobile Menu */}
         <Sheet>
           <SheetTrigger asChild>
@@ -77,13 +78,13 @@ export function Header() {
         </Sheet>
 
         {/* Logo */}
-        <div className="flex items-center gap-2 mr-8">
+        <div className="flex items-center gap-2 mr-4 md:mr-8 flex-shrink-0">
           <Package className="h-6 w-6 text-primary" />
-          <span className="font-semibold">{settings?.name || 'Aquvit POS'}</span>
+          <span className="font-semibold text-sm md:text-base truncate">{settings?.name || 'Aquvit POS'}</span>
         </div>
 
         {/* Desktop Navigation Menu */}
-        <nav className="hidden md:flex items-center space-x-6 flex-1">
+        <nav className="hidden md:flex items-center space-x-4 lg:space-x-6 flex-1 overflow-x-auto min-w-0">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.href;
@@ -93,7 +94,7 @@ export function Header() {
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors menu-item-hover",
+                  "flex items-center gap-2 px-2 md:px-3 py-2 rounded-md text-xs md:text-sm font-medium transition-colors menu-item-hover whitespace-nowrap",
                   isActive 
                     ? "bg-primary text-primary-foreground" 
                     : "text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -132,7 +133,7 @@ export function Header() {
         </nav>
 
         {/* Right Side - Theme Toggle & User Menu */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
           <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -9,7 +9,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText } from "lucide-react"
+import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText, Calendar } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -28,6 +28,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import {
   Table,
   TableBody,
@@ -38,7 +40,7 @@ import {
 } from "@/components/ui/table"
 import { Link } from "react-router-dom"
 import { Transaction, TransactionStatus } from "@/types/transaction"
-import { format } from "date-fns"
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { useToast } from "./ui/use-toast"
@@ -56,23 +58,66 @@ export function TransactionTable() {
   const navigate = useNavigate();
   const { user } = useAuth();
   
-  // Filter state
-  const [paymentStatusFilter, setPaymentStatusFilter] = React.useState('all');
-  const [dateFrom, setDateFrom] = React.useState('');
-  const [dateTo, setDateTo] = React.useState('');
+  // Filter states
+  const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
+  const [ppnFilter, setPpnFilter] = React.useState<'all' | 'ppn' | 'non-ppn'>('all');
+  const [filteredTransactions, setFilteredTransactions] = React.useState<Transaction[]>([]);
   
-  // Create filters object for useTransactions
-  const filters = React.useMemo(() => ({
-    payment_status: paymentStatusFilter !== 'all' ? paymentStatusFilter : undefined,
-    date_from: dateFrom || undefined,
-    date_to: dateTo || undefined,
-  }), [paymentStatusFilter, dateFrom, dateTo]);
-  
-  const { transactions, isLoading, deleteTransaction } = useTransactions(filters);
+  const { transactions, isLoading, deleteTransaction } = useTransactions();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [transactionToEdit, setTransactionToEdit] = React.useState<Transaction | null>(null);
+
+  // Filter logic
+  React.useEffect(() => {
+    if (!transactions) {
+      setFilteredTransactions([]);
+      return;
+    }
+
+    let filtered = [...transactions];
+
+    // Filter by date range
+    if (dateRange.from || dateRange.to) {
+      filtered = filtered.filter(transaction => {
+        if (!transaction.orderDate) return false;
+        const transactionDate = new Date(transaction.orderDate);
+        
+        if (dateRange.from && dateRange.to) {
+          return isWithinInterval(transactionDate, {
+            start: startOfDay(dateRange.from),
+            end: endOfDay(dateRange.to)
+          });
+        } else if (dateRange.from) {
+          return transactionDate >= startOfDay(dateRange.from);
+        } else if (dateRange.to) {
+          return transactionDate <= endOfDay(dateRange.to);
+        }
+        
+        return true;
+      });
+    }
+
+    // Filter by PPN status
+    if (ppnFilter !== 'all') {
+      filtered = filtered.filter(transaction => {
+        if (ppnFilter === 'ppn') {
+          return transaction.ppnEnabled === true;
+        } else if (ppnFilter === 'non-ppn') {
+          return transaction.ppnEnabled === false;
+        }
+        return true;
+      });
+    }
+
+    setFilteredTransactions(filtered);
+  }, [transactions, dateRange, ppnFilter]);
+
+  const clearFilters = () => {
+    setDateRange({ from: undefined, to: undefined });
+    setPpnFilter('all');
+  };
   
 
 
@@ -420,7 +465,7 @@ export function TransactionTable() {
   ]
 
   const table = useReactTable({
-    data: transactions || [],
+    data: filteredTransactions || [],
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -429,16 +474,15 @@ export function TransactionTable() {
   })
 
   const handleExportExcel = () => {
-    // Get filtered data from table
-    const filteredRows = table.getFilteredRowModel().rows;
-    const filteredTransactions = filteredRows.map(row => row.original);
+    // Use filteredTransactions directly
+    const exportTransactions = filteredTransactions;
     
     // Calculate summations
-    const totalSum = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
-    const paidSum = filteredTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
-    const remainingSum = filteredTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0);
+    const totalSum = exportTransactions.reduce((sum, t) => sum + t.total, 0);
+    const paidSum = exportTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
+    const remainingSum = exportTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0);
     
-    const exportData = filteredTransactions.map(t => ({
+    const exportData = exportTransactions.map(t => ({
       'No Order': t.id,
       'Pelanggan': t.customerName,
       'Tgl Order': t.orderDate ? format(new Date(t.orderDate), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
@@ -458,7 +502,7 @@ export function TransactionTable() {
       'Pelanggan': '',
       'Tgl Order': '',
       'Kasir': '',
-      'Produk': `TOTAL (${filteredTransactions.length} transaksi)`,
+      'Produk': `TOTAL (${exportTransactions.length} transaksi)`,
       'Total': totalSum,
       'Dibayar': paidSum,
       'Sisa': remainingSum,
@@ -469,18 +513,27 @@ export function TransactionTable() {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Transaksi");
-    XLSX.writeFile(workbook, `data-transaksi-${filteredTransactions.length}-records.xlsx`);
+    // Add filter info to filename
+    let filename = `data-transaksi-${exportTransactions.length}-records`;
+    if (dateRange.from && dateRange.to) {
+      filename += `-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`;
+    }
+    if (ppnFilter !== 'all') {
+      filename += `-${ppnFilter}`;
+    }
+    filename += '.xlsx';
+    
+    XLSX.writeFile(workbook, filename);
   };
 
   const handleExportPdf = () => {
-    // Get filtered data from table
-    const filteredRows = table.getFilteredRowModel().rows;
-    const filteredTransactions = filteredRows.map(row => row.original);
+    // Use filteredTransactions directly
+    const exportTransactions = filteredTransactions;
     
     // Calculate summations
-    const totalSum = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
-    const paidSum = filteredTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
-    const remainingSum = filteredTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0);
+    const totalSum = exportTransactions.reduce((sum, t) => sum + t.total, 0);
+    const paidSum = exportTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
+    const remainingSum = exportTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0);
     
     const doc = new jsPDF();
     
@@ -488,14 +541,19 @@ export function TransactionTable() {
     doc.setFontSize(16);
     doc.text('Data Transaksi', 14, 15);
     doc.setFontSize(10);
-    doc.text(`Total Records: ${filteredTransactions.length}`, 14, 25);
-    doc.text(`Export Date: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 30);
+    doc.text(`Total Records: ${exportTransactions.length}`, 14, 25);
+    if (dateRange.from && dateRange.to) {
+      doc.text(`Filter Tanggal: ${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`, 14, 30);
+      doc.text(`Export Date: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 35);
+    } else {
+      doc.text(`Export Date: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 30);
+    }
     
     // Data table
     autoTable(doc, {
       head: [['No. Order', 'Pelanggan', 'Tgl Order', 'Total', 'Dibayar', 'Sisa', 'Status Bayar', 'Status PPN']],
       body: [
-        ...filteredTransactions.map(t => [
+        ...exportTransactions.map(t => [
           t.id,
           t.customerName,
           t.orderDate ? format(new Date(t.orderDate), "dd/MM/yy", { locale: id }) : 'N/A',
@@ -510,7 +568,7 @@ export function TransactionTable() {
         [
           '',
           '',
-          `TOTAL (${filteredTransactions.length})`,
+          `TOTAL (${exportTransactions.length})`,
           new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalSum),
           new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(paidSum),
           new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(remainingSum),
@@ -531,7 +589,7 @@ export function TransactionTable() {
       },
       didParseCell: function (data: any) {
         // Highlight summary row
-        if (data.row.index === filteredTransactions.length) {
+        if (data.row.index === exportTransactions.length) {
           data.cell.styles.fillColor = [52, 152, 219];
           data.cell.styles.textColor = 255;
           data.cell.styles.fontStyle = 'bold';
@@ -539,8 +597,33 @@ export function TransactionTable() {
       }
     });
     
-    doc.save(`data-transaksi-${filteredTransactions.length}-records.pdf`);
+    // Add filter info to filename
+    let filename = `data-transaksi-${exportTransactions.length}-records`;
+    if (dateRange.from && dateRange.to) {
+      filename += `-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`;
+    }
+    if (ppnFilter !== 'all') {
+      filename += `-${ppnFilter}`;
+    }
+    filename += '.pdf';
+    
+    doc.save(filename);
   };
+
+
+  // Calculate filtered summary
+  const filteredSummary = React.useMemo(() => {
+    const totalAmount = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
+    const paidAmount = filteredTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
+    const remainingAmount = totalAmount - paidAmount;
+    
+    return {
+      count: filteredTransactions.length,
+      totalAmount,
+      paidAmount,
+      remainingAmount
+    };
+  }, [filteredTransactions]);
 
   return (
     <div className="w-full max-w-none">
@@ -548,95 +631,114 @@ export function TransactionTable() {
       <div className="flex flex-col gap-4 p-4 border rounded-lg mb-4 bg-background">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-medium">Filter Transaksi</h3>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => {
-              setPaymentStatusFilter('all');
-              setDateFrom('');
-              setDateTo('');
-            }}
-          >
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
             <X className="h-4 w-4 mr-2" />
             Reset Filter
           </Button>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Date Range Filter */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Status Pembayaran</label>
-            <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+            <label className="text-sm font-medium">Rentang Tanggal</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-full justify-start text-left font-normal",
+                    !dateRange.from && !dateRange.to && "text-muted-foreground"
+                  )}
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {dateRange.from ? (
+                    dateRange.to ? (
+                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
+                    ) : (
+                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
+                    )
+                  ) : (
+                    "Pilih Rentang Tanggal"
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarComponent
+                  initialFocus
+                  mode="range"
+                  defaultMonth={dateRange.from}
+                  selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
+                  onSelect={(range) => {
+                    if (range) {
+                      setDateRange({ from: range.from, to: range.to });
+                    } else {
+                      setDateRange({ from: undefined, to: undefined });
+                    }
+                  }}
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* PPN Status Filter */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Status PPN</label>
+            <Select value={ppnFilter} onValueChange={(value: 'all' | 'ppn' | 'non-ppn') => setPpnFilter(value)}>
               <SelectTrigger>
-                <SelectValue placeholder="Pilih Status Pembayaran" />
+                <SelectValue placeholder="Pilih Status PPN" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="Lunas">Lunas</SelectItem>
-                <SelectItem value="Belum Lunas">Belum Lunas</SelectItem>
-                <SelectItem value="Kredit">Kredit</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Dari Tanggal</label>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="input-glow"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Sampai Tanggal</label>
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="input-glow"
-            />
-          </div>
-        </div>
-        {(paymentStatusFilter !== 'all' || dateFrom || dateTo) && (
-          <div className="text-sm text-muted-foreground">
-            Menampilkan {transactions?.length || 0} transaksi yang difilter
-          </div>
-        )}
-      </div>
-      
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-          <div className="w-full sm:max-w-sm">
-            <Select
-              value={(table.getColumn("ppnStatus")?.getFilterValue() as string) ?? "all"}
-              onValueChange={(value) => {
-                table.getColumn("ppnStatus")?.setFilterValue(value === "all" ? "" : value)
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Filter PPN" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua</SelectItem>
                 <SelectItem value="ppn">PPN</SelectItem>
                 <SelectItem value="non-ppn">Non PPN</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {(table.getState().columnFilters.length > 0) && (
-            <div className="flex items-center gap-2">
-              <div className="text-sm text-muted-foreground">
-                Menampilkan {table.getFilteredRowModel().rows.length} dari {table.getCoreRowModel().rows.length} transaksi
-              </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => table.resetColumnFilters()}
-                className="h-8 px-2"
-              >
-                <X className="h-4 w-4" />
-                Clear
-              </Button>
-            </div>
-          )}
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="text-sm font-medium text-blue-700">Total Transaksi</div>
+          <div className="text-2xl font-bold text-blue-600">{filteredSummary.count}</div>
+        </div>
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="text-sm font-medium text-green-700">Total Nilai</div>
+          <div className="text-2xl font-bold text-green-600">
+            {new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              minimumFractionDigits: 0,
+            }).format(filteredSummary.totalAmount)}
+          </div>
+        </div>
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+          <div className="text-sm font-medium text-emerald-700">Dibayar</div>
+          <div className="text-2xl font-bold text-emerald-600">
+            {new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              minimumFractionDigits: 0,
+            }).format(filteredSummary.paidAmount)}
+          </div>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="text-sm font-medium text-red-700">Sisa Tagihan</div>
+          <div className="text-2xl font-bold text-red-600">
+            {new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              minimumFractionDigits: 0,
+            }).format(filteredSummary.remainingAmount)}
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
+        <div className="text-sm text-muted-foreground">
+          Menampilkan {filteredTransactions.length} dari {transactions?.length || 0} transaksi
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <Button variant="outline" onClick={handleExportExcel} className="text-xs sm:text-sm hover-glow">

@@ -9,7 +9,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { FileDown, Search, X } from "lucide-react"
+import { FileDown, Search, X, Calendar } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -17,6 +17,9 @@ import autoTable from "jspdf-autotable"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import { cn } from "@/lib/utils"
 import {
   Table,
   TableBody,
@@ -26,7 +29,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { CashHistory } from "@/types/cashFlow"
-import { format } from "date-fns"
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { Skeleton } from "./ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
@@ -182,6 +185,65 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [selectedRecord, setSelectedRecord] = React.useState<CashHistory | null>(null);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = React.useState(false);
+  const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
+  const [filteredData, setFilteredData] = React.useState<CashHistory[]>([]);
+
+  // Initialize filtered data when data changes
+  React.useEffect(() => {
+    if (Array.isArray(data)) {
+      setFilteredData(data);
+    } else {
+      setFilteredData([]);
+    }
+  }, [data]);
+
+  // Filter data based on date range
+  React.useEffect(() => {
+    if (!Array.isArray(data)) {
+      return;
+    }
+
+    if (!dateRange.from) {
+      setFilteredData(data);
+      return;
+    }
+
+    try {
+      if (dateRange.from && !dateRange.to) {
+        // Only start date selected
+        const filtered = data.filter(item => {
+          if (!item.created_at) return false;
+          const itemDate = new Date(item.created_at);
+          return itemDate >= startOfDay(dateRange.from!);
+        });
+        setFilteredData(filtered);
+        return;
+      }
+
+      if (dateRange.from && dateRange.to) {
+        // Both dates selected
+        const filtered = data.filter(item => {
+          if (!item.created_at) return false;
+          const itemDate = new Date(item.created_at);
+          return isWithinInterval(itemDate, {
+            start: startOfDay(dateRange.from!),
+            end: endOfDay(dateRange.to!)
+          });
+        });
+        setFilteredData(filtered);
+        return;
+      }
+
+      setFilteredData(data);
+    } catch (error) {
+      console.error('Error filtering cash flow data:', error);
+      setFilteredData(data);
+    }
+  }, [data, dateRange]);
+
+  const clearDateFilter = () => {
+    setDateRange({ from: undefined, to: undefined });
+  };
 
   const handleDeleteCashHistory = async () => {
     if (!selectedRecord) return;
@@ -319,7 +381,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         
         if (isIncomeType(item)) {
           return (
-            <div className="text-right font-medium text-green-600">
+            <div className="text-right font-semibold text-green-600 text-base">
               {new Intl.NumberFormat("id-ID", {
                 style: "currency",
                 currency: "IDR",
@@ -328,7 +390,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
             </div>
           );
         }
-        return <div className="text-right">-</div>;
+        return <div className="text-right text-base">-</div>;
       },
     },
     {
@@ -400,7 +462,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   ]
 
   const table = useReactTable({
-    data: data || [],
+    data: filteredData || [],
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
@@ -409,7 +471,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   })
 
   const handleExportExcel = () => {
-    const exportData = (data || []).map(item => ({
+    const exportData = (filteredData || []).map(item => ({
       'Tanggal': item.created_at ? format(new Date(item.created_at), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
       'Akun Keuangan': item.account_name || 'Unknown Account',
       'Jenis Transaksi': getTypeLabel(item),
@@ -423,36 +485,23 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Arus Kas");
-    XLSX.writeFile(workbook, "arus-kas.xlsx");
+    
+    // Add date range to filename if filtered
+    const filename = dateRange.from && dateRange.to 
+      ? `arus-kas-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}.xlsx`
+      : "arus-kas.xlsx";
+    
+    XLSX.writeFile(workbook, filename);
   };
 
   const handleExportPdf = () => {
-    const doc = new jsPDF('l', 'mm', 'a4'); // landscape orientation for more columns
-    autoTable(doc, {
-      head: [['Tanggal', 'Akun', 'Jenis', 'Deskripsi', 'Kas Masuk', 'Kas Keluar', 'User']],
-      body: (data || []).map(item => [
-        item.created_at ? format(new Date(item.created_at), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
-        item.account_name || 'Unknown Account',
-        getTypeLabel(item),
-        item.description,
-        isIncomeType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
-        isExpenseType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
-        item.user_name || item.created_by_name || 'Unknown'
-      ]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [71, 85, 105] },
-    });
-    doc.save('arus-kas.pdf');
-  };
-
-  // Calculate summary (exclude ONLY internal transfers, include other transfers)
-  const summary = React.useMemo(() => {
-    if (!data) return { totalIncome: 0, totalExpense: 0, netFlow: 0 };
+    const doc = new jsPDF('p', 'mm', 'a4'); // portrait orientation
     
-    const totalIncome = data
+    // Calculate totals for filtered data
+    const totalIncome = filteredData
       .filter(item => {
         if (isIncomeType(item)) {
-          // Exclude only internal transfers (transfer antar kas)
+          // Exclude only internal transfers
           if (item.source_type === 'transfer_masuk' || item.source_type === 'transfer_keluar') {
             return false;
           }
@@ -462,10 +511,10 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       })
       .reduce((sum, item) => sum + item.amount, 0);
     
-    const totalExpense = data
+    const totalExpense = filteredData
       .filter(item => {
         if (isExpenseType(item)) {
-          // Exclude only internal transfers (transfer antar kas)
+          // Exclude only internal transfers
           if (item.source_type === 'transfer_masuk' || item.source_type === 'transfer_keluar') {
             return false;
           }
@@ -474,72 +523,178 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         return false;
       })
       .reduce((sum, item) => sum + item.amount, 0);
+
+    const netFlow = totalIncome - totalExpense;
     
-    return {
-      totalIncome,
-      totalExpense,
-      netFlow: totalIncome - totalExpense
-    };
-  }, [data]);
+    // Add title and date range if filtered
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('LAPORAN ARUS KAS', 105, 20, { align: 'center' });
+    
+    let currentY = 35;
+    
+    if (dateRange.from && dateRange.to) {
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Periode: ${format(dateRange.from, 'd MMM yyyy', { locale: id })} - ${format(dateRange.to, 'd MMM yyyy', { locale: id })}`, 105, currentY, { align: 'center' });
+      currentY += 10;
+    }
+
+    // Add summary totals
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RINGKASAN:', 20, currentY);
+    currentY += 8;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(`Total Kas Masuk: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalIncome)}`, 20, currentY);
+    currentY += 6;
+    
+    doc.text(`Total Kas Keluar: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalExpense)}`, 20, currentY);
+    currentY += 6;
+    
+    doc.setFont('helvetica', 'bold');
+    const netColor = netFlow >= 0 ? [0, 128, 0] : [255, 0, 0]; // Green for positive, red for negative
+    doc.setTextColor(...netColor);
+    doc.text(`Arus Kas Bersih: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(netFlow)}`, 20, currentY);
+    doc.setTextColor(0, 0, 0); // Reset to black
+    currentY += 15;
+    
+    // Table with larger fonts and portrait layout
+    autoTable(doc, {
+      startY: currentY,
+      head: [['Tanggal', 'Jenis', 'Deskripsi', 'Kas Masuk', 'Kas Keluar']],
+      body: (filteredData || []).map(item => [
+        item.created_at ? format(new Date(item.created_at), "d MMM yyyy", { locale: id }) : 'N/A',
+        getTypeLabel(item),
+        item.description?.length > 25 ? item.description.substring(0, 25) + '...' : item.description || '',
+        isIncomeType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
+        isExpenseType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-'
+      ]),
+      styles: { 
+        fontSize: 10,
+        cellPadding: 3
+      },
+      headStyles: { 
+        fillColor: [71, 85, 105],
+        fontSize: 11,
+        fontStyle: 'bold'
+      },
+      columnStyles: {
+        0: { cellWidth: 25 }, // Tanggal
+        1: { cellWidth: 35 }, // Jenis
+        2: { cellWidth: 50 }, // Deskripsi
+        3: { cellWidth: 35, halign: 'right' }, // Kas Masuk
+        4: { cellWidth: 35, halign: 'right' }  // Kas Keluar
+      }
+    });
+    
+    // Add total row at the end - aligned with table columns
+    const finalY = (doc as any).lastAutoTable.finalY + 5;
+    
+    // Draw a line separator
+    doc.setLineWidth(0.5);
+    doc.line(20, finalY, 190, finalY);
+    
+    const totalRowY = finalY + 8;
+    
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TOTAL:', 20, totalRowY);
+    
+    // Position total amounts to align with table columns
+    // Column positions: 20 (start) + 25 (tanggal) + 35 (jenis) + 50 (deskripsi) = 130 for kas masuk column
+    // 130 + 35 (kas masuk width) = 165 for kas keluar column
+    doc.setTextColor(0, 128, 0); // Green for income
+    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalIncome), 155, totalRowY, { align: 'right' });
+    
+    doc.setTextColor(255, 0, 0); // Red for expense  
+    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalExpense), 190, totalRowY, { align: 'right' });
+    
+    doc.setTextColor(0, 0, 0); // Reset to black
+    
+    // Add generation timestamp
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Dicetak pada: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 105, 285, { align: 'center' });
+    
+    // Add date range to filename if filtered
+    const filename = dateRange.from && dateRange.to 
+      ? `arus-kas-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}.pdf`
+      : "arus-kas.pdf";
+    
+    doc.save(filename);
+  };
+
 
   return (
     <div className="w-full space-y-4">
       <TransferAccountDialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen} />
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="text-sm font-medium text-green-700">Total Kas Masuk</div>
-          <div className="text-2xl font-bold text-green-600">
-            {new Intl.NumberFormat("id-ID", {
-              style: "currency",
-              currency: "IDR",
-              minimumFractionDigits: 0,
-            }).format(summary.totalIncome)}
-          </div>
-        </div>
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="text-sm font-medium text-red-700">Total Kas Keluar</div>
-          <div className="text-2xl font-bold text-red-600">
-            {new Intl.NumberFormat("id-ID", {
-              style: "currency",
-              currency: "IDR",
-              minimumFractionDigits: 0,
-            }).format(summary.totalExpense)}
-          </div>
-        </div>
-        <div className={`border rounded-lg p-4 ${summary.netFlow >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
-          <div className={`text-sm font-medium ${summary.netFlow >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
-            Arus Kas Bersih
-          </div>
-          <div className={`text-2xl font-bold ${summary.netFlow >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-            {new Intl.NumberFormat("id-ID", {
-              style: "currency",
-              currency: "IDR",
-              minimumFractionDigits: 0,
-            }).format(summary.netFlow)}
-          </div>
-        </div>
-      </div>
 
       {/* Filters and Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-4 items-center">
-          {(table.getState().columnFilters.length > 0) && (
-            <div className="flex items-center gap-2">
-              <div className="text-sm text-muted-foreground">
-                Menampilkan {table.getFilteredRowModel().rows.length} dari {table.getCoreRowModel().rows.length} transaksi
-              </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                onClick={() => table.resetColumnFilters()}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex gap-4 items-center flex-wrap">
+          {/* Date Range Filter */}
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    "w-[280px] justify-start text-left font-normal",
+                    !dateRange.from && !dateRange.to && "text-muted-foreground"
+                  )}
+                >
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {dateRange.from ? (
+                    dateRange.to ? (
+                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
+                    ) : (
+                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
+                    )
+                  ) : (
+                    "Pilih Rentang Tanggal"
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarComponent
+                  initialFocus
+                  mode="range"
+                  defaultMonth={dateRange.from}
+                  selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
+                  onSelect={(range) => {
+                    if (range) {
+                      setDateRange({ from: range.from, to: range.to });
+                    } else {
+                      setDateRange({ from: undefined, to: undefined });
+                    }
+                  }}
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
+            
+            {(dateRange.from || dateRange.to) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearDateFilter}
                 className="h-8 px-2"
               >
                 <X className="h-4 w-4" />
                 Clear
               </Button>
+            )}
+          </div>
+
+          {/* Filter Info */}
+          <div className="flex items-center gap-2">
+            <div className="text-sm text-muted-foreground">
+              Menampilkan {filteredData.length} dari {data?.length || 0} transaksi
             </div>
-          )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={handleExportExcel}>
@@ -556,12 +711,12 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
 
       {/* Table */}
       <div className="rounded-md border">
-        <Table>
+        <Table className="text-base">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
+                  <TableHead key={header.id} className="text-base font-semibold h-12">
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -583,24 +738,26 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
                 </TableRow>
               ))
             ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => {
-                console.log('Rendering row:', row.id, row.original);
-                return (
-                  <TableRow key={row.id}>
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                );
-              })
+              <>
+                {table.getRowModel().rows.map((row) => {
+                  console.log('Rendering row:', row.id, row.original);
+                  return (
+                    <TableRow key={row.id}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="text-base py-4">
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })}
+              </>
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
+                <TableCell colSpan={columns.length} className="h-24 text-center text-base">
                   Tidak ada data arus kas.
                 </TableCell>
               </TableRow>
