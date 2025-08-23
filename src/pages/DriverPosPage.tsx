@@ -115,6 +115,22 @@ export default function DriverPosPage() {
   const [notes, setNotes] = useState("")
   const [paymentAccount, setPaymentAccount] = useState("")
   const [paidAmount, setPaidAmount] = useState(0)
+
+  const handlePaidAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value === '') {
+      setPaidAmount(0);
+      setPaymentAccount(''); // Reset payment account when amount is 0
+    } else {
+      const numValue = parseInt(value) || 0;
+      if (numValue >= 0 && numValue <= total) {
+        setPaidAmount(numValue);
+        if (numValue === 0) {
+          setPaymentAccount(''); // Reset payment account when amount becomes 0
+        }
+      }
+    }
+  };
   
   // Dialog states
   const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false)
@@ -476,6 +492,9 @@ export default function DriverPosPage() {
               <div>
                 <Label className="text-base font-medium">Jumlah</Label>
                 <Input
+                  type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={quantity}
                   onChange={(e) => {
                     const value = e.target.value.replace(/[^0-9]/g, '')
@@ -603,29 +622,6 @@ export default function DriverPosPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="px-6 pb-6 space-y-4">
-              <div>
-                <Label className="text-base font-medium">
-                  Akun Pembayaran {paidAmount > 0 ? '*' : '(Kosongkan jika kredit)'}
-                </Label>
-                <Select value={paymentAccount} onValueChange={setPaymentAccount}>
-                  <SelectTrigger className="h-12 text-base">
-                    <SelectValue placeholder={paidAmount > 0 ? "Pilih akun pembayaran" : "Kosongkan jika kredit"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accounts?.filter(account => account.isPaymentAccount).map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.name} - {new Intl.NumberFormat("id-ID", {
-                          style: "currency",
-                          currency: "IDR",
-                          minimumFractionDigits: 0
-                        }).format(account.balance || 0)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
                 <div className="flex items-center justify-between">
                   <Label className="text-base font-medium">Jumlah Dibayar</Label>
                   <Button 
@@ -640,15 +636,12 @@ export default function DriverPosPage() {
                 </div>
                 <Input
                   type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   min="0"
                   max={total}
-                  value={paidAmount}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value) || 0
-                    if (value <= total) {
-                      setPaidAmount(value)
-                    }
-                  }}
+                  value={paidAmount || ''}
+                  onChange={handlePaidAmountChange}
                   placeholder={`Maksimal: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(total)}`}
                   className="h-12 text-base"
                 />
@@ -658,6 +651,30 @@ export default function DriverPosPage() {
                   </p>
                 )}
               </div>
+
+              {paidAmount > 0 && (
+                <div>
+                  <Label className="text-base font-medium">
+                    Akun Pembayaran *
+                  </Label>
+                  <Select value={paymentAccount} onValueChange={setPaymentAccount}>
+                    <SelectTrigger className="h-12 text-base">
+                      <SelectValue placeholder="Pilih akun pembayaran" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts?.filter(account => account.isPaymentAccount).map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.name} - {new Intl.NumberFormat("id-ID", {
+                            style: "currency",
+                            currency: "IDR",
+                            minimumFractionDigits: 0
+                          }).format(account.balance || 0)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="bg-blue-50 p-4 rounded-lg space-y-3">
                 <div className="flex justify-between text-base">
