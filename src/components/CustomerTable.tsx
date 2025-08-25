@@ -289,8 +289,8 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
           </div>
         </div>
       </div>
-      {/* Mobile-responsive table wrapper */}
-      <div className="rounded-md border overflow-hidden">
+      {/* Desktop Table */}
+      <div className="hidden md:block rounded-md border overflow-hidden">
         <div className="overflow-x-auto">
           <Table className="min-w-[600px]">
             <TableHeader>
@@ -373,6 +373,132 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
           </Button>
         </div>
       </div>
+
+      {/* Mobile Card Layout */}
+      <div className="md:hidden space-y-4">
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="glass-card p-4">
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-3 w-1/2 mb-2" />
+              <Skeleton className="h-3 w-full" />
+            </div>
+          ))
+        ) : table.getRowModel().rows?.length ? (
+          table.getRowModel().rows.map((row) => {
+            const customer = row.original
+            return (
+              <div key={row.id} className="glass-card p-4 hover:shadow-lg transition-all duration-200">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-lg text-gray-900">{customer.name}</h3>
+                    <p className="text-sm text-gray-600">{customer.phone}</p>
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="h-8 w-8 p-0">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Aksi</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => handleEditClick(customer)}>
+                        Edit
+                      </DropdownMenuItem>
+                      {isOwner(user?.role) && (
+                        <DropdownMenuItem 
+                          className="text-red-500 hover:!text-red-500 hover:!bg-red-100"
+                          onClick={() => handleDeleteClick(customer)}
+                        >
+                          Hapus
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                {customer.address && (
+                  <div className="mb-3">
+                    <p className="text-sm text-gray-600 line-clamp-2">{customer.address}</p>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-3 mb-3">
+                  <div className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md">
+                    <span className="text-xs font-medium text-blue-700">Orders:</span>
+                    <span className="text-xs font-bold text-blue-800">{customer.orderCount || 0}</span>
+                  </div>
+                  
+                  {customer.jumlah_galon_titip > 0 && (
+                    <div className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-md">
+                      <span className="text-xs font-medium text-orange-700">Galon Titip:</span>
+                      <span className="text-xs font-bold text-orange-800">{customer.jumlah_galon_titip}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2 border-t border-gray-100">
+                  {customer.latitude && customer.longitude ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => window.open(`https://www.google.com/maps?q=${customer.latitude},${customer.longitude}`, '_blank')}
+                    >
+                      <MapPin className="h-3 w-3 mr-1" />
+                      Lihat Lokasi
+                    </Button>
+                  ) : (
+                    <div className="flex-1 text-xs text-gray-400 text-center py-2">
+                      Tidak ada koordinat
+                    </div>
+                  )}
+                  
+                  {customer.photo_url && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => window.open(customer.photo_url!, '_blank')}
+                    >
+                      <Camera className="h-3 w-3 mr-1" />
+                      Lihat Foto
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )
+          })
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            Tidak ada pelanggan ditemukan.
+          </div>
+        )}
+
+        {/* Mobile Pagination */}
+        <div className="flex items-center justify-center space-x-2 pt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            ‹ Prev
+          </Button>
+          <div className="text-sm text-muted-foreground px-3">
+            {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next ›
+          </Button>
+        </div>
+      </div>
+
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

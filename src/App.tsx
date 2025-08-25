@@ -4,10 +4,12 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { Layout } from "@/components/layout/Layout";
 import MobileLayout from "@/components/layout/MobileLayout";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import PageLoader from "@/components/PageLoader";
 import { useChunkErrorHandler } from "@/hooks/useChunkErrorHandler";
 import { useMobileDetection } from "@/hooks/useMobileDetection";
+import { useCompanySettings } from "@/hooks/useCompanySettings";
+import { updateFavicon } from "@/utils/faviconUtils";
 
 // Lazy load all pages
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
@@ -52,6 +54,16 @@ function App() {
   
   // Mobile detection
   const { shouldUseMobileLayout } = useMobileDetection();
+  
+  // Company settings for favicon
+  const { settings } = useCompanySettings();
+  
+  // Update favicon when company logo changes
+  useEffect(() => {
+    if (settings?.logo) {
+      updateFavicon(settings.logo);
+    }
+  }, [settings?.logo]);
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" storageKey="vite-ui-theme">
@@ -64,7 +76,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               
-              {/* Mobile routes - POS, Attendance, and Transactions */}
+              {/* Mobile routes - POS, Attendance, Transactions, and Customers */}
               {shouldUseMobileLayout ? (
                 <Route element={<ProtectedRoute><MobileLayout /></ProtectedRoute>}>
                   <Route path="/" element={<PosPage />} />
@@ -73,6 +85,8 @@ function App() {
                   <Route path="/attendance" element={<AttendancePage />} />
                   <Route path="/transactions" element={<TransactionListPage />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
+                  <Route path="/customers" element={<CustomerPage />} />
+                  <Route path="/customers/:id" element={<CustomerDetailPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               ) : (

@@ -217,7 +217,7 @@ export function DriverDeliveryDialog({
   const totalItemsToDeliver = Object.values(itemQuantities).reduce((sum, qty) => sum + qty, 0)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

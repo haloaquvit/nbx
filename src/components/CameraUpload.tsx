@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { Camera, Upload, X, Loader2, CheckCircle } from 'lucide-react';
 import { compressImage, captureFromCamera, validateImageFile, CompressedImage } from '@/utils/imageUtils';
-import { uploadToGoogleDrive as uploadToDrive } from '@/utils/googleDriveInit';
+import { PhotoUploadService } from '@/services/photoUploadService';
 
 interface CameraUploadProps {
   onPhotoUploaded: (photoUrl: string, fileName: string) => void;
@@ -53,7 +53,7 @@ export function CameraUpload({
       });
 
       // Upload to Google Drive
-      await uploadToGoogleDrive(compressed);
+      const result = await PhotoUploadService.uploadPhoto(compressed.file, Date.now().toString());
       
     } catch (error) {
       console.error('Camera capture failed:', error);
@@ -102,7 +102,7 @@ export function CameraUpload({
         const fileName = `delivery-${timestamp}-${file.name}`;
         
         // Upload to Google Drive
-        const result = await uploadToDrive(compressed.file, fileName);
+        const result = await PhotoUploadService.uploadPhoto(compressed.file, Date.now().toString());
         
         if (!result) {
           throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.');

@@ -41,7 +41,13 @@
       "Bash(docker rm:*)",
       "Bash(grep:*)",
       "Bash(del *.sql)",
-      "Bash(del test-terbilang.js)"
+      "Bash(del test-terbilang.js)",
+      "Bash(taskkill:*)",
+      "Bash(npm config:*)",
+      "Bash(npm start)",
+      "Bash(start /B node:*)",
+      "Bash(powershell:*)",
+      "Bash(del test-image.txt)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

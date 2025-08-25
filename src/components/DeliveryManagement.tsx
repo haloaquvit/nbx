@@ -41,9 +41,10 @@ import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
 interface DeliveryManagementProps {
   transaction: TransactionDeliveryInfo;
   onClose?: () => void;
+  embedded?: boolean; // Add embedded mode prop
 }
 
-export function DeliveryManagement({ transaction, onClose }: DeliveryManagementProps) {
+export function DeliveryManagement({ transaction, onClose, embedded = false }: DeliveryManagementProps) {
   const { toast } = useToast()
   const { createDelivery } = useDeliveries()
   const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()

@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
@@ -11,7 +11,7 @@ import { format } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 
 const MobileLayout = () => {
-  const { user, logout } = useAuth()
+  const { user, signOut } = useAuth()
   const { settings } = useCompanySettings()
   const navigate = useNavigate()
   const location = useLocation()
@@ -47,6 +47,14 @@ const MobileLayout = () => {
       textColor: 'text-white'
     },
     {
+      title: 'Data Pelanggan',
+      icon: Users,
+      path: '/customers',
+      description: 'Kelola data pelanggan',
+      color: 'bg-cyan-500 hover:bg-cyan-600',
+      textColor: 'text-white'
+    },
+    {
       title: 'Absensi',
       icon: Clock,
       path: '/attendance',
@@ -56,9 +64,13 @@ const MobileLayout = () => {
     }
   ]
 
-  const handleLogout = () => {
-    logout()
-    navigate('/login')
+  const handleLogout = async () => {
+    try {
+      await signOut()
+      navigate('/login')
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
   }
 
   const toggleSidebar = () => {
@@ -66,56 +78,102 @@ const MobileLayout = () => {
   }
 
   const currentPath = location.pathname
+  
+  const getPageTitle = (path: string) => {
+    if (path.startsWith('/transactions/')) {
+      return 'Detail Transaksi'
+    }
+    if (path.startsWith('/customers/')) {
+      return 'Detail Pelanggan'
+    }
+    
+    switch (path) {
+      case '/pos':
+        return 'Point of Sale'
+      case '/driver-pos':
+        return 'POS Supir'
+      case '/transactions':
+        return 'Data Transaksi'
+      case '/customers':
+        return 'Data Pelanggan'
+      case '/attendance':
+        return 'Absensi'
+      default:
+        return 'ERP System'
+    }
+  }
+  
+  const handleBack = () => {
+    if (currentPath === '/') {
+      // Already at home, can't go back further
+      return
+    }
+    
+    // Smart navigation based on current path
+    if (currentPath.startsWith('/transactions/')) {
+      // From transaction detail, go back to transactions list
+      navigate('/transactions')
+    } else if (currentPath.startsWith('/customers/')) {
+      // From customer detail, go back to customers list
+      navigate('/customers')
+    } else {
+      // From any other page, go back to home
+      navigate('/')
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 dark:from-gray-900 dark:to-gray-800">
-      {/* Mobile Header */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200 dark:bg-gray-900/80 dark:border-gray-700">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 dark:from-gray-900 dark:to-gray-800 pb-20">
+      {/* Mobile Header - Logo, Title, User Actions */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200 dark:bg-gray-900/80 dark:border-gray-700">
         <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center space-x-3">
-            <Button variant="ghost" size="icon" onClick={toggleSidebar}>
-              {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </Button>
-            <div className="flex items-center space-x-2">
-              {settings?.logo ? (
-                <img src={settings.logo} alt="Company Logo" className="h-6 w-6 object-contain" />
-              ) : (
-                <Package className="h-6 w-6 text-primary" />
-              )}
-              <div>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-white">{settings?.name || 'Aquvit POS'}</h1>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {format(new Date(), "eeee, d MMM yyyy", { locale: id })}
-                </p>
-              </div>
-            </div>
+          {/* Left - Logo */}
+          <div className="flex items-center space-x-2">
+            {settings?.logo ? (
+              <img src={settings.logo} alt="Company Logo" className="h-8 w-8 object-contain" />
+            ) : (
+              <Package className="h-8 w-8 text-primary" />
+            )}
           </div>
           
+          {/* Center - Title */}
+          <div className="flex-1 text-center px-4">
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">
+              {currentPath === '/' ? (settings?.name || 'ERP System') : getPageTitle(currentPath)}
+            </h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {format(new Date(), "eeee, d MMM yyyy", { locale: id })}
+            </p>
+          </div>
+          
+          {/* Right - User Actions */}
           <div className="flex items-center space-x-2">
-            <Avatar className="h-8 w-8">
-              <AvatarImage src={user?.avatar} />
-              <AvatarFallback className="bg-primary text-white text-xs">
-                {user?.name?.charAt(0) || 'U'}
-              </AvatarFallback>
-            </Avatar>
-            <Button variant="ghost" size="icon" onClick={handleLogout}>
+            <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(true)} className="h-10 w-10 rounded-full p-0">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={user?.avatar} />
+                <AvatarFallback className="bg-primary text-white text-xs">
+                  {user?.name?.charAt(0) || 'U'}
+                </AvatarFallback>
+              </Avatar>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={handleLogout} className="h-10 w-10">
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </div>
       </div>
 
-      {/* Sidebar Overlay */}
+      {/* Sidebar Overlay - Auto close when clicking outside */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden" 
+          className="fixed inset-0 z-40 bg-black/50" 
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <div className={cn(
-        "fixed left-0 top-0 z-50 h-full w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out lg:translate-x-0",
+        "fixed left-0 top-0 z-50 h-full w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out overflow-hidden",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
@@ -126,7 +184,7 @@ const MobileLayout = () => {
                 {user?.name?.charAt(0) || 'U'}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 overflow-hidden">
               <p className="font-medium text-gray-900 dark:text-white truncate">
                 {user?.name || 'User'}
               </p>
@@ -137,7 +195,67 @@ const MobileLayout = () => {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {/* Back/Home Button */}
+          {currentPath !== '/' && (
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto p-4 text-left overflow-hidden mb-4 border-gray-300 dark:border-gray-600"
+              onClick={() => {
+                handleBack()
+                setIsSidebarOpen(false)
+              }}
+            >
+              <div className="flex items-center space-x-3 w-full overflow-hidden">
+                <div className="p-2 rounded-lg flex-shrink-0 bg-gray-100 dark:bg-gray-700">
+                  <ArrowLeft className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+                </div>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <p className="font-medium truncate text-gray-900 dark:text-white">Kembali</p>
+                  <p className="text-sm truncate text-gray-500 dark:text-gray-400">
+                    {currentPath.startsWith('/transactions/') ? 'Ke Daftar Transaksi' : 
+                     currentPath.startsWith('/customers/') ? 'Ke Daftar Pelanggan' : 
+                     'Ke Beranda'}
+                  </p>
+                </div>
+              </div>
+            </Button>
+          )}
+          
+          {/* Home Button - Always visible */}
+          <Button
+            variant={currentPath === '/' ? "default" : "ghost"}
+            className={cn(
+              "w-full justify-start h-auto p-4 text-left overflow-hidden mb-4",
+              currentPath === '/' && "bg-primary text-white"
+            )}
+            onClick={() => {
+              navigate('/')
+              setIsSidebarOpen(false)
+            }}
+          >
+            <div className="flex items-center space-x-3 w-full overflow-hidden">
+              <div className={cn(
+                "p-2 rounded-lg flex-shrink-0",
+                currentPath === '/' ? "bg-white/20" : "bg-green-500"
+              )}>
+                <Home className={cn(
+                  "h-5 w-5",
+                  currentPath === '/' ? "text-white" : "text-white"
+                )} />
+              </div>
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <p className="font-medium truncate">Beranda</p>
+                <p className={cn(
+                  "text-sm truncate",
+                  currentPath === '/' ? "text-white/80" : "text-gray-500 dark:text-gray-400"
+                )}>
+                  Dashboard utama
+                </p>
+              </div>
+            </div>
+          </Button>
+
           {menuItems.map((item) => {
             const Icon = item.icon
             const isActive = currentPath === item.path
@@ -147,7 +265,7 @@ const MobileLayout = () => {
                 key={item.path}
                 variant={isActive ? "default" : "ghost"}
                 className={cn(
-                  "w-full justify-start h-auto p-4 text-left",
+                  "w-full justify-start h-auto p-4 text-left overflow-hidden",
                   isActive && "bg-primary text-white"
                 )}
                 onClick={() => {
@@ -155,9 +273,9 @@ const MobileLayout = () => {
                   setIsSidebarOpen(false)
                 }}
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-3 w-full overflow-hidden">
                   <div className={cn(
-                    "p-2 rounded-lg",
+                    "p-2 rounded-lg flex-shrink-0",
                     isActive ? "bg-white/20" : item.color
                   )}>
                     <Icon className={cn(
@@ -165,7 +283,7 @@ const MobileLayout = () => {
                       isActive ? "text-white" : item.textColor
                     )} />
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 overflow-hidden">
                     <p className="font-medium truncate">{item.title}</p>
                     <p className={cn(
                       "text-sm truncate",
@@ -193,10 +311,7 @@ const MobileLayout = () => {
       </div>
 
       {/* Main Content */}
-      <div className={cn(
-        "min-h-screen transition-all duration-300",
-        isSidebarOpen ? "lg:ml-64" : ""
-      )}>
+      <div className="min-h-screen">
         {/* Home/Dashboard View */}
         {currentPath === '/' && (
           <div className="p-4 space-y-6">
@@ -264,6 +379,27 @@ const MobileLayout = () => {
             <Outlet />
           </div>
         )}
+      </div>
+
+      {/* Mobile Footer Navigation - Minimal */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 dark:bg-gray-900/95 dark:border-gray-700">
+        <div className="flex items-center justify-between px-6 py-4">
+          {/* Left - Menu Button */}
+          <Button variant="ghost" size="lg" onClick={toggleSidebar} className="flex items-center space-x-2 h-12 px-6">
+            {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            <span className="text-sm font-medium">{isSidebarOpen ? 'Tutup' : 'Menu'}</span>
+          </Button>
+          
+          {/* Right - Back Button */}
+          {currentPath !== '/' ? (
+            <Button variant="ghost" size="lg" onClick={handleBack} className="flex items-center space-x-2 h-12 px-6">
+              <ArrowLeft className="h-5 w-5" />
+              <span className="text-sm font-medium">Kembali</span>
+            </Button>
+          ) : (
+            <div></div>
+          )}
+        </div>
       </div>
     </div>
   )

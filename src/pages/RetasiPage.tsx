@@ -100,7 +100,8 @@ export default function RetasiPage() {
       "Bawa": r.total_items,
       "Kembali": r.returned_items_count || 0,
       "Error": r.error_items_count || 0,
-      "Selisih": (r.total_items || 0) - (r.returned_items_count || 0) - (r.error_items_count || 0),
+      "Laku": r.barang_laku || 0,
+      "Selisih": (r.total_items || 0) - (r.returned_items_count || 0) - (r.error_items_count || 0) - (r.barang_laku || 0),
       "Catatan": r.return_notes || r.notes || "-",
     }));
 
@@ -114,6 +115,7 @@ export default function RetasiPage() {
       "Bawa": totals.bawa,
       "Kembali": totals.kembali,
       "Error": totals.error,
+      "Laku": totals.laku,
       "Selisih": totals.selisih,
       "Catatan": "",
     } as any);
@@ -328,11 +330,11 @@ export default function RetasiPage() {
                       </TableCell>
                       <TableCell>
                         <span className={`font-medium ${
-                          ((retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)) >= 0 
+                          ((retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)) >= 0 
                             ? 'text-blue-600' 
                             : 'text-red-600'
                         }`}>
-                          {(retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
+                          {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
                         </span>
                       </TableCell>
                       <TableCell>

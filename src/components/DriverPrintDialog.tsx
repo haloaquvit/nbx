@@ -50,7 +50,7 @@ export function DriverPrintDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={() => {}}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-green-600">
@@ -146,15 +146,8 @@ export function DriverPrintDialog({
 
           <DialogFooter className="gap-2">
             <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="h-4 w-4 mr-2" />
-              Tutup
-            </Button>
-            <Button
               onClick={handleComplete}
-              className="bg-green-600 hover:bg-green-700"
+              className="w-full bg-green-600 hover:bg-green-700"
             >
               <Check className="h-4 w-4 mr-2" />
               Selesai

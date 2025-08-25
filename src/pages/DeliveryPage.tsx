@@ -21,6 +21,15 @@ import { id as idLocale } from "date-fns/locale/id"
 import { useTransactionsReadyForDelivery, useDeliveryHistory } from "@/hooks/useDeliveries"
 import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { DeliveryDetailModal } from "@/components/DeliveryDetailModal"
+import { DeliveryFormContent } from "@/components/DeliveryFormContent"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { TransactionDeliveryInfo } from "@/types/delivery"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -39,8 +48,8 @@ export default function DeliveryPage() {
   const [selectedDelivery, setSelectedDelivery] = useState<any>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("active")
-  const [showDeliveryForm, setShowDeliveryForm] = useState(false)
-  const [deliveryFormTransaction, setDeliveryFormTransaction] = useState<TransactionDeliveryInfo | null>(null)
+  const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false)
+  const [selectedDeliveryTransaction, setSelectedDeliveryTransaction] = useState<TransactionDeliveryInfo | null>(null)
   
   // New filter states for history
   const [startDate, setStartDate] = useState("")
@@ -394,8 +403,7 @@ export default function DeliveryPage() {
                           key={transaction.id} 
                           className="cursor-pointer hover:bg-muted"
                           onClick={() => {
-                            setDeliveryFormTransaction(transaction)
-                            setShowDeliveryForm(true)
+                            setSelectedTransaction(transaction)
                           }}
                         >
                           <TableCell>
@@ -417,8 +425,7 @@ export default function DeliveryPage() {
                               {new Intl.NumberFormat("id-ID", {
                                 style: "currency",
                                 currency: "IDR",
-                                minimumFractionDigits: 0,
-                                notation: "compact"
+                                minimumFractionDigits: 0
                               }).format(transaction.total)}
                             </div>
                           </TableCell>
@@ -440,8 +447,8 @@ export default function DeliveryPage() {
                             <Button 
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setDeliveryFormTransaction(transaction)
-                                setShowDeliveryForm(true)
+                                setSelectedDeliveryTransaction(transaction)
+                                setIsDeliveryDialogOpen(true)
                               }}
                               size="sm"
                               className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
@@ -461,44 +468,6 @@ export default function DeliveryPage() {
         </Card>
           </div>
 
-          {/* Delivery Form Box - Appears when showDeliveryForm is true */}
-          {showDeliveryForm && deliveryFormTransaction && (
-            <div className="mt-6">
-              <Card className="border-2 border-green-200 bg-green-50/50">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-green-800">
-                      <Truck className="inline h-5 w-5 mr-2" />
-                      Form Input Pengantaran
-                    </CardTitle>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        setShowDeliveryForm(false)
-                        setDeliveryFormTransaction(null)
-                      }}
-                    >
-                      Tutup
-                    </Button>
-                  </div>
-                  <p className="text-sm text-green-700">
-                    Transaksi #{deliveryFormTransaction.id} - {deliveryFormTransaction.customerName}
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <DeliveryManagement
-                    transaction={deliveryFormTransaction}
-                    onClose={() => {
-                      setShowDeliveryForm(false)
-                      setDeliveryFormTransaction(null)
-                      refetch()
-                    }}
-                  />
-                </CardContent>
-              </Card>
-            </div>
-          )}
         </TabsContent>
 
         {/* History Tab - Only visible to admin/owner */}
@@ -741,8 +710,7 @@ export default function DeliveryPage() {
                                   {new Intl.NumberFormat("id-ID", {
                                     style: "currency",
                                     currency: "IDR",
-                                    minimumFractionDigits: 0,
-                                    notation: "compact"
+                                    minimumFractionDigits: 0
                                   }).format(delivery.transactionTotal)}
                                 </div>
                               </TableCell>
@@ -832,6 +800,29 @@ export default function DeliveryPage() {
         open={isDetailModalOpen}
         onOpenChange={setIsDetailModalOpen}
       />
+
+      {/* Delivery Dialog */}
+      {selectedDeliveryTransaction && (
+        <Dialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Buat Pengantaran Baru</DialogTitle>
+              <DialogDescription>
+                Catat pengantaran untuk order #{selectedDeliveryTransaction.id} - {selectedDeliveryTransaction.customerName}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <DeliveryFormContent
+              transaction={selectedDeliveryTransaction}
+              onSuccess={() => {
+                setIsDeliveryDialogOpen(false)
+                setSelectedDeliveryTransaction(null)
+                refetch()
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

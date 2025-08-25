@@ -320,7 +320,7 @@ export const useProduction = () => {
             material_id: input.materialId,
             material_name: material.name,
             type: 'OUT',
-            reason: 'ADJUSTMENT', // Use existing reason until migration is applied
+            reason: 'PRODUCTION_ERROR',
             quantity: input.quantity,
             previous_stock: material.stock,
             new_stock: newStock,

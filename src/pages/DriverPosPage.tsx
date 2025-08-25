@@ -107,7 +107,7 @@ export default function DriverPosPage() {
     )
   }
 
-  // Form state
+  // Form state - with cart functionality
   const [selectedCustomer, setSelectedCustomer] = useState("")
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState("1")
@@ -120,13 +120,13 @@ export default function DriverPosPage() {
     const value = e.target.value;
     if (value === '') {
       setPaidAmount(0);
-      setPaymentAccount(''); // Reset payment account when amount is 0
+      setPaymentAccount('');
     } else {
       const numValue = parseInt(value) || 0;
       if (numValue >= 0 && numValue <= total) {
         setPaidAmount(numValue);
         if (numValue === 0) {
-          setPaymentAccount(''); // Reset payment account when amount becomes 0
+          setPaymentAccount('');
         }
       }
     }
@@ -201,7 +201,6 @@ export default function DriverPosPage() {
   const removeItem = (index: number) => {
     setItems(items.filter((_, i) => i !== index))
   }
-
 
   const handleSubmit = async () => {
     if (!selectedCustomerData) {
@@ -283,7 +282,7 @@ export default function DriverPosPage() {
         newTransaction 
       })
 
-      // Update account balance if there's a payment (same as main POS)
+      // Update account balance if there's a payment
       if (paidAmount > 0 && paymentAccount) {
         try {
           await updateAccountBalance.mutateAsync({ accountId: paymentAccount, amount: paidAmount });
@@ -428,15 +427,16 @@ export default function DriverPosPage() {
           </CardContent>
         </Card>
 
-        {/* Product Selection */}
-        <Card>
-          <CardHeader className="py-4 px-6">
-            <CardTitle className="flex items-center gap-3 text-xl">
-              <Package className="h-5 w-5" />
-              Tambah Produk
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-6 pb-6 space-y-4">
+        {/* Product Selection - Only show when customer is selected */}
+        {selectedCustomer && (
+          <Card>
+            <CardHeader className="py-4 px-6">
+              <CardTitle className="flex items-center gap-3 text-xl">
+                <Package className="h-5 w-5" />
+                Pilih Produk
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-6 pb-6 space-y-4">
             <div>
               <Label className="text-base font-medium">Produk</Label>
               <Select value={selectedProduct} onValueChange={setSelectedProduct}>
@@ -494,19 +494,10 @@ export default function DriverPosPage() {
                 <Input
                   type="number"
                   inputMode="numeric"
-                  pattern="[0-9]*"
+                  min="1"
+                  max={selectedProductData?.currentStock || 999}
                   value={quantity}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/[^0-9]/g, '')
-                    if (value === '') {
-                      setQuantity('')
-                    } else {
-                      const num = parseInt(value)
-                      if (num > 0 && num <= (selectedProductData?.currentStock || 999)) {
-                        setQuantity(value)
-                      }
-                    }
-                  }}
+                  onChange={(e) => setQuantity(e.target.value)}
                   placeholder="Masukkan jumlah"
                   className="h-12 text-base"
                 />
@@ -562,13 +553,14 @@ export default function DriverPosPage() {
             <Button 
               onClick={addItem} 
               className="w-full h-14 text-lg font-medium"
-              disabled={!selectedProduct || quantityNum <= 0 || (selectedProductData?.currentStock || 0) === 0}
+              disabled={!selectedProduct || !quantity || quantity === '0' || (selectedProductData?.currentStock || 0) === 0}
             >
               <Plus className="h-5 w-5 mr-3" />
               {(selectedProductData?.currentStock || 0) === 0 ? 'Stock Kosong' : 'Tambah Produk'}
             </Button>
           </CardContent>
-        </Card>
+          </Card>
+        )}
 
         {/* Items List */}
         {items.length > 0 && (

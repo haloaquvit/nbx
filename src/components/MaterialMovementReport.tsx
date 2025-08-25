@@ -117,9 +117,21 @@ export function MaterialMovementReport() {
   const allMovements = useMemo(() => {
     const combined = [...transactionBasedMovements]
     
-    // Add non-transaction movements (like manual adjustments, purchases)
+    // Add only valid material movements (purchases, manual adjustments, production errors - NOT product transactions/deliveries)
     enrichedMovements.forEach(movement => {
-      if (movement.referenceType !== 'transaction') {
+      // Include material-related movements: purchases, adjustments, production errors, and production consumption
+      if (movement.referenceType !== 'transaction' && 
+          movement.referenceType !== 'delivery' &&
+          (movement.reason === 'PURCHASE' || 
+           movement.reason === 'ADJUSTMENT' || 
+           movement.reason === 'PRODUCTION_CONSUMPTION' ||
+           movement.reason === 'PRODUCTION_ERROR')) {
+        combined.push(movement)
+      }
+      // Also include production reference type if it's specifically for production errors or consumption
+      else if (movement.referenceType === 'production' &&
+               (movement.reason === 'PRODUCTION_ERROR' || 
+                movement.reason === 'PRODUCTION_CONSUMPTION')) {
         combined.push(movement)
       }
     })
@@ -148,6 +160,7 @@ export function MaterialMovementReport() {
       movement.type === 'IN' ? 'Masuk' : 'Keluar',
       movement.reason === 'PURCHASE' ? 'Pembelian' : 
       movement.reason === 'PRODUCTION_CONSUMPTION' ? 'Produksi' :
+      movement.reason === 'PRODUCTION_ERROR' ? 'Barang Rusak' :
       movement.reason === 'ADJUSTMENT' ? 'Penyesuaian' : movement.reason,
       movement.type === 'IN' ? `+${movement.quantity}` : `-${movement.quantity}`,
       movement.transactionId || '-',
@@ -191,7 +204,7 @@ export function MaterialMovementReport() {
               Pergerakan Penggunaan Bahan
             </CardTitle>
             <CardDescription>
-              Riwayat semua pergerakan stok material dari transaksi dan aktivitas lainnya
+              Riwayat penggunaan bahan dari proses produksi, barang rusak, pembelian bahan, dan penyesuaian stok
             </CardDescription>
           </div>
           <div className="flex items-center gap-4">
@@ -247,6 +260,7 @@ export function MaterialMovementReport() {
                     <TableCell>
                       {movement.reason === 'PURCHASE' ? 'Pembelian' : 
                        movement.reason === 'PRODUCTION_CONSUMPTION' ? 'Produksi' :
+                       movement.reason === 'PRODUCTION_ERROR' ? 'Barang Rusak' :
                        movement.reason === 'ADJUSTMENT' ? 'Penyesuaian' : 
                        movement.reason}
                     </TableCell>

@@ -8,7 +8,7 @@ import {
   DeliverySummaryItem,
   DeliveryEmployee 
 } from '@/types/delivery'
-import { googleDriveService } from '@/services/googleDriveService'
+import { PhotoUploadService } from '@/services/photoUploadService'
 
 // Fetch employees with driver and helper roles from profiles table
 export function useDeliveryEmployees() {
@@ -283,18 +283,19 @@ export function useDeliveries() {
       let photoUrl: string | undefined
       let photoDriveId: string | undefined
 
-      // Upload photo to Google Drive if provided
+      // Upload photo via backend API (secure)
       if (request.photo) {
         try {
-          const uploadResult = await googleDriveService.uploadFile(
+          const uploadResult = await PhotoUploadService.uploadPhoto(
             request.photo,
-            `delivery-${request.transactionId}-${Date.now()}.jpg`,
-            'delivery-photos'
+            request.transactionId
           )
-          photoUrl = uploadResult.webViewLink
-          photoDriveId = uploadResult.id
+          if (uploadResult) {
+            photoUrl = uploadResult.webViewLink
+            photoDriveId = uploadResult.id
+          }
         } catch (error) {
-          console.error('Failed to upload photo to Google Drive:', error)
+          console.error('Failed to upload photo via backend API:', error)
           // Continue without photo rather than failing the entire delivery
         }
       }

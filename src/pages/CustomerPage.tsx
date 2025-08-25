@@ -1,11 +1,12 @@
 "use client"
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PlusCircle, FileDown, Upload } from "lucide-react";
 import { CustomerTable } from "@/components/CustomerTable";
 import { AddCustomerDialog } from "@/components/AddCustomerDialog";
 import { EditCustomerDialog } from "@/components/EditCustomerDialog";
+import { MobileCustomerView } from "@/components/MobileCustomerView";
 import * as XLSX from "xlsx";
 import { useCustomers } from "@/hooks/useCustomers";
 import { useToast } from "@/components/ui/use-toast";
@@ -18,10 +19,23 @@ export default function CustomerPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const { customers } = useCustomers();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Check if mobile view
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const handleEditCustomer = (customer: Customer) => {
     setSelectedCustomer(customer);
@@ -84,19 +98,38 @@ export default function CustomerPage() {
           throw new Error('Tidak ada data pelanggan yang valid ditemukan dalam file');
         }
 
-        // Use direct database insert instead of edge function to avoid CORS
+        // Get existing customer names to avoid duplicates
+        const { data: existingCustomers, error: fetchError } = await supabase
+          .from('customers')
+          .select('name')
+          .in('name', transformedData.map(c => c.name));
+
+        if (fetchError) throw fetchError;
+
+        const existingNames = new Set(existingCustomers?.map(c => c.name) || []);
+        
+        // Filter out customers that already exist
+        const newCustomers = transformedData.filter(customer => !existingNames.has(customer.name));
+        const skippedCount = transformedData.length - newCustomers.length;
+
+        if (newCustomers.length === 0) {
+          toast({
+            title: "Import Selesai!",
+            description: `Semua ${transformedData.length} pelanggan sudah ada dalam database (tidak ada yang ditambahkan).`,
+          });
+          return;
+        }
+
+        // Insert only new customers
         const { error } = await supabase
           .from('customers')
-          .upsert(transformedData, { 
-            onConflict: 'name', // Upsert based on name
-            ignoreDuplicates: false 
-          });
+          .insert(newCustomers);
 
         if (error) throw error;
 
         toast({
           title: "Import Berhasil!",
-          description: `${transformedData.length} data pelanggan berhasil diimpor/diperbarui.`,
+          description: `${newCustomers.length} pelanggan baru berhasil ditambahkan${skippedCount > 0 ? `, ${skippedCount} pelanggan dilewati (sudah ada)` : ''}.`,
         });
         queryClient.invalidateQueries({ queryKey: ['customers'] });
       } catch (error: any) {
@@ -114,6 +147,24 @@ export default function CustomerPage() {
     reader.readAsArrayBuffer(file);
   };
 
+  // Show mobile view for small screens
+  if (isMobile) {
+    return (
+      <>
+        <AddCustomerDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} />
+        <EditCustomerDialog
+          open={isEditDialogOpen}
+          onOpenChange={setIsEditDialogOpen}
+          customer={selectedCustomer}
+        />
+        <MobileCustomerView 
+          onEditCustomer={handleEditCustomer}
+          onAddCustomer={() => setIsAddDialogOpen(true)}
+        />
+      </>
+    )
+  }
+
   return (
     <>
       <AddCustomerDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} />
@@ -130,9 +181,9 @@ export default function CustomerPage() {
         accept=".xlsx, .xls, .csv"
       />
       
-      {/* Mobile-first responsive design */}
+      {/* Desktop view */}
       <div className="w-full max-w-none p-4 lg:p-6">
-        {/* Header - Mobile optimized */}
+        {/* Header - Desktop optimized */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl sm:text-3xl font-bold">Data Pelanggan</h1>
@@ -153,7 +204,7 @@ export default function CustomerPage() {
           </div>
         </div>
 
-        {/* Action buttons - Mobile responsive */}
+        {/* Action buttons - Desktop responsive */}
         <Card className="mb-6 card-hover">
           <CardContent className="p-4">
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
@@ -187,15 +238,6 @@ export default function CustomerPage() {
             <CustomerTable onEditCustomer={handleEditCustomer} />
           </CardContent>
         </Card>
-
-        {/* Floating Action Button for Mobile */}
-        <Button
-          onClick={() => setIsAddDialogOpen(true)}
-          className="fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl transition-all duration-200 sm:hidden pulse-hover"
-          size="icon"
-        >
-          <PlusCircle className="h-6 w-6 text-white" />
-        </Button>
       </div>
     </>
   );

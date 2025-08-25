@@ -20,8 +20,9 @@ import { useToast } from "./ui/use-toast"
 import { Customer } from "@/types/customer"
 import { MapPin, Upload, ExternalLink } from "lucide-react"
 import { compressImage, formatFileSize, isImageFile } from "@/utils/imageCompression"
-import { uploadToGoogleDrive } from "@/utils/googleDriveInit"
+import { PhotoUploadService } from "@/services/photoUploadService"
 import { useState, useRef } from "react"
+import { useAuth } from "@/hooks/useAuth"
 
 const customerSchema = z.object({
   name: z.string().min(3, { message: "Nama harus diisi (minimal 3 karakter)." }),
@@ -44,11 +45,15 @@ interface AddCustomerDialogProps {
 export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCustomerDialogProps) {
   const { toast } = useToast()
   const { addCustomer, isLoading } = useCustomers()
+  const { user } = useAuth()
   const [isUploading, setIsUploading] = useState(false)
   const [storePhoto, setStorePhoto] = useState<File | null>(null)
   const [storePhotoUrl, setStorePhotoUrl] = useState<string>('')
   const [storePhotoDriveId, setStorePhotoDriveId] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Check if user must provide coordinates and photo
+  const requiresLocationAndPhoto = user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
   const {
     register,
     handleSubmit,
@@ -134,7 +139,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
       // Clean filename: replace special characters with spaces, then with hyphens
       const cleanName = customerName.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-').toLowerCase()
       const fileName = `${cleanName}.jpg`
-      const result = await uploadToGoogleDrive(compressedFile, fileName)
+      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName)
       
       if (!result) {
         throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.')
@@ -163,6 +168,27 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
 
 
   const onSubmit = async (data: CustomerFormData) => {
+    // Validate required fields for non-privileged users
+    if (requiresLocationAndPhoto) {
+      if (!data.latitude || !data.longitude) {
+        toast({
+          variant: "destructive",
+          title: "Koordinat GPS Wajib",
+          description: "Untuk role Anda, koordinat GPS pelanggan wajib diisi.",
+        })
+        return
+      }
+      
+      if (!storePhotoUrl) {
+        toast({
+          variant: "destructive", 
+          title: "Foto Toko Wajib",
+          description: "Untuk role Anda, foto toko/kios pelanggan wajib diupload.",
+        })
+        return
+      }
+    }
+
     const newCustomerData = {
       name: data.name,
       phone: data.phone,
@@ -206,7 +232,11 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
           <DialogHeader>
             <DialogTitle>Tambah Pelanggan Baru</DialogTitle>
             <DialogDescription>
-              Isi detail pelanggan di bawah ini. Klik simpan jika sudah selesai.
+              Isi detail pelanggan di bawah ini. {requiresLocationAndPhoto && (
+                <strong className="text-red-600">
+                  Koordinat GPS dan foto toko wajib diisi untuk role Anda.
+                </strong>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -227,7 +257,10 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
               {errors.address && <p className="text-red-500 text-sm">{errors.address.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="full_address">Koordinat GPS</Label>
+              <Label htmlFor="full_address">
+                Koordinat GPS
+                {requiresLocationAndPhoto && <span className="text-red-500 ml-1">*</span>}
+              </Label>
               <Textarea 
                 id="full_address" 
                 {...register("full_address")} 
@@ -259,7 +292,10 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
               {errors.jumlah_galon_titip && <p className="text-red-500 text-sm">{errors.jumlah_galon_titip.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Lokasi</Label>
+              <Label>
+                Lokasi
+                {requiresLocationAndPhoto && <span className="text-red-500 ml-1">*</span>}
+              </Label>
               <div className="space-y-2">
                 <Button 
                   type="button" 
@@ -288,7 +324,10 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Foto Toko</Label>
+              <Label>
+                Foto Toko
+                {requiresLocationAndPhoto && <span className="text-red-500 ml-1">*</span>}
+              </Label>
               <div className="space-y-2">
                 <input
                   type="file"

@@ -10,7 +10,7 @@ import { Upload, Image as ImageIcon, MapPin } from 'lucide-react'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
-import { GoogleDriveSettings } from '@/components/GoogleDriveSettings'
+import { GoogleDriveServiceAccountSettings } from '@/components/GoogleDriveServiceAccountSettingsSecure'
 import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog'
 import { AuditLogViewer } from '@/components/AuditLogViewer'
 import { SystemHealthCheck } from '@/components/SystemHealthCheck'
@@ -212,8 +212,8 @@ export default function SettingsPage() {
           )}
         </TabsContent>
         
-        <TabsContent value="integrations">
-          <GoogleDriveSettings />
+        <TabsContent value="integrations" className="space-y-6">
+          <GoogleDriveServiceAccountSettings />
         </TabsContent>
         
         <TabsContent value="audit">

@@ -21,7 +21,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { Customer } from "@/types/customer"
 import { MapPin, Upload, ExternalLink, Camera } from "lucide-react"
 import { compressImage, formatFileSize, isImageFile } from "@/utils/imageCompression"
-import { uploadToGoogleDrive } from "@/utils/googleDriveInit"
+import { PhotoUploadService } from "@/services/photoUploadService"
 
 const customerSchema = z.object({
   name: z.string().min(3, { message: "Nama harus diisi (minimal 3 karakter)." }),
@@ -55,6 +55,9 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
   
   // Check if user is owner, admin, or cashier
   const canEditAllFields = user?.role && ['owner', 'admin', 'cashier'].includes(user.role)
+  
+  // Check if user must provide coordinates and photo
+  const requiresLocationAndPhoto = user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
 
   const {
     register,
@@ -164,7 +167,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       // Clean filename: replace special characters with spaces, then with hyphens
       const cleanName = customerName.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-').toLowerCase()
       const fileName = `${cleanName}.jpg`
-      const result = await uploadToGoogleDrive(compressedFile, fileName)
+      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName)
       
       if (!result) {
         throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.')
@@ -193,6 +196,27 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
 
   const onSubmit = async (data: CustomerFormData) => {
     if (!customer) return
+
+    // Validate required fields for non-privileged users
+    if (requiresLocationAndPhoto) {
+      if (!data.latitude || !data.longitude) {
+        toast({
+          variant: "destructive",
+          title: "Koordinat GPS Wajib",
+          description: "Untuk role Anda, koordinat GPS pelanggan wajib diisi.",
+        })
+        return
+      }
+      
+      if (!storePhotoUrl && !customer.photo_url) {
+        toast({
+          variant: "destructive", 
+          title: "Foto Toko Wajib",
+          description: "Untuk role Anda, foto toko/kios pelanggan wajib diupload.",
+        })
+        return
+      }
+    }
 
     const updateData: any = {
       id: customer.id,
@@ -248,7 +272,11 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
           <DialogHeader>
             <DialogTitle>Edit Pelanggan</DialogTitle>
             <DialogDescription>
-              Ubah informasi pelanggan. Klik simpan untuk menyimpan perubahan.
+              Ubah informasi pelanggan. {requiresLocationAndPhoto && (
+                <strong className="text-red-600">
+                  Koordinat GPS dan foto toko wajib diisi untuk role Anda.
+                </strong>
+              )}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
