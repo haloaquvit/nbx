@@ -156,6 +156,13 @@ export function useTransactionsReadyForDelivery() {
 
       return transactionsWithDeliveryInfo
     },
+    // Optimized for complex delivery queries
+    staleTime: 3 * 60 * 1000, // 3 minutes - delivery data changes more frequently
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: 1, // Only retry once due to complex query
+    retryDelay: 2000, // Longer delay for complex queries
   })
 }
 
@@ -270,6 +277,13 @@ export function useTransactionDeliveryInfo(transactionId: string) {
       }
     },
     enabled: !!transactionId,
+    // Optimized for single transaction delivery info
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   })
 }
 

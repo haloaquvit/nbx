@@ -103,7 +103,14 @@ export const useTransactions = (filters?: {
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data ? data.map(fromDb) : [];
-    }
+    },
+    // Optimized settings to reduce unnecessary traffic
+    staleTime: 2 * 60 * 1000, // 2 minutes - data considered fresh
+    gcTime: 5 * 60 * 1000, // 5 minutes - cache garbage collection
+    refetchOnWindowFocus: false, // Don't refetch when window gains focus
+    refetchOnReconnect: false, // Don't refetch when reconnecting
+    retry: 1, // Only retry once on failure
+    retryDelay: 1000, // 1 second delay between retries
   })
 
   const addTransaction = useMutation({
@@ -602,6 +609,12 @@ export const useTransactionById = (id: string) => {
       return fromDb(data);
     },
     enabled: !!id,
+    // Optimized settings for single transaction
+    staleTime: 5 * 60 * 1000, // 5 minutes - single transaction changes less frequently
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
   });
   return { transaction, isLoading };
 }
@@ -618,6 +631,12 @@ export const useTransactionsByCustomer = (customerId: string) => {
             return data ? data.map(fromDb) : [];
         },
         enabled: !!customerId,
+        // Optimized settings for customer transactions
+        staleTime: 3 * 60 * 1000, // 3 minutes
+        gcTime: 10 * 60 * 1000, // 10 minutes cache
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        retry: 1,
     });
     return { transactions, isLoading };
 }

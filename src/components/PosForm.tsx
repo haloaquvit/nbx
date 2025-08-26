@@ -82,6 +82,7 @@ export const PosForm = () => {
   const [retasiBlocked, setRetasiBlocked] = useState(false);
   const [retasiMessage, setRetasiMessage] = useState('');
   const [isOfficeSale, setIsOfficeSale] = useState(false);
+  const [transactionNotes, setTransactionNotes] = useState('');
 
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
@@ -230,6 +231,7 @@ export const PosForm = () => {
       paidAmount: paidAmount,
       paymentStatus: paymentStatus,
       status: 'Pesanan Masuk',
+      notes: transactionNotes.trim() || undefined,
       isOfficeSale: isOfficeSale,
     };
 
@@ -496,6 +498,7 @@ export const PosForm = () => {
                     <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700">Qty</th>
                     <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">Satuan</th>
                     <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700">Harga Satuan</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">Catatan</th>
                     <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700">Total</th>
                     <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700">Aksi</th>
                   </tr>
@@ -503,7 +506,7 @@ export const PosForm = () => {
                 <tbody>
                   {items.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 md:py-12 text-center text-gray-500">
+                      <td colSpan={7} className="px-4 py-8 md:py-12 text-center text-gray-500">
                         <div className="flex flex-col items-center">
                           <div className="w-12 h-12 md:w-16 md:h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 md:mb-4">
                             <Plus className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
@@ -613,8 +616,8 @@ export const PosForm = () => {
               className="mt-1 w-full p-2 md:p-3 border rounded-lg resize-none text-sm"
               rows={2}
               placeholder="Tambahkan catatan untuk transaksi ini..."
-              value=""
-              onChange={() => {}}
+              value={transactionNotes}
+              onChange={(e) => setTransactionNotes(e.target.value)}
             />
           </div>
 

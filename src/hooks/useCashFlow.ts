@@ -27,7 +27,14 @@ export function useCashFlow() {
 
       // Return the data directly since account_name is already in cash_history table
       return data || [];
-    }
+    },
+    // Optimized for Dashboard usage - cash flow updates frequently
+    staleTime: 2 * 60 * 1000, // 2 minutes - cash flow changes frequently
+    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: 1, // Only retry once
+    retryDelay: 1000,
   });
 
   return {

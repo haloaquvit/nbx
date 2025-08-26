@@ -1,4 +1,3 @@
-"use client"
 import * as React from "react"
 import {
   ColumnDef,
@@ -61,6 +60,7 @@ export function TransactionTable() {
   // Filter states
   const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [ppnFilter, setPpnFilter] = React.useState<'all' | 'ppn' | 'non-ppn'>('all');
+  const [deliveryFilter, setDeliveryFilter] = React.useState<'all' | 'pending-delivery'>('all');
   const [filteredTransactions, setFilteredTransactions] = React.useState<Transaction[]>([]);
   
   const { transactions, isLoading, deleteTransaction } = useTransactions();
@@ -111,12 +111,20 @@ export function TransactionTable() {
       });
     }
 
+    // Filter by delivery status
+    if (deliveryFilter === 'pending-delivery') {
+      filtered = filtered.filter(transaction => {
+        return transaction.status === 'Pesanan Masuk' || transaction.status === 'Diantar Sebagian';
+      });
+    }
+
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter]);
+  }, [transactions, dateRange, ppnFilter, deliveryFilter]);
 
   const clearFilters = () => {
     setDateRange({ from: undefined, to: undefined });
     setPpnFilter('all');
+    setDeliveryFilter('all');
   };
   
 
@@ -692,6 +700,20 @@ export function TransactionTable() {
                 <SelectItem value="all">Semua Status</SelectItem>
                 <SelectItem value="ppn">PPN</SelectItem>
                 <SelectItem value="non-ppn">Non PPN</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Delivery Status Filter */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Status Pengantaran</label>
+            <Select value={deliveryFilter} onValueChange={(value: 'all' | 'pending-delivery') => setDeliveryFilter(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih Status Pengantaran" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="pending-delivery">Belum Selesai Pengantaran</SelectItem>
               </SelectContent>
             </Select>
           </div>

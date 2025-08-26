@@ -8,15 +8,20 @@ export const useCustomers = () => {
   const { data: customers, isLoading } = useQuery<Customer[]>({
     queryKey: ['customers'],
     queryFn: async () => {
-      console.log('Fetching customers data...');
       const { data, error } = await supabase
         .from('customers')
         .select('*')
         .order('name', { ascending: true });
-      console.log('Customers query result:', { data, error, count: data?.length });
       if (error) throw new Error(error.message);
       return data || [];
-    }
+    },
+    // Optimized for POS and customer management usage
+    staleTime: 5 * 60 * 1000, // 5 minutes - customers change less frequently
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: 1, // Only retry once
+    retryDelay: 1000,
   });
 
   const addCustomer = useMutation({

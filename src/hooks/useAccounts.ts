@@ -35,7 +35,14 @@ export const useAccounts = () => {
       const { data, error } = await supabase.from('accounts').select('*');
       if (error) throw new Error(error.message);
       return data ? data.map(fromDbToApp) : [];
-    }
+    },
+    // Optimized for Dashboard and POS usage  
+    staleTime: 10 * 60 * 1000, // 10 minutes - accounts change infrequently
+    gcTime: 15 * 60 * 1000, // 15 minutes cache
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: 1, // Only retry once
+    retryDelay: 1000,
   })
 
   const addAccount = useMutation({

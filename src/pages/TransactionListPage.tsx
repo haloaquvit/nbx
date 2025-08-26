@@ -1,4 +1,3 @@
-"use client"
 import { TransactionTable } from "@/components/TransactionTable";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 

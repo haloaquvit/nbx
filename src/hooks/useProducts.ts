@@ -50,7 +50,14 @@ export const useProducts = () => {
         .order('name', { ascending: true });
       if (error) throw new Error(error.message);
       return data ? data.map(fromDb) : [];
-    }
+    },
+    // Optimized for high-frequency POS usage
+    staleTime: 10 * 60 * 1000, // 10 minutes - products don't change frequently
+    gcTime: 15 * 60 * 1000, // 15 minutes cache
+    refetchOnWindowFocus: false, // Critical: don't refetch on POS window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: 1, // Only retry once
+    retryDelay: 1000,
   })
 
   const upsertProduct = useMutation({

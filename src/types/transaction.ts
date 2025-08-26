@@ -53,6 +53,7 @@ export interface Transaction {
   paymentStatus: PaymentStatus; // Status pembayaran
   dueDate?: Date | null; // Tanggal jatuh tempo untuk pembayaran kredit
   status: TransactionStatus;
+  notes?: string; // Catatan transaksi
   isOfficeSale?: boolean; // Tandai jika produk laku kantor
   createdAt: Date;
 }

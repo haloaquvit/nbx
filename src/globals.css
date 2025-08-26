@@ -1,8 +1,8 @@
+@import './styles/hover-effects.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import './styles/hover-effects.css';
 
 @layer base {
   :root {

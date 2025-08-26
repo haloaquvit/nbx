@@ -8,8 +8,6 @@ export const useEmployees = () => {
   const { data: employees, isLoading, error, isError } = useQuery<Employee[]>({
     queryKey: ['employees'],
     queryFn: async () => {
-      console.log('[useEmployees] Fetching employees...');
-      
       try {
         // Simple approach - just get profiles data, don't crash on error
         const { data, error } = await supabase
@@ -39,7 +37,14 @@ export const useEmployees = () => {
         // Return empty array to prevent app crash
         return [];
       }
-    }
+    },
+    // Optimized for employee management pages
+    staleTime: 10 * 60 * 1000, // 10 minutes - employees don't change frequently
+    gcTime: 15 * 60 * 1000, // 15 minutes cache
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: 1, // Only retry once
+    retryDelay: 1000,
   });
 
   const createEmployee = useMutation({

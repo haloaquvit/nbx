@@ -43,7 +43,14 @@ export const useMaterials = () => {
         .select('*');
       if (error) throw new Error(error.message);
       return data ? data.map(fromDbToApp) : [];
-    }
+    },
+    // Optimized for material management pages
+    staleTime: 5 * 60 * 1000, // 5 minutes - materials change more frequently than products
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnReconnect: false, // Don't refetch on reconnect
+    retry: 1, // Only retry once
+    retryDelay: 1000,
   });
 
   const addStock = useMutation({
