@@ -1,5 +1,5 @@
 "use client"
-import { useParams, Link } from "react-router-dom"
+import { useParams, Link, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,21 +10,21 @@ import { useTransactions } from "@/hooks/useTransactions"
 import { useTransactionDeliveryInfo } from "@/hooks/useDeliveries"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
-import { PrintReceiptDialog } from "@/components/PrintReceiptDialog"
 import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { useState } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useToast } from "@/components/ui/use-toast"
+import { useCompanySettings } from "@/hooks/useCompanySettings"
 
 export default function TransactionDetailPage() {
   const { id: transactionId } = useParams<{ id: string }>()
   const { transactions, isLoading } = useTransactions()
   const { data: deliveryInfo, isLoading: isLoadingDelivery } = useTransactionDeliveryInfo(transactionId || '')
   const { toast } = useToast()
-  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
-  const [printTemplate, setPrintTemplate] = useState<'receipt' | 'invoice'>('receipt')
+  const { settings: companyInfo } = useCompanySettings()
+  const navigate = useNavigate()
   const [showDeliveryForm, setShowDeliveryForm] = useState(false)
 
   const transaction = transactions?.find(t => t.id === transactionId)
@@ -107,10 +107,669 @@ export default function TransactionDetailPage() {
     return 'Sebagian';
   }
 
-  const handlePrintClick = (template: 'receipt' | 'invoice') => {
-    setPrintTemplate(template);
-    setIsPrintDialogOpen(true);
-  }
+  // Generate PDF Invoice - langsung tanpa dialog
+  const handleGenerateInvoicePdf = () => {
+    if (!transaction) return;
+    const doc = new jsPDF();
+    const pageHeight = doc.internal.pageSize.height;
+    const pageWidth = doc.internal.pageSize.width;
+    const margin = 15;
+
+    // Currency formatting function
+    const formatCurrency = (amount: number): string => {
+      return new Intl.NumberFormat("id-ID", { 
+        style: "currency", 
+        currency: "IDR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(amount);
+    };
+
+    // Add logo with better proportions
+    const logoWidth = 25;
+    const logoHeight = 20;
+    if (companyInfo?.logo) {
+      try {
+        doc.addImage(companyInfo.logo, 'PNG', margin, 12, logoWidth, logoHeight, undefined, 'FAST');
+      } catch (e) { console.error(e); }
+    }
+    
+    // Company info
+    doc.setFontSize(18).setFont("helvetica", "bold").text(companyInfo?.name || '', margin, 32);
+    doc.setFontSize(10).setFont("helvetica", "normal").text(companyInfo?.address || '', margin, 38).text(companyInfo?.phone || '', margin, 43);
+    doc.setDrawColor(200).line(margin, 48, pageWidth - margin, 48);
+    
+    // Invoice header
+    doc.setFontSize(22).setFont("helvetica", "bold").setTextColor(150).text("INVOICE", pageWidth - margin, 32, { align: 'right' });
+    const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
+    doc.setFontSize(11).setTextColor(0).text(`No: ${transaction.id}`, pageWidth - margin, 38, { align: 'right' }).text(`Tanggal: ${format(orderDate, "d MMMM yyyy", { locale: id })}`, pageWidth - margin, 43, { align: 'right' });
+    
+    // Customer info
+    let y = 55;
+    doc.setFontSize(10).setTextColor(100).text("DITAGIHKAN KEPADA:", margin, y);
+    doc.setFontSize(12).setFont("helvetica", "bold").setTextColor(0).text(transaction.customerName, margin, y + 6);
+    y += 16;
+    
+    // Items table
+    const tableData = transaction.items.map(item => [item.product.name, item.quantity, formatCurrency(item.price), formatCurrency(item.price * item.quantity)]);
+    autoTable(doc, {
+      startY: y,
+      head: [['Deskripsi', 'Jumlah', 'Harga Satuan', 'Total']],
+      body: tableData,
+      theme: 'plain',
+      headStyles: { fillColor: [240, 240, 240], textColor: [50, 50, 50], fontStyle: 'bold', fontSize: 10 },
+      bodyStyles: { fontSize: 10 },
+      columnStyles: { 0: { cellWidth: 80 }, 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+      didDrawPage: (data) => { doc.setFontSize(8).setTextColor(150).text(`Halaman ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' }); }
+    });
+    
+    // Summary
+    const finalY = (doc as any).lastAutoTable.finalY;
+    let summaryY = finalY + 10;
+    doc.setFontSize(10).setFont("helvetica", "normal").text("Subtotal:", 140, summaryY);
+    doc.text(formatCurrency(transaction.subtotal), pageWidth - margin, summaryY, { align: 'right' });
+    summaryY += 5;
+    
+    if (transaction.ppnEnabled) {
+      doc.text(`PPN (${transaction.ppnPercentage}%):`, 140, summaryY);
+      doc.text(formatCurrency(transaction.ppnAmount), pageWidth - margin, summaryY, { align: 'right' });
+      summaryY += 5;
+    }
+    
+    doc.setDrawColor(200).line(140, summaryY, pageWidth - margin, summaryY);
+    summaryY += 7;
+    doc.setFontSize(12).setFont("helvetica", "bold").text("TOTAL:", 140, summaryY);
+    doc.text(formatCurrency(transaction.total), pageWidth - margin, summaryY, { align: 'right' });
+    summaryY += 10;
+    
+    // Payment Information
+    doc.setDrawColor(200).line(140, summaryY, pageWidth - margin, summaryY);
+    summaryY += 7;
+    doc.setFontSize(10).setFont("helvetica", "normal").text("Status Pembayaran:", 140, summaryY);
+    doc.text(getPaymentStatusText(transaction.paidAmount || 0, transaction.total), pageWidth - margin, summaryY, { align: 'right' });
+    summaryY += 5;
+    doc.text("Jumlah Dibayar:", 140, summaryY);
+    doc.text(formatCurrency(transaction.paidAmount || 0), pageWidth - margin, summaryY, { align: 'right' });
+    summaryY += 5;
+    
+    if (transaction.total > (transaction.paidAmount || 0)) {
+      doc.text("Sisa Tagihan:", 140, summaryY);
+      doc.text(formatCurrency(transaction.total - (transaction.paidAmount || 0)), pageWidth - margin, summaryY, { align: 'right' });
+      summaryY += 5;
+    }
+    
+    // Signature
+    let signatureY = summaryY + 15;
+    doc.setFontSize(12).setFont("helvetica", "normal");
+    doc.text("Hormat Kami", margin, signatureY);
+    doc.setFontSize(10).setFont("helvetica", "bold");
+    doc.text((transaction.cashierName || ""), margin, signatureY + 8);
+    doc.setFontSize(10).setFont("helvetica", "normal");
+    doc.text("Terima kasih atas kepercayaan Anda.", margin, signatureY + 20);
+
+    const filename = `Invoice-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
+    doc.save(filename);
+  };
+
+  // Cetak Thermal - langsung print tanpa dialog
+  const handleThermalPrint = () => {
+    if (!transaction) return;
+    
+    // Buat preview content thermal receipt
+    const receiptContent = `
+      <div class="font-mono w-full max-w-sm mx-auto">
+        <header class="text-center mb-2">
+          ${companyInfo?.logo ? `<img src="${companyInfo.logo}" alt="Logo" class="mx-auto max-h-6 max-w-12 mb-1 object-contain" />` : ''}
+          <h1 class="text-sm font-bold break-words">${companyInfo?.name || 'Nota Transaksi'}</h1>
+          <p class="text-xs break-words">${companyInfo?.address || ''}</p>
+          <p class="text-xs break-words">${companyInfo?.phone || ''}</p>
+        </header>
+        <div class="text-xs space-y-0.5 my-2 border-y border-dashed border-black py-1">
+          <div class="flex justify-between"><span>No:</span> <strong>${transaction.id}</strong></div>
+          <div class="flex justify-between"><span>Tgl:</span> <span>${transaction.orderDate ? format(new Date(transaction.orderDate), "dd/MM/yy HH:mm", { locale: id }) : 'N/A'}</span></div>
+          <div class="flex justify-between"><span>Plgn:</span> <span>${transaction.customerName}</span></div>
+          <div class="flex justify-between"><span>Kasir:</span> <span>${transaction.cashierName}</span></div>
+        </div>
+        <div class="w-full text-xs overflow-x-auto">
+          <table class="w-full min-w-full">
+            <thead>
+              <tr class="border-b border-dashed border-black">
+                <th class="text-left font-normal pb-1 pr-2">Item</th>
+                <th class="text-right font-normal pb-1">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${transaction.items.map(item => `
+                <tr>
+                  <td class="pt-1 align-top pr-2">
+                    <div class="break-words">${item.product.name}</div>
+                    <div class="whitespace-nowrap">${item.quantity}x @${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(item.price)}</div>
+                  </td>
+                  <td class="pt-1 text-right align-top whitespace-nowrap">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-2 pt-1 border-t border-dashed border-black text-xs space-y-1">
+          <div class="flex justify-between">
+            <span>Subtotal:</span>
+            <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.subtotal)}</span>
+          </div>
+          ${transaction.ppnEnabled ? `
+            <div class="flex justify-between">
+              <span>PPN (${transaction.ppnPercentage}%):</span>
+              <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.ppnAmount)}</span>
+            </div>
+          ` : ''}
+          <div class="flex justify-between font-semibold border-t border-dashed border-black pt-1">
+            <span>Total:</span>
+            <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.total)}</span>
+          </div>
+          <div class="border-t border-dashed border-black pt-1 space-y-1">
+            <div class="flex justify-between items-center">
+              <span>Status:</span>
+              <span class="text-right break-words ${getPaymentStatusText(transaction.paidAmount || 0, transaction.total) === 'Lunas' ? 'font-semibold' : ''}">${getPaymentStatusText(transaction.paidAmount || 0, transaction.total)}</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span>Jumlah Bayar:</span>
+              <span class="text-right whitespace-nowrap">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</span>
+            </div>
+            ${transaction.total > (transaction.paidAmount || 0) ? `
+              <div class="flex justify-between items-center">
+                <span>Sisa Tagihan:</span>
+                <span class="text-right whitespace-nowrap">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</span>
+              </div>
+            ` : ''}
+          </div>
+        </div>
+        <div class="text-center mt-3 text-xs">
+          Terima kasih!
+        </div>
+      </div>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    printWindow?.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Cetak Thermal Receipt</title>
+          <style>
+            body {
+              font-family: 'Courier New', Courier, monospace;
+              font-size: 9pt;
+              margin: 0;
+              padding: 2mm;
+              width: 78mm;
+              background: #fff;
+              line-height: 1.2;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+            td, th {
+              padding: 1px 2px;
+              font-size: 8pt;
+            }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .text-left { text-align: left; }
+            .font-bold { font-weight: bold; }
+            .font-normal { font-weight: normal; }
+            .border-y {
+              border-top: 1px dashed black;
+              border-bottom: 1px dashed black;
+            }
+            .border-b {
+              border-bottom: 1px dashed black;
+            }
+            .border-t {
+              border-top: 1px dashed black;
+            }
+            .py-1 {
+              padding-top: 2px;
+              padding-bottom: 2px;
+            }
+            .pt-1 {
+              padding-top: 2px;
+            }
+            .pb-1 {
+              padding-bottom: 2px;
+            }
+            .pr-2 {
+              padding-right: 4px;
+            }
+            .mb-1 {
+              margin-bottom: 2px;
+            }
+            .mb-2 {
+              margin-bottom: 4px;
+            }
+            .mt-2 {
+              margin-top: 4px;
+            }
+            .mt-3 {
+              margin-top: 6px;
+            }
+            .my-2 {
+              margin-top: 4px;
+              margin-bottom: 4px;
+            }
+            .mx-auto {
+              margin-left: auto;
+              margin-right: auto;
+            }
+            .max-h-6 {
+              max-height: 12mm;
+            }
+            .max-w-12 {
+              max-width: 20mm;
+            }
+            .object-contain {
+              object-fit: contain;
+              display: block;
+            }
+            .flex {
+              display: flex;
+            }
+            .justify-between {
+              justify-content: space-between;
+            }
+            .space-y-0\\.5 > * + * {
+              margin-top: 1px;
+            }
+            .space-y-1 > * + * {
+              margin-top: 2px;
+            }
+            .break-words {
+              word-break: break-word;
+              hyphens: auto;
+            }
+            .whitespace-nowrap {
+              white-space: nowrap;
+            }
+            .align-top {
+              vertical-align: top;
+            }
+            .w-full {
+              width: 100%;
+            }
+            .min-w-full {
+              min-width: 100%;
+            }
+            .overflow-x-auto {
+              overflow-x: auto;
+            }
+            header h1 {
+              font-size: 10pt;
+              margin: 1px 0;
+              font-weight: bold;
+            }
+            header p {
+              font-size: 8pt;
+              margin: 1px 0;
+            }
+            @page {
+              size: 80mm auto;
+              margin: 2mm;
+            }
+            @media print {
+              body {
+                width: 76mm;
+                font-size: 8pt;
+              }
+              .max-h-6 {
+                max-height: 10mm;
+              }
+              .max-w-12 {
+                max-width: 18mm;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          ${receiptContent}
+        </body>
+      </html>
+    `);
+    printWindow?.document.close();
+    printWindow?.focus();
+    printWindow?.print();
+  };
+
+  // Cetak Dot Matrix - khusus untuk LX-310 tanpa logo
+  const handleDotMatrixPrint = () => {
+    if (!transaction) return;
+    
+    // Version khusus LX-310 - tanpa logo, nama perusahaan diperbesar
+    const invoiceContent = `
+      <div class="p-8 bg-white text-black">
+        <header class="flex justify-between items-center mb-4 pb-2 border-b-2 border-gray-200">
+          <div class="ml-2">
+            <div class="company-logo-text-compact">
+              <h1 class="text-2xl font-bold text-gray-800 mb-1 tracking-wide">${companyInfo?.name}</h1>
+              <div class="company-tagline text-sm font-semibold text-gray-600 mb-1">━━━ PROFESSIONAL SERVICES ━━━</div>
+            </div>
+            <div class="ml-1">
+              <p class="text-sm text-gray-500 leading-tight">${companyInfo?.address}</p>
+              <p class="text-sm text-gray-500 leading-tight">${companyInfo?.phone}</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <h2 class="text-4xl font-bold uppercase text-gray-300">INVOICE</h2>
+            <p class="text-lg text-gray-600"><strong class="text-gray-800">No:</strong> ${transaction.id}</p>
+            <p class="text-lg text-gray-600"><strong class="text-gray-800">Tanggal:</strong> ${transaction.orderDate ? format(new Date(transaction.orderDate), "d MMMM yyyy", { locale: id }) : 'N/A'}</p>
+          </div>
+        </header>
+        <div class="mb-4">
+          <h3 class="text-base font-semibold text-gray-500 mb-1">DITAGIHKAN KEPADA:</h3>
+          <p class="text-xl font-bold text-gray-800">${transaction.customerName}</p>
+        </div>
+        <table class="w-full border-collapse border border-gray-200">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-left text-base">Deskripsi</th>
+              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-center text-base">Jumlah</th>
+              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-right text-base">Harga Satuan</th>
+              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-right text-base">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${transaction.items.map(item => `
+              <tr>
+                <td class="border border-gray-200 p-3 font-medium text-gray-800 text-base">${item.product.name}</td>
+                <td class="border border-gray-200 p-3 text-center text-gray-600 text-base">${item.quantity}</td>
+                <td class="border border-gray-200 p-3 text-right text-gray-600 text-base">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(item.price)}</td>
+                <td class="border border-gray-200 p-3 text-right font-medium text-gray-800 text-base">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="flex justify-end mt-6">
+          <div class="w-full max-w-sm text-gray-700 space-y-3">
+            <div class="flex justify-between text-lg"><span>Subtotal:</span><span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.subtotal)}</span></div>
+            ${transaction.ppnEnabled ? `
+              <div class="flex justify-between text-lg"><span>PPN (${transaction.ppnPercentage}%):</span><span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.ppnAmount)}</span></div>
+            ` : ''}
+            <div class="flex justify-between font-bold text-xl border-t-2 border-gray-200 pt-3 text-gray-900"><span>TOTAL:</span><span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.total)}</span></div>
+            <div class="border-t-2 border-gray-200 pt-3 space-y-3">
+              <div class="flex justify-between font-medium text-lg">
+                <span>Status Pembayaran:</span>
+                <span class="${getPaymentStatusText(transaction.paidAmount || 0, transaction.total) === 'Lunas' ? 'text-green-600 font-semibold' : 'text-orange-600 font-semibold'}">${getPaymentStatusText(transaction.paidAmount || 0, transaction.total)}</span>
+              </div>
+              <div class="flex justify-between text-lg">
+                <span>Jumlah Dibayar:</span>
+                <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</span>
+              </div>
+              ${transaction.total > (transaction.paidAmount || 0) ? `
+                <div class="flex justify-between font-medium text-red-600 text-lg">
+                  <span>Sisa Tagihan:</span>
+                  <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</span>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+        <footer class="text-center text-xs text-gray-400 mt-16 pt-4 border-t border-gray-200">
+          <div class="flex flex-col items-center gap-2">
+            <span class="font-bold text-gray-700">Hormat Kami</span>
+            <span class="font-semibold text-gray-800">${transaction.cashierName}</span>
+          </div>
+          <p class="mt-4">Terima kasih atas kepercayaan Anda.</p>
+        </footer>
+      </div>
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.left = '-9999px';
+    iframe.style.top = '-9999px';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Cetak Dot Matrix</title>
+          <style>
+            body { font-family: 'Courier New', Courier, monospace; font-size: 12pt; margin: 0; padding: 10mm; width: 9.5in; background: #fff; }
+            table { width: 100%; border-collapse: collapse; }
+            td, th { padding: 3px; font-size: 11pt; }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .text-left { text-align: left; }
+            .font-bold { font-weight: bold; }
+            .font-semibold { font-weight: 600; }
+            .border-y { border-top: 1px dashed; border-bottom: 1px dashed; }
+            .border-b { border-bottom: 1px dashed; }
+            .border-t { border-top: 1px dashed; }
+            .border-t-2 { border-top: 2px solid; }
+            .border-b-2 { border-bottom: 2px solid; }
+            .flex { display: flex; }
+            .items-center { align-items: center; }
+            .items-start { align-items: flex-start; }
+            .justify-between { justify-content: space-between; }
+            .gap-4 { gap: 8px; }
+            .gap-6 { gap: 12px; }
+            .ml-2 { margin-left: 4px; }
+            .ml-4 { margin-left: 8px; }
+            .mb-1 { margin-bottom: 2px; }
+            .mb-4 { margin-bottom: 8px; }
+            .mb-8 { margin-bottom: 16px; }
+            .mt-8 { margin-top: 16px; }
+            .mt-16 { margin-top: 32px; }
+            .pt-2 { padding-top: 4px; }
+            .pt-4 { padding-top: 8px; }
+            .pb-2 { padding-bottom: 4px; }
+            .pb-4 { padding-bottom: 8px; }
+            .p-2 { padding: 4px; }
+            .text-xs { font-size: 9pt; }
+            .text-sm { font-size: 10pt; }
+            .text-base { font-size: 12pt; }
+            .text-lg { font-size: 14pt; }
+            .text-2xl { font-size: 16pt; }
+            .text-3xl { font-size: 20pt; }
+            .text-4xl { font-size: 24pt; }
+            .text-5xl { font-size: 30pt; }
+            .text-xl { font-size: 16pt; }
+            .leading-tight { line-height: 1.1; }
+            .tracking-wide { letter-spacing: 0.025em; }
+            .company-logo-text {
+              border: 2px solid #374151;
+              padding: 8px 12px;
+              background-color: #f9fafb;
+              border-radius: 4px;
+            }
+            .company-logo-text-compact {
+              border: 2px solid #374151;
+              padding: 6px 8px;
+              background-color: #f9fafb;
+              border-radius: 4px;
+            }
+            .company-tagline {
+              text-align: center;
+              font-family: 'Courier New', Courier, monospace;
+            }
+            .text-gray-300 { color: #d1d5db; }
+            .text-gray-400 { color: #9ca3af; }
+            .text-gray-500 { color: #6b7280; }
+            .text-gray-600 { color: #4b5563; }
+            .text-gray-700 { color: #374151; }
+            .text-gray-800 { color: #1f2937; }
+            .text-gray-900 { color: #111827; }
+            .text-green-600 { color: #059669; }
+            .text-orange-600 { color: #ea580c; }
+            .text-red-600 { color: #dc2626; }
+            .bg-gray-100 { background-color: #f3f4f6; }
+            .border-gray-200 { border-color: #e5e7eb; }
+            .uppercase { text-transform: uppercase; }
+            .w-full { width: 100%; }
+            .max-w-xs { max-width: 200px; }
+            .space-y-2 > * + * { margin-top: 4px; }
+            .flex-col { flex-direction: column; }
+            .border { border: 1px solid; }
+            .border-b-2 { border-bottom: 2px solid; }
+            .border-collapse { border-collapse: collapse; }
+            .border-radius { border-radius: 4px; }
+            .bg-gray-50 { background-color: #f9fafb; }
+            @page { size: 9.5in 11in; margin: 10mm; }
+            @media print {
+              body { width: 9.5in; height: 11in; font-size: 11pt; }
+              .company-logo-text {
+                border: 2px solid #000 !important;
+                background-color: #fff !important;
+                print-color-adjust: exact;
+              }
+              td, th { font-size: 10pt; }
+            }
+          </style>
+        </head>
+        <body>
+          ${invoiceContent}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }, 500);
+  };
+
+  // Fungsi cetak Rawbt Thermal 80mm
+  const handleRawbtPrint = () => {
+    if (!transaction) return;
+
+    const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
+    
+    const formatCurrency = (amount: number): string => {
+      if (amount === null || amount === undefined || isNaN(amount)) {
+        return "Rp 0";
+      }
+      const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+      let result = new Intl.NumberFormat("id-ID", { 
+        style: "currency", 
+        currency: "IDR",
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(numAmount);
+      result = result.replace(/\u00A0/g, ' ');
+      return result;
+    };
+
+    const formatNumber = (amount: number): string => {
+      if (amount === null || amount === undefined || isNaN(amount)) {
+        return "0";
+      }
+      const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+      let result = new Intl.NumberFormat("id-ID", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(numAmount);
+      result = result.replace(/\u00A0/g, ' ');
+      return result;
+    };
+    
+    let receiptText = '';
+    receiptText += '\x1B\x40';
+    receiptText += '\x1B\x61\x01';
+    receiptText += (companyInfo?.name || 'Nota Transaksi') + '\n';
+    if (companyInfo?.address) {
+      receiptText += companyInfo.address + '\n';
+    }
+    if (companyInfo?.phone) {
+      receiptText += companyInfo.phone + '\n';
+    }
+    receiptText += '\x1B\x61\x00';
+    receiptText += '--------------------------------\n';
+    receiptText += `No: ${transaction.id}\n`;
+    receiptText += `Tgl: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : 'N/A'}\n`;
+    receiptText += `Plgn: ${transaction.customerName}\n`;
+    receiptText += `Kasir: ${transaction.cashierName}\n`;
+    receiptText += '--------------------------------\n';
+    receiptText += 'Item                        Total\n';
+    receiptText += '--------------------------------\n';
+    
+    transaction.items.forEach((item) => {
+      receiptText += item.product.name + '\n';
+      const qtyPrice = `${item.quantity}x @${formatNumber(item.price)}`;
+      const itemTotal = formatNumber(item.price * item.quantity);
+      const spacing = 32 - qtyPrice.length - itemTotal.length;
+      receiptText += qtyPrice + ' '.repeat(Math.max(0, spacing)) + itemTotal + '\n';
+    });
+    
+    receiptText += '--------------------------------\n';
+    const subtotalText = 'Subtotal:';
+    const subtotalAmount = formatCurrency(transaction.subtotal);
+    const subtotalSpacing = 32 - subtotalText.length - subtotalAmount.length;
+    receiptText += subtotalText + ' '.repeat(Math.max(0, subtotalSpacing)) + subtotalAmount + '\n';
+    
+    if (transaction.ppnEnabled) {
+      const ppnText = `PPN (${transaction.ppnPercentage}%):`;
+      const ppnAmount = formatCurrency(transaction.ppnAmount);
+      const ppnSpacing = 32 - ppnText.length - ppnAmount.length;
+      receiptText += ppnText + ' '.repeat(Math.max(0, ppnSpacing)) + ppnAmount + '\n';
+    }
+    
+    receiptText += '--------------------------------\n';
+    const totalText = 'Total:';
+    const totalAmount = formatCurrency(transaction.total);
+    const totalSpacing = 32 - totalText.length - totalAmount.length;
+    
+    receiptText += '\x1B\x45\x01';
+    receiptText += totalText + ' '.repeat(Math.max(0, totalSpacing)) + totalAmount + '\n';
+    receiptText += '\x1B\x45\x00';
+    receiptText += '--------------------------------\n';
+    
+    const statusText = 'Status:';
+    const statusValue = getPaymentStatusText(transaction.paidAmount || 0, transaction.total);
+    const statusSpacing = 32 - statusText.length - statusValue.length;
+    receiptText += statusText + ' '.repeat(Math.max(0, statusSpacing)) + statusValue + '\n';
+    
+    const paidText = 'Jumlah Bayar:';
+    const paidAmount = formatCurrency(transaction.paidAmount || 0);
+    const paidSpacing = 32 - paidText.length - paidAmount.length;
+    receiptText += paidText + ' '.repeat(Math.max(0, paidSpacing)) + paidAmount + '\n';
+    
+    if (transaction.total > (transaction.paidAmount || 0)) {
+      const remainingText = 'Sisa Tagihan:';
+      const remainingAmount = formatCurrency(transaction.total - (transaction.paidAmount || 0));
+      const remainingSpacing = 32 - remainingText.length - remainingAmount.length;
+      receiptText += remainingText + ' '.repeat(Math.max(0, remainingSpacing)) + remainingAmount + '\n';
+    }
+    
+    receiptText += '\n';
+    receiptText += '\x1B\x61\x01';
+    receiptText += 'Terima kasih!\n';
+    receiptText += '\x1B\x61\x00';
+    receiptText += '\n\n\n';
+    receiptText += '\x1D\x56\x41';
+
+    const encodedText = encodeURIComponent(receiptText);
+    const rawbtUrl = `rawbt:${encodedText}`;
+    
+    try {
+      window.location.href = rawbtUrl;
+    } catch (error) {
+      console.error('Failed to open RawBT protocol:', error);
+    }
+    
+    setTimeout(() => {
+      navigate('/transactions');
+    }, 500);
+  };
 
   const generateDeliveryNote = () => {
     if (!transaction) return;
@@ -266,13 +925,6 @@ export default function TransactionDetailPage() {
 
   return (
     <div className="space-y-6">
-      <PrintReceiptDialog 
-        open={isPrintDialogOpen} 
-        onOpenChange={setIsPrintDialogOpen} 
-        transaction={transaction} 
-        template={printTemplate}
-      />
-
       {/* Mobile and Desktop Header */}
       <div className="flex flex-col space-y-4 md:flex-row md:items-center md:justify-between md:space-y-0">
         <div className="flex items-center gap-4">
@@ -310,13 +962,21 @@ export default function TransactionDetailPage() {
             <FileText className="mr-2 h-4 w-4" />
             Surat Jalan
           </Button>
-          <Button variant="outline" onClick={() => handlePrintClick('receipt')}>
+          <Button variant="outline" onClick={handleGenerateInvoicePdf}>
+            <FileDown className="mr-2 h-4 w-4" />
+            Simpan PDF
+          </Button>
+          <Button variant="outline" onClick={handleThermalPrint}>
             <Printer className="mr-2 h-4 w-4" />
             Cetak Thermal
           </Button>
-          <Button onClick={() => handlePrintClick('invoice')}>
-            <FileDown className="mr-2 h-4 w-4" />
-            Cetak Invoice PDF
+          <Button variant="outline" onClick={handleDotMatrixPrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Cetak Dot Matrix
+          </Button>
+          <Button onClick={handleRawbtPrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Rawbt Thermal
           </Button>
         </div>
       </div>
@@ -351,19 +1011,37 @@ export default function TransactionDetailPage() {
           <Button 
             variant="outline" 
             size="sm" 
-            className="flex-shrink-0"
-            onClick={() => handlePrintClick('receipt')}
+            className="flex-1 min-w-0"
+            onClick={handleGenerateInvoicePdf}
           >
-            <Printer className="mr-2 h-4 w-4" />
-            Thermal
+            <FileDown className="mr-1 h-3 w-3" />
+            <span className="text-xs">PDF</span>
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1 min-w-0"
+            onClick={handleThermalPrint}
+          >
+            <Printer className="mr-1 h-3 w-3" />
+            <span className="text-xs">Thermal</span>
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1 min-w-0"
+            onClick={handleDotMatrixPrint}
+          >
+            <Printer className="mr-1 h-3 w-3" />
+            <span className="text-xs">Dot Matrix</span>
           </Button>
           <Button 
             size="sm" 
-            className="flex-1"
-            onClick={() => handlePrintClick('invoice')}
+            className="flex-1 min-w-0"
+            onClick={handleRawbtPrint}
           >
-            <FileDown className="mr-2 h-4 w-4" />
-            Invoice
+            <Printer className="mr-1 h-3 w-3" />
+            <span className="text-xs">Rawbt</span>
           </Button>
         </div>
       </div>
@@ -690,7 +1368,7 @@ export default function TransactionDetailPage() {
           <Button
             size="lg"
             className="rounded-full shadow-lg"
-            onClick={() => handlePrintClick('receipt')}
+            onClick={handleThermalPrint}
           >
             <Printer className="h-5 w-5" />
           </Button>

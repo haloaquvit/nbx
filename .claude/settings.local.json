@@ -47,7 +47,8 @@
       "Bash(npm start)",
       "Bash(start /B node:*)",
       "Bash(powershell:*)",
-      "Bash(del test-image.txt)"
+      "Bash(del test-image.txt)",
+      "Bash(del nul)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"
