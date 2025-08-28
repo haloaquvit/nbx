@@ -48,7 +48,8 @@
       "Bash(start /B node:*)",
       "Bash(powershell:*)",
       "Bash(del test-image.txt)",
-      "Bash(del nul)"
+      "Bash(del nul)",
+      "Bash(docker:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

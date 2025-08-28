@@ -46,14 +46,14 @@ CREATE TABLE IF NOT EXISTS public.material_stock_movements (
 ALTER TABLE public.material_stock_movements ENABLE ROW LEVEL SECURITY;
 
 -- Create policy for authenticated users to view material stock movements
-CREATE POLICY IF NOT EXISTS "Authenticated users can view material stock movements" 
+CREATE POLICY "Authenticated users can view material stock movements" 
 ON public.material_stock_movements FOR SELECT 
 USING (auth.role() = 'authenticated');
 
 -- Create policy for authenticated users to insert material stock movements
-CREATE POLICY IF NOT EXISTS "Authenticated users can create material stock movements" 
+CREATE POLICY "Authenticated users can create material stock movements" 
 ON public.material_stock_movements FOR INSERT 
-USING (auth.role() = 'authenticated');
+WITH CHECK (auth.role() = 'authenticated');
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_material_stock_movements_material ON public.material_stock_movements(material_id);

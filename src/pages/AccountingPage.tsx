@@ -1,6 +1,6 @@
 "use client"
-import { AccountManagement } from "@/components/AccountManagement";
+import { EnhancedAccountManagement } from "@/components/EnhancedAccountManagement";
 
 export default function AccountingPage() {
-  return <AccountManagement />;
+  return <EnhancedAccountManagement />;
 }
