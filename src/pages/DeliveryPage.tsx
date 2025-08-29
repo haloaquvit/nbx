@@ -36,6 +36,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/hooks/useAuth"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
+import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
+import { Delivery } from "@/types/delivery"
 
 export default function DeliveryPage() {
   const { toast } = useToast()
@@ -48,6 +51,17 @@ export default function DeliveryPage() {
   const [selectedDelivery, setSelectedDelivery] = useState<any>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("active")
+  const [completionDialogOpen, setCompletionDialogOpen] = useState(false)
+  const [completedDelivery, setCompletedDelivery] = useState<Delivery | null>(null)
+  const [completedTransaction, setCompletedTransaction] = useState<TransactionDeliveryInfo | null>(null)
+
+  // Handle delivery completion
+  const handleDeliveryCompleted = (delivery: Delivery, transaction: TransactionDeliveryInfo) => {
+    setCompletedDelivery(delivery)
+    setCompletedTransaction(transaction)
+    setCompletionDialogOpen(true)
+    setIsDeliveryDialogOpen(false) // Close the form dialog
+  }
   const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false)
   const [selectedDeliveryTransaction, setSelectedDeliveryTransaction] = useState<TransactionDeliveryInfo | null>(null)
   
@@ -749,18 +763,21 @@ export default function DeliveryPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                <Button 
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-xs px-2 py-1"
-                                  onClick={() => {
-                                    setSelectedDelivery(delivery)
-                                    setIsDetailModalOpen(true)
-                                  }}
-                                >
-                                  <Eye className="h-3 w-3 sm:mr-1" />
-                                  <span className="hidden sm:inline">Detail</span>
-                                </Button>
+                                <div className="flex gap-1">
+                                  <DeliveryNotePDF delivery={delivery} />
+                                  <Button 
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-xs px-2 py-1"
+                                    onClick={() => {
+                                      setSelectedDelivery(delivery)
+                                      setIsDetailModalOpen(true)
+                                    }}
+                                  >
+                                    <Eye className="h-3 w-3 sm:mr-1" />
+                                    <span className="hidden sm:inline">Detail</span>
+                                  </Button>
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -815,14 +832,22 @@ export default function DeliveryPage() {
             <DeliveryFormContent
               transaction={selectedDeliveryTransaction}
               onSuccess={() => {
-                setIsDeliveryDialogOpen(false)
                 setSelectedDeliveryTransaction(null)
                 refetch()
               }}
+              onDeliveryCreated={handleDeliveryCompleted}
             />
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Delivery Completion Dialog */}
+      <DeliveryCompletionDialog
+        open={completionDialogOpen}
+        onOpenChange={setCompletionDialogOpen}
+        delivery={completedDelivery}
+        transaction={completedTransaction}
+      />
     </div>
   )
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { CircleUser, Menu, Package, LogOut, Home, ShoppingCart, List, Users, Box, Settings, Shield, BarChart3, HandCoins, TrendingUp, Truck, Factory, Store, Wrench, UserCheck, Archive, FlaskConical } from "lucide-react";
+import { CircleUser, Menu, Package, LogOut, Home, ShoppingCart, List, Users, Box, Settings, Shield, BarChart3, HandCoins, TrendingUp, Truck, Factory, Store, Wrench, UserCheck, Archive, FlaskConical, PieChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -59,6 +59,7 @@ export function Header() {
     { href: "/retasi", label: "Retasi", icon: Archive, permission: PERMISSIONS.DELIVERIES },
     { href: "/cash-flow", label: "Arus Kas", icon: TrendingUp, permission: PERMISSIONS.FINANCIAL },
     { href: "/receivables", label: "Piutang", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
+    { href: "/financial-reports", label: "Laporan Keuangan", icon: PieChart, permission: PERMISSIONS.FINANCIAL },
     { href: "/production", label: "Produksi", icon: Factory, permission: PERMISSIONS.PRODUCTION },
     { href: "/stock-report", label: "Laporan", icon: BarChart3, permission: PERMISSIONS.REPORTS },
   ].filter(item => !item.permission || hasPermission(item.permission));

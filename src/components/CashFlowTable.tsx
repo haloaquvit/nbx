@@ -53,8 +53,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MoreHorizontal, Trash2 } from "lucide-react"
+import { MoreHorizontal, Trash2, BookOpen } from "lucide-react"
 import { TransferAccountDialog } from "./TransferAccountDialog"
+import { JournalViewTable } from "./JournalViewTable"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useAccounts } from "@/hooks/useAccounts"
 
 const getTypeVariant = (item: CashHistory) => {
   // Handle transfers with special color
@@ -182,6 +185,7 @@ interface CashFlowTableProps {
 export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { accounts } = useAccounts();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [selectedRecord, setSelectedRecord] = React.useState<CashHistory | null>(null);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = React.useState(false);
@@ -631,160 +635,181 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   return (
     <div className="w-full space-y-4">
       <TransferAccountDialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen} />
+      
+      <Tabs defaultValue="cashflow" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="cashflow">Cash Flow View</TabsTrigger>
+          <TabsTrigger value="journal" className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4" />
+            Journal View
+          </TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="cashflow" className="space-y-4 mt-4">
+          {/* Filters and Actions */}
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex gap-4 items-center flex-wrap">
+              {/* Date Range Filter */}
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-[280px] justify-start text-left font-normal",
+                        !dateRange.from && !dateRange.to && "text-muted-foreground"
+                      )}
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {dateRange.from ? (
+                        dateRange.to ? (
+                          `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
+                        ) : (
+                          `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
+                        )
+                      ) : (
+                        "Pilih Rentang Tanggal"
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      initialFocus
+                      mode="range"
+                      defaultMonth={dateRange.from}
+                      selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
+                      onSelect={(range) => {
+                        if (range) {
+                          setDateRange({ from: range.from, to: range.to });
+                        } else {
+                          setDateRange({ from: undefined, to: undefined });
+                        }
+                      }}
+                      numberOfMonths={2}
+                    />
+                  </PopoverContent>
+                </Popover>
+                
+                {(dateRange.from || dateRange.to) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearDateFilter}
+                    className="h-8 px-2"
+                  >
+                    <X className="h-4 w-4" />
+                    Clear
+                  </Button>
+                )}
+              </div>
 
-      {/* Filters and Actions */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex gap-4 items-center flex-wrap">
-          {/* Date Range Filter */}
-          <div className="flex items-center gap-2">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-[280px] justify-start text-left font-normal",
-                    !dateRange.from && !dateRange.to && "text-muted-foreground"
-                  )}
-                >
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {dateRange.from ? (
-                    dateRange.to ? (
-                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
-                    ) : (
-                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
-                    )
-                  ) : (
-                    "Pilih Rentang Tanggal"
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <CalendarComponent
-                  initialFocus
-                  mode="range"
-                  defaultMonth={dateRange.from}
-                  selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
-                  onSelect={(range) => {
-                    if (range) {
-                      setDateRange({ from: range.from, to: range.to });
-                    } else {
-                      setDateRange({ from: undefined, to: undefined });
-                    }
-                  }}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
-            
-            {(dateRange.from || dateRange.to) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearDateFilter}
-                className="h-8 px-2"
-              >
-                <X className="h-4 w-4" />
-                Clear
+              {/* Filter Info */}
+              <div className="flex items-center gap-2">
+                <div className="text-sm text-muted-foreground">
+                  Menampilkan {filteredData.length} dari {data?.length || 0} transaksi
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={handleExportExcel}>
+                <FileDown className="mr-2 h-4 w-4" /> Ekspor Excel
               </Button>
-            )}
-          </div>
-
-          {/* Filter Info */}
-          <div className="flex items-center gap-2">
-            <div className="text-sm text-muted-foreground">
-              Menampilkan {filteredData.length} dari {data?.length || 0} transaksi
+              <Button variant="outline" onClick={handleExportPdf}>
+                <FileDown className="mr-2 h-4 w-4" /> Ekspor PDF
+              </Button>
+              <Button variant="outline" className="text-blue-600 border-blue-600 hover:bg-blue-50" onClick={() => setIsTransferDialogOpen(true)}>
+                <MoreHorizontal className="mr-2 h-4 w-4" /> Transfer Antar Kas
+              </Button>
             </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleExportExcel}>
-            <FileDown className="mr-2 h-4 w-4" /> Ekspor Excel
-          </Button>
-          <Button variant="outline" onClick={handleExportPdf}>
-            <FileDown className="mr-2 h-4 w-4" /> Ekspor PDF
-          </Button>
-          <Button variant="outline" className="text-blue-600 border-blue-600 hover:bg-blue-50" onClick={() => setIsTransferDialogOpen(true)}>
-            <MoreHorizontal className="mr-2 h-4 w-4" /> Transfer Antar Kas
-          </Button>
-        </div>
-      </div>
 
-      {/* Table */}
-      <div className="rounded-md border">
-        <Table className="text-base">
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="text-base font-semibold h-12">
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                  </TableHead>
+          {/* Table */}
+          <div className="rounded-md border">
+            <Table className="text-base">
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>
+                    {headerGroup.headers.map((header) => (
+                      <TableHead key={header.id} className="text-base font-semibold h-12">
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                      </TableHead>
+                    ))}
+                  </TableRow>
                 ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell colSpan={columns.length}>
-                    <Skeleton className="h-8 w-full" />
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : table.getRowModel().rows?.length ? (
-              <>
-                {table.getRowModel().rows.map((row) => {
-                  console.log('Rendering row:', row.id, row.original);
-                  return (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id} className="text-base py-4">
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
-                      ))}
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell colSpan={columns.length}>
+                        <Skeleton className="h-8 w-full" />
+                      </TableCell>
                     </TableRow>
-                  );
-                })}
-              </>
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-base">
-                  Tidak ada data arus kas.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      
-      {/* Pagination */}
-      <div className="flex items-center justify-end space-x-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
-        >
-          Next
-        </Button>
-      </div>
+                  ))
+                ) : table.getRowModel().rows?.length ? (
+                  <>
+                    {table.getRowModel().rows.map((row) => {
+                      console.log('Rendering row:', row.id, row.original);
+                      return (
+                        <TableRow key={row.id}>
+                          {row.getVisibleCells().map((cell) => (
+                            <TableCell key={cell.id} className="text-base py-4">
+                              {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext()
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      );
+                    })}
+                  </>
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={columns.length} className="h-24 text-center text-base">
+                      Tidak ada data arus kas.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          
+          {/* Pagination */}
+          <div className="flex items-center justify-end space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+            </Button>
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="journal" className="space-y-4 mt-4">
+          <JournalViewTable 
+            cashHistory={data || []}
+            accounts={accounts || []}
+            isLoading={isLoading}
+            dateRange={dateRange}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

@@ -33,18 +33,20 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
 import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle } from "lucide-react"
+import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
-import { TransactionDeliveryInfo, DeliveryFormData } from "@/types/delivery"
+import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
 
 interface DeliveryManagementProps {
   transaction: TransactionDeliveryInfo;
   onClose?: () => void;
   embedded?: boolean; // Add embedded mode prop
+  onDeliveryCreated?: (delivery: Delivery, transaction: TransactionDeliveryInfo) => void;
 }
 
-export function DeliveryManagement({ transaction, onClose, embedded = false }: DeliveryManagementProps) {
+export function DeliveryManagement({ transaction, onClose, embedded = false, onDeliveryCreated }: DeliveryManagementProps) {
   const { toast } = useToast()
   const { createDelivery } = useDeliveries()
   const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()
@@ -185,6 +187,11 @@ export function DeliveryManagement({ transaction, onClose, embedded = false }: D
           title: "Pengantaran Berhasil Dicatat",
           description: `Pengantaran untuk transaksi ${transaction.id} berhasil disimpan`,
         })
+      }
+
+      // Call completion dialog callback if provided
+      if (onDeliveryCreated && result) {
+        onDeliveryCreated(result as Delivery, transaction)
       }
 
       // Reset form
@@ -483,16 +490,19 @@ export function DeliveryManagement({ transaction, onClose, embedded = false }: D
                             {delivery.helperId && ` • Helper: ${delivery.helperName || delivery.helperId}`}
                           </div>
                         </div>
-                        {delivery.photoUrl && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(delivery.photoUrl, '_blank')}
-                          >
-                            <Camera className="h-4 w-4 mr-1" />
-                            Lihat Foto
-                          </Button>
-                        )}
+                        <div className="flex gap-2">
+                          <DeliveryNotePDF delivery={delivery} transactionInfo={transaction} />
+                          {delivery.photoUrl && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.open(delivery.photoUrl, '_blank')}
+                            >
+                              <Camera className="h-4 w-4 mr-1" />
+                              Lihat Foto
+                            </Button>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

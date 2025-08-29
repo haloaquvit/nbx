@@ -16,15 +16,16 @@ import {
 } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
 import { format } from "date-fns"
-import { TransactionDeliveryInfo, DeliveryFormData } from "@/types/delivery"
+import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
 
 interface DeliveryFormContentProps {
   transaction: TransactionDeliveryInfo;
   onSuccess?: () => void;
+  onDeliveryCreated?: (delivery: Delivery, transaction: TransactionDeliveryInfo) => void;
 }
 
-export function DeliveryFormContent({ transaction, onSuccess }: DeliveryFormContentProps) {
+export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated }: DeliveryFormContentProps) {
   const { toast } = useToast()
   const { createDelivery } = useDeliveries()
   const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()
@@ -151,6 +152,11 @@ export function DeliveryFormContent({ transaction, onSuccess }: DeliveryFormCont
         })
       }
 
+      // Call the completion dialog callback if provided
+      if (onDeliveryCreated && result) {
+        onDeliveryCreated(result as Delivery, transaction)
+      }
+
       onSuccess?.()
     } catch (error) {
       toast({
@@ -176,7 +182,7 @@ export function DeliveryFormContent({ transaction, onSuccess }: DeliveryFormCont
           />
         </div>
         <div>
-          <Label htmlFor="driverId">Supir *</Label>
+          <Label>Supir *</Label>
           <Select
             value={formData.driverId}
             onValueChange={(value) => setFormData(prev => ({ ...prev, driverId: value }))}
@@ -195,7 +201,7 @@ export function DeliveryFormContent({ transaction, onSuccess }: DeliveryFormCont
           {isLoadingEmployees && <div className="text-sm text-muted-foreground">Loading employees...</div>}
         </div>
         <div>
-          <Label htmlFor="helperId">Helper (Opsional)</Label>
+          <Label>Helper (Opsional)</Label>
           <Select
             value={formData.helperId || "no-helper"}
             onValueChange={(value) => setFormData(prev => ({ ...prev, helperId: value === "no-helper" ? "" : value }))}

@@ -31,6 +31,7 @@ import {
   Factory,
   Truck,
   Calculator,
+  PieChart,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState } from "react";
@@ -88,6 +89,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/expenses", label: "Pengeluaran", icon: FileText, permission: PERMISSIONS.FINANCIAL },
       { href: "/advances", label: "Panjar Karyawan", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
       { href: "/commission-manage", label: "Pengaturan Komisi", icon: Calculator, permission: PERMISSIONS.FINANCIAL },
+      { href: "/financial-reports", label: "Laporan Keuangan", icon: PieChart, permission: PERMISSIONS.FINANCIAL },
     ].filter(item => hasPermission(item.permission)),
   },
   {

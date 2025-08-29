@@ -15,6 +15,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { Skeleton } from "./ui/skeleton"
 import { isAdminOrOwner, isOwner } from '@/utils/roleUtils'
 import { PayPoDialog } from "./PayPoDialog"
+import { PurchaseOrderPDF } from "./PurchaseOrderPDF"
 import { Trash2 } from "lucide-react"
 import {
   AlertDialog,
@@ -78,6 +79,15 @@ export function PurchaseOrderTable() {
     { accessorKey: "id", header: "No. PO" },
     { accessorKey: "materialName", header: "Nama Bahan" },
     { accessorKey: "quantity", header: "Jumlah", cell: ({ row }) => `${row.original.quantity} ${row.original.unit}` },
+    { 
+      accessorKey: "totalCost", 
+      header: "Total Cost", 
+      cell: ({ row }) => {
+        const cost = row.original.totalCost;
+        return cost ? `Rp ${cost.toLocaleString('id-ID')}` : '-';
+      }
+    },
+    { accessorKey: "supplierName", header: "Supplier", cell: ({ row }) => row.original.supplierName || '-' },
     { accessorKey: "requestedBy", header: "Pemohon" },
     { accessorKey: "createdAt", header: "Tgl Request", cell: ({ row }) => format(new Date(row.getValue("createdAt")), "d MMM yyyy", { locale: id }) },
     {
@@ -116,6 +126,7 @@ export function PurchaseOrderTable() {
         const isOwnerRole = isOwner(user);
         return (
           <div className="flex items-center gap-1">
+            <PurchaseOrderPDF purchaseOrder={po} />
             {po.status === 'Dibayar' && (
               <Button size="sm" onClick={() => handleReceiveGoods(po)} disabled={receivePurchaseOrder.isPending}>Terima Barang</Button>
             )}

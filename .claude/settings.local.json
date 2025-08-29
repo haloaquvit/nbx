@@ -49,7 +49,8 @@
       "Bash(powershell:*)",
       "Bash(del test-image.txt)",
       "Bash(del nul)",
-      "Bash(docker:*)"
+      "Bash(docker:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

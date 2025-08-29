@@ -47,6 +47,7 @@ const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
 const DriverPosPage = lazy(() => import("@/pages/DriverPosPage"));
 const CommissionManagePage = lazy(() => import("@/pages/CommissionManagePage"));
 const CommissionReportPage = lazy(() => import("@/pages/CommissionReportPage"));
+const FinancialReportsPage = lazy(() => import("@/pages/FinancialReportsPage"));
 
 function App() {
   // Handle chunk loading errors
@@ -125,6 +126,7 @@ function App() {
                   <Route path="/driver-pos" element={<DriverPosPage />} />
                   <Route path="/commission-manage" element={<CommissionManagePage />} />
                   <Route path="/commission-report" element={<CommissionReportPage />} />
+                  <Route path="/financial-reports" element={<FinancialReportsPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

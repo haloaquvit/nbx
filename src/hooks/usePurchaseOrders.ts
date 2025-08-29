@@ -11,6 +11,7 @@ const fromDb = (dbPo: any): PurchaseOrder => ({
   materialName: dbPo.material_name,
   quantity: dbPo.quantity,
   unit: dbPo.unit,
+  unitPrice: dbPo.unit_price,
   requestedBy: dbPo.requested_by,
   status: dbPo.status,
   createdAt: new Date(dbPo.created_at),
@@ -18,6 +19,9 @@ const fromDb = (dbPo: any): PurchaseOrder => ({
   totalCost: dbPo.total_cost,
   paymentAccountId: dbPo.payment_account_id,
   paymentDate: dbPo.payment_date ? new Date(dbPo.payment_date) : undefined,
+  supplierName: dbPo.supplier_name,
+  supplierContact: dbPo.supplier_contact,
+  expectedDeliveryDate: dbPo.expected_delivery_date ? new Date(dbPo.expected_delivery_date) : undefined,
 });
 
 const toDb = (appPo: Partial<PurchaseOrder>) => ({
@@ -26,12 +30,16 @@ const toDb = (appPo: Partial<PurchaseOrder>) => ({
   material_name: appPo.materialName,
   quantity: appPo.quantity,
   unit: appPo.unit,
+  unit_price: appPo.unitPrice,
   requested_by: appPo.requestedBy,
   status: appPo.status,
   notes: appPo.notes,
   total_cost: appPo.totalCost,
   payment_account_id: appPo.paymentAccountId,
   payment_date: appPo.paymentDate,
+  supplier_name: appPo.supplierName,
+  supplier_contact: appPo.supplierContact,
+  expected_delivery_date: appPo.expectedDeliveryDate,
 });
 
 export const usePurchaseOrders = () => {
@@ -173,6 +181,7 @@ export const usePurchaseOrders = () => {
     purchaseOrders,
     isLoading,
     addPurchaseOrder,
+    createPurchaseOrder: addPurchaseOrder, // Alias for create dialog
     updatePoStatus,
     payPurchaseOrder,
     receivePurchaseOrder,

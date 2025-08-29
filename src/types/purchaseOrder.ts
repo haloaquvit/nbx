@@ -6,6 +6,7 @@ export interface PurchaseOrder {
   materialName: string;
   quantity: number;
   unit: string;
+  unitPrice?: number;
   requestedBy: string;
   status: PurchaseOrderStatus;
   createdAt: Date;
@@ -13,4 +14,7 @@ export interface PurchaseOrder {
   totalCost?: number;
   paymentAccountId?: string;
   paymentDate?: Date;
+  supplierName?: string;
+  supplierContact?: string;
+  expectedDeliveryDate?: Date;
 }
