@@ -14,7 +14,7 @@ export function CashFlowPage() {
     <div className="container mx-auto py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold">Arus Kas</h1>
+          <h1 className="text-3xl font-bold">Buku Besar</h1>
           <p className="text-muted-foreground">
             Pantau semua aktivitas kas masuk dan keluar
           </p>

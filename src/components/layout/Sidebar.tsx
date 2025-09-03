@@ -84,7 +84,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
     title: "Keuangan",
     items: [
       { href: "/accounts", label: "Akun Keuangan", icon: Landmark, permission: PERMISSIONS.FINANCIAL },
-      { href: "/cash-flow", label: "Arus Kas", icon: TrendingUp, permission: PERMISSIONS.FINANCIAL },
+      { href: "/cash-flow", label: "Buku Besar", icon: TrendingUp, permission: PERMISSIONS.FINANCIAL },
       { href: "/receivables", label: "Piutang", icon: ReceiptText, permission: PERMISSIONS.FINANCIAL },
       { href: "/expenses", label: "Pengeluaran", icon: FileText, permission: PERMISSIONS.FINANCIAL },
       { href: "/advances", label: "Panjar Karyawan", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
