@@ -2,6 +2,7 @@
 import * as React from "react"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { saveCompressedPDF } from "@/utils/pdfUtils"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { Calendar as CalendarIcon, FileDown } from "lucide-react"
@@ -378,7 +379,7 @@ export function DateRangeReportPDF({ cashHistory }: DateRangeReportPDFProps) {
 
       // Save the PDF
       const fileName = `laporan-keuangan-${format(selectedDate, 'yyyy-MM-dd')}.pdf`;
-      doc.save(fileName);
+      saveCompressedPDF(doc, fileName, 100);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Terjadi kesalahan saat menghasilkan PDF. Silakan coba lagi.');

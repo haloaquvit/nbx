@@ -211,7 +211,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="no-helper">Tidak ada helper</SelectItem>
-              {employees?.filter(emp => emp.role?.toLowerCase() === 'helper').map((helper) => (
+              {employees?.filter(emp => ['helper', 'supir'].includes(emp.role?.toLowerCase())).map((helper) => (
                 <SelectItem key={helper.id} value={helper.id}>
                   {helper.name} - {helper.position}
                 </SelectItem>

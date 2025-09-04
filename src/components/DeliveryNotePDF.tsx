@@ -1,14 +1,14 @@
 "use client"
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { FileDown } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { FileDown, Printer, Download } from "lucide-react"
 import { Delivery, TransactionDeliveryInfo } from "@/types/delivery"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
 import { useCompanySettings } from "@/hooks/useCompanySettings"
 import { useTransactions } from "@/hooks/useTransactions"
+import { createCompressedPDF } from "@/utils/pdfUtils"
 
 interface DeliveryNotePDFProps {
   delivery: Delivery
@@ -20,37 +20,95 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
   const { settings } = useCompanySettings()
   const { transactions } = useTransactions()
   const printRef = React.useRef<HTMLDivElement>(null)
+  const dotMatrixRef = React.useRef<HTMLDivElement>(null)
+  const [isDialogOpen, setIsDialogOpen] = React.useState(false)
 
   // Get transaction info if not provided
   const transaction = transactionInfo || transactions?.find(t => t.id === delivery.transactionId)
 
   const handlePrintPDF = async () => {
-    if (!printRef.current) return
+    if (!printRef.current) {
+      console.error('Print ref is null')
+      return
+    }
 
     try {
-      // Create canvas from the print element
-      const canvas = await html2canvas(printRef.current, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff'
+      console.log('Starting PDF generation...', {
+        element: printRef.current,
+        width: printRef.current.offsetWidth,
+        height: printRef.current.offsetHeight
       })
-
-      // Create PDF with A4 half size (A5-like)
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: [148, 210] // Half A4 width
-      })
-
-      const imgWidth = 148 // Half A4 width in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, imgWidth, imgHeight)
-      pdf.save(`Surat-Jalan-${delivery.transactionId}-${delivery.deliveryNumber}.pdf`)
+      
+      await createCompressedPDF(
+        printRef.current,
+        `Surat-Jalan-${delivery.transactionId}-${delivery.deliveryNumber}.pdf`,
+        [210, 297], // A4 size (210mm x 297mm)
+        200 // Max 200KB for A4
+      )
+      console.log('PDF generation completed successfully')
+      setIsDialogOpen(false)
     } catch (error) {
       console.error('Error generating PDF:', error)
+      alert('Gagal membuat PDF: ' + (error as Error).message)
     }
+  }
+
+  const handleDotMatrixPrint = () => {
+    if (!dotMatrixRef.current) {
+      console.error('Dot matrix ref is null')
+      return
+    }
+
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Cetak Dot Matrix</title>
+            <style>
+              body {
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 10pt;
+                margin: 0;
+                padding: 10mm;
+                width: 210mm;
+                background: #fff;
+              }
+              table { width: 100%; border-collapse: collapse; }
+              td, th { padding: 2px; }
+              .text-center { text-align: center; }
+              .text-right { text-align: right; }
+              .font-bold { font-weight: bold; }
+              .border-y { border-top: 1px dashed; border-bottom: 1px dashed; }
+              .border-b { border-bottom: 1px dashed; }
+              .py-1 { padding-top: 4px; padding-bottom: 4px; }
+              .mb-1 { margin-bottom: 4px; }
+              .mb-2 { margin-bottom: 8px; }
+              .mt-2 { margin-top: 8px; }
+              .mt-3 { margin-top: 12px; }
+              .mx-auto { margin-left: auto; margin-right: auto; }
+              .max-h-12 { max-height: 48px; }
+              .flex { display: flex; }
+              .justify-between { justify-content: space-between; }
+              @media print {
+                body { width: 210mm; }
+              }
+            </style>
+          </head>
+          <body>
+            ${dotMatrixRef.current.innerHTML}
+          </body>
+        </html>
+      `)
+      printWindow.document.close()
+      printWindow.print()
+      printWindow.close()
+      setIsDialogOpen(false)
+    }
+  }
+
+  const handleButtonClick = () => {
+    setIsDialogOpen(true)
   }
 
   if (!transaction) {
@@ -63,110 +121,161 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
 
   return (
     <>
-      <Button
-        onClick={handlePrintPDF}
-        size="sm"
-        variant="outline"
-        className="gap-2"
-      >
-        <FileDown className="h-4 w-4" />
-        PDF
-      </Button>
+      {children ? (
+        <div onClick={handleButtonClick} className="cursor-pointer">
+          {children}
+        </div>
+      ) : (
+        <Button
+          onClick={handleButtonClick}
+          size="sm"
+          variant="outline"
+          className="gap-2"
+        >
+          <FileDown className="h-4 w-4" />
+          PDF
+        </Button>
+      )}
 
-      {/* Hidden printable content - Half A4 size */}
-      <div className="fixed -left-[9999px] top-0">
-        <div ref={printRef} className="w-[560px] bg-white p-6" style={{ fontSize: '12px' }}>
+      {/* Print Format Selection Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pilih Format Cetak</DialogTitle>
+            <DialogDescription>
+              Pilih format cetak untuk surat jalan {delivery.transactionId}-{delivery.deliveryNumber}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 py-4">
+            <Button
+              onClick={handleDotMatrixPrint}
+              className="justify-start gap-3 h-12"
+              variant="outline"
+            >
+              <Printer className="h-5 w-5" />
+              <div className="text-left">
+                <div className="font-medium">Cetak Dot Matrix</div>
+                <div className="text-xs text-muted-foreground">Format sesuai invoice dot matrix</div>
+              </div>
+            </Button>
+            <Button
+              onClick={handlePrintPDF}
+              className="justify-start gap-3 h-12"
+              variant="outline"
+            >
+              <Download className="h-5 w-5" />
+              <div className="text-left">
+                <div className="font-medium">Download PDF</div>
+                <div className="text-xs text-muted-foreground">Format PDF 8.5" x 5.5"</div>
+              </div>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hidden printable content - Full A4 size */}
+      <div className="fixed -left-[9999px] top-0 z-[-1]">
+        <div ref={printRef} className="w-[794px] h-auto bg-white p-8 border" style={{ fontSize: '14px', minHeight: '1123px' }}>
           {/* Header */}
-          <div className="flex justify-between items-start mb-6">
+          <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-gray-200">
             <div>
               {settings?.logo && (
                 <img 
                   src={settings.logo} 
                   alt="Company Logo" 
-                  className="h-12 w-auto mb-3"
+                  className="h-16 w-auto mb-4"
                 />
               )}
               <div>
-                <h1 className="text-lg font-bold text-gray-900">
-                  {settings?.companyName || 'PT. Aquavit'}
+                <h1 className="text-2xl font-bold text-gray-900 mb-2">
+                  {settings?.companyName || 'PT. AQUAVIT'}
                 </h1>
-                <p className="text-xs text-gray-600">
+                <p className="text-sm text-gray-600">
                   {settings?.address || 'Alamat Perusahaan'}
                 </p>
-                <p className="text-xs text-gray-600">
+                <p className="text-sm text-gray-600">
                   Telp: {settings?.phone || '-'}
                 </p>
               </div>
             </div>
             <div className="text-right">
-              <h2 className="text-lg font-bold text-gray-900">SURAT JALAN</h2>
-              <p className="text-xs font-medium">No: {delivery.transactionId}-{delivery.deliveryNumber}</p>
+              <h2 className="text-3xl font-bold text-gray-300 mb-4">SURAT JALAN</h2>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p><strong className="text-gray-800">No:</strong> {delivery.transactionId}-{delivery.deliveryNumber}</p>
+                <p><strong className="text-gray-800">Tanggal:</strong> {format(delivery.deliveryDate, "d MMMM yyyy", { locale: id })}</p>
+                <p><strong className="text-gray-800">Jam:</strong> {format(delivery.deliveryDate, "HH:mm", { locale: id })} WIB</p>
+              </div>
             </div>
           </div>
 
           {/* Customer & Delivery Info */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-2 gap-8 mb-8">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900 mb-2">Kepada Yth:</h3>
-              <div className="bg-gray-50 p-3 rounded text-xs">
-                <p className="font-medium">{transaction.customerName}</p>
-                <p className="text-gray-600">Customer</p>
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">Dikirim Kepada:</h3>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-lg font-bold text-gray-900">{transaction.customerName}</p>
+                <p className="text-sm text-gray-600 mt-1">Customer</p>
               </div>
             </div>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span>Tanggal:</span>
-                <span className="font-medium">{format(delivery.deliveryDate, "dd/MM/yyyy", { locale: id })}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Jam:</span>
-                <span className="font-medium">{format(delivery.deliveryDate, "HH:mm", { locale: id })}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Driver:</span>
-                <span className="font-medium">{delivery.driverName || '-'}</span>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between border-b border-gray-200 pb-2">
+                <span className="text-gray-600">Driver:</span>
+                <span className="font-medium text-gray-900">{delivery.driverName || '-'}</span>
               </div>
               {delivery.helperName && (
-                <div className="flex justify-between">
-                  <span>Helper:</span>
-                  <span className="font-medium">{delivery.helperName}</span>
+                <div className="flex justify-between border-b border-gray-200 pb-2">
+                  <span className="text-gray-600">Helper:</span>
+                  <span className="font-medium text-gray-900">{delivery.helperName}</span>
                 </div>
               )}
+              <div className="flex justify-between">
+                <span className="text-gray-600">Status:</span>
+                <span className="font-medium text-green-600">Siap Dikirim</span>
+              </div>
             </div>
           </div>
 
           {/* Items Table */}
-          <div className="mb-6">
-            <table className="w-full border-collapse border border-gray-300 text-xs">
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Daftar Barang</h3>
+            <table className="w-full border-collapse border border-gray-300 text-sm">
               <thead>
                 <tr className="bg-gray-100">
-                  <th className="border border-gray-300 px-2 py-1 text-left">No</th>
-                  <th className="border border-gray-300 px-2 py-1 text-left">Nama Barang</th>
-                  <th className="border border-gray-300 px-2 py-1 text-center">Qty</th>
-                  <th className="border border-gray-300 px-2 py-1 text-center">Satuan</th>
-                  <th className="border border-gray-300 px-2 py-1 text-center">Dimensi</th>
+                  <th className="border border-gray-300 px-4 py-3 text-left text-gray-700 font-semibold">No</th>
+                  <th className="border border-gray-300 px-4 py-3 text-left text-gray-700 font-semibold">Nama Barang</th>
+                  <th className="border border-gray-300 px-4 py-3 text-center text-gray-700 font-semibold">Antar</th>
+                  <th className="border border-gray-300 px-4 py-3 text-center text-gray-700 font-semibold">Satuan</th>
+                  <th className="border border-gray-300 px-4 py-3 text-center text-gray-700 font-semibold">Total Antar</th>
+                  <th className="border border-gray-300 px-4 py-3 text-center text-gray-700 font-semibold">Sisa</th>
                 </tr>
               </thead>
               <tbody>
-                {delivery.items.map((item, index) => (
-                  <tr key={item.id}>
-                    <td className="border border-gray-300 px-2 py-1">{index + 1}</td>
-                    <td className="border border-gray-300 px-2 py-1">{item.productName}</td>
-                    <td className="border border-gray-300 px-2 py-1 text-center">{item.quantityDelivered}</td>
-                    <td className="border border-gray-300 px-2 py-1 text-center">{item.unit}</td>
-                    <td className="border border-gray-300 px-2 py-1 text-center">
-                      {item.width && item.height ? `${item.width} x ${item.height}` : '-'}
-                    </td>
-                  </tr>
-                ))}
+                {delivery.items.map((item, index) => {
+                  // Get total delivered and remaining from the transaction delivery summary
+                  const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
+                  const totalDelivered = deliverySummaryItem?.deliveredQuantity || 0
+                  const remaining = deliverySummaryItem?.remainingQuantity || 0
+                  
+                  return (
+                    <tr key={item.id} className="border-b border-gray-200">
+                      <td className="border border-gray-300 px-4 py-3 text-center">{index + 1}</td>
+                      <td className="border border-gray-300 px-4 py-3 font-medium text-gray-800">{item.productName}</td>
+                      <td className="border border-gray-300 px-4 py-3 text-center font-medium">{item.quantityDelivered}</td>
+                      <td className="border border-gray-300 px-4 py-3 text-center text-gray-600">{item.unit}</td>
+                      <td className="border border-gray-300 px-4 py-3 text-center font-medium text-blue-600">{totalDelivered + item.quantityDelivered}</td>
+                      <td className="border border-gray-300 px-4 py-3 text-center font-medium text-orange-600">{remaining - item.quantityDelivered}</td>
+                    </tr>
+                  )
+                })}
                 {/* Add empty rows to fill space */}
-                {Array.from({ length: Math.max(0, 3 - delivery.items.length) }).map((_, index) => (
+                {Array.from({ length: Math.max(0, 5 - delivery.items.length) }).map((_, index) => (
                   <tr key={`empty-${index}`}>
-                    <td className="border border-gray-300 px-2 py-1 h-6">{delivery.items.length + index + 1}</td>
-                    <td className="border border-gray-300 px-2 py-1"></td>
-                    <td className="border border-gray-300 px-2 py-1"></td>
-                    <td className="border border-gray-300 px-2 py-1"></td>
-                    <td className="border border-gray-300 px-2 py-1"></td>
+                    <td className="border border-gray-300 px-4 py-3 h-12 text-center text-gray-400">{delivery.items.length + index + 1}</td>
+                    <td className="border border-gray-300 px-4 py-3"></td>
+                    <td className="border border-gray-300 px-4 py-3"></td>
+                    <td className="border border-gray-300 px-4 py-3"></td>
+                    <td className="border border-gray-300 px-4 py-3"></td>
+                    <td className="border border-gray-300 px-4 py-3"></td>
                   </tr>
                 ))}
               </tbody>
@@ -174,48 +283,147 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
           </div>
 
           {/* Notes */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-2">Catatan:</h3>
-            <div className="bg-gray-50 p-3 rounded min-h-[60px]">
-              <p className="text-xs">{delivery.notes || 'Barang sudah diterima dalam kondisi baik'}</p>
+          <div className="mb-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-3">Catatan:</h3>
+            <div className="bg-gray-50 p-4 rounded-lg min-h-[80px] border border-gray-200">
+              <p className="text-sm text-gray-700">{delivery.notes || 'Barang sudah diterima dalam kondisi baik dan sesuai pesanan.'}</p>
             </div>
           </div>
 
           {/* Important Notes */}
-          <div className="mb-6">
-            <div className="bg-yellow-50 border border-yellow-200 p-3 rounded">
-              <p className="text-xs text-yellow-800 font-medium">Penting:</p>
-              <ul className="text-xs text-yellow-700 mt-1 space-y-1">
-                <li>• Barang yang sudah diterima tidak dapat dikembalikan</li>
-                <li>• Harap periksa kondisi barang sebelum menandatangani</li>
-                <li>• Simpan surat jalan ini sebagai bukti pengiriman</li>
+          <div className="mb-8">
+            <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+              <p className="text-sm text-yellow-800 font-semibold mb-2">Ketentuan Penting:</p>
+              <ul className="text-sm text-yellow-700 space-y-2">
+                <li>• Barang yang sudah diterima dan ditandatangani tidak dapat dikembalikan</li>
+                <li>• Harap periksa kondisi dan jumlah barang sebelum menandatangani surat jalan</li>
+                <li>• Simpan surat jalan ini sebagai bukti resmi pengiriman barang</li>
+                <li>• Jika ada kerusakan atau kekurangan, harap segera laporkan kepada penanggung jawab</li>
               </ul>
             </div>
           </div>
 
           {/* Signatures */}
-          <div className="grid grid-cols-2 gap-6">
+          <div className="grid grid-cols-2 gap-12">
             <div className="text-center">
-              <p className="text-xs font-semibold mb-12">Yang Mengirim</p>
-              <div className="border-t border-gray-400">
-                <p className="mt-2 text-xs">{delivery.driverName || '_______________'}</p>
-                <p className="text-xs text-gray-600">Driver</p>
+              <p className="text-sm font-semibold text-gray-700 mb-16">Yang Mengirim</p>
+              <div className="border-t-2 border-gray-400 pt-3">
+                <p className="text-sm font-medium text-gray-900">{delivery.driverName || '_______________'}</p>
+                <p className="text-sm text-gray-600 mt-1">Driver Pengiriman</p>
               </div>
             </div>
             <div className="text-center">
-              <p className="text-xs font-semibold mb-12">Yang Menerima</p>
-              <div className="border-t border-gray-400">
-                <p className="mt-2 text-xs">_______________</p>
-                <p className="text-xs text-gray-600">{transaction.customerName}</p>
+              <p className="text-sm font-semibold text-gray-700 mb-16">Yang Menerima</p>
+              <div className="border-t-2 border-gray-400 pt-3">
+                <p className="text-sm font-medium text-gray-900">_______________</p>
+                <p className="text-sm text-gray-600 mt-1">{transaction.customerName}</p>
               </div>
             </div>
           </div>
 
           {/* Footer */}
-          <div className="mt-6 pt-3 border-t border-gray-300 text-center">
-            <p className="text-xs text-gray-500">
-              Dicetak pada: {format(new Date(), "dd MMMM yyyy, HH:mm", { locale: id })} WIB
-            </p>
+          <div className="mt-8 pt-4 border-t-2 border-gray-300 text-center">
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>Dicetak pada: {format(new Date(), "d MMMM yyyy, HH:mm", { locale: id })} WIB</p>
+              <p>Dokumen ini adalah salinan resmi surat jalan pengiriman barang</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Hidden dot matrix format */}
+      <div className="fixed -left-[9999px] top-0 z-[-1]">
+        <div ref={dotMatrixRef} className="font-mono">
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-left">
+              <h1 className="text-sm font-bold">{settings?.companyName || 'PT. AQUAVIT'}</h1>
+              <p className="text-xs">{settings?.address || 'Alamat Perusahaan'}</p>
+              <p className="text-xs">Telp: {settings?.phone || '-'}</p>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-bold mb-1">SURAT JALAN</div>
+              <div className="text-xs space-y-0.5">
+                <div><strong>No:</strong> {delivery.transactionId}-{delivery.deliveryNumber}</div>
+                <div><strong>Tgl:</strong> {format(delivery.deliveryDate, "dd/MM/yy HH:mm", { locale: id })}</div>
+                <div><strong>Kepada:</strong> {transaction.customerName}</div>
+                <div><strong>Driver:</strong> {delivery.driverName || '-'}</div>
+                {delivery.helperName && (
+                  <div><strong>Helper:</strong> {delivery.helperName}</div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="border-b border-dashed border-black mb-2"></div>
+          
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-dashed border-black">
+                <th className="text-left font-normal pb-1">No</th>
+                <th className="text-left font-normal pb-1">Nama Barang</th>
+                <th className="text-right font-normal pb-1">Antar</th>
+                <th className="text-center font-normal pb-1">Sat</th>
+                <th className="text-right font-normal pb-1">Total Antar</th>
+                <th className="text-right font-normal pb-1">Sisa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {delivery.items.map((item, index) => {
+                // Get total delivered and remaining from the transaction delivery summary
+                const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
+                const totalDelivered = deliverySummaryItem?.deliveredQuantity || 0
+                const remaining = deliverySummaryItem?.remainingQuantity || 0
+                
+                return (
+                  <tr key={item.id}>
+                    <td className="pt-1 align-top">{index + 1}</td>
+                    <td className="pt-1 align-top">{item.productName}</td>
+                    <td className="pt-1 text-right align-top">{item.quantityDelivered}</td>
+                    <td className="pt-1 text-center align-top">{item.unit}</td>
+                    <td className="pt-1 text-right align-top">{totalDelivered + item.quantityDelivered}</td>
+                    <td className="pt-1 text-right align-top">{remaining - item.quantityDelivered}</td>
+                  </tr>
+                )
+              })}
+              {/* Add empty rows if needed */}
+              {delivery.items.length < 5 && Array.from({ length: 5 - delivery.items.length }).map((_, index) => (
+                <tr key={`empty-${index}`}>
+                  <td className="pt-1">{delivery.items.length + index + 1}</td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          
+          <div className="mt-2 pt-1 border-t border-dashed border-black text-xs">
+            <div><strong>Catatan:</strong> {delivery.notes || 'Barang sudah diterima dalam kondisi baik'}</div>
+          </div>
+          
+          <div className="flex justify-between mt-3 text-xs">
+            <div className="text-center">
+              <div className="mb-2">Yang Mengirim</div>
+              <div style={{ height: '30px' }}></div>
+              <div className="border-t border-black inline-block px-4">
+                <div className="mt-1">{delivery.driverName || '_______________'}</div>
+                <div>Driver</div>
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="mb-2">Yang Menerima</div>
+              <div style={{ height: '30px' }}></div>
+              <div className="border-t border-black inline-block px-4">
+                <div className="mt-1">_______________</div>
+                <div>{transaction.customerName}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="text-center mt-3 text-xs border-t border-dashed border-black pt-1">
+            Dicetak: {format(new Date(), "dd/MM/yy HH:mm", { locale: id })}
           </div>
         </div>
       </div>

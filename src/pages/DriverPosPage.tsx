@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -109,10 +109,20 @@ export default function DriverPosPage() {
 
   // Form state - with cart functionality
   const [selectedCustomer, setSelectedCustomer] = useState("")
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState("")
   const [quantity, setQuantity] = useState("1")
   const [items, setItems] = useState<TransactionItem[]>([])
   const [notes, setNotes] = useState("")
+
+  const filteredCustomers = useMemo(() => {
+    if (!customers) return [];
+    return customers.filter(customer => 
+      customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      customer.phone.includes(customerSearch)
+    ).slice(0, 10); // Limit to 10 results
+  }, [customers, customerSearch]);
   const [paymentAccount, setPaymentAccount] = useState("")
   const [paidAmount, setPaidAmount] = useState(0)
 
@@ -203,11 +213,14 @@ export default function DriverPosPage() {
   }
 
   const handleSubmit = async () => {
-    if (!selectedCustomerData) {
+    // Check if we have either selected customer or typed customer name
+    const customerName = selectedCustomerData?.name || customerSearch.trim();
+    
+    if (!customerName) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Pilih pelanggan terlebih dahulu"
+        description: "Isi nama pelanggan terlebih dahulu"
       })
       return
     }
@@ -258,8 +271,8 @@ export default function DriverPosPage() {
       
       const newTransaction: Omit<Transaction, 'createdAt'> = {
         id: transactionId,
-        customerId: selectedCustomerData.id,
-        customerName: selectedCustomerData.name,
+        customerId: selectedCustomerData?.id || 'manual-customer',
+        customerName: customerName,
         cashierId: user.id,
         cashierName: user.name || user.email || 'Driver POS',
         paymentAccountId: paymentAccount || null,
@@ -300,6 +313,7 @@ export default function DriverPosPage() {
       
       // Clear form
       setSelectedCustomer("")
+      setCustomerSearch('')
       setSelectedProduct("")
       setQuantity("1")
       setItems([])
@@ -362,21 +376,69 @@ export default function DriverPosPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="px-6 pb-6">
-            <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
-              <SelectTrigger className="h-12 text-base">
-                <SelectValue placeholder="Pilih Pelanggan" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers?.map((customer) => (
-                  <SelectItem key={customer.id} value={customer.id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{customer.name}</span>
-                      <span className="text-xs text-muted-foreground">{customer.phone}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="space-y-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Ketik nama pelanggan atau pilih dari dropdown..."
+                  value={customerSearch}
+                  onChange={(e) => {
+                    setCustomerSearch(e.target.value)
+                    setShowCustomerDropdown(true)
+                    if (!e.target.value) {
+                      setSelectedCustomer('')
+                    }
+                  }}
+                  onFocus={() => setShowCustomerDropdown(true)}
+                  onBlur={() => {
+                    // Delay to allow click on dropdown items
+                    setTimeout(() => setShowCustomerDropdown(false), 150)
+                  }}
+                  className="w-full h-12 px-4 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                
+                {showCustomerDropdown && filteredCustomers.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    {filteredCustomers.map((customer) => (
+                      <div
+                        key={customer.id}
+                        className="px-4 py-3 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => {
+                          setSelectedCustomer(customer.id)
+                          setCustomerSearch(customer.name)
+                          setShowCustomerDropdown(false)
+                        }}
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium text-base">{customer.name}</span>
+                          <span className="text-sm text-gray-500">{customer.phone}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Select value={selectedCustomer} onValueChange={(value) => {
+                setSelectedCustomer(value)
+                const customer = customers?.find(c => c.id === value)
+                setCustomerSearch(customer?.name || '')
+              }}>
+                <SelectTrigger className="h-12 text-base">
+                  <SelectValue placeholder="Atau pilih dari daftar lengkap" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers?.map((customer) => (
+                    <SelectItem key={customer.id} value={customer.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{customer.name}</span>
+                        <span className="text-xs text-muted-foreground">{customer.phone}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             
             {/* Customer Information Display */}
             {selectedCustomerData && (
@@ -726,7 +788,7 @@ export default function DriverPosPage() {
           <Button 
             onClick={handleSubmit} 
             className="w-full h-16 text-xl font-bold bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 shadow-lg"
-            disabled={isSubmitting || !selectedCustomer || items.length === 0}
+            disabled={isSubmitting || (!selectedCustomer && !customerSearch.trim()) || items.length === 0}
           >
             <Truck className="h-6 w-6 mr-3" />
             {isSubmitting ? "Memproses..." : "Simpan & Antar"}

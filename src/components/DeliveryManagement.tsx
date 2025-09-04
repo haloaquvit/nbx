@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle } from "lucide-react"
+import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle, FileText } from "lucide-react"
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
@@ -249,14 +249,26 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
               Order #{transaction.id} • {format(transaction.orderDate, "d MMMM yyyy", { locale: idLocale })}
             </CardDescription>
           </div>
-          <Dialog open={isOpen} onOpenChange={setIsOpen}>
-            <DialogTrigger asChild>
-              <Button className="flex items-center gap-2">
-                <Truck className="h-4 w-4" />
-                Buat Pengantaran
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center gap-2">
+            {transaction.deliveries.length > 0 && (
+              <DeliveryNotePDF 
+                delivery={transaction.deliveries[0]} 
+                transactionInfo={transaction}
+              >
+                <Button variant="outline" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Cetak Surat Jalan
+                </Button>
+              </DeliveryNotePDF>
+            )}
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+              <DialogTrigger asChild>
+                <Button className="flex items-center gap-2">
+                  <Truck className="h-4 w-4" />
+                  Buat Pengantaran
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Buat Pengantaran Baru</DialogTitle>
                 <DialogDescription>
@@ -305,7 +317,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="no-helper">Tidak ada helper</SelectItem>
-                        {employees?.filter(emp => emp.role?.toLowerCase() === 'helper').map((helper) => (
+                        {employees?.filter(emp => ['helper', 'supir'].includes(emp.role?.toLowerCase())).map((helper) => (
                           <SelectItem key={helper.id} value={helper.id}>
                             {helper.name} - {helper.position}
                           </SelectItem>
@@ -423,6 +435,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </CardHeader>
       <CardContent>

@@ -2,6 +2,7 @@
 import * as React from "react"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { saveCompressedPDF } from "@/utils/pdfUtils"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { Button } from "@/components/ui/button"
@@ -170,7 +171,7 @@ export function ReceivablesReportPDF({ receivables, filterStatus }: ReceivablesR
 
     // Save the PDF
     const fileName = `laporan-piutang-${filterStatus}-${format(new Date(), 'yyyy-MM-dd')}.pdf`;
-    doc.save(fileName);
+    saveCompressedPDF(doc, fileName, 100);
   };
 
   const formatCurrency = (amount: number) => {

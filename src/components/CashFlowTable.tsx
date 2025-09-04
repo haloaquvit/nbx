@@ -53,11 +53,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MoreHorizontal, Trash2, BookOpen } from "lucide-react"
+import { MoreHorizontal, Trash2 } from "lucide-react"
 import { TransferAccountDialog } from "./TransferAccountDialog"
-import { JournalViewTable } from "./JournalViewTable"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useAccounts } from "@/hooks/useAccounts"
 
 const getTypeVariant = (item: CashHistory) => {
   // Handle transfers with special color
@@ -185,7 +182,6 @@ interface CashFlowTableProps {
 export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { accounts } = useAccounts();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [selectedRecord, setSelectedRecord] = React.useState<CashHistory | null>(null);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = React.useState(false);
@@ -635,24 +631,14 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   return (
     <div className="w-full space-y-4">
       <TransferAccountDialog open={isTransferDialogOpen} onOpenChange={setIsTransferDialogOpen} />
-      
-      <Tabs defaultValue="cashflow" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="cashflow">Cash Flow View</TabsTrigger>
-          <TabsTrigger value="journal" className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4" />
-            Journal View
-          </TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="cashflow" className="space-y-4 mt-4">
-          {/* Filters and Actions */}
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex gap-4 items-center flex-wrap">
-              {/* Date Range Filter */}
-              <div className="flex items-center gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
+
+      {/* Filters and Actions */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex gap-4 items-center flex-wrap">
+          {/* Date Range Filter */}
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       className={cn(
@@ -799,17 +785,6 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
               Next
             </Button>
           </div>
-        </TabsContent>
-        
-        <TabsContent value="journal" className="space-y-4 mt-4">
-          <JournalViewTable 
-            cashHistory={data || []}
-            accounts={accounts || []}
-            isLoading={isLoading}
-            dateRange={dateRange}
-          />
-        </TabsContent>
-      </Tabs>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

@@ -9,6 +9,7 @@ import { ThermalPanjarDialog } from "./ThermalPanjarDialog"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { terbilang } from '@/utils/terbilang'
+import { saveCompressedPDF } from '@/utils/pdfUtils'
 
 interface PanjarReceiptPDFProps {
   advance: EmployeeAdvance
@@ -192,7 +193,7 @@ export function PanjarReceiptPDF({
       window.open(doc.output('bloburl'), '_blank')
     } else {
       const fileName = `kwitansi-panjar-${advance.employeeName.replace(/\s+/g, '-')}-${format(advance.date, 'yyyy-MM-dd')}.pdf`
-      doc.save(fileName)
+      saveCompressedPDF(doc, fileName, 100)
     }
   }
 

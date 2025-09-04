@@ -9,6 +9,7 @@ import { ThermalReceiptDialog } from "./ThermalReceiptDialog"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { terbilang } from '@/utils/terbilang'
+import { saveCompressedPDF } from '@/utils/pdfUtils'
 
 interface ExpenseReceiptPDFProps {
   expense: Expense
@@ -173,7 +174,7 @@ export function ExpenseReceiptPDF({
       window.open(doc.output('bloburl'), '_blank')
     } else {
       const fileName = `kwitansi-pengeluaran-${expense.id}-${format(expense.date, 'yyyy-MM-dd')}.pdf`
-      doc.save(fileName)
+      saveCompressedPDF(doc, fileName, 100)
     }
   }
 

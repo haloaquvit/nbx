@@ -32,6 +32,7 @@ import { User } from '@/types/user'
 import { useCustomers } from '@/hooks/useCustomers'
 import { useRetasi } from '@/hooks/useRetasi'
 import { supabase } from '@/integrations/supabase/client'
+import { useSalesEmployees } from '@/hooks/useSalesCommission'
 
 interface FormTransactionItem {
   id: number;
@@ -53,10 +54,14 @@ export const PosForm = () => {
   const { users } = useUsers();
   const { accounts, updateAccountBalance } = useAccounts();
   const { addTransaction } = useTransactions();
+  const { data: salesEmployees } = useSalesEmployees();
   const { customers } = useCustomers();
   const { checkDriverAvailability } = useRetasi();
   
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [selectedSales, setSelectedSales] = useState<string>('none')
   const [orderDate, setOrderDate] = useState<Date | undefined>(new Date())
   const [dueDate, setDueDate] = useState(() => {
     const date = new Date();
@@ -164,6 +169,7 @@ export const PosForm = () => {
     if (shouldNavigate) {
       // Reset form
       setSelectedCustomer(null);
+      setCustomerSearch('');
       setItems([]);
       setDiskon(0);
       setPaidAmount(0);
@@ -188,8 +194,11 @@ export const PosForm = () => {
     
     const validItems = items.filter(item => item.product && item.qty > 0);
 
-    if (!selectedCustomer || validItems.length === 0 || !currentUser) {
-      toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap pilih Pelanggan dan tambahkan minimal satu item produk yang valid." });
+    // Check if we have either selected customer or typed customer name
+    const customerName = selectedCustomer?.name || customerSearch.trim();
+    
+    if (!customerName || validItems.length === 0 || !currentUser) {
+      toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap isi Nama Pelanggan dan tambahkan minimal satu item produk yang valid." });
       return;
     }
 
@@ -211,10 +220,12 @@ export const PosForm = () => {
 
     const newTransaction: Omit<Transaction, 'createdAt'> = {
       id: `KRP-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000)}`,
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.name,
+      customerId: selectedCustomer?.id || 'manual-customer',
+      customerName: customerName,
       cashierId: currentUser.id,
       cashierName: currentUser.name,
+      salesId: selectedSales && selectedSales !== 'none' ? selectedSales : null,
+      salesName: selectedSales && selectedSales !== 'none' ? salesEmployees?.find(s => s.id === selectedSales)?.name || null : null,
       designerId: null,
       operatorId: null,
       paymentAccountId: paymentAccountId || null,
@@ -269,6 +280,14 @@ export const PosForm = () => {
     ) || [];
   }, [products, productSearch]);
 
+  const filteredCustomers = useMemo(() => {
+    if (!customers) return [];
+    return customers.filter(customer => 
+      customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      customer.phone.includes(customerSearch)
+    ).slice(0, 10); // Limit to 10 results
+  }, [customers, customerSearch]);
+
   const addToCart = (product: Product) => {
     const existing = items.find(item => item.product?.id === product.id);
     if (existing) {
@@ -295,8 +314,22 @@ export const PosForm = () => {
 
   return (
     <>
-      <CustomerSearchDialog open={isCustomerSearchOpen} onOpenChange={setIsCustomerSearchOpen} onCustomerSelect={setSelectedCustomer} />
-      <AddCustomerDialog open={isCustomerAddOpen} onOpenChange={setIsCustomerAddOpen} onCustomerAdded={setSelectedCustomer} />
+      <CustomerSearchDialog 
+        open={isCustomerSearchOpen} 
+        onOpenChange={setIsCustomerSearchOpen} 
+        onCustomerSelect={(customer) => {
+          setSelectedCustomer(customer)
+          setCustomerSearch(customer?.name || '')
+        }} 
+      />
+      <AddCustomerDialog 
+        open={isCustomerAddOpen} 
+        onOpenChange={setIsCustomerAddOpen} 
+        onCustomerAdded={(customer) => {
+          setSelectedCustomer(customer)
+          setCustomerSearch(customer?.name || '')
+        }} 
+      />
       {savedTransaction && <PrintReceiptDialog open={isPrintDialogOpen} onOpenChange={handlePrintDialogClose} transaction={savedTransaction} template="receipt" />}
       
       <div className="min-h-screen bg-white">
@@ -328,9 +361,47 @@ export const PosForm = () => {
             <div>
               <h3 className="text-sm font-medium text-gray-700 mb-2">Nama Pemesan</h3>
               <div className="space-y-3">
-                <div className="text-base md:text-lg font-medium text-gray-900 truncate">
-                  {selectedCustomer ? selectedCustomer.name : "Pelanggan Belum Dipilih"}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Ketik nama pelanggan atau pilih dari dropdown..."
+                    value={customerSearch}
+                    onChange={(e) => {
+                      setCustomerSearch(e.target.value)
+                      setShowCustomerDropdown(true)
+                      if (!e.target.value) {
+                        setSelectedCustomer(null)
+                      }
+                    }}
+                    onFocus={() => setShowCustomerDropdown(true)}
+                    onBlur={() => {
+                      // Delay to allow click on dropdown items
+                      setTimeout(() => setShowCustomerDropdown(false), 150)
+                    }}
+                    disabled={retasiBlocked}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  
+                  {showCustomerDropdown && filteredCustomers.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      {filteredCustomers.map((customer) => (
+                        <div
+                          key={customer.id}
+                          className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                          onClick={() => {
+                            setSelectedCustomer(customer)
+                            setCustomerSearch(customer.name)
+                            setShowCustomerDropdown(false)
+                          }}
+                        >
+                          <div className="font-medium">{customer.name}</div>
+                          <div className="text-xs text-gray-500">{customer.phone}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -341,7 +412,7 @@ export const PosForm = () => {
                     className="bg-yellow-400 hover:bg-yellow-500 text-black border-yellow-400 text-xs md:text-sm"
                   >
                     <Search className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
-                    Cari
+                    Cari Lanjutan
                   </Button>
                   <Button
                     type="button"
@@ -400,6 +471,39 @@ export const PosForm = () => {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Sales Selection */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">Sales</h3>
+              <Select value={selectedSales} onValueChange={setSelectedSales} disabled={retasiBlocked}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Sales (Opsional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    <span className="text-gray-500">Tanpa Sales</span>
+                  </SelectItem>
+                  {salesEmployees?.map((sales) => (
+                    <SelectItem key={sales.id} value={sales.id}>
+                      <div className="flex items-center gap-2">
+                        <UserIcon className="h-4 w-4" />
+                        <span>{sales.name}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedSales && selectedSales !== 'none' && (
+                <div className="mt-2 text-xs text-green-700">
+                  <strong>Sales:</strong> {salesEmployees?.find(s => s.id === selectedSales)?.name}
+                </div>
+              )}
+              {selectedSales === 'none' && (
+                <div className="mt-2 text-xs text-gray-500">
+                  <strong>Sales:</strong> Tanpa Sales
+                </div>
+              )}
             </div>
 
             {/* Office Sale Checkbox */}
@@ -580,7 +684,7 @@ export const PosForm = () => {
                             min="1"
                             value={item.qty}
                             onChange={(e) => handleItemChange(index, 'qty', Number(e.target.value) || 1)}
-                            className="w-12 md:w-16 text-center text-xs"
+                            className="w-16 md:w-20 text-center text-xs"
                             disabled={retasiBlocked}
                           />
                         </td>
@@ -590,7 +694,7 @@ export const PosForm = () => {
                             type="number"
                             value={item.harga}
                             onChange={(e) => handleItemChange(index, 'harga', Number(e.target.value) || 0)}
-                            className="w-16 md:w-24 text-right text-xs"
+                            className="w-20 md:w-32 text-right text-xs"
                             disabled={retasiBlocked}
                           />
                         </td>
@@ -773,7 +877,7 @@ export const PosForm = () => {
                       type="number"
                       value={paidAmount}
                       onChange={(e) => setPaidAmount(Number(e.target.value) || 0)}
-                      className="text-right font-medium text-sm"
+                      className="text-right font-medium text-sm w-full"
                       disabled={retasiBlocked}
                     />
                   </div>

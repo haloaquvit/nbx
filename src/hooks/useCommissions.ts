@@ -11,6 +11,7 @@ export function useCommissionRules() {
   const fetchRules = async () => {
     try {
       setIsLoading(true)
+      setError(null)
       
       // Check if commission_rules table exists
       const { data, error } = await supabase
@@ -18,10 +19,17 @@ export function useCommissionRules() {
         .select('*')
         .limit(1)
 
-      if (error && error.code === 'PGRST116') {
+      if (error && (error.code === 'PGRST116' || error.message.includes('does not exist'))) {
         console.log('Commission rules table does not exist yet')
         setRules([])
-        setError('Tabel komisi belum dibuat. Silakan jalankan migrasi database terlebih dahulu.')
+        setError('Tabel commission_rules belum tersedia. Fitur komisi tidak dapat digunakan.')
+        return
+      }
+
+      if (error && error.code === '406') {
+        console.log('Commission rules table access denied (406)')
+        setRules([])
+        setError('Tidak dapat mengakses tabel commission_rules. Periksa konfigurasi database.')
         return
       }
 
@@ -29,29 +37,41 @@ export function useCommissionRules() {
       const { data: allData, error: fetchError } = await supabase
         .from('commission_rules')
         .select('*')
-        .order('product_name', { ascending: true })
+        .order('created_at', { ascending: false })
 
-      if (fetchError) throw fetchError
+      if (fetchError) {
+        if (fetchError.code === '406') {
+          setRules([])
+          setError('Tidak dapat mengakses data commission_rules. Periksa permission database.')
+          return
+        }
+        throw fetchError
+      }
 
       const formattedRules: CommissionRule[] = allData?.map(rule => ({
         id: rule.id,
         productId: rule.product_id,
-        productName: rule.product_name,
+        productName: rule.product_name || 'Unknown Product',
         productSku: rule.product_sku,
         role: rule.role,
-        ratePerQty: rule.rate_per_qty,
+        ratePerQty: rule.rate_per_qty || 0,
         createdAt: new Date(rule.created_at),
-        updatedAt: new Date(rule.updated_at)
+        updatedAt: new Date(rule.updated_at || rule.created_at)
       })) || []
 
       setRules(formattedRules)
+      setError(null)
     } catch (err: any) {
       console.error('Error fetching commission rules:', err)
-      if (err.code === 'PGRST116' || err.message.includes('relation "commission_rules" does not exist')) {
-        setError('Tabel komisi belum dibuat. Silakan jalankan migrasi database terlebih dahulu.')
+      if (err.code === 'PGRST116' || err.message.includes('does not exist')) {
+        setError('Tabel commission_rules belum tersedia. Silakan hubungi administrator.')
+        setRules([])
+      } else if (err.code === '406') {
+        setError('Akses ke tabel commission_rules ditolak. Periksa permission RLS.')
         setRules([])
       } else {
-        setError(err.message)
+        setError(`Error: ${err.message}`)
+        setRules([])
       }
     } finally {
       setIsLoading(false)
@@ -60,20 +80,80 @@ export function useCommissionRules() {
 
   const updateCommissionRate = async (productId: string, role: 'sales' | 'driver' | 'helper', ratePerQty: number) => {
     try {
-      const { error } = await supabase
+      // First check if table exists
+      const { data: tableCheck, error: tableError } = await supabase
         .from('commission_rules')
-        .upsert({
-          product_id: productId,
-          role: role,
-          rate_per_qty: ratePerQty,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'product_id,role'
-        })
+        .select('id')
+        .limit(1)
 
-      if (error) throw error
+      if (tableError && (tableError.code === 'PGRST116' || tableError.message.includes('does not exist'))) {
+        throw new Error('Tabel commission_rules belum tersedia. Silakan hubungi administrator.')
+      }
+
+      // Get product information first
+      const { data: product, error: productError } = await supabase
+        .from('products')
+        .select('name, sku')
+        .eq('id', productId)
+        .single()
+
+      if (productError) {
+        console.error('Error fetching product:', productError)
+        throw new Error(`Product tidak ditemukan: ${productError.message}`)
+      }
+
+      // Check if rule already exists
+      const { data: existing, error: checkError } = await supabase
+        .from('commission_rules')
+        .select('id')
+        .eq('product_id', productId)
+        .eq('role', role)
+        .maybeSingle()
+
+      // Handle check errors
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking existing rule:', checkError)
+        throw new Error(`Gagal memeriksa rule yang ada: ${checkError.message}`)
+      }
+
+      if (existing) {
+        // Update existing rule
+        const { error } = await supabase
+          .from('commission_rules')
+          .update({
+            rate_per_qty: ratePerQty,
+            updated_at: new Date().toISOString()
+          })
+          .eq('product_id', productId)
+          .eq('role', role)
+
+        if (error) {
+          console.error('Error updating rule:', error)
+          throw new Error(`Gagal memperbarui rule: ${error.message}`)
+        }
+      } else {
+        // Insert new rule with product information
+        const { error } = await supabase
+          .from('commission_rules')
+          .insert({
+            product_id: productId,
+            product_name: product.name,
+            product_sku: product.sku,
+            role: role,
+            rate_per_qty: ratePerQty,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+
+        if (error) {
+          console.error('Error inserting rule:', error)
+          throw new Error(`Gagal menambahkan rule baru: ${error.message}`)
+        }
+      }
+
       await fetchRules()
     } catch (err: any) {
+      console.error('Commission rate update error:', err)
       setError(err.message)
       throw err
     }

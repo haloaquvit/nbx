@@ -5,9 +5,8 @@ import { FileDown, Printer } from "lucide-react"
 import { PurchaseOrder } from "@/types/purchaseOrder"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
 import { useCompanySettings } from "@/hooks/useCompanySettings"
+import { createCompressedPDF } from "@/utils/pdfUtils"
 
 interface PurchaseOrderPDFProps {
   purchaseOrder: PurchaseOrder
@@ -22,26 +21,12 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
     if (!printRef.current) return
 
     try {
-      // Create canvas from the print element
-      const canvas = await html2canvas(printRef.current, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff'
-      })
-
-      // Create PDF
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      })
-
-      const imgWidth = 210 // A4 width in mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
-
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, imgWidth, imgHeight)
-      pdf.save(`PO-${purchaseOrder.id}.pdf`)
+      await createCompressedPDF(
+        printRef.current,
+        `PO-${purchaseOrder.id}.pdf`,
+        [210, 297], // A4 format
+        100 // Max 100KB
+      )
     } catch (error) {
       console.error('Error generating PDF:', error)
     }

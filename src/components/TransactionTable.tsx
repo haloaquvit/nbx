@@ -8,7 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText, Calendar, Truck } from "lucide-react"
+import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText, Calendar, Truck, Filter, ChevronDown, ChevronUp } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -58,9 +58,11 @@ export function TransactionTable() {
   const { user } = useAuth();
   
   // Filter states
+  const [showFilters, setShowFilters] = React.useState(false);
   const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [ppnFilter, setPpnFilter] = React.useState<'all' | 'ppn' | 'non-ppn'>('all');
   const [deliveryFilter, setDeliveryFilter] = React.useState<'all' | 'pending-delivery'>('all');
+  const [paymentFilter, setPaymentFilter] = React.useState<'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang'>('all');
   const [filteredTransactions, setFilteredTransactions] = React.useState<Transaction[]>([]);
   
   const { transactions, isLoading, deleteTransaction } = useTransactions();
@@ -68,6 +70,31 @@ export function TransactionTable() {
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [transactionToEdit, setTransactionToEdit] = React.useState<Transaction | null>(null);
+
+  // Helper function to check if payment is overdue
+  const isPaymentOverdue = (transaction: Transaction): boolean => {
+    if (!transaction.dueDate || transaction.paymentStatus === 'Lunas') return false;
+    return new Date() > new Date(transaction.dueDate);
+  };
+
+  // Helper function to categorize payment status
+  const getPaymentCategory = (transaction: Transaction): string => {
+    const paidAmount = transaction.paidAmount || 0;
+    const total = transaction.total;
+    
+    if (paidAmount >= total) return 'lunas';
+    if (paidAmount === 0) {
+      if (transaction.paymentStatus === 'Kredit' && isPaymentOverdue(transaction)) {
+        return 'jatuh-tempo';
+      }
+      return 'belum-lunas';
+    }
+    // Partial payment
+    if (transaction.paymentStatus === 'Kredit' && isPaymentOverdue(transaction)) {
+      return 'jatuh-tempo';
+    }
+    return 'piutang'; // Partial payment, still has remaining balance
+  };
 
   // Filter logic
   React.useEffect(() => {
@@ -118,13 +145,22 @@ export function TransactionTable() {
       });
     }
 
+    // Filter by payment status
+    if (paymentFilter !== 'all') {
+      filtered = filtered.filter(transaction => {
+        const category = getPaymentCategory(transaction);
+        return category === paymentFilter;
+      });
+    }
+
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter, deliveryFilter]);
+  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter]);
 
   const clearFilters = () => {
     setDateRange({ from: undefined, to: undefined });
     setPpnFilter('all');
     setDeliveryFilter('all');
+    setPaymentFilter('all');
   };
   
 
@@ -233,19 +269,31 @@ export function TransactionTable() {
         const transaction = row.original;
         const total = transaction.total;
         const paidAmount = transaction.paidAmount || 0;
+        const category = getPaymentCategory(transaction);
         
         let statusText = "";
         let variant: "default" | "secondary" | "destructive" | "outline" | "success" = "default";
         
-        if (paidAmount === 0) {
-          statusText = "Belum Lunas";
-          variant = "destructive";
-        } else if (paidAmount >= total) {
-          statusText = "Lunas";
-          variant = "success";
-        } else {
-          statusText = "Sebagian";
-          variant = "secondary";
+        switch (category) {
+          case 'lunas':
+            statusText = "Lunas";
+            variant = "success";
+            break;
+          case 'belum-lunas':
+            statusText = "Belum Lunas";
+            variant = "destructive";
+            break;
+          case 'piutang':
+            statusText = "Piutang";
+            variant = "secondary";
+            break;
+          case 'jatuh-tempo':
+            statusText = "Jatuh Tempo";
+            variant = "outline";
+            break;
+          default:
+            statusText = "Unknown";
+            variant = "default";
         }
         
         return (
@@ -265,6 +313,11 @@ export function TransactionTable() {
                   currency: "IDR",
                   minimumFractionDigits: 0,
                 }).format(total - paidAmount)}
+              </div>
+            )}
+            {transaction.dueDate && category === 'jatuh-tempo' && (
+              <div className="text-xs text-red-500 font-medium">
+                Due: {format(new Date(transaction.dueDate), "dd MMM yyyy")}
               </div>
             )}
           </div>
@@ -488,19 +541,43 @@ export function TransactionTable() {
 
   return (
     <div className="w-full max-w-none">
-      {/* Filter Controls */}
-      <div className="flex flex-col gap-4 p-4 border rounded-lg mb-4 bg-background">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">Filter Transaksi</h3>
+      {/* Filter Toggle Button */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setShowFilters(!showFilters)}
+            className="gap-2"
+          >
+            <Filter className="h-4 w-4" />
+            Filter Transaksi
+            {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all') && (
+            <Badge variant="secondary" className="ml-2">
+              Filter aktif
+            </Badge>
+          )}
+        </div>
+        {showFilters && (
           <Button variant="ghost" size="sm" onClick={clearFilters}>
             <X className="h-4 w-4 mr-2" />
             Reset Filter
           </Button>
-        </div>
+        )}
+      </div>
+      
+      {/* Filter Controls */}
+      {showFilters && (
+        <div className="flex flex-col gap-4 p-4 border rounded-lg mb-4 bg-background">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium">Filter Transaksi</h3>
+          </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {/* Date Range Filter */}
-          <div className="space-y-2">
+          <div className="space-y-2 md:col-span-2 lg:col-span-1">
             <label className="text-sm font-medium">Rentang Tanggal</label>
             <Popover>
               <PopoverTrigger asChild>
@@ -542,6 +619,23 @@ export function TransactionTable() {
             </Popover>
           </div>
 
+          {/* Payment Status Filter */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Status Pembayaran</label>
+            <Select value={paymentFilter} onValueChange={(value: 'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang') => setPaymentFilter(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih Status Pembayaran" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Status</SelectItem>
+                <SelectItem value="lunas">Lunas</SelectItem>
+                <SelectItem value="belum-lunas">Belum Lunas</SelectItem>
+                <SelectItem value="piutang">Piutang (Dibayar Sebagian)</SelectItem>
+                <SelectItem value="jatuh-tempo">Jatuh Tempo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* PPN Status Filter */}
           <div className="space-y-2">
             <label className="text-sm font-medium">Status PPN</label>
@@ -571,7 +665,8 @@ export function TransactionTable() {
             </Select>
           </div>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">

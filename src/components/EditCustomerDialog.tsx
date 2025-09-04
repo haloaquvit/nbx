@@ -208,7 +208,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
         return
       }
       
-      if (!storePhotoUrl && !customer.photo_url) {
+      if (!storePhotoUrl && !customer.store_photo_url) {
         toast({
           variant: "destructive", 
           title: "Foto Toko Wajib",

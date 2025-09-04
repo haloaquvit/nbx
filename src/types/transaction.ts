@@ -37,6 +37,8 @@ export interface Transaction {
   customerName: string;
   cashierId: string;
   cashierName: string;
+  salesId?: string | null;
+  salesName?: string | null;
   designerId?: string | null;
   operatorId?: string | null;
   paymentAccountId?: string | null;

@@ -9,6 +9,7 @@ import { Printer, X, FileDown } from "lucide-react"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { useCompanySettings, CompanyInfo } from "@/hooks/useCompanySettings"
+import { saveCompressedPDF } from "@/utils/pdfUtils"
 
 interface PrintReceiptDialogProps {
   open: boolean
@@ -67,6 +68,12 @@ const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transactio
           <span>Total:</span>
           <span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.total)}</span>
         </div>
+        {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
+          <div className="flex justify-between text-xs mt-1 pt-1 border-t border-dashed border-black">
+            <span>Jatuh Tempo:</span>
+            <span>{format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</span>
+          </div>
+        )}
       </div>
       <div className="text-center mt-3 text-xs">
         Terima kasih!
@@ -116,6 +123,12 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
             <div className="flex justify-between"><span>PPN ({transaction.ppnPercentage}%):</span><span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.ppnAmount)}</span></div>
           )}
           <div className="flex justify-between font-bold text-lg border-t-2 border-gray-200 pt-2 text-gray-900"><span>TOTAL:</span><span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.total)}</span></div>
+          {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
+            <div className="flex justify-between text-red-600 font-medium mt-2 pt-2 border-t border-red-200">
+              <span>JATUH TEMPO:</span>
+              <span>{format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id })}</span>
+            </div>
+          )}
         </div>
       </div>
       <footer className="text-center text-xs text-gray-400 mt-16 pt-4 border-t border-gray-200">
@@ -181,6 +194,17 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     summaryY += 7;
     doc.setFontSize(12).setFont("helvetica", "bold").text("TOTAL:", 140, summaryY);
     doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.total), pageWidth - margin, summaryY, { align: 'right' });
+    
+    // Add due date if payment is not complete
+    if (transaction.paymentStatus !== 'Lunas' && transaction.dueDate) {
+      summaryY += 10;
+      doc.setDrawColor(200, 0, 0).line(140, summaryY, pageWidth - margin, summaryY);
+      summaryY += 7;
+      doc.setFontSize(11).setFont("helvetica", "bold").setTextColor(200, 0, 0).text("JATUH TEMPO:", 140, summaryY);
+      doc.text(format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id }), pageWidth - margin, summaryY, { align: 'right' });
+      doc.setTextColor(0); // Reset color to black
+    }
+    
     // Signature & Thank you
     let signatureY = summaryY + 25;
     doc.setFontSize(12).setFont("helvetica", "normal");
@@ -191,7 +215,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.text("Terima kasih atas kepercayaan Anda.", margin, signatureY + 20);
 
     const filename = `MDIInvoice-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
-    doc.save(filename);
+    saveCompressedPDF(doc, filename, 100);
   };
 
   const handleThermalPrint = () => {

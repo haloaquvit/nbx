@@ -1,5 +1,5 @@
 export type EmployeeStatus = 'Aktif' | 'Tidak Aktif';
-export type UserRole = 'cashier' | 'designer' | 'operator' | 'admin' | 'supervisor' | 'owner' | 'me' | 'ceo' | 'driver' | 'helper';
+export type UserRole = 'cashier' | 'designer' | 'operator' | 'admin' | 'supervisor' | 'owner' | 'me' | 'ceo' | 'driver' | 'helper' | 'sales';
 
 export interface Employee {
   id: string;

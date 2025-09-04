@@ -30,16 +30,16 @@ const toDb = (appPo: Partial<PurchaseOrder>) => ({
   material_name: appPo.materialName,
   quantity: appPo.quantity,
   unit: appPo.unit,
-  unit_price: appPo.unitPrice,
+  unit_price: appPo.unitPrice || null,
   requested_by: appPo.requestedBy,
   status: appPo.status,
-  notes: appPo.notes,
-  total_cost: appPo.totalCost,
-  payment_account_id: appPo.paymentAccountId,
-  payment_date: appPo.paymentDate,
-  supplier_name: appPo.supplierName,
-  supplier_contact: appPo.supplierContact,
-  expected_delivery_date: appPo.expectedDeliveryDate,
+  notes: appPo.notes || null,
+  total_cost: appPo.totalCost || null,
+  payment_account_id: appPo.paymentAccountId || null,
+  payment_date: appPo.paymentDate || null,
+  supplier_name: appPo.supplierName || null,
+  supplier_contact: appPo.supplierContact || null,
+  expected_delivery_date: appPo.expectedDeliveryDate || null,
 });
 
 export const usePurchaseOrders = () => {
@@ -59,13 +59,26 @@ export const usePurchaseOrders = () => {
 
   const addPurchaseOrder = useMutation({
     mutationFn: async (newPoData: Omit<PurchaseOrder, 'id' | 'createdAt' | 'status'>): Promise<PurchaseOrder> => {
+      console.log('[addPurchaseOrder] Input data:', newPoData);
+      
+      const poId = `PO-${Date.now()}`;
       const dbData = toDb({
         ...newPoData,
-        id: `PO-${Date.now().toString().slice(-4)}`,
+        id: poId,
         status: 'Pending',
+        createdAt: new Date(),
       });
+      
+      console.log('[addPurchaseOrder] DB data to insert:', dbData);
+      
       const { data, error } = await supabase.from('purchase_orders').insert(dbData).select().single();
-      if (error) throw new Error(error.message);
+      
+      if (error) {
+        console.error('[addPurchaseOrder] Database error:', error);
+        throw new Error(error.message);
+      }
+      
+      console.log('[addPurchaseOrder] Success:', data);
       return fromDb(data);
     },
     onSuccess: () => {
