@@ -8,6 +8,7 @@ export interface DeliveryItem {
   width?: number;
   height?: number;
   notes?: string;
+  isBonus?: boolean; // Menandai apakah item ini adalah bonus (tidak dihitung komisi)
   createdAt: Date;
 }
 
@@ -64,6 +65,7 @@ export interface CreateDeliveryRequest {
     width?: number;
     height?: number;
     notes?: string;
+    isBonus?: boolean;
   }[];
   photo?: File;
 }

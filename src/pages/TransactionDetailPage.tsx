@@ -1010,7 +1010,12 @@ export default function TransactionDetailPage() {
                     <div className="space-y-2">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <p className="font-medium text-sm">{item.product.name}</p>
+                          <Link 
+                            to={`/products/${item.product.id}`}
+                            className="font-medium text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {item.product.name}
+                          </Link>
                           {item.notes && (
                             <p className="text-xs text-muted-foreground">{item.notes}</p>
                           )}
@@ -1054,7 +1059,12 @@ export default function TransactionDetailPage() {
                       <TableRow key={index}>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{item.product.name}</p>
+                            <Link 
+                              to={`/products/${item.product.id}`}
+                              className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {item.product.name}
+                            </Link>
                             {item.notes && (
                               <p className="text-sm text-muted-foreground">{item.notes}</p>
                             )}

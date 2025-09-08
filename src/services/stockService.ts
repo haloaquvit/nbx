@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client'
-import { Product, ProductType } from '@/types/product'
+import { Product } from '@/types/product'
 import { StockMovementType, StockMovementReason, CreateStockMovementData } from '@/types/stockMovement'
 import { TransactionItem } from '@/types/transaction'
 
@@ -24,22 +24,43 @@ export class StockService {
       let movementType: StockMovementType;
       let reason: StockMovementReason = 'PRODUCTION_CONSUMPTION';
 
-      // Determine stock movement based on product type
-      if (product.type === 'Stock') {
-        // Stock items: production reduces stock
-        newStock = currentStock - item.quantity;
-        movementType = 'OUT';
-        reason = 'PRODUCTION_CONSUMPTION';
-      } else if (product.type === 'Beli') {
-        // Beli items: track usage/consumption (no actual stock reduction but track usage)
-        newStock = currentStock + item.quantity; // Track cumulative usage
-        movementType = 'OUT'; // This is consumption/usage
-        reason = 'PRODUCTION_CONSUMPTION'; // Changed to valid constraint value
+      // Determine stock movement based on product type and quantity (negative for restore)  
+      if (product.type === 'Stock' as any) {
+        if (item.quantity < 0) {
+          // Restoring stock (negative quantity means restore)
+          newStock = currentStock - item.quantity; // Add back to stock (subtract negative)
+          movementType = 'IN';
+          reason = 'ADJUSTMENT';
+        } else {
+          // Stock items: production reduces stock
+          newStock = currentStock - item.quantity;
+          movementType = 'OUT';
+          reason = 'PRODUCTION_CONSUMPTION';
+        }
+      } else if (product.type === 'Beli' as any) {
+        if (item.quantity < 0) {
+          // Restoring usage tracking
+          newStock = currentStock - item.quantity; // Reverse the usage tracking
+          movementType = 'IN';
+          reason = 'ADJUSTMENT';
+        } else {
+          // Beli items: track usage/consumption (no actual stock reduction but track usage)
+          newStock = currentStock + item.quantity; // Track cumulative usage
+          movementType = 'OUT'; // This is consumption/usage
+          reason = 'PRODUCTION_CONSUMPTION'; // Changed to valid constraint value
+        }
       } else {
-        // Default to stock behavior
-        newStock = currentStock - item.quantity;
-        movementType = 'OUT';
-        reason = 'PRODUCTION_CONSUMPTION';
+        if (item.quantity < 0) {
+          // Default restore behavior
+          newStock = currentStock - item.quantity; // Add back to stock
+          movementType = 'IN';
+          reason = 'ADJUSTMENT';
+        } else {
+          // Default to stock behavior
+          newStock = currentStock - item.quantity;
+          movementType = 'OUT';
+          reason = 'PRODUCTION_CONSUMPTION';
+        }
       }
 
       // Create stock movement record
@@ -48,7 +69,7 @@ export class StockService {
         productName: product.name,
         type: movementType,
         reason,
-        quantity: item.quantity,
+        quantity: Math.abs(item.quantity), // Always store positive quantity in movement records
         previousStock: currentStock,
         newStock,
         notes: referenceType === 'delivery' 
@@ -103,7 +124,7 @@ export class StockService {
     }
     
     // First, check if the table exists and what columns are available
-    const { data: tableCheck, error: tableError } = await supabase
+    const { error: tableError } = await supabase
       .from('material_stock_movements')
       .select('id')
       .limit(1);
@@ -154,7 +175,7 @@ export class StockService {
       if (error.message.includes('material_name')) {
         console.warn('Retrying without material_name column...');
         
-        const fallbackMovements = dbMovements.map(({ material_name, ...rest }) => rest);
+        const fallbackMovements = dbMovements.map(({ material_name: _material_name, ...rest }) => rest);
         
         const { error: fallbackError } = await supabase
           .from('material_stock_movements')
@@ -181,7 +202,7 @@ export class StockService {
     const { data, error } = await supabase
       .from('products')
       .select('*')
-      .lt('current_stock', supabase.raw('min_stock'))
+      .filter('current_stock', 'lt', 'min_stock')
       .order('name');
 
     if (error) {

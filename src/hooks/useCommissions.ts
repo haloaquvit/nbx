@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/integrations/supabase/client'
 import { CommissionRule, CommissionEntry } from '@/types/commission'
 import { useAuth } from './useAuth'
+import { deleteCommissionExpense, deleteTransactionCommissionExpenses } from '@/utils/financialIntegration'
 
 export function useCommissionRules() {
   const [rules, setRules] = useState<CommissionRule[]>([])
@@ -52,7 +53,6 @@ export function useCommissionRules() {
         id: rule.id,
         productId: rule.product_id,
         productName: rule.product_name || 'Unknown Product',
-        productSku: rule.product_sku,
         role: rule.role,
         ratePerQty: rule.rate_per_qty || 0,
         createdAt: new Date(rule.created_at),
@@ -93,7 +93,7 @@ export function useCommissionRules() {
       // Get product information first
       const { data: product, error: productError } = await supabase
         .from('products')
-        .select('name, sku')
+        .select('name')
         .eq('id', productId)
         .single()
 
@@ -101,6 +101,8 @@ export function useCommissionRules() {
         console.error('Error fetching product:', productError)
         throw new Error(`Product tidak ditemukan: ${productError.message}`)
       }
+
+      console.log('✅ Product found:', product.name, 'for commission rule');
 
       // Check if rule already exists
       const { data: existing, error: checkError } = await supabase
@@ -138,7 +140,6 @@ export function useCommissionRules() {
           .insert({
             product_id: productId,
             product_name: product.name,
-            product_sku: product.sku,
             role: role,
             rate_per_qty: ratePerQty,
             created_at: new Date().toISOString(),
@@ -172,15 +173,25 @@ export function useCommissionRules() {
   }
 }
 
-export function useCommissionEntries() {
-  const [entries, setEntries] = useState<CommissionEntry[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: string) {
   const { user } = useAuth()
+  const [entries, setEntries] = useState<CommissionEntry[]>([])
+  const [error, setError] = useState<string | null>(null)
 
-  const fetchEntries = async (startDate?: Date, endDate?: Date, role?: string) => {
+  const fetchEntries = useCallback(async (startDate?: Date, endDate?: Date, role?: string) => {
+    const callId = Math.random().toString(36).substring(7);
+    console.log(`🚀 [${callId}] fetchEntries called with:`, { 
+      startDate: startDate?.toISOString(), 
+      endDate: endDate?.toISOString(), 
+      role, 
+      userId: user?.id,
+      userRole: user?.role 
+    });
+    console.log(`📍 [${callId}] Call stack:`, new Error().stack);
+    
     try {
       setIsLoading(true)
+      console.log(`⏳ [${callId}] Setting loading to true`);
       
       // Check if commission_entries table exists, if not use empty data
       const { data, error } = await supabase
@@ -190,7 +201,7 @@ export function useCommissionEntries() {
 
       if (error && error.code === 'PGRST116') {
         // Table doesn't exist, return empty data
-        console.log('Commission entries table does not exist yet')
+        console.log(`❌ [${callId}] Commission entries table does not exist yet`)
         setEntries([])
         setError('Tabel komisi belum dibuat. Silakan jalankan migrasi database terlebih dahulu.')
         return
@@ -219,7 +230,12 @@ export function useCommissionEntries() {
 
       const { data: queryData, error: queryError } = await query
 
-      if (queryError) throw queryError
+      if (queryError) {
+        console.error(`❌ [${callId}] Commission entries query error:`, queryError);
+        throw queryError;
+      }
+
+      console.log(`📊 [${callId}] Commission entries raw data:`, queryData);
 
       const formattedEntries: CommissionEntry[] = queryData?.map(entry => ({
         id: entry.id,
@@ -228,7 +244,6 @@ export function useCommissionEntries() {
         role: entry.role,
         productId: entry.product_id,
         productName: entry.product_name,
-        productSku: entry.product_sku,
         quantity: entry.quantity,
         ratePerQty: entry.rate_per_qty,
         amount: entry.amount,
@@ -239,9 +254,11 @@ export function useCommissionEntries() {
         status: entry.status
       })) || []
 
+      console.log(`✅ [${callId}] Commission entries formatted (${formattedEntries.length} entries):`, formattedEntries);
       setEntries(formattedEntries)
+      setError(null) // Clear any previous errors
     } catch (err: any) {
-      console.error('Error fetching commission entries:', err)
+      console.error(`❌ [${callId}] Error fetching commission entries:`, err)
       if (err.code === 'PGRST116' || err.message.includes('relation "commission_entries" does not exist')) {
         setError('Tabel komisi belum dibuat. Silakan jalankan migrasi database terlebih dahulu.')
         setEntries([])
@@ -249,9 +266,10 @@ export function useCommissionEntries() {
         setError(err.message)
       }
     } finally {
+      console.log(`🏁 [${callId}] Setting loading to false`);
       setIsLoading(false)
     }
-  }
+  }, [user])
 
   const createCommissionEntry = async (entry: Omit<CommissionEntry, 'id' | 'createdAt'>) => {
     try {
@@ -263,7 +281,6 @@ export function useCommissionEntries() {
           role: entry.role,
           product_id: entry.productId,
           product_name: entry.productName,
-          product_sku: entry.productSku,
           quantity: entry.quantity,
           rate_per_qty: entry.ratePerQty,
           amount: entry.amount,
@@ -281,9 +298,75 @@ export function useCommissionEntries() {
     }
   }
 
+  const deleteCommissionEntry = async (entryId: string) => {
+    try {
+      console.log('🗑️ Deleting commission entry and related expense:', entryId);
+      
+      // First delete the corresponding expense entry
+      try {
+        await deleteCommissionExpense(entryId);
+      } catch (expenseError) {
+        console.error('❌ Failed to delete commission expense (continuing with commission deletion):', expenseError);
+        // Don't throw - continue with commission deletion even if expense deletion fails
+      }
+      
+      // Then delete the commission entry
+      const { error } = await supabase
+        .from('commission_entries')
+        .delete()
+        .eq('id', entryId)
+
+      if (error) {
+        console.error('❌ Error deleting commission entry:', error);
+        throw error;
+      }
+
+      console.log('✅ Commission entry and expense deleted successfully');
+      
+      // Refresh the entries
+      await fetchEntries();
+    } catch (err: any) {
+      console.error('❌ Delete commission error:', err);
+      setError(err.message)
+      throw err
+    }
+  }
+
+  const deleteCommissionsByTransaction = async (transactionId: string) => {
+    try {
+      console.log('🗑️ Deleting commission entries and expenses for transaction:', transactionId);
+      
+      // First delete all corresponding expense entries for this transaction
+      try {
+        await deleteTransactionCommissionExpenses(transactionId);
+      } catch (expenseError) {
+        console.error('❌ Failed to delete commission expenses for transaction (continuing):', expenseError);
+        // Don't throw - continue with commission deletion even if expense deletion fails
+      }
+      
+      // Then delete the commission entries
+      const { error } = await supabase
+        .from('commission_entries')
+        .delete()
+        .eq('transaction_id', transactionId)
+
+      if (error) {
+        console.error('❌ Error deleting commission entries:', error);
+        throw error;
+      }
+
+      console.log('✅ All commission entries and expenses for transaction deleted successfully');
+    } catch (err: any) {
+      console.error('❌ Delete transaction commissions error:', err);
+      setError(err.message)
+      throw err
+    }
+  }
+
   useEffect(() => {
+    console.log('🔄 useCommissionEntries useEffect triggered, user changed:', user?.id);
     fetchEntries()
-  }, [user])
+  }, [fetchEntries])
 
   return {
     entries,
@@ -291,6 +374,8 @@ export function useCommissionEntries() {
     error,
     fetchEntries,
     createCommissionEntry,
+    deleteCommissionEntry,
+    deleteCommissionsByTransaction,
     refetch: () => fetchEntries()
   }
 }

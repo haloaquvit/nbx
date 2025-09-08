@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { useCommissionEntries } from "@/hooks/useCommissions"
+import { useOptimizedCommissionEntries, useDeleteCommissionEntry } from "@/hooks/useOptimizedCommissions"
 import { useAuth } from "@/hooks/useAuth"
 import { useUsers } from "@/hooks/useUsers"
 import { format } from "date-fns"
@@ -18,14 +18,17 @@ import {
   Calendar,
   Download,
   Filter,
-  Loader2
+  Loader2,
+  Trash2,
+  AlertTriangle
 } from "lucide-react"
 
 
 export default function CommissionReportPage() {
   const { user } = useAuth()
-  const { entries, isLoading, fetchEntries, error } = useCommissionEntries()
   const { users, isLoading: usersLoading } = useUsers()
+  const deleteCommissionMutation = useDeleteCommissionEntry()
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null)
   
   // Date filters
   const [startDate, setStartDate] = useState(() => {
@@ -40,12 +43,15 @@ export default function CommissionReportPage() {
   
   const [selectedUser, setSelectedUser] = useState<string>("all")
 
-  // Fetch data when filters change
-  useEffect(() => {
-    const start = new Date(startDate + "T00:00:00")
-    const end = new Date(endDate + "T23:59:59.999")
-    fetchEntries(start, end)
-  }, [startDate, endDate])
+  // Use optimized commission entries with date filters
+  const start = new Date(startDate + "T00:00:00")
+  const end = new Date(endDate + "T23:59:59.999")
+  
+  const { 
+    data: entries = [], 
+    isLoading, 
+    error 
+  } = useOptimizedCommissionEntries(start, end)
 
   // Filter by user if selected
   const filteredEntries = useMemo(() => {
@@ -123,10 +129,31 @@ export default function CommissionReportPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [users, entries])
 
+  const handleDeleteCommission = async (entryId: string) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus entri komisi ini?')) {
+      return;
+    }
+
+    setDeleteLoading(entryId);
+    
+    deleteCommissionMutation.mutate(entryId, {
+      onSuccess: () => {
+        console.log('✅ Commission entry deleted successfully');
+        setDeleteLoading(null);
+      },
+      onError: (error) => {
+        console.error('❌ Error deleting commission:', error);
+        alert('Gagal menghapus komisi. Silakan coba lagi.');
+        setDeleteLoading(null);
+      }
+    });
+  };
+
   const exportToPDF = () => {
     // TODO: Implement PDF export
     console.log("Export to PDF")
   }
+
 
   if (isLoading || usersLoading) {
     return (
@@ -141,8 +168,17 @@ export default function CommissionReportPage() {
     )
   }
 
+  // Debug render state
+  console.log('🖥️ CommissionReportPage render state:', {
+    isLoading,
+    usersLoading,
+    error,
+    entriesCount: entries.length,
+    filteredCount: filteredEntries.length
+  });
+
   // Show error message if table doesn't exist
-  if (error && error.includes('Tabel komisi belum dibuat')) {
+  if (error && error.message?.includes('Tabel komisi belum dibuat')) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-6">
@@ -338,15 +374,17 @@ export default function CommissionReportPage() {
           </CardContent>
         </Card>
 
-        {/* Export Button */}
+        {/* Export Buttons */}
         <div className="flex justify-between items-center">
           <div className="text-sm text-gray-600">
             Menampilkan {filteredEntries.length} entri komisi
           </div>
-          <Button onClick={exportToPDF} variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export PDF
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={exportToPDF} variant="outline">
+              <Download className="h-4 w-4 mr-2" />
+              Export PDF
+            </Button>
+          </div>
         </div>
 
         {/* Detailed Table */}
@@ -371,6 +409,7 @@ export default function CommissionReportPage() {
                     <th className="text-left px-4 py-3 font-semibold">Jumlah</th>
                     <th className="text-left px-4 py-3 font-semibold">Ref</th>
                     <th className="text-left px-4 py-3 font-semibold">Status</th>
+                    <th className="text-left px-4 py-3 font-semibold">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -423,11 +462,28 @@ export default function CommissionReportPage() {
                           {entry.status === 'paid' ? 'Dibayar' : entry.status === 'pending' ? 'Pending' : 'Batal'}
                         </Badge>
                       </td>
+                      <td className="px-4 py-3">
+                        {(user?.role === 'admin' || user?.role === 'owner' || user?.role === 'cashier') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteCommission(entry.id)}
+                            disabled={deleteLoading === entry.id}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            {deleteLoading === entry.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {filteredEntries.length === 0 && (
                     <tr>
-                      <td className="px-4 py-8 text-center text-slate-500" colSpan={9}>
+                      <td className="px-4 py-8 text-center text-slate-500" colSpan={10}>
                         Tidak ada data komisi untuk periode yang dipilih
                       </td>
                     </tr>

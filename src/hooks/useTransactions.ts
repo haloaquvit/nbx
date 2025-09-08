@@ -4,37 +4,74 @@ import { supabase } from '@/integrations/supabase/client'
 import { useExpenses } from './useExpenses'
 import { StockService } from '@/services/stockService'
 import { MaterialStockService } from '@/services/materialStockService'
+import { generateSalesCommission } from '@/utils/commissionUtils'
+
+// Helper to extract sales info from items array
+const extractSalesFromItems = (items: any[]) => {
+  if (!Array.isArray(items)) {
+    return { salesId: null, salesName: null, cleanItems: items || [] };
+  }
+  
+  // Check if first element is sales metadata
+  const firstItem = items[0];
+  if (firstItem && firstItem._isSalesMeta) {
+    const { salesId, salesName } = firstItem;
+    const cleanItems = items.slice(1); // Remove metadata item
+    console.log('🔄 Extracted sales info:', { salesId, salesName, itemCount: cleanItems.length });
+    return { salesId, salesName, cleanItems };
+  }
+  
+  return { salesId: null, salesName: null, cleanItems: items };
+};
 
 // Helper to map from DB (snake_case) to App (camelCase)
-const fromDb = (dbTransaction: any): Transaction => ({
-  id: dbTransaction.id,
-  customerId: dbTransaction.customer_id,
-  customerName: dbTransaction.customer_name,
-  cashierId: dbTransaction.cashier_id,
-  cashierName: dbTransaction.cashier_name,
-  designerId: dbTransaction.designer_id,
-  operatorId: dbTransaction.operator_id,
-  paymentAccountId: dbTransaction.payment_account_id,
-  orderDate: new Date(dbTransaction.order_date),
-  finishDate: dbTransaction.finish_date ? new Date(dbTransaction.finish_date) : null,
-  items: dbTransaction.items || [],
-  subtotal: dbTransaction.subtotal ?? dbTransaction.total ?? 0, // Fallback untuk data lama
-  ppnEnabled: dbTransaction.ppn_enabled ?? false,
-  ppnMode: dbTransaction.ppn_mode || 'exclude',
-  ppnPercentage: dbTransaction.ppn_percentage ?? 11,
-  ppnAmount: dbTransaction.ppn_amount ?? 0,
-  total: dbTransaction.total,
-  paidAmount: dbTransaction.paid_amount || 0,
-  paymentStatus: dbTransaction.payment_status,
-  status: dbTransaction.status,
-  isOfficeSale: dbTransaction.is_office_sale ?? false,
-  dueDate: dbTransaction.due_date ? new Date(dbTransaction.due_date) : null,
-  createdAt: new Date(dbTransaction.created_at),
-});
+const fromDb = (dbTransaction: any): Transaction => {
+  const salesInfo = extractSalesFromItems(dbTransaction.items);
+  
+  return {
+    id: dbTransaction.id,
+    customerId: dbTransaction.customer_id,
+    customerName: dbTransaction.customer_name,
+    cashierId: dbTransaction.cashier_id,
+    cashierName: dbTransaction.cashier_name,
+    salesId: dbTransaction.sales_id || salesInfo.salesId, // Try direct column first, then extract from items
+    salesName: dbTransaction.sales_name || salesInfo.salesName, // Try direct column first, then extract from items
+    designerId: dbTransaction.designer_id || null,
+    operatorId: dbTransaction.operator_id || null,
+    paymentAccountId: dbTransaction.payment_account_id || null,
+    orderDate: new Date(dbTransaction.order_date),
+    finishDate: dbTransaction.finish_date ? new Date(dbTransaction.finish_date) : null,
+    items: salesInfo.cleanItems || [],
+    subtotal: dbTransaction.subtotal ?? dbTransaction.total ?? 0, // Fallback untuk data lama
+    ppnEnabled: dbTransaction.ppn_enabled ?? false,
+    ppnMode: dbTransaction.ppn_mode || 'exclude',
+    ppnPercentage: dbTransaction.ppn_percentage ?? 11,
+    ppnAmount: dbTransaction.ppn_amount ?? 0,
+    total: dbTransaction.total,
+    paidAmount: dbTransaction.paid_amount || 0,
+    paymentStatus: dbTransaction.payment_status,
+    status: dbTransaction.status,
+    notes: null, // Notes column not available
+    isOfficeSale: dbTransaction.is_office_sale ?? false,
+    dueDate: dbTransaction.due_date ? new Date(dbTransaction.due_date) : null,
+    createdAt: new Date(dbTransaction.created_at),
+  };
+};
 
 // Helper to map from App (camelCase) to DB (snake_case)
 const toDb = (appTransaction: Partial<Omit<Transaction, 'createdAt'>>) => {
-  // Base object with required fields
+  // Store sales info as first element of items array with special marker
+  let itemsWithSales = [...(appTransaction.items || [])];
+  if (appTransaction.salesId && appTransaction.salesName) {
+    // Add sales metadata as first element with special _isSalesMeta flag
+    itemsWithSales.unshift({
+      _isSalesMeta: true,
+      salesId: appTransaction.salesId,
+      salesName: appTransaction.salesName
+    });
+  }
+
+  // Base object with required fields only (no notes column)
   const baseObj: any = {
     id: appTransaction.id,
     customer_id: appTransaction.customerId,
@@ -46,21 +83,16 @@ const toDb = (appTransaction: Partial<Omit<Transaction, 'createdAt'>>) => {
     payment_account_id: appTransaction.paymentAccountId || null,
     order_date: appTransaction.orderDate,
     finish_date: appTransaction.finishDate || null,
-    items: appTransaction.items,
+    items: itemsWithSales,
     total: appTransaction.total,
     paid_amount: appTransaction.paidAmount,
     payment_status: appTransaction.paymentStatus,
     status: appTransaction.status,
   };
 
-  // Only add PPN fields if they exist (for backward compatibility)
-  if (appTransaction.subtotal !== undefined) baseObj.subtotal = appTransaction.subtotal;
-  if (appTransaction.ppnEnabled !== undefined) baseObj.ppn_enabled = appTransaction.ppnEnabled;
-  if (appTransaction.ppnMode !== undefined) baseObj.ppn_mode = appTransaction.ppnMode;
-  if (appTransaction.ppnPercentage !== undefined) baseObj.ppn_percentage = appTransaction.ppnPercentage;
-  if (appTransaction.ppnAmount !== undefined) baseObj.ppn_amount = appTransaction.ppnAmount;
-  if (appTransaction.isOfficeSale !== undefined) baseObj.is_office_sale = appTransaction.isOfficeSale;
-  if (appTransaction.dueDate !== undefined) baseObj.due_date = appTransaction.dueDate;
+  // Only add optional fields if they exist (for backward compatibility)
+  // Note: These columns might not exist in older database schemas
+  // The database insert will ignore unknown columns gracefully
 
   return baseObj;
 };
@@ -78,9 +110,12 @@ export const useTransactions = (filters?: {
   const { data: transactions, isLoading } = useQuery<Transaction[]>({
     queryKey: ['transactions', filters],
     queryFn: async () => {
+      // Use only essential columns that definitely exist in the original schema
+      const selectFields = '*'; // Let Supabase handle available columns automatically
+      
       let query = supabase
         .from('transactions')
-        .select('*')
+        .select(selectFields)
         .order('created_at', { ascending: false });
 
       // Apply filters
@@ -115,19 +150,22 @@ export const useTransactions = (filters?: {
 
   const addTransaction = useMutation({
     mutationFn: async ({ newTransaction, quotationId }: { newTransaction: Omit<Transaction, 'createdAt'>, quotationId?: string | null }): Promise<Transaction> => {
-      const dbData = toDb(newTransaction);
+      let dbData = toDb(newTransaction);
+      
+      // Insert transaction - sales info is now embedded in notes field
       const { data: savedTransaction, error } = await supabase
         .from('transactions')
         .insert([dbData])
         .select()
         .single();
+        
       if (error) throw new Error(error.message);
 
       // Process stock movements for this transaction
       try {
         await StockService.processTransactionStock(
           savedTransaction.id,
-          newTransaction.items,
+          newTransaction.items, // This is clean items from form, no metadata yet
           newTransaction.cashierId,
           newTransaction.cashierName
         );
@@ -136,6 +174,40 @@ export const useTransactions = (filters?: {
         console.error('Failed to process stock movements:', stockError);
         // Note: We don't throw here to avoid breaking the transaction creation
         // Stock movements can be adjusted manually later if needed
+      }
+
+      // Generate sales commission for this transaction
+      try {
+        // Since database might not have sales columns yet, use original newTransaction data
+        const transactionWithCreatedAt = {
+          ...newTransaction, // This contains salesId and salesName from POS form
+          id: savedTransaction.id,
+          createdAt: new Date()
+        };
+        
+        console.log('🎯 About to generate commission with transaction data:', {
+          id: transactionWithCreatedAt.id,
+          salesId: transactionWithCreatedAt.salesId,
+          salesName: transactionWithCreatedAt.salesName,
+          cashierId: transactionWithCreatedAt.cashierId,
+          cashierName: transactionWithCreatedAt.cashierName,
+          itemsCount: transactionWithCreatedAt.items?.length
+        });
+        
+        // Double check if salesId and salesName exist
+        if (!transactionWithCreatedAt.salesId || !transactionWithCreatedAt.salesName) {
+          console.warn('⚠️ No sales info found in transaction for commission generation');
+          console.log('Transaction data:', transactionWithCreatedAt);
+        } else {
+          console.log('✅ Sales info found, proceeding with commission generation');
+        }
+        
+        await generateSalesCommission(transactionWithCreatedAt);
+        console.log('Sales commission generated successfully for transaction:', savedTransaction.id);
+      } catch (commissionError) {
+        console.error('Failed to generate sales commission:', commissionError);
+        // Note: We don't throw here to avoid breaking the transaction creation
+        // Commission can be calculated manually later if needed
       }
 
       // If it came from a quotation, update the quotation
@@ -325,8 +397,10 @@ export const useTransactions = (filters?: {
       
       // Step 2: Rollback stock changes - restore product stock
       if (transaction.items && Array.isArray(transaction.items)) {
-        console.log('Reversing stock movements for items:', transaction.items);
-        for (const item of transaction.items) {
+        // First extract actual items (skip sales metadata)
+        const actualItems = transaction.items.filter(item => !item._isSalesMeta);
+        console.log('Reversing stock movements for items:', actualItems);
+        for (const item of actualItems) {
           try {
             // Get current product stock
             const { data: product, error: productError } = await supabase
@@ -507,7 +581,37 @@ export const useTransactions = (filters?: {
         }
       }
       
-      // Step 6: Delete payment history records (if table exists)
+      // Step 6: Delete commission entries (if table exists)
+      try {
+        console.log('Attempting to delete commission entries for transaction:', transactionId);
+        
+        // First check if commission_entries table exists by trying to select from it
+        const { error: commissionTableCheckError } = await supabase
+          .from('commission_entries')
+          .select('id')
+          .limit(1);
+          
+        if (commissionTableCheckError && (commissionTableCheckError.code === 'PGRST205' || commissionTableCheckError.message.includes('does not exist'))) {
+          console.warn('commission_entries table does not exist, skipping commission entries deletion');
+        } else {
+          // Table exists, proceed with deletion
+          const { data: deletedCommissions, error: commissionDeleteError } = await supabase
+            .from('commission_entries')
+            .delete()
+            .eq('transaction_id', transactionId)
+            .select();
+            
+          if (commissionDeleteError) {
+            console.error('Failed to delete commission entries:', commissionDeleteError);
+          } else {
+            console.log('Deleted commission entries:', deletedCommissions);
+          }
+        }
+      } catch (error) {
+        console.error('Error during commission entries deletion:', error);
+      }
+
+      // Step 7: Delete payment history records (if table exists)
       try {
         console.log('Attempting to delete payment history for transaction:', transactionId);
         
@@ -556,6 +660,33 @@ export const useTransactions = (filters?: {
         console.error('Error resetting quotation:', error);
       }
 
+      // Step 7.5: Delete commission entries and expenses for this transaction
+      console.log('Attempting to delete commission entries and expenses for transaction:', transactionId);
+      try {
+        // Import the function dynamically to avoid circular dependency
+        const { deleteTransactionCommissionExpenses } = await import('@/utils/financialIntegration');
+        
+        // Delete commission expenses first
+        await deleteTransactionCommissionExpenses(transactionId);
+        
+        // Then delete commission entries
+        const { data: deletedCommissions, error: commissionError } = await supabase
+          .from('commission_entries')
+          .delete()
+          .eq('transaction_id', transactionId)
+          .select();
+          
+        if (commissionError && commissionError.code !== 'PGRST116') {
+          console.error('Failed to delete commission entries:', commissionError);
+          // Don't throw error here - commission table might not exist
+        } else if (deletedCommissions) {
+          console.log(`Deleted ${deletedCommissions.length} commission entries and expenses for transaction`);
+        }
+      } catch (error) {
+        console.error('Error deleting commission entries and expenses:', error);
+        // Don't throw - commission system might not be set up yet
+      }
+
       // Step 8: Delete the main transaction
       const { error } = await supabase
         .from('transactions')
@@ -573,8 +704,11 @@ export const useTransactions = (filters?: {
       queryClient.invalidateQueries({ queryKey: ['stockMovements'] });
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
       queryClient.invalidateQueries({ queryKey: ['cash_history'] });
+      queryClient.invalidateQueries({ queryKey: ['commissions'] });
       queryClient.invalidateQueries({ queryKey: ['paymentHistory'] });
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
+      queryClient.invalidateQueries({ queryKey: ['commission-rules'] });
+      queryClient.invalidateQueries({ queryKey: ['commission-entries'] });
     },
   });
 

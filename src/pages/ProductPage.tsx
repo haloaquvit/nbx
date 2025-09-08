@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions"
 import { ProductType } from "@/types/product"
+import { Link } from "react-router-dom"
 
 export default function ProductPage() {
   const { products, upsertProduct, deleteProduct, isLoading } = useProducts()
@@ -36,7 +37,18 @@ export default function ProductPage() {
   const canDelete = hasPermission(PERMISSIONS.PRODUCTS)
 
   const baseColumns = [
-    { key: "name", header: "Nama Produk" },
+    { 
+      key: "name", 
+      header: "Nama Produk",
+      render: (row: any) => (
+        <Link 
+          to={`/products/${row.id}`} 
+          className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          {row.name}
+        </Link>
+      )
+    },
     {
       key: "type",
       header: "Jenis",

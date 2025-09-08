@@ -416,11 +416,15 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                       {canManageProducts && (
                         <TableCell>
                           <div className="flex gap-2">
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => navigate(`/products/${product.id}`)}
+                            >
+                              Detail
+                            </Button>
                             {canEditAllProducts && (
                               <Button variant="outline" size="sm" onClick={() => handleEditClick(product)}>Edit</Button>
-                            )}
-                            {isDesigner && (
-                              <Button variant="outline" size="sm" disabled className="text-gray-400">View Only</Button>
                             )}
                             {canDeleteProducts && (
                               <AlertDialog>

@@ -341,7 +341,7 @@ export function useDeliveries() {
           customer_name: transactionData?.customer_name || '',
           customer_address: transactionData?.customers?.address || '',
           customer_phone: transactionData?.customers?.phone || '',
-          delivery_date: request.deliveryDate.toISOString(),
+          delivery_date: new Date().toISOString(), // Always use server time for consistency
           photo_url: photoUrl,
           photo_drive_id: photoDriveId,
           notes: request.notes,
@@ -663,8 +663,197 @@ export function useDeliveries() {
     },
   })
 
+  // Delete delivery and restore stock
+  const deleteDelivery = useMutation({
+    mutationFn: async (deliveryId: string): Promise<void> => {
+      // Check user permission
+      const { data: userData } = await supabase.auth.getUser()
+      
+      if (!userData?.user) {
+        throw new Error('User tidak terautentikasi')
+      }
+
+      // Get user profile to check role
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', userData.user.id)
+        .single()
+
+      const userRole = profileData?.role || 'user'
+      
+      if (userRole !== 'admin' && userRole !== 'owner') {
+        throw new Error('Hanya admin dan owner yang dapat menghapus pengantaran')
+      }
+
+      // Get delivery details including items
+      const { data: deliveryData, error: deliveryError } = await supabase
+        .from('deliveries')
+        .select(`
+          *,
+          items:delivery_items(*)
+        `)
+        .eq('id', deliveryId)
+        .single()
+
+      if (deliveryError) {
+        throw new Error(`Gagal mengambil data pengantaran: ${deliveryError.message}`)
+      }
+
+      if (!deliveryData) {
+        throw new Error('Data pengantaran tidak ditemukan')
+      }
+
+      // Restore stock for each delivered item
+      try {
+        const { StockService } = await import('@/services/stockService')
+        const { data: userData } = await supabase.auth.getUser()
+        
+        if (userData?.user) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', userData.user.id)
+            .single()
+
+          // Get product data for stock restoration
+          const productIds = deliveryData.items?.map((item: any) => item.product_id) || []
+          
+          if (productIds.length > 0) {
+            const { data: productsData } = await supabase
+              .from('products')
+              .select('id, name, type, current_stock')
+              .in('id', productIds)
+
+            // Create reverse stock movements to restore stock
+            const restoreItems = deliveryData.items?.map((item: any) => {
+              const productData = productsData?.find(p => p.id === item.product_id)
+              return {
+                product: {
+                  id: item.product_id,
+                  name: item.product_name,
+                  type: productData?.type || 'Stock',
+                  currentStock: productData?.current_stock || 0,
+                },
+                quantity: -item.quantity_delivered, // Negative quantity to reverse the stock movement
+                notes: `Restore stock from deleted delivery ${deliveryData.delivery_number}`,
+              }
+            }) || []
+
+            // Process reverse stock movements
+            await StockService.processTransactionStock(
+              deliveryId,
+              restoreItems,
+              userData.user.id,
+              profileData?.full_name || 'Unknown User',
+              'delivery' // This will actually process the stock changes
+            )
+          }
+        }
+      } catch (stockError) {
+        console.error('Failed to restore stock for deleted delivery:', stockError)
+        // Continue with deletion even if stock restoration fails
+      }
+
+      // Delete delivery items first
+      const { error: itemsError } = await supabase
+        .from('delivery_items')
+        .delete()
+        .eq('delivery_id', deliveryId)
+
+      if (itemsError) {
+        console.error('Failed to delete delivery items:', itemsError)
+        // Continue with delivery deletion even if items deletion fails
+      }
+
+      // Delete delivery record
+      const { error: deliveryDeleteError } = await supabase
+        .from('deliveries')
+        .delete()
+        .eq('id', deliveryId)
+
+      if (deliveryDeleteError) {
+        throw new Error(`Gagal menghapus pengantaran: ${deliveryDeleteError.message}`)
+      }
+
+      // Update transaction status based on remaining deliveries
+      try {
+        const transactionId = deliveryData.transaction_id
+
+        // Get remaining deliveries for this transaction
+        const { data: remainingDeliveries } = await supabase
+          .from('deliveries')
+          .select(`
+            items:delivery_items(*)
+          `)
+          .eq('transaction_id', transactionId)
+
+        // Get transaction details
+        const { data: transactionData } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('id', transactionId)
+          .single()
+
+        if (transactionData) {
+          let allItemsDelivered = true
+          let anyItemsDelivered = false
+
+          const transactionItems = transactionData.items || []
+
+          for (const transactionItem of transactionItems) {
+            const productId = transactionItem.product?.id
+            if (!productId) continue
+
+            const orderedQuantity = transactionItem.quantity || 0
+
+            // Calculate total delivered quantity from remaining deliveries
+            let totalDelivered = 0
+            if (remainingDeliveries) {
+              for (const delivery of remainingDeliveries) {
+                for (const deliveryItem of (delivery.items || [])) {
+                  if (deliveryItem.product_id === productId) {
+                    totalDelivered += deliveryItem.quantity_delivered
+                  }
+                }
+              }
+            }
+
+            if (totalDelivered > 0) anyItemsDelivered = true
+            if (totalDelivered < orderedQuantity) allItemsDelivered = false
+          }
+
+          // Determine new status
+          let newStatus = 'Pesanan Masuk' // Default back to initial status
+          if (allItemsDelivered && anyItemsDelivered) {
+            newStatus = 'Selesai'
+          } else if (anyItemsDelivered) {
+            newStatus = 'Diantar Sebagian'
+          }
+
+          // Update transaction status
+          await supabase
+            .from('transactions')
+            .update({ status: newStatus })
+            .eq('id', transactionId)
+        }
+      } catch (statusError) {
+        console.error('Error updating transaction status after delivery deletion:', statusError)
+        // Don't fail the deletion if status update fails
+      }
+    },
+    onSuccess: () => {
+      // Invalidate related queries
+      queryClient.invalidateQueries({ queryKey: ['transactions-ready-for-delivery'] })
+      queryClient.invalidateQueries({ queryKey: ['transaction-delivery-info'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-history'] })
+    },
+  })
+
   return {
     createDelivery,
+    deleteDelivery,
   }
 }
 

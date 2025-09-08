@@ -34,7 +34,9 @@
       "Read(/D:\\App\\Aquvit Fix\\src\\pages/**)",
       "Read(/D:\\App\\Aquvit Fix\\src\\pages/**)",
       "Read(/D:\\App\\Aquvit Fix\\src\\pages/**)",
-      "Read(/D:\\App\\Aquvit Fix\\src\\pages/**)"
+      "Read(/D:\\App\\Aquvit Fix\\src\\pages/**)",
+      "Bash(npx supabase:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": [],

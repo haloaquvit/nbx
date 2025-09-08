@@ -33,6 +33,9 @@ import { useCustomers } from '@/hooks/useCustomers'
 import { useRetasi } from '@/hooks/useRetasi'
 import { supabase } from '@/integrations/supabase/client'
 import { useSalesEmployees } from '@/hooks/useSalesCommission'
+import { useProductPricing, usePriceCalculation } from '@/hooks/usePricing'
+import { PricingService } from '@/services/pricingService'
+import { Link } from 'react-router-dom'
 
 interface FormTransactionItem {
   id: number;
@@ -42,6 +45,9 @@ interface FormTransactionItem {
   harga: number;
   unit: string;
   designFileName?: string;
+  isBonus?: boolean;
+  bonusDescription?: string;
+  parentItemId?: number;
 }
 
 export const PosForm = () => {
@@ -88,6 +94,7 @@ export const PosForm = () => {
   const [retasiMessage, setRetasiMessage] = useState('');
   const [isOfficeSale, setIsOfficeSale] = useState(false);
   const [transactionNotes, setTransactionNotes] = useState('');
+  const [loadingPrices, setLoadingPrices] = useState<{[key: number]: boolean}>({});
 
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
@@ -100,6 +107,112 @@ export const PosForm = () => {
   }, [subtotalAfterDiskon, ppnEnabled, ppnPercentage, ppnMode]);
   const totalTagihan = useMemo(() => ppnCalculation.total, [ppnCalculation]);
   const sisaTagihan = useMemo(() => totalTagihan - paidAmount, [totalTagihan, paidAmount]);
+
+  // Helper function to create sample pricing rules for testing (tiered system)
+  const createSamplePricingRules = async (productId: string, basePrice: number) => {
+    try {
+      // Create bonus rules
+      const bonusRules = [
+        {
+          minQuantity: 100,
+          bonusValue: 1,
+          description: 'Beli 100+ gratis 1'
+        },
+        {
+          minQuantity: 500,
+          bonusValue: 25,
+          description: 'Beli 500+ gratis 25'
+        },
+        {
+          minQuantity: 1000,
+          bonusValue: 75,
+          description: 'Beli 1000+ gratis 75'
+        }
+      ];
+
+      for (const rule of bonusRules) {
+        await PricingService.createBonusPricing({
+          productId: productId,
+          minQuantity: rule.minQuantity,
+          maxQuantity: null, // No upper limit
+          bonusQuantity: rule.bonusValue,
+          bonusType: 'quantity',
+          bonusValue: rule.bonusValue,
+          description: rule.description
+        });
+      }
+
+      // Create stock-based pricing rules (different prices based on stock levels)
+      const stockPricingRules = [
+        {
+          minStock: 0,
+          maxStock: 50,
+          price: basePrice * 1.2, // Higher price when stock is low
+          description: 'Harga tinggi (stok rendah)'
+        },
+        {
+          minStock: 51,
+          maxStock: 200,
+          price: basePrice, // Normal price
+          description: 'Harga normal'
+        },
+        {
+          minStock: 201,
+          maxStock: null, // No upper limit
+          price: basePrice * 0.9, // Lower price when stock is high
+          description: 'Harga diskon (stok tinggi)'
+        }
+      ];
+
+      for (const rule of stockPricingRules) {
+        await PricingService.createStockPricing({
+          productId: productId,
+          minStock: rule.minStock,
+          maxStock: rule.maxStock,
+          price: rule.price
+        });
+      }
+
+      console.log('✅ Created tiered pricing rules (bonus + stock) for product:', productId);
+    } catch (error) {
+      console.error('❌ Failed to create sample pricing rules:', error);
+    }
+  };
+
+  // Function to calculate dynamic pricing for a product
+  const calculateDynamicPrice = async (product: Product, quantity: number) => {
+    try {
+      console.log('🔄 Calculating price for product:', product.name, 'quantity:', quantity);
+      let productPricing = await PricingService.getProductPricing(product.id)
+      console.log('📊 Product pricing data:', productPricing);
+      
+      // If no pricing data exists, create sample pricing rules (for testing)
+      if (!productPricing || (productPricing.bonusPricings.length === 0 && productPricing.stockPricings.length === 0)) {
+        console.log('🎯 No pricing rules found, creating sample rules...');
+        await createSamplePricingRules(product.id, product.basePrice);
+        productPricing = await PricingService.getProductPricing(product.id);
+        console.log('📊 Product pricing data after creating sample:', productPricing);
+      }
+      
+      if (productPricing) {
+        const priceCalculation = PricingService.calculatePrice(
+          product.basePrice,
+          product.currentStock,
+          quantity,
+          productPricing.stockPricings,
+          productPricing.bonusPricings
+        )
+        console.log('💰 Price calculation:', priceCalculation);
+        return {
+          price: priceCalculation.stockAdjustedPrice,
+          calculation: priceCalculation
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error calculating dynamic price:', error)
+    }
+    return { price: product.basePrice, calculation: null }
+  }
 
 
   useEffect(() => {
@@ -146,21 +259,45 @@ export const PosForm = () => {
     setItems([...items, newItem]);
   };
 
-  const handleItemChange = (index: number, field: keyof FormTransactionItem, value: any) => {
+  const handleItemChange = async (index: number, field: keyof FormTransactionItem, value: any) => {
+    const targetItem = items[index];
     const newItems = [...items];
     (newItems[index] as any)[field] = value;
 
     if (field === 'product' && value) {
       const selectedProduct = value as Product;
-      newItems[index].harga = selectedProduct.basePrice || 0;
+      setLoadingPrices(prev => ({ ...prev, [newItems[index].id]: true }));
+      const { price } = await calculateDynamicPrice(selectedProduct, newItems[index].qty);
+      newItems[index].harga = price;
       newItems[index].unit = selectedProduct.unit || 'pcs';
+      setLoadingPrices(prev => ({ ...prev, [newItems[index].id]: false }));
+    }
+    
+    if (field === 'qty' && newItems[index].product && !newItems[index].isBonus) {
+      // Handle main item quantity change with bonus updates
+      setLoadingPrices(prev => ({ ...prev, [newItems[index].id]: true }));
+      await updateItemWithBonuses(newItems[index], value);
+      setLoadingPrices(prev => ({ ...prev, [newItems[index].id]: false }));
+      return;
+    }
+
+    if (field === 'qty' && newItems[index].isBonus) {
+      // Allow manual bonus quantity adjustment
+      newItems[index].qty = value;
     }
     
     setItems(newItems);
   };
 
   const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    const itemToRemove = items[index];
+    if (itemToRemove.isBonus) {
+      // Remove only the bonus item
+      setItems(items.filter((_, i) => i !== index));
+    } else {
+      // Remove main item and all its bonus items
+      setItems(items.filter((item, i) => i !== index && item.parentItemId !== itemToRemove.id));
+    }
   };
 
   const handlePrintDialogClose = (shouldNavigate: boolean = true) => {
@@ -212,8 +349,12 @@ export const PosForm = () => {
       quantity: item.qty,
       price: item.harga,
       unit: item.unit,
-      width: 0, height: 0, notes: item.keterangan,
+      width: 0, height: 0, 
+      notes: item.isBonus 
+        ? `${item.keterangan}${item.keterangan ? ' - ' : ''}BONUS: ${item.bonusDescription || 'Bonus Item'}`
+        : item.keterangan,
       designFileName: item.designFileName,
+      isBonus: item.isBonus || false,
     }));
 
     const paymentStatus: PaymentStatus = sisaTagihan <= 0 ? 'Lunas' : 'Belum Lunas';
@@ -288,28 +429,101 @@ export const PosForm = () => {
     ).slice(0, 10); // Limit to 10 results
   }, [customers, customerSearch]);
 
-  const addToCart = (product: Product) => {
-    const existing = items.find(item => item.product?.id === product.id);
+  const addToCart = async (product: Product) => {
+    const existing = items.find(item => item.product?.id === product.id && !item.isBonus);
     if (existing) {
-      const newItems = items.map(item => 
-        item.product?.id === product.id 
-          ? { ...item, qty: item.qty + 1 }
-          : item
-      );
-      setItems(newItems);
+      const newQty = existing.qty + 1;
+      await updateItemWithBonuses(existing, newQty);
     } else {
-      const newItem: FormTransactionItem = {
-        id: Date.now(),
-        product: product,
-        keterangan: '',
-        qty: 1,
-        harga: product.basePrice || 0,
-        unit: product.unit || 'pcs'
-      };
-      setItems([...items, newItem]);
+      await addNewItemWithBonuses(product, 1);
     }
     setShowProductDropdown(false);
     setProductSearch('');
+  };
+
+  const updateItemWithBonuses = async (existingItem: FormTransactionItem, newQty: number) => {
+    const { price, calculation } = await calculateDynamicPrice(existingItem.product!, newQty);
+    
+    console.log('🎯 Price calculation result:', calculation);
+    console.log('🎯 Product:', existingItem.product?.name, 'Qty:', newQty, 'Price:', price);
+    
+    // Remove existing bonus items for this product
+    let newItems = items.filter(item => item.parentItemId !== existingItem.id);
+    
+    // Update main item
+    newItems = newItems.map(item => 
+      item.id === existingItem.id
+        ? { ...item, qty: newQty, harga: price }
+        : item
+    );
+    
+    // Add bonus items if any
+    if (calculation?.bonuses && calculation.bonuses.length > 0) {
+      console.log('🎁 Processing bonuses:', calculation.bonuses);
+      for (const bonus of calculation.bonuses) {
+        // Only add quantity-based bonuses as separate items
+        if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+          console.log('🎁 Adding bonus item:', bonus);
+          const bonusItem: FormTransactionItem = {
+            id: Date.now() + Math.random(),
+            product: existingItem.product,
+            keterangan: bonus.description || `Bonus - ${bonus.type}`,
+            qty: bonus.bonusQuantity,
+            harga: 0,
+            unit: existingItem.product!.unit || 'pcs',
+            isBonus: true,
+            bonusDescription: bonus.description,
+            parentItemId: existingItem.id
+          };
+          newItems.push(bonusItem);
+        }
+        // For discount bonuses, we don't add separate items as the price is already adjusted
+      }
+    } else {
+      console.log('❌ No bonuses found in calculation:', calculation);
+    }
+    
+    setItems(newItems);
+  };
+
+  const addNewItemWithBonuses = async (product: Product, quantity: number) => {
+    const { price, calculation } = await calculateDynamicPrice(product, quantity);
+    const newItemId = Date.now();
+    
+    const newItem: FormTransactionItem = {
+      id: newItemId,
+      product: product,
+      keterangan: '',
+      qty: quantity,
+      harga: price,
+      unit: product.unit || 'pcs'
+    };
+    
+    let newItems = [...items, newItem];
+    
+    // Add bonus items if any
+    if (calculation?.bonuses && calculation.bonuses.length > 0) {
+      for (const bonus of calculation.bonuses) {
+        // Only add quantity-based bonuses as separate items
+        if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+          const bonusItem: FormTransactionItem = {
+            id: Date.now() + Math.random(),
+            product: product,
+            keterangan: bonus.description || `Bonus - ${bonus.type}`,
+            qty: bonus.bonusQuantity,
+            harga: 0,
+            unit: product.unit || 'pcs',
+            isBonus: true,
+            bonusDescription: bonus.description,
+            parentItemId: newItemId
+          };
+          newItems.push(bonusItem);
+        }
+        // For discount bonuses, we don't add separate items as the price is already adjusted
+      }
+    }
+    
+    setItems(newItems);
   };
 
   return (
@@ -560,10 +774,21 @@ export const PosForm = () => {
                       {filteredProducts.map((product) => (
                         <div
                           key={product.id}
-                          className="p-4 hover:bg-gray-50 cursor-pointer border-b last:border-b-0 transition-colors"
+                          className="p-4 hover:bg-gray-50 border-b last:border-b-0 transition-colors cursor-pointer"
                           onClick={() => addToCart(product)}
                         >
-                          <div className="font-semibold text-base mb-1">{product.name}</div>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-semibold text-base text-gray-900">
+                                  {product.name}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-green-600 font-medium">
+                              <Plus className="h-5 w-5" />
+                            </div>
+                          </div>
                           <div className="flex items-center gap-2 mb-1">
                             <span className={`inline-flex px-2 py-0.5 rounded text-xs ${
                               product.type === 'Produksi' 
@@ -623,60 +848,69 @@ export const PosForm = () => {
                     </tr>
                   ) : (
                     items.map((item, index) => (
-                      <tr key={item.id} className="border-t">
+                      <tr key={item.id} className={`border-t ${item.isBonus ? 'bg-green-50' : ''}`}>
                         <td className="px-2 md:px-4 py-2 md:py-3">
-                          <Popover open={openProductDropdowns[index]} onOpenChange={(open) => {
-                            setOpenProductDropdowns(prev => ({ ...prev, [index]: open }));
-                          }}>
-                            <PopoverTrigger asChild disabled={retasiBlocked}>
-                              <Button
-                                variant="outline"
-                                role="combobox"
-                                className={cn(
-                                  "w-full justify-between text-xs h-8",
-                                  !item.product && "text-muted-foreground"
-                                )}
-                              >
-                                {item.product ? item.product.name : "Pilih produk..."}
-                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-[300px] p-0">
-                              <Command>
-                                <CommandInput placeholder="Cari produk..." />
-                                <CommandEmpty>Produk tidak ditemukan.</CommandEmpty>
-                                <CommandGroup className="max-h-64 overflow-y-auto">
-                                  {(products || []).map((product) => (
-                                    <CommandItem
-                                      key={product.id}
-                                      value={product.name}
-                                      onSelect={() => {
-                                        handleItemChange(index, 'product', product);
-                                        setOpenProductDropdowns(prev => ({ ...prev, [index]: false }));
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          "mr-2 h-4 w-4",
-                                          item.product?.id === product.id ? "opacity-100" : "opacity-0"
-                                        )}
-                                      />
-                                      <div>
-                                        <div className="font-medium">{product.name}</div>
-                                        <div className="text-xs text-gray-500">
-                                          {new Intl.NumberFormat("id-ID", {
-                                            style: "currency",
-                                            currency: "IDR",
-                                            maximumFractionDigits: 0,
-                                          }).format(product.basePrice || 0)} | {product.unit}
+                          {item.isBonus ? (
+                            <div className="text-xs text-green-700 font-medium">
+                              🎁 {item.product?.name} (Bonus)
+                              {item.bonusDescription && (
+                                <div className="text-xs text-gray-600 mt-1">{item.bonusDescription}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <Popover open={openProductDropdowns[index]} onOpenChange={(open) => {
+                              setOpenProductDropdowns(prev => ({ ...prev, [index]: open }));
+                            }}>
+                              <PopoverTrigger asChild disabled={retasiBlocked}>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  className={cn(
+                                    "w-full justify-between text-xs h-8",
+                                    !item.product && "text-muted-foreground"
+                                  )}
+                                >
+                                  {item.product ? item.product.name : "Pilih produk..."}
+                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[300px] p-0">
+                                <Command>
+                                  <CommandInput placeholder="Cari produk..." />
+                                  <CommandEmpty>Produk tidak ditemukan.</CommandEmpty>
+                                  <CommandGroup className="max-h-64 overflow-y-auto">
+                                    {(products || []).map((product) => (
+                                      <CommandItem
+                                        key={product.id}
+                                        value={product.name}
+                                        onSelect={() => {
+                                          handleItemChange(index, 'product', product);
+                                          setOpenProductDropdowns(prev => ({ ...prev, [index]: false }));
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            item.product?.id === product.id ? "opacity-100" : "opacity-0"
+                                          )}
+                                        />
+                                        <div>
+                                          <div className="font-medium">{product.name}</div>
+                                          <div className="text-xs text-gray-500">
+                                            {new Intl.NumberFormat("id-ID", {
+                                              style: "currency",
+                                              currency: "IDR",
+                                              maximumFractionDigits: 0,
+                                            }).format(product.basePrice || 0)} | {product.unit}
+                                          </div>
                                         </div>
-                                      </div>
-                                    </CommandItem>
-                                  ))}
-                                </CommandGroup>
-                              </Command>
-                            </PopoverContent>
-                          </Popover>
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                          )}
                         </td>
                         <td className="px-2 md:px-4 py-2 md:py-3 text-center">
                           <Input
@@ -690,11 +924,32 @@ export const PosForm = () => {
                         </td>
                         <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">{item.unit}</td>
                         <td className="px-2 md:px-4 py-2 md:py-3 text-right">
+                          {item.isBonus ? (
+                            <div className="text-center text-xs text-green-600 font-medium">GRATIS</div>
+                          ) : (
+                            <div className="relative">
+                              <Input
+                                type="number"
+                                value={item.harga}
+                                onChange={(e) => handleItemChange(index, 'harga', Number(e.target.value) || 0)}
+                                className="w-20 md:w-32 text-right text-xs"
+                                disabled={retasiBlocked || loadingPrices[item.id]}
+                              />
+                              {loadingPrices[item.id] && (
+                                <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70">
+                                  <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-2 md:px-4 py-2 md:py-3 text-left">
                           <Input
-                            type="number"
-                            value={item.harga}
-                            onChange={(e) => handleItemChange(index, 'harga', Number(e.target.value) || 0)}
-                            className="w-20 md:w-32 text-right text-xs"
+                            type="text"
+                            placeholder="Catatan..."
+                            value={item.keterangan}
+                            onChange={(e) => handleItemChange(index, 'keterangan', e.target.value)}
+                            className="w-20 md:w-32 text-xs"
                             disabled={retasiBlocked}
                           />
                         </td>

@@ -2,7 +2,6 @@ export interface CommissionRule {
   id: string
   productId: string
   productName: string
-  productSku?: string
   role: 'sales' | 'driver' | 'helper'
   ratePerQty: number
   createdAt: Date
@@ -16,7 +15,6 @@ export interface CommissionEntry {
   role: 'sales' | 'driver' | 'helper'
   productId: string
   productName: string
-  productSku?: string
   quantity: number
   ratePerQty: number
   amount: number

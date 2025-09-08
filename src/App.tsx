@@ -10,6 +10,7 @@ import { useChunkErrorHandler } from "@/hooks/useChunkErrorHandler";
 import { useMobileDetection } from "@/hooks/useMobileDetection";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { updateFavicon } from "@/utils/faviconUtils";
+import { useCacheManager, useBackgroundRefresh } from "@/hooks/useCacheManager";
 
 // Lazy load all pages
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
@@ -17,6 +18,7 @@ const PosPage = lazy(() => import("@/pages/PosPage"));
 const TransactionListPage = lazy(() => import("@/pages/TransactionListPage"));
 const TransactionDetailPage = lazy(() => import("@/pages/TransactionDetailPage"));
 const ProductPage = lazy(() => import("@/pages/ProductPage"));
+const ProductDetailPage = lazy(() => import("@/pages/ProductDetailPage"));
 const MaterialPage = lazy(() => import("@/pages/MaterialPage"));
 const ProductionPage = lazy(() => import("@/pages/ProductionPage"));
 const MaterialDetailPage = lazy(() => import("@/pages/MaterialDetailPage"));
@@ -59,12 +61,30 @@ function App() {
   // Company settings for favicon
   const { settings } = useCompanySettings();
   
+  // Cache management and optimization
+  const { prefetchCriticalData, getCacheStats } = useCacheManager();
+  useBackgroundRefresh();
+  
   // Update favicon when company logo changes
   useEffect(() => {
     if (settings?.logo) {
       updateFavicon(settings.logo);
     }
   }, [settings?.logo]);
+
+  // Prefetch critical data on app load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      prefetchCriticalData();
+      
+      // Log cache stats in development
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📊 Cache Stats:', getCacheStats());
+      }
+    }, 1000); // Delay to avoid blocking initial load
+
+    return () => clearTimeout(timer);
+  }, [prefetchCriticalData, getCacheStats]);
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" storageKey="vite-ui-theme">
@@ -98,6 +118,7 @@ function App() {
                   <Route path="/transactions" element={<TransactionListPage />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
                   <Route path="/products" element={<ProductPage />} />
+                  <Route path="/products/:id" element={<ProductDetailPage />} />
                   <Route path="/materials" element={<MaterialPage />} />
                   <Route path="/production" element={<ProductionPage />} />
                   <Route path="/materials/:materialId" element={<MaterialDetailPage />} />

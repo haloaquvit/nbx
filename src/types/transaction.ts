@@ -10,6 +10,7 @@ export interface TransactionItem {
   unit: string; // Satuan produk (pcs, m, box, etc.)
   designFile?: File | null; // Untuk upload file
   designFileName?: string; // Untuk menyimpan nama file
+  isBonus?: boolean; // Menandai apakah item ini adalah bonus (tidak dihitung komisi)
 }
 
 export type TransactionStatus = 

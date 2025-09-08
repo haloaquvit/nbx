@@ -32,12 +32,14 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle, FileText } from "lucide-react"
+import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle, FileText, Trash2 } from "lucide-react"
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
+import { useAuth } from "@/hooks/useAuth"
+import { Link } from "react-router-dom"
 
 interface DeliveryManagementProps {
   transaction: TransactionDeliveryInfo;
@@ -48,14 +50,19 @@ interface DeliveryManagementProps {
 
 export function DeliveryManagement({ transaction, onClose, embedded = false, onDeliveryCreated }: DeliveryManagementProps) {
   const { toast } = useToast()
-  const { createDelivery } = useDeliveries()
+  const { user } = useAuth()
+  const { createDelivery, deleteDelivery } = useDeliveries()
   const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()
   const [isOpen, setIsOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  
+  // Check if user is admin or owner
+  const canDeleteDelivery = user?.role === 'admin' || user?.role === 'owner'
   
   const [formData, setFormData] = useState<DeliveryFormData>({
     transactionId: transaction.id,
-    deliveryDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    deliveryDate: "", // Not used anymore, server time will be used
     notes: "",
     driverId: "",
     helperId: "",
@@ -197,7 +204,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
       // Reset form
       setFormData(prev => ({
         ...prev,
-        deliveryDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+        deliveryDate: "", // Not used anymore
         notes: "",
         driverId: "",
         helperId: "",
@@ -215,6 +222,29 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
       })
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleDeleteDelivery = async (deliveryId: string, deliveryNumber: number) => {
+    if (!confirm(`Apakah Anda yakin ingin menghapus pengantaran #${deliveryNumber}? Stock akan dikembalikan.`)) {
+      return
+    }
+
+    setIsDeleting(deliveryId)
+    try {
+      await deleteDelivery.mutateAsync(deliveryId)
+      toast({
+        title: "Pengantaran Berhasil Dihapus",
+        description: `Pengantaran #${deliveryNumber} telah dihapus dan stock dikembalikan`,
+      })
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Gagal menghapus pengantaran"
+      })
+    } finally {
+      setIsDeleting(null)
     }
   }
 
@@ -277,16 +307,12 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
               </DialogHeader>
 
               <div className="grid gap-6">
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="deliveryDate">Waktu Pengantaran</Label>
-                    <Input
-                      id="deliveryDate"
-                      type="datetime-local"
-                      value={formData.deliveryDate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, deliveryDate: e.target.value }))}
-                    />
-                  </div>
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                  <p className="text-sm text-blue-700">
+                    💡 <strong>Waktu pengantaran akan otomatis dicatat saat pengantaran disimpan</strong>
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="driverId">Supir *</Label>
                     <Select
@@ -345,7 +371,12 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                         <TableRow key={item.productId}>
                           <TableCell>
                             <div>
-                              <div className="font-medium">{item.productName}</div>
+                              <Link 
+                                to={`/products/${item.productId}`}
+                                className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                              >
+                                {item.productName}
+                              </Link>
                               {(item.width || item.height) && (
                                 <div className="text-sm text-muted-foreground">
                                   {item.width}×{item.height} {item.unit}
@@ -458,7 +489,12 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                   <TableRow key={item.productId}>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{item.productName}</div>
+                        <Link 
+                          to={`/products/${item.productId}`}
+                          className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          {item.productName}
+                        </Link>
                         {(item.width || item.height) && (
                           <div className="text-sm text-muted-foreground">
                             {item.width}×{item.height} {item.unit}
@@ -515,6 +551,17 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                               Lihat Foto
                             </Button>
                           )}
+                          {canDeleteDelivery && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteDelivery(delivery.id, delivery.deliveryNumber)}
+                              disabled={isDeleting === delivery.id}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              {isDeleting === delivery.id ? "Menghapus..." : "Hapus"}
+                            </Button>
+                          )}
                         </div>
                       </div>
                       
@@ -524,7 +571,13 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                           <ul className="text-sm text-muted-foreground space-y-1">
                             {delivery.items.map((item) => (
                               <li key={item.id}>
-                                {item.productName}: {item.quantityDelivered} {item.unit}
+                                <Link 
+                                  to={`/products/${item.productId}`}
+                                  className="text-blue-600 hover:text-blue-800 hover:underline"
+                                >
+                                  {item.productName}
+                                </Link>
+                                : {item.quantityDelivered} {item.unit}
                                 {item.notes && (
                                   <span className="text-blue-600"> • {item.notes}</span>
                                 )}
