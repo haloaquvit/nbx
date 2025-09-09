@@ -77,8 +77,10 @@ export interface DeliveryFormData {
   driverId: string;
   helperId: string;
   items: {
+    itemId: string; // Unique identifier per item row
     productId: string;
     productName: string;
+    isBonus?: boolean;
     orderedQuantity: number;
     deliveredQuantity: number;
     remainingQuantity: number;

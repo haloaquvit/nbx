@@ -66,9 +66,11 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
     notes: "",
     driverId: "",
     helperId: "",
-    items: transaction.deliverySummary.map(item => ({
+    items: transaction.deliverySummary.map((item, index) => ({
+      itemId: `${item.productId}-${index}`,
       productId: item.productId,
       productName: item.productName,
+      isBonus: item.productName.includes("BONUS") || item.productName.includes("(BONUS)"),
       orderedQuantity: item.orderedQuantity,
       deliveredQuantity: item.deliveredQuantity,
       remainingQuantity: item.remainingQuantity,
@@ -81,22 +83,22 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
     photo: undefined,
   })
 
-  const handleItemQuantityChange = (productId: string, quantityToDeliver: number) => {
+  const handleItemQuantityChange = (itemId: string, quantityToDeliver: number) => {
     setFormData(prev => ({
       ...prev,
       items: prev.items.map(item =>
-        item.productId === productId
+        item.itemId === itemId
           ? { ...item, quantityToDeliver: Math.max(0, Math.min(quantityToDeliver, item.remainingQuantity)) }
           : item
       )
     }))
   }
 
-  const handleItemNotesChange = (productId: string, notes: string) => {
+  const handleItemNotesChange = (itemId: string, notes: string) => {
     setFormData(prev => ({
       ...prev,
       items: prev.items.map(item =>
-        item.productId === productId ? { ...item, notes } : item
+        item.itemId === itemId ? { ...item, notes } : item
       )
     }))
   }
@@ -367,21 +369,23 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {formData.items.map((item) => (
-                        <TableRow key={item.productId}>
+                      {formData.items.map((item, index) => (
+                        <TableRow key={item.itemId} className={item.isBonus ? "bg-orange-50" : ""}>
                           <TableCell>
                             <div>
-                              <Link 
-                                to={`/products/${item.productId}`}
-                                className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                              >
-                                {item.productName}
-                              </Link>
-                              {(item.width || item.height) && (
-                                <div className="text-sm text-muted-foreground">
-                                  {item.width}×{item.height} {item.unit}
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <Link 
+                                  to={`/products/${item.productId}`}
+                                  className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                >
+                                  {item.productName}
+                                </Link>
+                                {item.isBonus && (
+                                  <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 border-orange-300">
+                                    BONUS
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell>{item.orderedQuantity} {item.unit}</TableCell>
@@ -393,7 +397,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                               min="0"
                               max={item.remainingQuantity}
                               value={item.quantityToDeliver}
-                              onChange={(e) => handleItemQuantityChange(item.productId, parseInt(e.target.value) || 0)}
+                              onChange={(e) => handleItemQuantityChange(item.itemId, parseInt(e.target.value) || 0)}
                               placeholder={`Maks: ${item.remainingQuantity}`}
                               className="w-20"
                             />
@@ -406,7 +410,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                           <TableCell>
                             <Input
                               value={item.notes}
-                              onChange={(e) => handleItemNotesChange(item.productId, e.target.value)}
+                              onChange={(e) => handleItemNotesChange(item.itemId, e.target.value)}
                               placeholder="Catatan..."
                               className="w-32"
                             />
@@ -495,11 +499,6 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                         >
                           {item.productName}
                         </Link>
-                        {(item.width || item.height) && (
-                          <div className="text-sm text-muted-foreground">
-                            {item.width}×{item.height} {item.unit}
-                          </div>
-                        )}
                       </div>
                     </TableCell>
                     <TableCell>{item.orderedQuantity} {item.unit}</TableCell>

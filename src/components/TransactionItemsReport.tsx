@@ -27,6 +27,7 @@ interface TransactionItem {
   total: number
   status: string
   cashierName: string
+  isBonus: boolean
 }
 
 interface MaterialUsage {
@@ -50,6 +51,7 @@ export const TransactionItemsReport = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
+  const [itemFilter, setItemFilter] = useState<'all' | 'regular' | 'bonus'>('all')
   const [reportData, setReportData] = useState<TransactionItem[]>([])
   const [materialUsageData, setMaterialUsageData] = useState<MaterialUsage[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -135,17 +137,25 @@ export const TransactionItemsReport = () => {
       if (transactionDate >= fromDate && transactionDate <= toDate) {
         // Extract each item from transaction
         transaction.items?.forEach((item: any) => {
+          const itemName = item.product?.name || item.name || 'Unknown Item'
+          const isBonus = itemName.includes('BONUS') || itemName.includes('(BONUS)') || Boolean(item.isBonus)
+          
+          // Apply item filter
+          if (itemFilter === 'regular' && isBonus) return
+          if (itemFilter === 'bonus' && !isBonus) return
+          
           items.push({
             transactionId: transaction.id,
             transactionDate: transactionDate,
             customerName: transaction.customerName || 'Customer',
-            itemName: item.product?.name || item.name || 'Unknown Item',
+            itemName: itemName,
             quantity: Number(item.quantity || 0),
             unit: item.product?.unit || item.unit || 'pcs',
             price: Number(item.product?.basePrice || item.price || 0),
             total: Number(item.quantity || 0) * Number(item.product?.basePrice || item.price || 0),
             status: transaction.status,
-            cashierName: transaction.cashierName || 'Unknown'
+            cashierName: transaction.cashierName || 'Unknown',
+            isBonus: isBonus
           })
         })
       }
@@ -181,11 +191,13 @@ export const TransactionItemsReport = () => {
   }
 
   const getReportTitle = () => {
+    const itemFilterText = itemFilter === 'all' ? '' : itemFilter === 'regular' ? ' (Item Reguler)' : ' (Item Bonus)'
+    
     if (filterType === 'monthly') {
       const monthName = months.find(m => m.value === selectedMonth)?.label
-      return `Laporan Item Keluar - ${monthName} ${selectedYear}`
+      return `Laporan Item Keluar${itemFilterText} - ${monthName} ${selectedYear}`
     } else {
-      return `Laporan Item Keluar - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
+      return `Laporan Item Keluar${itemFilterText} - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
     }
   }
 
@@ -208,7 +220,7 @@ export const TransactionItemsReport = () => {
       format(item.transactionDate, 'dd/MM/yyyy'),
       item.transactionId,
       item.customerName,
-      item.itemName,
+      item.isBonus ? `${item.itemName} [BONUS]` : item.itemName,
       item.quantity.toString(),
       item.unit,
       `Rp ${item.price.toLocaleString()}`,
@@ -248,17 +260,27 @@ export const TransactionItemsReport = () => {
     const totalQuantity = reportData.reduce((sum, item) => sum + item.quantity, 0)
     const totalValue = reportData.reduce((sum, item) => sum + item.total, 0)
     const uniqueTransactions = new Set(reportData.map(item => item.transactionId)).size
+    const regularItems = reportData.filter(item => !item.isBonus).length
+    const bonusItems = reportData.filter(item => item.isBonus).length
     
     doc.setFont('helvetica', 'normal')
     doc.text(`• Total Item: ${totalItems}`, 14, finalY + 8)
-    doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 16)
-    doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 24)
-    doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 32)
+    if (itemFilter === 'all') {
+      doc.text(`• Item Reguler: ${regularItems}, Item Bonus: ${bonusItems}`, 14, finalY + 16)
+      doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 24)
+      doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 32)
+      doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 40)
+    } else {
+      doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 16)
+      doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 24)
+      doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 32)
+    }
     
     // Save PDF with dynamic filename
+    const filterSuffix = itemFilter === 'regular' ? '-Reguler' : itemFilter === 'bonus' ? '-Bonus' : ''
     const filename = filterType === 'monthly' 
-      ? `Laporan-Item-Keluar-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.pdf`
-      : `Laporan-Item-Keluar-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.pdf`
+      ? `Laporan-Item-Keluar${filterSuffix}-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.pdf`
+      : `Laporan-Item-Keluar${filterSuffix}-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.pdf`
     doc.save(filename)
   }
 
@@ -351,17 +373,33 @@ export const TransactionItemsReport = () => {
         <CardContent className="space-y-4">
           <div className="space-y-4">
             {/* Filter Type Selection */}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">Jenis Filter</Label>
-              <Select value={filterType} onValueChange={(value: 'monthly' | 'dateRange') => setFilterType(value)}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="monthly">Bulanan</SelectItem>
-                  <SelectItem value="dateRange">Rentang Tanggal</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Jenis Filter</Label>
+                <Select value={filterType} onValueChange={(value: 'monthly' | 'dateRange') => setFilterType(value)}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Bulanan</SelectItem>
+                    <SelectItem value="dateRange">Rentang Tanggal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Filter Item</Label>
+                <Select value={itemFilter} onValueChange={(value: 'all' | 'regular' | 'bonus') => setItemFilter(value)}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Item</SelectItem>
+                    <SelectItem value="regular">Item Reguler</SelectItem>
+                    <SelectItem value="bonus">Item Bonus</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Monthly Filter */}
@@ -525,7 +563,14 @@ export const TransactionItemsReport = () => {
                           </TableCell>
                           <TableCell>
                             <div>
-                              <div className="font-medium">{item.itemName}</div>
+                              <div className="font-medium flex items-center gap-2">
+                                {item.itemName}
+                                {item.isBonus && (
+                                  <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 border-orange-300">
+                                    BONUS
+                                  </Badge>
+                                )}
+                              </div>
                               <div className="text-sm text-muted-foreground">{item.unit}</div>
                             </div>
                           </TableCell>
@@ -662,13 +707,29 @@ export const TransactionItemsReport = () => {
             </Tabs>
 
             {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mt-6">
               <Card>
                 <CardContent className="p-4">
                   <div className="text-2xl font-bold">{reportData.length}</div>
                   <div className="text-sm text-muted-foreground">Total Item</div>
                 </CardContent>
               </Card>
+              {itemFilter === 'all' && (
+                <>
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-blue-600">{reportData.filter(item => !item.isBonus).length}</div>
+                      <div className="text-sm text-muted-foreground">Item Reguler</div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="text-2xl font-bold text-orange-600">{reportData.filter(item => item.isBonus).length}</div>
+                      <div className="text-sm text-muted-foreground">Item Bonus</div>
+                    </CardContent>
+                  </Card>
+                </>
+              )}
               <Card>
                 <CardContent className="p-4">
                   <div className="text-2xl font-bold">{materialUsageData.length}</div>

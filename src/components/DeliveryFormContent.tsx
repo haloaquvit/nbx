@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
+import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
 import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
@@ -37,9 +38,11 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
     notes: "",
     driverId: "",
     helperId: "",
-    items: transaction.deliverySummary.map(item => ({
+    items: transaction.deliverySummary.map((item, index) => ({
+      itemId: `${item.productId}-${index}`, // Unique identifier per row
       productId: item.productId,
       productName: item.productName,
+      isBonus: item.productName.includes("BONUS") || item.productName.includes("(BONUS)"),
       orderedQuantity: item.orderedQuantity,
       deliveredQuantity: item.deliveredQuantity,
       remainingQuantity: item.remainingQuantity,
@@ -52,22 +55,22 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
     photo: undefined,
   })
 
-  const handleItemQuantityChange = (productId: string, quantityToDeliver: number) => {
+  const handleItemQuantityChange = (itemId: string, quantityToDeliver: number) => {
     setFormData(prev => ({
       ...prev,
       items: prev.items.map(item =>
-        item.productId === productId
+        item.itemId === itemId
           ? { ...item, quantityToDeliver: Math.max(0, Math.min(quantityToDeliver, item.remainingQuantity)) }
           : item
       )
     }))
   }
 
-  const handleItemNotesChange = (productId: string, notes: string) => {
+  const handleItemNotesChange = (itemId: string, notes: string) => {
     setFormData(prev => ({
       ...prev,
       items: prev.items.map(item =>
-        item.productId === productId ? { ...item, notes } : item
+        item.itemId === itemId ? { ...item, notes } : item
       )
     }))
   }
@@ -235,16 +238,18 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
             </TableRow>
           </TableHeader>
           <TableBody>
-            {formData.items.map((item) => (
-              <TableRow key={item.productId}>
+            {formData.items.map((item, index) => (
+              <TableRow key={item.itemId} className={item.isBonus ? "bg-orange-50" : ""}>
                 <TableCell>
                   <div>
-                    <div className="font-medium">{item.productName}</div>
-                    {(item.width || item.height) && (
-                      <div className="text-sm text-muted-foreground">
-                        {item.width}×{item.height} {item.unit}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{item.productName}</span>
+                      {item.isBonus && (
+                        <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 border-orange-300">
+                          BONUS
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell>{item.orderedQuantity} {item.unit}</TableCell>
@@ -256,7 +261,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
                     min="0"
                     max={item.remainingQuantity}
                     value={item.quantityToDeliver}
-                    onChange={(e) => handleItemQuantityChange(item.productId, parseInt(e.target.value) || 0)}
+                    onChange={(e) => handleItemQuantityChange(item.itemId, parseInt(e.target.value) || 0)}
                     placeholder={`Maks: ${item.remainingQuantity}`}
                     className="w-20"
                   />
@@ -269,7 +274,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
                 <TableCell>
                   <Input
                     value={item.notes}
-                    onChange={(e) => handleItemNotesChange(item.productId, e.target.value)}
+                    onChange={(e) => handleItemNotesChange(item.itemId, e.target.value)}
                     placeholder="Catatan..."
                     className="w-32"
                   />

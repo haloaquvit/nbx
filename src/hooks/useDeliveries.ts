@@ -119,11 +119,12 @@ export function useTransactionsReadyForDelivery() {
             const width = item.width
             const height = item.height
 
-            // Calculate delivered quantity for this product
+            // Calculate delivered quantity for this specific product name (to separate regular vs bonus)
             let deliveredQuantity = 0
             for (const delivery of deliveries) {
               for (const deliveryItem of delivery.items) {
-                if (deliveryItem.productId === productId) {
+                // Match by both productId AND productName to differentiate bonus vs regular items
+                if (deliveryItem.productId === productId && deliveryItem.productName === productName) {
                   deliveredQuantity += deliveryItem.quantityDelivered
                 }
               }
@@ -217,6 +218,7 @@ export function useTransactionDeliveryInfo(transactionId: string) {
           width: item.width,
           height: item.height,
           notes: item.notes,
+          isBonus: item.is_bonus || false,
           createdAt: new Date(item.created_at),
         })),
         createdAt: new Date(d.created_at),
@@ -243,11 +245,12 @@ export function useTransactionDeliveryInfo(transactionId: string) {
         const width = item.width
         const height = item.height
 
-        // Calculate delivered quantity for this product
+        // Calculate delivered quantity for this specific product name (to separate regular vs bonus)
         let deliveredQuantity = 0
         for (const delivery of deliveries) {
           for (const deliveryItem of delivery.items) {
-            if (deliveryItem.productId === productId) {
+            // Match by both productId AND productName to differentiate bonus vs regular items
+            if (deliveryItem.productId === productId && deliveryItem.productName === productName) {
               deliveredQuantity += deliveryItem.quantityDelivered
             }
           }
@@ -333,11 +336,26 @@ export function useDeliveries() {
         throw new Error(`Tidak dapat mengambil data transaksi: ${transactionError.message}`)
       }
 
+      // Get next delivery number for this transaction
+      const { data: existingDeliveries } = await supabase
+        .from('deliveries')
+        .select('delivery_number')
+        .eq('transaction_id', request.transactionId)
+        .order('delivery_number', { ascending: false })
+        .limit(1);
+
+      const nextDeliveryNumber = existingDeliveries && existingDeliveries.length > 0 
+        ? existingDeliveries[0].delivery_number + 1 
+        : 1;
+
+      console.log(`📦 Creating delivery #${nextDeliveryNumber} for transaction ${request.transactionId}`);
+
       // Create delivery record (handle table not existing gracefully)
       const { data: deliveryData, error: deliveryError } = await supabase
         .from('deliveries')
         .insert({
           transaction_id: request.transactionId,
+          delivery_number: nextDeliveryNumber,
           customer_name: transactionData?.customer_name || '',
           customer_address: transactionData?.customers?.address || '',
           customer_phone: transactionData?.customers?.phone || '',
@@ -350,6 +368,7 @@ export function useDeliveries() {
         })
         .select()
         .single()
+
 
       if (deliveryError) {
         console.error('[useDeliveries] Delivery creation error:', deliveryError)
@@ -370,11 +389,51 @@ export function useDeliveries() {
           throw new Error('Tabel pengantaran belum tersedia. Silakan jalankan database migration terlebih dahulu.')
         }
         
-        if (deliveryError.code === '23505' && deliveryError.message.includes('deliveries_delivery_number_key')) {
-          throw new Error('Terjadi konflik nomor pengantaran. Silakan coba lagi dalam beberapa saat.')
+        if (deliveryError.code === '23505' && (deliveryError.message.includes('deliveries_delivery_number_key') || deliveryError.message.includes('deliveries_transaction_delivery_number_key'))) {
+          console.warn('Delivery number conflict detected, retrying with next number...');
+          
+          // Retry with next available number
+          const { data: retryDeliveries } = await supabase
+            .from('deliveries')
+            .select('delivery_number')
+            .eq('transaction_id', request.transactionId)
+            .order('delivery_number', { ascending: false })
+            .limit(1);
+
+          const retryDeliveryNumber = retryDeliveries && retryDeliveries.length > 0 
+            ? retryDeliveries[0].delivery_number + 1 
+            : 1;
+
+          console.log(`🔄 Retrying with delivery #${retryDeliveryNumber}`);
+
+          // Try again with updated number
+          const { data: retryDeliveryData, error: retryError } = await supabase
+            .from('deliveries')
+            .insert({
+              transaction_id: request.transactionId,
+              delivery_number: retryDeliveryNumber,
+              customer_name: transactionData?.customer_name || '',
+              customer_address: transactionData?.customers?.address || '',
+              customer_phone: transactionData?.customers?.phone || '',
+              delivery_date: new Date().toISOString(),
+              photo_url: photoUrl,
+              photo_drive_id: photoDriveId,
+              notes: request.notes,
+              driver_id: request.driverId,
+              helper_id: request.helperId,
+            })
+            .select()
+            .single();
+
+          if (retryError) {
+            throw new Error(`Failed to create delivery after retry: ${retryError.message}`);
+          }
+          
+          // Use retry data for the rest of the function
+          deliveryData = retryDeliveryData;
+        } else {
+          throw new Error(`Database error: ${deliveryError.message}`)
         }
-        
-        throw new Error(`Database error: ${deliveryError.message}`)
       }
 
       // Validate product IDs exist in products table first
@@ -433,6 +492,11 @@ export function useDeliveries() {
           }
           if (item.height !== undefined && item.height !== null) {
             itemData.height = item.height
+          }
+          
+          // Add isBonus field for commission calculation
+          if (item.isBonus !== undefined) {
+            itemData.is_bonus = item.isBonus
           }
           
           return itemData
@@ -509,15 +573,23 @@ export function useDeliveries() {
             .eq('id', userData.user.id)
             .single()
           
+          // Filter items with delivered quantity > 0 for stock processing
+          const deliveredItems = request.items.filter(item => item.quantityDelivered > 0);
+          
+          if (deliveredItems.length === 0) {
+            console.warn('⚠️ No items with delivered quantity > 0 found for stock processing');
+            return result;
+          }
+
           // Fetch actual product data for accurate stock processing
-          const productIds = request.items.map(item => item.productId)
+          const productIds = deliveredItems.map(item => item.productId)
           const { data: productsData } = await supabase
             .from('products')
             .select('id, name, type, current_stock')
             .in('id', productIds)
 
           // Create transaction items format for stock processing
-          const transactionItems = request.items.map(item => {
+          const transactionItems = deliveredItems.map(item => {
             const productData = productsData?.find(p => p.id === item.productId)
             return {
               product: {
@@ -531,6 +603,19 @@ export function useDeliveries() {
             }
           })
 
+          console.log('🔄 Processing stock movements for delivery:', {
+            deliveryId: deliveryData.id,
+            deliveryNumber: deliveryData.delivery_number,
+            itemsCount: transactionItems.length,
+            items: transactionItems.map(item => ({
+              productId: item.product.id,
+              productName: item.product.name,
+              type: item.product.type,
+              currentStock: item.product.currentStock,
+              quantityDelivered: item.quantity
+            }))
+          });
+
           // Process stock movements for the delivered items
           await StockService.processTransactionStock(
             deliveryData.id, // Use delivery ID as reference
@@ -539,6 +624,8 @@ export function useDeliveries() {
             profileData?.full_name || 'Unknown User',
             'delivery' // Specify this is a delivery, not a transaction
           )
+
+          console.log('✅ Stock movements processed successfully for delivery:', deliveryData.id);
         }
       } catch (stockError) {
         console.error('Failed to process stock movements for delivery:', stockError)
@@ -642,6 +729,7 @@ export function useDeliveries() {
           width: item.width,
           height: item.height,
           notes: item.notes,
+          isBonus: item.is_bonus || false,
           createdAt: new Date(item.created_at),
         })),
         createdAt: new Date(deliveryData.created_at),
@@ -652,13 +740,20 @@ export function useDeliveries() {
       if ((deliveryData as any)._invalidProductIds) {
         result._invalidProductIds = (deliveryData as any)._invalidProductIds;
       }
+
+      // Generate delivery commission for driver and helper
+      try {
+        const { generateDeliveryCommission } = await import('@/utils/commissionUtils');
+        await generateDeliveryCommission(result);
+      } catch (commissionError) {
+        // Don't fail delivery creation if commission generation fails
+      }
       
       return result;
     },
     onSuccess: () => {
-      // Invalidate related queries
+      // Only invalidate essential queries for better performance
       queryClient.invalidateQueries({ queryKey: ['transactions-ready-for-delivery'] })
-      queryClient.invalidateQueries({ queryKey: ['transaction-delivery-info'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
     },
   })
@@ -676,7 +771,7 @@ export function useDeliveries() {
       // Get user profile to check role
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, full_name')
         .eq('id', userData.user.id)
         .single()
 
@@ -728,6 +823,12 @@ export function useDeliveries() {
             // Create reverse stock movements to restore stock
             const restoreItems = deliveryData.items?.map((item: any) => {
               const productData = productsData?.find(p => p.id === item.product_id)
+              console.log(`📦 Preparing stock restoration for ${item.product_name}:`, {
+                productId: item.product_id,
+                quantityDelivered: item.quantity_delivered,
+                currentStock: productData?.current_stock,
+                restoreQuantity: -item.quantity_delivered
+              })
               return {
                 product: {
                   id: item.product_id,
@@ -740,6 +841,17 @@ export function useDeliveries() {
               }
             }) || []
 
+            console.log('🔄 Processing stock restoration for deleted delivery:', {
+              deliveryId,
+              itemsCount: restoreItems.length,
+              restoreItems: restoreItems.map(item => ({
+                productId: item.product.id,
+                productName: item.product.name,
+                quantity: item.quantity,
+                currentStock: item.product.currentStock
+              }))
+            })
+
             // Process reverse stock movements
             await StockService.processTransactionStock(
               deliveryId,
@@ -748,11 +860,32 @@ export function useDeliveries() {
               profileData?.full_name || 'Unknown User',
               'delivery' // This will actually process the stock changes
             )
+
+            console.log('✅ Stock restoration completed for delivery:', deliveryId)
           }
         }
       } catch (stockError) {
-        console.error('Failed to restore stock for deleted delivery:', stockError)
+        console.error('❌ Failed to restore stock for deleted delivery:', stockError)
         // Continue with deletion even if stock restoration fails
+        // Note: We don't throw here to allow delivery deletion to proceed
+      }
+
+      // Delete delivery commissions
+      try {
+        console.log('🔄 Deleting delivery commissions for:', deliveryId)
+        const { error: commissionError } = await supabase
+          .from('commission_entries')
+          .delete()
+          .eq('delivery_id', deliveryId)
+
+        if (commissionError) {
+          console.error('❌ Failed to delete delivery commissions:', commissionError)
+        } else {
+          console.log('✅ Delivery commissions deleted for:', deliveryId)
+        }
+      } catch (commissionError) {
+        console.error('❌ Error deleting delivery commissions:', commissionError)
+        // Don't throw - commission deletion is not critical
       }
 
       // Delete delivery items first
@@ -906,6 +1039,7 @@ export function useDeliveryHistory() {
           width: item.width,
           height: item.height,
           notes: item.notes,
+          isBonus: item.is_bonus || false,
           createdAt: new Date(item.created_at),
         })),
         createdAt: new Date(d.created_at),

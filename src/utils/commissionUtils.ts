@@ -1,54 +1,43 @@
-import { supabase } from '@/integrations/supabase/client'
-import { CommissionEntry } from '@/types/commission'
-import { Transaction } from '@/types/transaction'
-import { Delivery } from '@/types/delivery'
-import { createCommissionExpense } from './financialIntegration'
+import { supabase } from '@/integrations/supabase/client';
+import { CommissionEntry } from '@/types/commission';
+import { Transaction } from '@/types/transaction';
+import { Delivery } from '@/types/delivery';
+import { createCommissionExpense } from './financialIntegration';
 
 export async function generateSalesCommission(transaction: Transaction) {
   try {
     // Only generate commission if there's a sales person assigned
     if (!transaction.salesId || !transaction.salesName) {
-      console.log('No sales person assigned to transaction, skipping commission generation');
-      console.log('Transaction details:', { 
-        id: transaction.id, 
-        salesId: transaction.salesId, 
-        salesName: transaction.salesName,
-        cashierId: transaction.cashierId,
-        cashierName: transaction.cashierName
-      });
       return;
     }
-
-    console.log('✅ Generating commission for sales person:', {
-      salesId: transaction.salesId,
-      salesName: transaction.salesName,
-      transactionId: transaction.id
-    });
 
     // Get commission rules for sales
     const { data: rules, error: rulesError } = await supabase
       .from('commission_rules')
       .select('*')
-      .eq('role', 'sales')
+      .eq('role', 'sales');
 
-    if (rulesError) throw rulesError
-
-    if (!rules || rules.length === 0) {
-      console.log('No sales commission rules found')
-      return
+    if (rulesError) {
+      if (rulesError.code === 'PGRST116') {
+        return; // Table doesn't exist
+      }
+      throw rulesError;
     }
 
-    const commissionEntries = []
+    if (!rules || rules.length === 0) {
+      return; // No commission rules
+    }
+
+    const commissionEntries = [];
 
     // Create commission entries for each item (exclude bonus items)
     for (const item of transaction.items) {
       // Skip bonus items - they don't generate commission
       if (item.isBonus) {
-        console.log(`Skipping commission for bonus item: ${item.product.name} (qty: ${item.quantity})`);
         continue;
       }
 
-      const rule = rules.find(r => r.product_id === item.product.id)
+      const rule = rules.find(r => r.product_id === item.product.id);
       
       if (rule && rule.rate_per_qty > 0) {
         const commissionEntry = {
@@ -64,9 +53,9 @@ export async function generateSalesCommission(transaction: Transaction) {
           ref: `TXN-${transaction.id}`,
           status: 'pending' as const,
           created_at: new Date().toISOString()
-        }
+        };
 
-        commissionEntries.push(commissionEntry)
+        commissionEntries.push(commissionEntry);
       }
     }
 
@@ -75,16 +64,14 @@ export async function generateSalesCommission(transaction: Transaction) {
       const { data: insertedEntries, error: insertError } = await supabase
         .from('commission_entries')
         .insert(commissionEntries)
-        .select()
+        .select();
 
-      if (insertError) throw insertError
+      if (insertError) {
+        throw insertError;
+      }
 
-      console.log(`Generated ${commissionEntries.length} sales commission entries for transaction ${transaction.id}`)
-      
       // Create corresponding expense entries automatically
       if (insertedEntries && insertedEntries.length > 0) {
-        console.log('🔄 Creating automatic expense entries for sales commissions...');
-        
         for (const entry of insertedEntries) {
           try {
             const commissionEntry: CommissionEntry = {
@@ -106,18 +93,14 @@ export async function generateSalesCommission(transaction: Transaction) {
             
             await createCommissionExpense(commissionEntry);
           } catch (expenseError) {
-            console.error('❌ Failed to create expense for commission entry:', entry.id, expenseError);
             // Don't throw - commission is created successfully, expense is secondary
           }
         }
-        
-        console.log('✅ Automatic expense entries created for sales commissions');
       }
     }
 
   } catch (error) {
-    console.error('Error generating sales commission:', error)
-    throw error
+    throw error;
   }
 }
 
@@ -127,27 +110,28 @@ export async function generateDeliveryCommission(delivery: Delivery) {
     const { data: rules, error: rulesError } = await supabase
       .from('commission_rules')
       .select('*')
-      .where('role', 'in', ['driver', 'helper'])
+      .in('role', ['driver', 'helper']);
 
-    if (rulesError) throw rulesError
-
-    if (!rules || rules.length === 0) {
-      console.log('No delivery commission rules found')
-      return
+    if (rulesError) {
+      throw rulesError;
     }
 
-    const commissionEntries = []
+    if (!rules || rules.length === 0) {
+      return;
+    }
+
+    const commissionEntries = [];
 
     // Create commission entries for delivered items (exclude bonus items)
     for (const item of delivery.items) {
       // Skip bonus items - they don't generate commission
-      if (item.isBonus) {
-        console.log(`Skipping delivery commission for bonus item: ${item.productName} (qty: ${item.quantityDelivered})`);
+      const isBonusItem = item.isBonus || item.productName.includes('(Bonus)') || item.productName.includes('BONUS');
+      if (isBonusItem) {
         continue;
       }
 
-      const driverRule = rules.find(r => r.product_id === item.productId && r.role === 'driver')
-      const helperRule = rules.find(r => r.product_id === item.productId && r.role === 'helper')
+      const driverRule = rules.find(r => r.product_id === item.productId && r.role === 'driver');
+      const helperRule = rules.find(r => r.product_id === item.productId && r.role === 'helper');
 
       // Driver commission
       if (delivery.driverId && driverRule && driverRule.rate_per_qty > 0) {
@@ -165,9 +149,9 @@ export async function generateDeliveryCommission(delivery: Delivery) {
           ref: `DEL-${delivery.id}`,
           status: 'pending' as const,
           created_at: new Date().toISOString()
-        }
+        };
 
-        commissionEntries.push(commissionEntry)
+        commissionEntries.push(commissionEntry);
       }
 
       // Helper commission
@@ -186,9 +170,9 @@ export async function generateDeliveryCommission(delivery: Delivery) {
           ref: `DEL-${delivery.id}`,
           status: 'pending' as const,
           created_at: new Date().toISOString()
-        }
+        };
 
-        commissionEntries.push(commissionEntry)
+        commissionEntries.push(commissionEntry);
       }
     }
 
@@ -197,16 +181,14 @@ export async function generateDeliveryCommission(delivery: Delivery) {
       const { data: insertedEntries, error: insertError } = await supabase
         .from('commission_entries')
         .insert(commissionEntries)
-        .select()
+        .select();
 
-      if (insertError) throw insertError
+      if (insertError) {
+        throw insertError;
+      }
 
-      console.log(`Generated ${commissionEntries.length} delivery commission entries for delivery ${delivery.id}`)
-      
       // Create corresponding expense entries automatically
       if (insertedEntries && insertedEntries.length > 0) {
-        console.log('🔄 Creating automatic expense entries for delivery commissions...');
-        
         for (const entry of insertedEntries) {
           try {
             const commissionEntry: CommissionEntry = {
@@ -228,18 +210,14 @@ export async function generateDeliveryCommission(delivery: Delivery) {
             
             await createCommissionExpense(commissionEntry);
           } catch (expenseError) {
-            console.error('❌ Failed to create expense for delivery commission entry:', entry.id, expenseError);
             // Don't throw - commission is created successfully, expense is secondary
           }
         }
-        
-        console.log('✅ Automatic expense entries created for delivery commissions');
       }
     }
 
   } catch (error) {
-    console.error('Error generating delivery commission:', error)
-    throw error
+    throw error;
   }
 }
 
@@ -247,27 +225,27 @@ export async function getCommissionSummary(userId?: string, startDate?: Date, en
   try {
     let query = supabase
       .from('commission_entries')
-      .select('*')
+      .select('*');
 
     if (userId) {
-      query = query.eq('user_id', userId)
+      query = query.eq('user_id', userId);
     }
 
     if (startDate) {
-      query = query.gte('created_at', startDate.toISOString())
+      query = query.gte('created_at', startDate.toISOString());
     }
 
     if (endDate) {
-      query = query.lte('created_at', endDate.toISOString())
+      query = query.lte('created_at', endDate.toISOString());
     }
 
-    const { data: entries, error } = await query
+    const { data: entries, error } = await query;
 
-    if (error) throw error
+    if (error) throw error;
 
     // Calculate summary
     const summary = entries?.reduce((acc, entry) => {
-      const key = `${entry.user_id}-${entry.role}`
+      const key = `${entry.user_id}-${entry.role}`;
       
       if (!acc[key]) {
         acc[key] = {
@@ -277,27 +255,27 @@ export async function getCommissionSummary(userId?: string, startDate?: Date, en
           totalAmount: 0,
           totalQuantity: 0,
           entryCount: 0
-        }
+        };
       }
 
-      acc[key].totalAmount += entry.amount
-      acc[key].totalQuantity += entry.quantity
-      acc[key].entryCount += 1
+      acc[key].totalAmount += entry.amount;
+      acc[key].totalQuantity += entry.quantity;
+      acc[key].entryCount += 1;
 
-      return acc
+      return acc;
     }, {} as Record<string, {
-      userId: string
-      userName: string
-      role: string
-      totalAmount: number
-      totalQuantity: number
-      entryCount: number
-    }>)
+      userId: string;
+      userName: string;
+      role: string;
+      totalAmount: number;
+      totalQuantity: number;
+      entryCount: number;
+    }>);
 
-    return Object.values(summary || {})
+    return Object.values(summary || {});
 
   } catch (error) {
-    console.error('Error getting commission summary:', error)
-    throw error
+    console.error('Error getting commission summary:', error);
+    throw error;
   }
 }

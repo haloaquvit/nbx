@@ -11,6 +11,8 @@ import { useAuth } from "@/hooks/useAuth"
 import { useUsers } from "@/hooks/useUsers"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { 
   BarChart3, 
   TrendingUp, 
@@ -52,6 +54,7 @@ export default function CommissionReportPage() {
     isLoading, 
     error 
   } = useOptimizedCommissionEntries(start, end)
+
 
   // Filter by user if selected
   const filteredEntries = useMemo(() => {
@@ -138,11 +141,9 @@ export default function CommissionReportPage() {
     
     deleteCommissionMutation.mutate(entryId, {
       onSuccess: () => {
-        console.log('✅ Commission entry deleted successfully');
         setDeleteLoading(null);
       },
       onError: (error) => {
-        console.error('❌ Error deleting commission:', error);
         alert('Gagal menghapus komisi. Silakan coba lagi.');
         setDeleteLoading(null);
       }
@@ -150,8 +151,210 @@ export default function CommissionReportPage() {
   };
 
   const exportToPDF = () => {
-    // TODO: Implement PDF export
-    console.log("Export to PDF")
+    const doc = new jsPDF('landscape', 'pt', 'a4')
+    
+    // Set font for Indonesian text support
+    doc.setFont('helvetica')
+    
+    // Title
+    doc.setFontSize(18)
+    doc.text('Laporan Komisi Karyawan', 40, 40)
+    
+    // Filter information
+    doc.setFontSize(10)
+    const filterInfo = `Periode: ${format(start, 'dd MMM yyyy', { locale: id })} - ${format(end, 'dd MMM yyyy', { locale: id })}`
+    const userInfo = selectedUser === 'all' 
+      ? 'Semua Karyawan' 
+      : `Karyawan: ${uniqueUsers.find(u => u.id === selectedUser)?.name || 'Unknown'}`
+    
+    doc.text(filterInfo, 40, 65)
+    doc.text(userInfo, 40, 80)
+    
+    // Summary box
+    doc.setFontSize(12)
+    doc.text('RINGKASAN', 40, 110)
+    doc.setFontSize(10)
+    doc.text(`Total Komisi: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(totals.total)}`, 40, 130)
+    doc.text(`Total Qty: ${totals.quantity.toLocaleString("id-ID")}`, 40, 145)
+    doc.text(`Total Entri: ${filteredEntries.length}`, 40, 160)
+    doc.text(`Karyawan: ${Object.keys(totals.byUser).length}`, 40, 175)
+    
+    // Summary by role
+    let yPos = 195
+    doc.text('Ringkasan per Peran:', 40, yPos)
+    Object.entries(totals.byRole).forEach(([role, data]) => {
+      yPos += 15
+      doc.text(`• ${role.toUpperCase()}: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.amount)} (${data.quantity} qty, ${data.count} entri)`, 50, yPos)
+    })
+    
+    // Table data
+    const tableData = filteredEntries.map(entry => {
+      const employee = users?.find(u => u.id === entry.userId)
+      return [
+        format(entry.createdAt, "dd/MM/yyyy", { locale: id }),
+        entry.role.toUpperCase(),
+        employee?.name || entry.userName,
+        entry.productName,
+        entry.quantity.toString(),
+        new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(entry.ratePerQty),
+        new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(entry.amount),
+        entry.ref,
+        entry.status === 'paid' ? 'Dibayar' : entry.status === 'pending' ? 'Pending' : 'Batal'
+      ]
+    })
+    
+    // Add table
+    autoTable(doc, {
+      head: [['Tanggal', 'Peran', 'Karyawan', 'Produk', 'Qty', 'Rate (Rp)', 'Jumlah (Rp)', 'Ref', 'Status']],
+      body: tableData,
+      startY: yPos + 30,
+      styles: {
+        fontSize: 8,
+        cellPadding: 3,
+      },
+      headStyles: {
+        fillColor: [59, 130, 246], // blue-600
+        textColor: 255,
+        fontStyle: 'bold'
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252] // slate-50
+      },
+      columnStyles: {
+        0: { cellWidth: 60 }, // Date
+        1: { cellWidth: 50 }, // Role
+        2: { cellWidth: 80 }, // Employee
+        3: { cellWidth: 120 }, // Product
+        4: { cellWidth: 40, halign: 'center' }, // Qty
+        5: { cellWidth: 70, halign: 'right' }, // Rate
+        6: { cellWidth: 80, halign: 'right' }, // Amount
+        7: { cellWidth: 80 }, // Ref
+        8: { cellWidth: 60 } // Status
+      },
+      margin: { left: 40, right: 40 },
+    })
+    
+    // Footer
+    const pageCount = (doc as any).internal.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(8)
+      doc.text(
+        `Halaman ${i} dari ${pageCount} - Dibuat pada ${format(new Date(), 'dd MMM yyyy HH:mm', { locale: id })}`,
+        40,
+        doc.internal.pageSize.height - 20
+      )
+    }
+    
+    // Save the PDF
+    const fileName = `laporan-komisi-detail-${format(start, 'yyyy-MM-dd')}-${format(end, 'yyyy-MM-dd')}.pdf`
+    doc.save(fileName)
+  }
+
+  const exportSummaryToPDF = () => {
+    const doc = new jsPDF('portrait', 'pt', 'a4')
+    
+    // Set font for Indonesian text support
+    doc.setFont('helvetica')
+    
+    // Title
+    doc.setFontSize(20)
+    doc.text('Ringkasan Komisi Karyawan', 40, 40)
+    
+    // Filter information
+    doc.setFontSize(12)
+    const filterInfo = `Periode: ${format(start, 'dd MMM yyyy', { locale: id })} - ${format(end, 'dd MMM yyyy', { locale: id })}`
+    const userInfo = selectedUser === 'all' 
+      ? 'Semua Karyawan' 
+      : `Karyawan: ${uniqueUsers.find(u => u.id === selectedUser)?.name || 'Unknown'}`
+    
+    doc.text(filterInfo, 40, 70)
+    doc.text(userInfo, 40, 90)
+    
+    // Overall Summary
+    doc.setFontSize(16)
+    doc.text('RINGKASAN KESELURUHAN', 40, 130)
+    doc.setFontSize(12)
+    
+    // Create summary box
+    doc.setLineWidth(1)
+    doc.rect(40, 140, 500, 100)
+    doc.text(`Total Komisi: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(totals.total)}`, 50, 165)
+    doc.text(`Total Quantity: ${totals.quantity.toLocaleString("id-ID")} items`, 50, 185)
+    doc.text(`Total Entri: ${filteredEntries.length} transaksi komisi`, 50, 205)
+    doc.text(`Jumlah Karyawan: ${Object.keys(totals.byUser).length} orang`, 50, 225)
+    
+    // Summary by Role
+    doc.setFontSize(16)
+    doc.text('RINGKASAN PER PERAN', 40, 280)
+    
+    const roleTableData = Object.entries(totals.byRole).map(([role, data]) => [
+      role.toUpperCase(),
+      data.count.toString(),
+      data.quantity.toString(),
+      new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(data.amount),
+      new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.amount)
+    ])
+    
+    autoTable(doc, {
+      head: [['Peran', 'Entri', 'Qty', 'Amount (Rp)', 'Total']],
+      body: roleTableData,
+      startY: 300,
+      styles: { fontSize: 10, cellPadding: 8 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        1: { halign: 'center' },
+        2: { halign: 'center' },
+        3: { halign: 'right' },
+        4: { halign: 'right' }
+      }
+    })
+    
+    // Summary by User
+    const finalY = (doc as any).lastAutoTable.finalY + 30
+    doc.setFontSize(16)
+    doc.text('RINGKASAN PER KARYAWAN', 40, finalY)
+    
+    const userTableData = Object.entries(totals.byUser)
+      .sort((a, b) => b[1].amount - a[1].amount) // Sort by amount descending
+      .map(([userId, data]) => [
+        data.userName,
+        data.role.toUpperCase(),
+        data.count.toString(),
+        data.quantity.toString(),
+        new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.amount)
+      ])
+    
+    autoTable(doc, {
+      head: [['Nama Karyawan', 'Peran', 'Entri', 'Qty', 'Total Komisi']],
+      body: userTableData,
+      startY: finalY + 20,
+      styles: { fontSize: 10, cellPadding: 8 },
+      headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        2: { halign: 'center' },
+        3: { halign: 'center' },
+        4: { halign: 'right' }
+      }
+    })
+    
+    // Footer
+    const pageCount = (doc as any).internal.getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      doc.setFontSize(8)
+      doc.text(
+        `Halaman ${i} dari ${pageCount} - Dibuat pada ${format(new Date(), 'dd MMM yyyy HH:mm', { locale: id })}`,
+        40,
+        doc.internal.pageSize.height - 20
+      )
+    }
+    
+    // Save the PDF
+    const fileName = `ringkasan-komisi-${format(start, 'yyyy-MM-dd')}-${format(end, 'yyyy-MM-dd')}.pdf`
+    doc.save(fileName)
   }
 
 
@@ -168,14 +371,6 @@ export default function CommissionReportPage() {
     )
   }
 
-  // Debug render state
-  console.log('🖥️ CommissionReportPage render state:', {
-    isLoading,
-    usersLoading,
-    error,
-    entriesCount: entries.length,
-    filteredCount: filteredEntries.length
-  });
 
   // Show error message if table doesn't exist
   if (error && error.message?.includes('Tabel komisi belum dibuat')) {
@@ -380,9 +575,13 @@ export default function CommissionReportPage() {
             Menampilkan {filteredEntries.length} entri komisi
           </div>
           <div className="flex gap-2">
-            <Button onClick={exportToPDF} variant="outline">
+            <Button onClick={exportSummaryToPDF} variant="outline" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
               <Download className="h-4 w-4 mr-2" />
-              Export PDF
+              Export Ringkasan
+            </Button>
+            <Button onClick={exportToPDF} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">
+              <Download className="h-4 w-4 mr-2" />
+              Export Detail
             </Button>
           </div>
         </div>

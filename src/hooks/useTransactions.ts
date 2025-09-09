@@ -165,49 +165,25 @@ export const useTransactions = (filters?: {
       try {
         await StockService.processTransactionStock(
           savedTransaction.id,
-          newTransaction.items, // This is clean items from form, no metadata yet
+          newTransaction.items,
           newTransaction.cashierId,
           newTransaction.cashierName
         );
-        console.log('Stock movements processed successfully for transaction:', savedTransaction.id);
       } catch (stockError) {
-        console.error('Failed to process stock movements:', stockError);
         // Note: We don't throw here to avoid breaking the transaction creation
-        // Stock movements can be adjusted manually later if needed
       }
 
       // Generate sales commission for this transaction
       try {
-        // Since database might not have sales columns yet, use original newTransaction data
         const transactionWithCreatedAt = {
-          ...newTransaction, // This contains salesId and salesName from POS form
+          ...newTransaction,
           id: savedTransaction.id,
           createdAt: new Date()
         };
         
-        console.log('🎯 About to generate commission with transaction data:', {
-          id: transactionWithCreatedAt.id,
-          salesId: transactionWithCreatedAt.salesId,
-          salesName: transactionWithCreatedAt.salesName,
-          cashierId: transactionWithCreatedAt.cashierId,
-          cashierName: transactionWithCreatedAt.cashierName,
-          itemsCount: transactionWithCreatedAt.items?.length
-        });
-        
-        // Double check if salesId and salesName exist
-        if (!transactionWithCreatedAt.salesId || !transactionWithCreatedAt.salesName) {
-          console.warn('⚠️ No sales info found in transaction for commission generation');
-          console.log('Transaction data:', transactionWithCreatedAt);
-        } else {
-          console.log('✅ Sales info found, proceeding with commission generation');
-        }
-        
         await generateSalesCommission(transactionWithCreatedAt);
-        console.log('Sales commission generated successfully for transaction:', savedTransaction.id);
       } catch (commissionError) {
-        console.error('Failed to generate sales commission:', commissionError);
         // Note: We don't throw here to avoid breaking the transaction creation
-        // Commission can be calculated manually later if needed
       }
 
       // If it came from a quotation, update the quotation
@@ -382,8 +358,6 @@ export const useTransactions = (filters?: {
 
   const deleteTransaction = useMutation({
     mutationFn: async (transactionId: string) => {
-      console.log(`Starting delete transaction rollback for: ${transactionId}`);
-      
       // Step 1: Get transaction data before deletion
       const { data: transaction, error: fetchError } = await supabase
         .from('transactions')
@@ -393,44 +367,10 @@ export const useTransactions = (filters?: {
         
       if (fetchError) throw new Error(`Failed to fetch transaction: ${fetchError.message}`);
       
-      console.log('Transaction to delete:', transaction);
-      
-      // Step 2: Rollback stock changes - restore product stock
-      if (transaction.items && Array.isArray(transaction.items)) {
-        // First extract actual items (skip sales metadata)
-        const actualItems = transaction.items.filter(item => !item._isSalesMeta);
-        console.log('Reversing stock movements for items:', actualItems);
-        for (const item of actualItems) {
-          try {
-            // Get current product stock
-            const { data: product, error: productError } = await supabase
-              .from('products')
-              .select('current_stock')
-              .eq('id', item.product.id)
-              .single();
-              
-            if (productError) {
-              console.error(`Failed to get product ${item.product.id}:`, productError);
-              continue;
-            }
-            
-            // Restore stock by adding back the sold quantity
-            const newStock = (product.current_stock || 0) + item.quantity;
-            console.log(`Restoring stock for ${item.product.name}: ${product.current_stock} + ${item.quantity} = ${newStock}`);
-            
-            const { error: updateError } = await supabase
-              .from('products')
-              .update({ current_stock: newStock })
-              .eq('id', item.product.id);
-              
-            if (updateError) {
-              console.error(`Failed to restore stock for ${item.product.id}:`, updateError);
-            }
-          } catch (error) {
-            console.error(`Error restoring stock for item:`, error);
-          }
-        }
-      }
+      // Step 2: Stock restoration is handled by delivery deletion (see Step 8)
+      // Transaction creation doesn't reduce stock - only delivery does
+      // So we don't need to restore stock from transaction items here
+      console.log('Stock restoration will be handled by delivery deletion (Step 8)');
       
       // Step 3: Rollback account balance if there was payment
       if (transaction.paid_amount > 0 && transaction.payment_account_id) {
@@ -669,12 +609,47 @@ export const useTransactions = (filters?: {
         // Delete commission expenses first
         await deleteTransactionCommissionExpenses(transactionId);
         
-        // Then delete commission entries
+        // Then delete commission entries (both transaction and delivery commissions)
         const { data: deletedCommissions, error: commissionError } = await supabase
           .from('commission_entries')
           .delete()
           .eq('transaction_id', transactionId)
           .select();
+          
+        // Also delete delivery commissions if any deliveries exist for this transaction  
+        // First get all delivery IDs for this transaction
+        const { data: deliveries, error: deliveryFetchError } = await supabase
+          .from('deliveries')
+          .select('id')
+          .eq('transaction_id', transactionId);
+          
+        if (!deliveryFetchError && deliveries && deliveries.length > 0) {
+          const deliveryIds = deliveries.map(d => d.id);
+          console.log(`Found ${deliveryIds.length} deliveries for transaction, checking for delivery commissions...`);
+          
+          // Get delivery commission entries
+          const { data: deliveryCommissions, error: deliveryCommissionError } = await supabase
+            .from('commission_entries')
+            .select('id')
+            .in('delivery_id', deliveryIds);
+            
+          if (!deliveryCommissionError && deliveryCommissions && deliveryCommissions.length > 0) {
+            console.log(`Found ${deliveryCommissions.length} delivery commission entries to delete`);
+            
+            // Delete the delivery commission entries
+            const { data: deletedDeliveryCommissions, error: deleteDeliveryCommError } = await supabase
+              .from('commission_entries')
+              .delete()
+              .in('delivery_id', deliveryIds)
+              .select();
+              
+            if (!deleteDeliveryCommError && deletedDeliveryCommissions) {
+              console.log(`Deleted ${deletedDeliveryCommissions.length} delivery commission entries`);
+            } else if (deleteDeliveryCommError) {
+              console.error('Error deleting delivery commission entries:', deleteDeliveryCommError);
+            }
+          }
+        }
           
         if (commissionError && commissionError.code !== 'PGRST116') {
           console.error('Failed to delete commission entries:', commissionError);
@@ -687,7 +662,112 @@ export const useTransactions = (filters?: {
         // Don't throw - commission system might not be set up yet
       }
 
-      // Step 8: Delete the main transaction
+      // Step 8: Delete deliveries and delivery_items for this transaction
+      console.log('Attempting to delete deliveries and delivery_items for transaction:', transactionId);
+      try {
+        // First get all deliveries for this transaction
+        const { data: deliveries, error: deliveriesError } = await supabase
+          .from('deliveries')
+          .select('id')
+          .eq('transaction_id', transactionId);
+
+        if (deliveriesError) {
+          console.error('Failed to get deliveries:', deliveriesError);
+        } else if (deliveries && deliveries.length > 0) {
+          console.log(`Found ${deliveries.length} deliveries to delete with stock restoration`);
+          
+          // First restore stock for each delivery before deletion
+          for (const delivery of deliveries) {
+            try {
+              // Get delivery details and items for stock restoration
+              const { data: deliveryData, error: deliveryError } = await supabase
+                .from('deliveries')
+                .select(`
+                  *,
+                  items:delivery_items(*)
+                `)
+                .eq('id', delivery.id)
+                .single();
+
+              if (deliveryError) {
+                console.error(`Failed to get delivery ${delivery.id}:`, deliveryError);
+                continue;
+              }
+
+              if (deliveryData.items && deliveryData.items.length > 0) {
+                // Get all unique product IDs
+                const productIds = [...new Set(deliveryData.items.map((item: any) => item.product_id))];
+                
+                if (productIds.length > 0) {
+                  const { data: productsData } = await supabase
+                    .from('products')
+                    .select('id, name, current_stock')
+                    .in('id', productIds);
+
+                  // Restore stock for each delivered item
+                  for (const item of deliveryData.items) {
+                    const productData = productsData?.find(p => p.id === item.product_id);
+                    
+                    if (productData) {
+                      const currentStock = productData.current_stock || 0;
+                      const newStock = currentStock + item.quantity_delivered; // Add back delivered quantity
+                      
+                      console.log(`📦 Restoring stock for ${item.product_name}: ${currentStock} + ${item.quantity_delivered} = ${newStock}`);
+                      
+                      const { error: updateError } = await supabase
+                        .from('products')
+                        .update({ current_stock: newStock })
+                        .eq('id', item.product_id);
+                        
+                      if (updateError) {
+                        console.error(`Failed to restore stock for ${item.product_name}:`, updateError);
+                      } else {
+                        console.log(`✅ Stock restored for ${item.product_name}`);
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (stockError) {
+              console.error(`Error restoring stock for delivery ${delivery.id}:`, stockError);
+              // Continue with other deliveries
+            }
+
+            // Now delete delivery items
+            const { data: deletedItems, error: itemsError } = await supabase
+              .from('delivery_items')
+              .delete()
+              .eq('delivery_id', delivery.id)
+              .select();
+              
+            if (itemsError) {
+              console.error(`Failed to delete items for delivery ${delivery.id}:`, itemsError);
+            } else {
+              console.log(`Deleted ${deletedItems?.length || 0} delivery items for delivery ${delivery.id}`);
+            }
+          }
+          
+          // Delete deliveries
+          const { data: deletedDeliveries, error: deleteDeliveriesError } = await supabase
+            .from('deliveries')
+            .delete()
+            .eq('transaction_id', transactionId)
+            .select();
+            
+          if (deleteDeliveriesError) {
+            console.error('Failed to delete deliveries:', deleteDeliveriesError);
+          } else {
+            console.log(`Deleted ${deletedDeliveries?.length || 0} deliveries for transaction`);
+          }
+        } else {
+          console.log('No deliveries found for this transaction');
+        }
+      } catch (error) {
+        console.error('Error deleting deliveries and delivery_items:', error);
+        // Don't throw - delivery system might not be set up yet
+      }
+
+      // Step 9: Delete the main transaction
       const { error } = await supabase
         .from('transactions')
         .delete()
@@ -706,6 +786,7 @@ export const useTransactions = (filters?: {
       queryClient.invalidateQueries({ queryKey: ['cash_history'] });
       queryClient.invalidateQueries({ queryKey: ['commissions'] });
       queryClient.invalidateQueries({ queryKey: ['paymentHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['deliveries'] });
       queryClient.invalidateQueries({ queryKey: ['quotations'] });
       queryClient.invalidateQueries({ queryKey: ['commission-rules'] });
       queryClient.invalidateQueries({ queryKey: ['commission-entries'] });

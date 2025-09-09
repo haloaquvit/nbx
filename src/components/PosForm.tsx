@@ -345,7 +345,11 @@ export const PosForm = () => {
     }
 
     const transactionItems: TransactionItem[] = validItems.map(item => ({
-      product: item.product!,
+      product: {
+        ...item.product!,
+        // Ensure bonus items have distinct names for delivery differentiation
+        name: item.isBonus ? `${item.product!.name} (Bonus)` : item.product!.name
+      },
       quantity: item.qty,
       price: item.harga,
       unit: item.unit,

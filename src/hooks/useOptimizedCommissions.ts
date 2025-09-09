@@ -37,7 +37,8 @@ export function useOptimizedCommissionEntries(
         endDate: endDate?.toISOString(),
         role,
         userId: user?.id,
-        userRole: user?.role
+        userRole: user?.role,
+        isAdminOrOwner: user?.role === 'admin' || user?.role === 'owner'
       })
 
       // Check if commission_entries table exists
@@ -79,6 +80,21 @@ export function useOptimizedCommissionEntries(
         console.error('❌ Commission entries query error:', error)
         throw error
       }
+
+      console.log(`📊 Commission entries query result:`, {
+        totalEntries: data?.length || 0,
+        roleBreakdown: data?.reduce((acc, entry) => {
+          acc[entry.role] = (acc[entry.role] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>) || {},
+        sampleEntries: data?.slice(0, 3).map(e => ({
+          id: e.id,
+          role: e.role,
+          userName: e.user_name,
+          productName: e.product_name,
+          amount: e.amount
+        })) || []
+      });
 
       // Transform data
       const formattedEntries: CommissionEntry[] = data?.map(entry => ({

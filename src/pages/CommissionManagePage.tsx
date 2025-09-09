@@ -10,6 +10,7 @@ import { useCommissionRules } from "@/hooks/useCommissions"
 import { useAuth } from "@/hooks/useAuth"
 import { Loader2, Save, Calculator } from "lucide-react"
 import { canManageCash } from '@/utils/roleUtils'
+import { CommissionRulesQuickSetup } from '@/components/CommissionRulesQuickSetup'
 
 type RateRow = {
   productId: string
@@ -150,6 +151,13 @@ export default function CommissionManagePage() {
               Atur komisi per produk untuk Sales, Driver, dan Helper
             </CardDescription>
           </CardHeader>
+        </Card>
+
+        {/* Quick Setup Section */}
+        <Card>
+          <CardContent className="pt-6">
+            <CommissionRulesQuickSetup />
+          </CardContent>
         </Card>
 
         {/* Save Button */}

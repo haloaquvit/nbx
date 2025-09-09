@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Commission Debug Tool</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        button { padding: 10px 20px; margin: 5px; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; white-space: pre-wrap; }
+        .error { background: #ffe6e6; color: red; }
+        .success { background: #e6ffe6; color: green; }
+    </style>
+</head>
+<body>
+    <h1>Commission System Debug Tool</h1>
+    
+    <div class="section">
+        <h3>1. Check Commission Rules</h3>
+        <button onclick="checkCommissionRules()">Check Commission Rules</button>
+        <div id="rules-result" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h3>2. Check Employee Profiles</h3>
+        <button onclick="checkEmployeeProfiles()">Check Employees with Driver/Helper Roles</button>
+        <div id="employees-result" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h3>3. Setup Commission Rules</h3>
+        <button onclick="setupCommissionRules()">Setup Commission Rules for Driver/Helper</button>
+        <div id="setup-result" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h3>4. Test Delivery Commission Generation</h3>
+        <button onclick="testDeliveryCommission()">Test Commission Generation Logic</button>
+        <div id="test-result" class="result"></div>
+    </div>
+
+    <script type="module">
+        import { createClient } from 'https://cdn.skypack.dev/@supabase/supabase-js';
+
+        const supabaseUrl = 'https://emfvoassfrsokqwspuml.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVtZnZvYXNzZnJzb2txd3NwdW1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYzNTQyMzIsImV4cCI6MjA1MTkzMDIzMn0.qGRZ3cK4KuKmOFTj3WV7b1onuSDSVsqo0YHOoKcVdyE';
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        window.checkCommissionRules = async function() {
+            const resultDiv = document.getElementById('rules-result');
+            try {
+                console.log('🔍 Checking commission rules...');
+                
+                const { data: allRules, error: allError } = await supabase
+                    .from('commission_rules')
+                    .select('*')
+                    .order('role');
+
+                if (allError) throw allError;
+
+                const { data: deliveryRules, error: deliveryError } = await supabase
+                    .from('commission_rules')
+                    .select('*')
+                    .in('role', ['driver', 'helper'])
+                    .order('role');
+
+                if (deliveryError) throw deliveryError;
+
+                let result = `All Commission Rules (${allRules?.length || 0} total):\n`;
+                result += JSON.stringify(allRules, null, 2) + '\n\n';
+                
+                result += `Driver/Helper Commission Rules (${deliveryRules?.length || 0} total):\n`;
+                result += JSON.stringify(deliveryRules, null, 2);
+
+                resultDiv.className = 'result success';
+                resultDiv.textContent = result;
+
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+                console.error('❌ Error checking commission rules:', error);
+            }
+        };
+
+        window.checkEmployeeProfiles = async function() {
+            const resultDiv = document.getElementById('employees-result');
+            try {
+                console.log('🔍 Checking employee profiles...');
+                
+                const { data: employees, error } = await supabase
+                    .from('profiles')
+                    .select('id, full_name, role, status')
+                    .in('role', ['supir', 'helper', 'driver'])
+                    .order('role');
+
+                if (error) throw error;
+
+                let result = `Delivery Employees (${employees?.length || 0} total):\n`;
+                result += JSON.stringify(employees, null, 2);
+
+                resultDiv.className = 'result success';
+                resultDiv.textContent = result;
+
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+                console.error('❌ Error checking employees:', error);
+            }
+        };
+
+        window.setupCommissionRules = async function() {
+            const resultDiv = document.getElementById('setup-result');
+            try {
+                console.log('🔧 Setting up commission rules...');
+                
+                // First get all products
+                const { data: products, error: productError } = await supabase
+                    .from('products')
+                    .select('id, name, type')
+                    .eq('type', 'Stock');
+
+                if (productError) throw productError;
+
+                let result = `Found ${products?.length || 0} stock products\n\n`;
+
+                // Create commission rules for each product
+                const driverRules = [];
+                const helperRules = [];
+
+                for (const product of products || []) {
+                    driverRules.push({
+                        product_id: product.id,
+                        product_name: product.name,
+                        role: 'driver',
+                        rate_per_qty: 1000
+                    });
+
+                    helperRules.push({
+                        product_id: product.id,
+                        product_name: product.name,
+                        role: 'helper',
+                        rate_per_qty: 500
+                    });
+                }
+
+                // Insert driver rules
+                if (driverRules.length > 0) {
+                    const { data: driverData, error: driverError } = await supabase
+                        .from('commission_rules')
+                        .upsert(driverRules, { onConflict: 'product_id,role' })
+                        .select();
+
+                    if (driverError) {
+                        result += `Driver rules error: ${driverError.message}\n`;
+                    } else {
+                        result += `Created ${driverData?.length || 0} driver commission rules\n`;
+                    }
+                }
+
+                // Insert helper rules
+                if (helperRules.length > 0) {
+                    const { data: helperData, error: helperError } = await supabase
+                        .from('commission_rules')
+                        .upsert(helperRules, { onConflict: 'product_id,role' })
+                        .select();
+
+                    if (helperError) {
+                        result += `Helper rules error: ${helperError.message}\n`;
+                    } else {
+                        result += `Created ${helperData?.length || 0} helper commission rules\n`;
+                    }
+                }
+
+                resultDiv.className = 'result success';
+                resultDiv.textContent = result;
+
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+                console.error('❌ Error setting up commission rules:', error);
+            }
+        };
+
+        window.testDeliveryCommission = async function() {
+            const resultDiv = document.getElementById('test-result');
+            try {
+                console.log('🧪 Testing delivery commission generation...');
+
+                // Get a sample delivery to test with
+                const { data: deliveries, error: deliveryError } = await supabase
+                    .from('deliveries')
+                    .select(`
+                        *,
+                        items:delivery_items(*)
+                    `)
+                    .limit(1)
+                    .order('created_at', { ascending: false });
+
+                if (deliveryError) throw deliveryError;
+
+                let result = '';
+
+                if (!deliveries || deliveries.length === 0) {
+                    result = 'No deliveries found to test with. Please create a delivery first.';
+                } else {
+                    const delivery = deliveries[0];
+                    result += `Testing with delivery: ${delivery.id}\n`;
+                    result += `Driver ID: ${delivery.driver_id}\n`;
+                    result += `Helper ID: ${delivery.helper_id}\n`;
+                    result += `Items count: ${delivery.items?.length || 0}\n\n`;
+
+                    // Check if commission entries exist for this delivery
+                    const { data: commissions, error: commissionError } = await supabase
+                        .from('commission_entries')
+                        .select('*')
+                        .eq('delivery_id', delivery.id);
+
+                    if (commissionError) {
+                        result += `Commission check error: ${commissionError.message}\n`;
+                    } else {
+                        result += `Existing commission entries: ${commissions?.length || 0}\n`;
+                        if (commissions && commissions.length > 0) {
+                            result += JSON.stringify(commissions, null, 2) + '\n';
+                        }
+                    }
+
+                    // Check commission rules for the delivery items
+                    if (delivery.items && delivery.items.length > 0) {
+                        const productIds = delivery.items.map(item => item.product_id);
+                        const { data: rules, error: rulesError } = await supabase
+                            .from('commission_rules')
+                            .select('*')
+                            .in('product_id', productIds)
+                            .in('role', ['driver', 'helper']);
+
+                        if (rulesError) {
+                            result += `Rules check error: ${rulesError.message}\n`;
+                        } else {
+                            result += `\nMatching commission rules: ${rules?.length || 0}\n`;
+                            result += JSON.stringify(rules, null, 2);
+                        }
+                    }
+                }
+
+                resultDiv.className = 'result success';
+                resultDiv.textContent = result;
+
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.textContent = `Error: ${error.message}`;
+                console.error('❌ Error testing commission:', error);
+            }
+        };
+    </script>
+</body>
+</html>

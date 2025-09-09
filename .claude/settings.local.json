@@ -36,7 +36,12 @@
       "Read(/D:\\App\\Aquvit Fix\\src\\pages/**)",
       "Read(/D:\\App\\Aquvit Fix\\src\\pages/**)",
       "Bash(npx supabase:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(find:*)",
+      "Bash(start http://localhost:8082/commission-manage)",
+      "Bash(start http://localhost:8083/commission-manage)",
+      "Bash(npm install:*)",
+      "Bash(start http://localhost:8083/commission-report)"
     ],
     "deny": [],
     "ask": [],
