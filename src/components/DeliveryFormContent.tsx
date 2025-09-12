@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -32,7 +32,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
   const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()
   const [isSubmitting, setIsSubmitting] = useState(false)
   
-  const [formData, setFormData] = useState<DeliveryFormData>({
+  const [formData, setFormData] = useState<DeliveryFormData>(() => ({
     transactionId: transaction.id,
     deliveryDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     notes: "",
@@ -53,16 +53,62 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
       notes: "",
     })),
     photo: undefined,
-  })
+  }))
+  
+  // FIX: Update form items when transaction.deliverySummary changes (e.g., after delivery deletion)
+  useEffect(() => {
+    console.log('🔄 Updating form data due to transaction change:', {
+      transactionId: transaction.id,
+      deliverySummaryCount: transaction.deliverySummary.length,
+      summary: transaction.deliverySummary.map(item => ({
+        name: item.productName,
+        remaining: item.remainingQuantity
+      }))
+    })
+    
+    setFormData(prev => ({
+      ...prev,
+      items: transaction.deliverySummary.map((item, index) => {
+        // Try to preserve existing quantityToDeliver if item exists
+        const existingItem = prev.items.find(existing => 
+          existing.productId === item.productId && existing.productName === item.productName
+        )
+        
+        return {
+          itemId: `${item.productId}-${index}`,
+          productId: item.productId,
+          productName: item.productName,
+          isBonus: item.productName.includes("BONUS") || item.productName.includes("(BONUS)"),
+          orderedQuantity: item.orderedQuantity,
+          deliveredQuantity: item.deliveredQuantity,
+          remainingQuantity: item.remainingQuantity,
+          quantityToDeliver: existingItem ? Math.min(existingItem.quantityToDeliver, item.remainingQuantity) : 0,
+          unit: item.unit,
+          width: item.width,
+          height: item.height,
+          notes: existingItem?.notes || "",
+        }
+      })
+    }))
+  }, [transaction.deliverySummary])
 
   const handleItemQuantityChange = (itemId: string, quantityToDeliver: number) => {
     setFormData(prev => ({
       ...prev,
-      items: prev.items.map(item =>
-        item.itemId === itemId
-          ? { ...item, quantityToDeliver: Math.max(0, Math.min(quantityToDeliver, item.remainingQuantity)) }
-          : item
-      )
+      items: prev.items.map(item => {
+        if (item.itemId === itemId) {
+          const clampedQuantity = Math.max(0, Math.min(quantityToDeliver, item.remainingQuantity))
+          
+          console.log(`📦 Updating quantity for ${item.productName}:`, {
+            requested: quantityToDeliver,
+            remaining: item.remainingQuantity,
+            clamped: clampedQuantity
+          })
+          
+          return { ...item, quantityToDeliver: clampedQuantity }
+        }
+        return item
+      })
     }))
   }
 
@@ -131,7 +177,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
 
       const result = await createDelivery.mutateAsync({
         transactionId: formData.transactionId,
-        deliveryDate: new Date(), // Use current time instead of input
+        deliveryDate: new Date(formData.deliveryDate), // Use user's selected delivery date and time
         notes: formData.notes,
         driverId: formData.driverId,
         helperId: formData.helperId || undefined,

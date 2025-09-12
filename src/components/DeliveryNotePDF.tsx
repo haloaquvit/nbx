@@ -188,7 +188,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               )}
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                  {settings?.companyName || 'PT. AQUAVIT'}
+                  {settings?.name || 'PT. AQUAVIT'}
                 </h1>
                 <p className="text-sm text-gray-600">
                   {settings?.address || 'Alamat Perusahaan'}
@@ -251,10 +251,22 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               </thead>
               <tbody>
                 {delivery.items.map((item, index) => {
-                  // Get total delivered and remaining from the transaction delivery summary
+                  // FIXED: Calculate historical cumulative totals up to and including this delivery
+                  // Get the delivery summary item for baseline data
                   const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
-                  const totalDelivered = deliverySummaryItem?.deliveredQuantity || 0
-                  const remaining = deliverySummaryItem?.remainingQuantity || 0
+                  const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
+                  
+                  // Calculate cumulative delivered quantity up to and including this delivery
+                  // by finding all deliveries for this product up to this delivery's creation date
+                  const cumulativeDeliveredAtThisPoint = transaction.deliveries
+                    .filter(d => d.createdAt <= delivery.createdAt)
+                    .reduce((sum, d) => {
+                      const productItem = d.items.find(di => di.productId === item.productId)
+                      return sum + (productItem?.quantityDelivered || 0)
+                    }, 0)
+                  
+                  // Calculate remaining quantity at this point in time
+                  const remainingAtThisPoint = orderedQuantity - cumulativeDeliveredAtThisPoint
                   
                   return (
                     <tr key={item.id} className="border-b border-gray-200">
@@ -262,8 +274,8 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                       <td className="border border-gray-300 px-4 py-3 font-medium text-gray-800">{item.productName}</td>
                       <td className="border border-gray-300 px-4 py-3 text-center font-medium">{item.quantityDelivered}</td>
                       <td className="border border-gray-300 px-4 py-3 text-center text-gray-600">{item.unit}</td>
-                      <td className="border border-gray-300 px-4 py-3 text-center font-medium text-blue-600">{totalDelivered + item.quantityDelivered}</td>
-                      <td className="border border-gray-300 px-4 py-3 text-center font-medium text-orange-600">{remaining - item.quantityDelivered}</td>
+                      <td className="border border-gray-300 px-4 py-3 text-center font-medium text-blue-600">{cumulativeDeliveredAtThisPoint}</td>
+                      <td className="border border-gray-300 px-4 py-3 text-center font-medium text-orange-600">{remainingAtThisPoint}</td>
                     </tr>
                   )
                 })}
@@ -336,7 +348,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         <div ref={dotMatrixRef} className="font-mono">
           <div className="flex justify-between items-start mb-2">
             <div className="text-left">
-              <h1 className="text-sm font-bold">{settings?.companyName || 'PT. AQUAVIT'}</h1>
+              <h1 className="text-sm font-bold">{settings?.name || 'PT. AQUAVIT'}</h1>
               <p className="text-xs">{settings?.address || 'Alamat Perusahaan'}</p>
               <p className="text-xs">Telp: {settings?.phone || '-'}</p>
             </div>
@@ -369,10 +381,22 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
             </thead>
             <tbody>
               {delivery.items.map((item, index) => {
-                // Get total delivered and remaining from the transaction delivery summary
+                // FIXED: Calculate historical cumulative totals up to and including this delivery
+                // Get the delivery summary item for baseline data
                 const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
-                const totalDelivered = deliverySummaryItem?.deliveredQuantity || 0
-                const remaining = deliverySummaryItem?.remainingQuantity || 0
+                const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
+                
+                // Calculate cumulative delivered quantity up to and including this delivery
+                // by finding all deliveries for this product up to this delivery's creation date
+                const cumulativeDeliveredAtThisPoint = transaction.deliveries
+                  .filter(d => d.createdAt <= delivery.createdAt)
+                  .reduce((sum, d) => {
+                    const productItem = d.items.find(di => di.productId === item.productId)
+                    return sum + (productItem?.quantityDelivered || 0)
+                  }, 0)
+                
+                // Calculate remaining quantity at this point in time
+                const remainingAtThisPoint = orderedQuantity - cumulativeDeliveredAtThisPoint
                 
                 return (
                   <tr key={item.id}>
@@ -380,8 +404,8 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                     <td className="pt-1 align-top">{item.productName}</td>
                     <td className="pt-1 text-right align-top">{item.quantityDelivered}</td>
                     <td className="pt-1 text-center align-top">{item.unit}</td>
-                    <td className="pt-1 text-right align-top">{totalDelivered + item.quantityDelivered}</td>
-                    <td className="pt-1 text-right align-top">{remaining - item.quantityDelivered}</td>
+                    <td className="pt-1 text-right align-top">{cumulativeDeliveredAtThisPoint}</td>
+                    <td className="pt-1 text-right align-top">{remainingAtThisPoint}</td>
                   </tr>
                 )
               })}
