@@ -2,8 +2,10 @@ export interface Expense {
   id: string;
   description: string;
   amount: number;
-  accountId?: string; // Akun mana yang digunakan untuk membayar (opsional)
-  accountName?: string;
+  accountId?: string; // Payment account (kas/bank)
+  accountName?: string; // Payment account name
+  expenseAccountId?: string; // 6000 series expense account
+  expenseAccountName?: string; // Expense account name (e.g. "Beban Operasional")
   date: Date;
   category: string;
   createdAt: Date;

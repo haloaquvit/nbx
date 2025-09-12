@@ -11,6 +11,8 @@ const fromDbToApp = (dbExpense: any): Expense => ({
   amount: dbExpense.amount,
   accountId: dbExpense.account_id,
   accountName: dbExpense.account_name,
+  expenseAccountId: dbExpense.expense_account_id,
+  expenseAccountName: dbExpense.expense_account_name,
   date: new Date(dbExpense.date),
   category: dbExpense.category,
   createdAt: new Date(dbExpense.created_at),
@@ -18,10 +20,12 @@ const fromDbToApp = (dbExpense: any): Expense => ({
 
 // Helper to map from App (camelCase) to DB (snake_case)
 const fromAppToDb = (appExpense: Partial<Omit<Expense, 'id' | 'createdAt'>>) => {
-  const { accountId, accountName, ...rest } = appExpense;
+  const { accountId, accountName, expenseAccountId, expenseAccountName, ...rest } = appExpense;
   const dbData: any = { ...rest };
   if (accountId !== undefined) dbData.account_id = accountId;
   if (accountName !== undefined) dbData.account_name = accountName;
+  if (expenseAccountId !== undefined) dbData.expense_account_id = expenseAccountId;
+  if (expenseAccountName !== undefined) dbData.expense_account_name = expenseAccountName;
   return dbData;
 };
 

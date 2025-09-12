@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/useAuth"
 import { canManageCash } from '@/utils/roleUtils'
 import { Trash2 } from "lucide-react"
 import { ExpenseReceiptPDF } from "./ExpenseReceiptPDF"
+import { getExpenseCategoryOptions, getExpenseAccountForCategory } from "@/hooks/useExpenseCategories"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,29 +60,46 @@ export function ExpenseManagement() {
 
   const watchDate = watch("date")
   const canDeleteExpense = canManageCash(user);
+  const expenseCategories = getExpenseCategoryOptions();
 
-  const onSubmit = (data: ExpenseFormData) => {
+  const onSubmit = async (data: ExpenseFormData) => {
     const account = accounts?.find(a => a.id === data.accountId)
     if (!account) return
     
-    const newExpenseData = {
-      description: data.description,
-      amount: data.amount,
-      accountId: data.accountId,
-      date: data.date,
-      category: data.category,
-      accountName: account.name,
-    };
+    try {
+      // Get the proper expense account for this category
+      const expenseAccount = await getExpenseAccountForCategory(data.category);
+      
+      const newExpenseData = {
+        description: data.description,
+        amount: data.amount,
+        accountId: data.accountId, // This is the payment account (kas/bank)
+        date: data.date,
+        category: data.category,
+        accountName: account.name, // Payment account name
+        expenseAccountId: expenseAccount.accountId, // 6000 series expense account
+        expenseAccountName: expenseAccount.accountName, // e.g. "Beban Operasional"
+      };
 
-    addExpense.mutate(newExpenseData, {
-      onSuccess: () => {
-        toast({ title: "Sukses", description: "Pengeluaran berhasil dicatat." })
-        reset({ date: new Date(), description: "", amount: 0, accountId: "", category: "" })
-      },
-      onError: (error) => {
-        toast({ variant: "destructive", title: "Gagal", description: error.message })
-      }
-    })
+      addExpense.mutate(newExpenseData, {
+        onSuccess: () => {
+          toast({ 
+            title: "Sukses", 
+            description: `Pengeluaran berhasil dicatat ke ${expenseAccount.accountName} (${expenseAccount.accountCode})` 
+          })
+          reset({ date: new Date(), description: "", amount: 0, accountId: "", category: "" })
+        },
+        onError: (error) => {
+          toast({ variant: "destructive", title: "Gagal", description: error.message })
+        }
+      })
+    } catch (error) {
+      toast({ 
+        variant: "destructive", 
+        title: "Error", 
+        description: "Gagal mendapatkan akun beban untuk kategori ini" 
+      })
+    }
   }
 
   const handleDelete = (expenseId: string) => {
@@ -117,7 +135,18 @@ export function ExpenseManagement() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="category">Kategori</Label>
-                <Input id="category" {...register("category")} placeholder="cth: Operasional" />
+                <Select onValueChange={(value) => setValue("category", value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih kategori..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {expenseCategories.map(category => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {errors.category && <p className="text-sm text-destructive">{errors.category.message}</p>}
               </div>
               <div className="space-y-2">
@@ -154,14 +183,22 @@ export function ExpenseManagement() {
         </CardHeader>
         <CardContent>
           <Table>
-            <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Deskripsi</TableHead><TableHead>Kategori</TableHead><TableHead>Sumber Dana</TableHead><TableHead className="text-right">Jumlah</TableHead><TableHead className="text-center">Kwitansi</TableHead>{canDeleteExpense && <TableHead className="text-right">Aksi</TableHead>}</TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Deskripsi</TableHead><TableHead>Kategori</TableHead><TableHead>Akun Beban</TableHead><TableHead>Sumber Dana</TableHead><TableHead className="text-right">Jumlah</TableHead><TableHead className="text-center">Kwitansi</TableHead>{canDeleteExpense && <TableHead className="text-right">Aksi</TableHead>}</TableRow></TableHeader>
             <TableBody>
-              {isLoadingExpenses ? <TableRow><TableCell colSpan={canDeleteExpense ? 7 : 6}>Memuat...</TableCell></TableRow> :
+              {isLoadingExpenses ? <TableRow><TableCell colSpan={canDeleteExpense ? 8 : 7}>Memuat...</TableCell></TableRow> :
                 expenses?.map(exp => (
                   <TableRow key={exp.id}>
                     <TableCell>{format(new Date(exp.date), "d MMM yyyy", { locale: id })}</TableCell>
                     <TableCell className="font-medium">{exp.description}</TableCell>
                     <TableCell>{exp.category}</TableCell>
+                    <TableCell className="text-sm">
+                      {exp.expenseAccountName || 'Belum dipetakan'}
+                      {exp.expenseAccountId && (
+                        <div className="text-xs text-muted-foreground">
+                          {exp.expenseAccountId.replace('acc-', '')}
+                        </div>
+                      )}
+                    </TableCell>
                     <TableCell>{exp.accountName}</TableCell>
                     <TableCell className="text-right">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(exp.amount)}</TableCell>
                     <TableCell className="text-center">
