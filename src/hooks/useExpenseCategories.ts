@@ -84,7 +84,6 @@ export const getExpenseCategoryOptions = () => {
     'Komunikasi',
     'Pemeliharaan',
     'Komisi',
-    'Panjar Karyawan',
     'Pembayaran PO',
     'Penghapusan Piutang',
     'Lain-lain'

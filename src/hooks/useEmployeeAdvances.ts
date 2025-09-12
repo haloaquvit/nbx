@@ -78,7 +78,11 @@ export const useEmployeeAdvances = () => {
 
       if (error) throw new Error(error.message);
       
+      // Decrease payment account (kas/bank)
       updateAccountBalance.mutate({ accountId: newData.accountId, amount: -newData.amount });
+
+      // Increase panjar karyawan account (1220) - this is an asset
+      updateAccountBalance.mutate({ accountId: 'acc-1220', amount: newData.amount });
 
       // Record in cash_history for advance tracking
       if (newData.accountId && user) {
@@ -177,7 +181,10 @@ export const useEmployeeAdvances = () => {
             console.log('Successfully recorded repayment in cash history');
             // Update account balance for the repayment
             if (accountId) {
+              // Increase payment account (kas/bank)
               updateAccountBalance.mutate({ accountId, amount: repaymentData.amount });
+              // Decrease panjar karyawan account (1220) - reduce asset
+              updateAccountBalance.mutate({ accountId: 'acc-1220', amount: -repaymentData.amount });
             }
           }
         } catch (error) {
@@ -212,8 +219,11 @@ export const useEmployeeAdvances = () => {
       const { error } = await supabase.from('employee_advances').delete().eq('id', advanceToDelete.id);
       if (error) throw new Error(error.message);
 
-      // Reimburse the account with the original amount
+      // Reimburse the payment account with the original amount
       updateAccountBalance.mutate({ accountId: advanceToDelete.accountId, amount: advanceToDelete.amount });
+      
+      // Decrease panjar karyawan account (1220) since we're removing the advance
+      updateAccountBalance.mutate({ accountId: 'acc-1220', amount: -advanceToDelete.amount });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
