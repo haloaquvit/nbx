@@ -259,14 +259,19 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                   // Calculate cumulative delivered quantity up to and including this delivery
                   // by finding all deliveries for this product up to this delivery's creation date
                   const cumulativeDeliveredAtThisPoint = transaction.deliveries
-                    .filter(d => d.createdAt <= delivery.createdAt)
-                    .reduce((sum, d) => {
-                      const productItem = d.items.find(di => di.productId === item.productId)
-                      return sum + (productItem?.quantityDelivered || 0)
-                    }, 0)
+                    ? transaction.deliveries
+                        .filter(d => d.createdAt <= delivery.createdAt)
+                        .reduce((sum, d) => {
+                          const productItem = d.items.find(di => di.productId === item.productId)
+                          return sum + (productItem?.quantityDelivered || 0)
+                        }, 0)
+                    : item.quantityDelivered // Fallback to current delivery quantity if no deliveries array
                   
                   // Calculate remaining quantity at this point in time
-                  const remainingAtThisPoint = orderedQuantity - cumulativeDeliveredAtThisPoint
+                  // For history view without complete transaction data, show 0 remaining
+                  const remainingAtThisPoint = transaction.deliverySummary 
+                    ? orderedQuantity - cumulativeDeliveredAtThisPoint
+                    : 0
                   
                   return (
                     <tr key={item.id} className="border-b border-gray-200">
@@ -389,14 +394,19 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                 // Calculate cumulative delivered quantity up to and including this delivery
                 // by finding all deliveries for this product up to this delivery's creation date
                 const cumulativeDeliveredAtThisPoint = transaction.deliveries
-                  .filter(d => d.createdAt <= delivery.createdAt)
-                  .reduce((sum, d) => {
-                    const productItem = d.items.find(di => di.productId === item.productId)
-                    return sum + (productItem?.quantityDelivered || 0)
-                  }, 0)
+                  ? transaction.deliveries
+                      .filter(d => d.createdAt <= delivery.createdAt)
+                      .reduce((sum, d) => {
+                        const productItem = d.items.find(di => di.productId === item.productId)
+                        return sum + (productItem?.quantityDelivered || 0)
+                      }, 0)
+                  : item.quantityDelivered // Fallback to current delivery quantity if no deliveries array
                 
                 // Calculate remaining quantity at this point in time
-                const remainingAtThisPoint = orderedQuantity - cumulativeDeliveredAtThisPoint
+                // For history view without complete transaction data, show 0 remaining
+                const remainingAtThisPoint = transaction.deliverySummary 
+                  ? orderedQuantity - cumulativeDeliveredAtThisPoint
+                  : 0
                 
                 return (
                   <tr key={item.id}>

@@ -455,10 +455,10 @@ export async function generateIncomeStatement(
   }];
 
   const komisi: IncomeStatementItem[] = totalCommissions > 0 ? [{
-    accountName: 'Beban Komisi',
+    accountName: 'Beban Komisi (Otomatis)',
     amount: totalCommissions,
     formattedAmount: formatCurrency(totalCommissions),
-    source: 'commission_entries'
+    source: 'calculated'
   }] : [];
 
   const totalOperatingExpenses = operatingExpenseCash + totalCommissions;

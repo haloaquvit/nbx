@@ -85,58 +85,154 @@ const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transactio
 const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transaction, companyInfo?: CompanyInfo | null }) => {
   const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
   return (
-    <div className="p-8 bg-white text-black">
-      <header className="flex justify-between items-start mb-8 pb-4 border-b-2 border-gray-200">
-        <div>
-          {companyInfo?.logo && <img src={companyInfo.logo} alt="Logo" className="max-h-20 mb-4" />}
-          <h1 className="text-2xl font-bold text-gray-800">{companyInfo?.name}</h1>
-          <p className="text-sm text-gray-500">{companyInfo?.address}</p>
-          <p className="text-sm text-gray-500">{companyInfo?.phone}</p>
+    <div className="p-12 bg-white text-black min-h-[297mm]" style={{ width: '210mm', fontFamily: 'Arial, sans-serif' }}>
+      <header className="flex justify-between items-start mb-12 pb-6 border-b-2 border-blue-600">
+        <div className="flex items-start gap-6">
+          {companyInfo?.logo && (
+            <img 
+              src={companyInfo.logo} 
+              alt="Company Logo" 
+              className="max-h-24 w-auto object-contain" 
+            />
+          )}
+          <div>
+            <h1 className="text-3xl font-bold text-blue-900 mb-2">
+              {companyInfo?.name || 'PT. COMPANY NAME'}
+            </h1>
+            <div className="text-sm text-gray-700 space-y-1">
+              <p className="flex items-center gap-2">
+                <span className="w-4 h-4 bg-blue-100 rounded-full flex items-center justify-center">
+                  📍
+                </span>
+                {companyInfo?.address || 'Company Address'}
+              </p>
+              <p className="flex items-center gap-2">
+                <span className="w-4 h-4 bg-blue-100 rounded-full flex items-center justify-center">
+                  📞
+                </span>
+                {companyInfo?.phone || 'Company Phone'}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="text-right">
-          <h2 className="text-4xl font-bold uppercase text-gray-300">INVOICE</h2>
-          <p className="text-sm text-gray-600"><strong className="text-gray-800">No:</strong> {transaction.id}</p>
-          <p className="text-sm text-gray-600"><strong className="text-gray-800">Tanggal:</strong> {orderDate ? format(orderDate, "d MMMM yyyy", { locale: id }) : 'N/A'}</p>
+        <div className="text-right bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200">
+          <h2 className="text-5xl font-bold text-blue-800 mb-4">INVOICE</h2>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold text-blue-800">No Invoice:</span><br/>
+              <span className="text-lg font-mono font-bold text-blue-900">{transaction.id}</span>
+            </p>
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold text-blue-800">Tanggal:</span><br/>
+              <span className="font-medium">{orderDate ? format(orderDate, "d MMMM yyyy", { locale: id }) : 'N/A'}</span>
+            </p>
+          </div>
         </div>
       </header>
+      <div className="mb-10">
+        <div className="bg-gradient-to-r from-blue-50 to-transparent p-6 rounded-lg border-l-4 border-blue-600">
+          <h3 className="text-sm font-semibold text-blue-800 mb-3 uppercase tracking-wide">Ditagihkan Kepada:</h3>
+          <div className="space-y-1">
+            <p className="text-2xl font-bold text-gray-900">{transaction.customerName}</p>
+            <p className="text-sm text-gray-600">Pelanggan</p>
+          </div>
+        </div>
+      </div>
       <div className="mb-8">
-        <h3 className="text-sm font-semibold text-gray-500 mb-1">DITAGIHKAN KEPADA:</h3>
-        <p className="text-lg font-bold text-gray-800">{transaction.customerName}</p>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gradient-to-r from-blue-600 to-blue-700 hover:bg-gradient-to-r hover:from-blue-600 hover:to-blue-700">
+                <TableHead className="text-white font-bold py-4 px-6 text-left">Deskripsi Produk</TableHead>
+                <TableHead className="text-white font-bold py-4 px-4 text-center">Qty</TableHead>
+                <TableHead className="text-white font-bold py-4 px-4 text-right">Harga Satuan</TableHead>
+                <TableHead className="text-white font-bold py-4 px-6 text-right">Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {transaction.items.map((item, index) => (
+                <TableRow key={index} className={`border-b border-gray-100 hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                  <TableCell className="font-semibold text-gray-900 py-4 px-6">{item.product.name}</TableCell>
+                  <TableCell className="text-center text-gray-700 py-4 px-4 font-medium">{item.quantity}</TableCell>
+                  <TableCell className="text-right text-gray-700 py-4 px-4">
+                    {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.price)}
+                  </TableCell>
+                  <TableCell className="text-right font-bold text-gray-900 py-4 px-6">
+                    {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.price * item.quantity)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
-      <Table>
-        <TableHeader><TableRow className="bg-gray-100 hover:bg-gray-100"><TableHead className="text-gray-600 font-bold">Deskripsi</TableHead><TableHead className="text-gray-600 font-bold text-center">Jumlah</TableHead><TableHead className="text-gray-600 font-bold text-right">Harga Satuan</TableHead><TableHead className="text-gray-600 font-bold text-right">Total</TableHead></TableRow></TableHeader>
-        <TableBody>
-          {transaction.items.map((item, index) => (
-            <TableRow key={index} className="border-b-gray-200">
-              <TableCell className="font-medium text-gray-800">{item.product.name}</TableCell>
-              <TableCell className="text-center text-gray-600">{item.quantity}</TableCell>
-              <TableCell className="text-right text-gray-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price)}</TableCell>
-              <TableCell className="text-right font-medium text-gray-800">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price * item.quantity)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <div className="flex justify-end mt-8">
-        <div className="w-full max-w-xs text-gray-700 space-y-2">
-          <div className="flex justify-between"><span>Subtotal:</span><span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.subtotal)}</span></div>
-          {transaction.ppnEnabled && (
-            <div className="flex justify-between"><span>PPN ({transaction.ppnPercentage}%):</span><span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.ppnAmount)}</span></div>
-          )}
-          <div className="flex justify-between font-bold text-lg border-t-2 border-gray-200 pt-2 text-gray-900"><span>TOTAL:</span><span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.total)}</span></div>
-          {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
-            <div className="flex justify-between text-red-600 font-medium mt-2 pt-2 border-t border-red-200">
-              <span>JATUH TEMPO:</span>
-              <span>{format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id })}</span>
+      <div className="flex justify-end mt-10">
+        <div className="w-full max-w-md">
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-6 border border-gray-200">
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-300">
+                <span className="text-gray-700 font-medium">Subtotal:</span>
+                <span className="font-semibold text-gray-900">
+                  {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.subtotal)}
+                </span>
+              </div>
+              {transaction.ppnEnabled && (
+                <div className="flex justify-between items-center py-2 border-b border-gray-300">
+                  <span className="text-gray-700 font-medium">PPN ({transaction.ppnPercentage}%):</span>
+                  <span className="font-semibold text-gray-900">
+                    {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.ppnAmount)}
+                  </span>
+                </div>
+              )}
+              <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg p-4 mt-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-xl font-bold">TOTAL TAGIHAN:</span>
+                  <span className="text-2xl font-bold">
+                    {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}
+                  </span>
+                </div>
+              </div>
+              {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-red-800 font-semibold">JATUH TEMPO:</span>
+                    <span className="text-red-900 font-bold">
+                      {format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id })}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
-      <footer className="text-center text-xs text-gray-400 mt-16 pt-4 border-t border-gray-200">
-        <div className="flex flex-col items-center gap-2">
-          <span className="font-bold text-gray-700">Hormat Kami</span>
-          <span className="font-semibold text-gray-800">{transaction.cashierName}</span>
+      <footer className="mt-16 pt-8 border-t-2 border-gray-200">
+        <div className="flex justify-between items-start mb-8">
+          <div className="text-left">
+            <h4 className="text-sm font-semibold text-gray-800 mb-4">Catatan Pembayaran:</h4>
+            <div className="text-xs text-gray-600 space-y-1 max-w-md">
+              <p>• Pembayaran dapat dilakukan melalui transfer bank</p>
+              <p>• Harap sertakan nomor invoice saat melakukan pembayaran</p>
+              <p>• Konfirmasi pembayaran ke nomor telepon di atas</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+              <p className="text-sm font-semibold text-blue-800 mb-4">Hormat Kami,</p>
+              <div className="mt-8 pt-4 border-t border-blue-300">
+                <p className="font-bold text-blue-900 text-lg">{transaction.cashierName}</p>
+                <p className="text-xs text-blue-700 mt-1">Sales Representative</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <p className="mt-4">Terima kasih atas kepercayaan Anda.</p>
+        <div className="text-center py-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg">
+          <p className="text-lg font-semibold mb-2">Terima kasih atas kepercayaan Anda!</p>
+          <p className="text-sm opacity-90">Invoice ini dibuat secara otomatis dan sah tanpa tanda tangan</p>
+          <p className="text-xs opacity-75 mt-2">
+            Dicetak pada: {format(new Date(), "d MMMM yyyy, HH:mm", { locale: id })} WIB
+          </p>
+        </div>
       </footer>
     </div>
   )
@@ -150,69 +246,150 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     const doc = new jsPDF();
     const pageHeight = doc.internal.pageSize.height;
     const pageWidth = doc.internal.pageSize.width;
-    const margin = 15;
+    const margin = 20;
 
-    const logoWidth = 40;
-    const logoHeight = 16;
+    // Modern header with blue accent
+    doc.setFillColor(59, 130, 246); // Blue color
+    doc.rect(0, 0, pageWidth, 50, 'F');
+    
+    // Company logo and info
+    const logoWidth = 35;
+    const logoHeight = 14;
     if (companyInfo?.logo) {
       try {
-        doc.addImage(companyInfo.logo, 'PNG', margin, 12, logoWidth, logoHeight, undefined, 'FAST');
+        doc.addImage(companyInfo.logo, 'PNG', margin, 15, logoWidth, logoHeight, undefined, 'FAST');
       } catch (e) { console.error(e); }
     }
-    doc.setFontSize(18).setFont("helvetica", "bold").text(companyInfo?.name || '', margin, 32);
-    doc.setFontSize(10).setFont("helvetica", "normal").text(companyInfo?.address || '', margin, 38).text(companyInfo?.phone || '', margin, 43);
-    doc.setDrawColor(200).line(margin, 48, pageWidth - margin, 48);
-    doc.setFontSize(22).setFont("helvetica", "bold").setTextColor(150).text("INVOICE", pageWidth - margin, 32, { align: 'right' });
+    
+    // Company name in white
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20).setFont("helvetica", "bold").text(companyInfo?.name || 'PT. COMPANY NAME', margin + logoWidth + 10, 25);
+    doc.setFontSize(10).setFont("helvetica", "normal");
+    doc.text(companyInfo?.address || 'Company Address', margin + logoWidth + 10, 32);
+    doc.text(companyInfo?.phone || 'Company Phone', margin + logoWidth + 10, 37);
+    
+    // Invoice title and info in white
+    doc.setFontSize(28).setFont("helvetica", "bold").setTextColor(255, 255, 255);
+    doc.text("INVOICE", pageWidth - margin, 25, { align: 'right' });
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
-    doc.setFontSize(11).setTextColor(0).text(`No: ${transaction.id}`, pageWidth - margin, 38, { align: 'right' }).text(`Tanggal: ${format(orderDate, "d MMMM yyyy", { locale: id })}`, pageWidth - margin, 43, { align: 'right' });
-    let y = 55;
-    doc.setFontSize(10).setTextColor(100).text("DITAGIHKAN KEPADA:", margin, y);
-    doc.setFontSize(12).setFont("helvetica", "bold").setTextColor(0).text(transaction.customerName, margin, y + 6);
-    y += 16;
+    doc.setFontSize(11).setTextColor(255, 255, 255);
+    doc.text(`No: ${transaction.id}`, pageWidth - margin, 33, { align: 'right' });
+    doc.text(`Tanggal: ${format(orderDate, "d MMMM yyyy", { locale: id })}`, pageWidth - margin, 39, { align: 'right' });
+    // Customer info section with background
+    let y = 65;
+    doc.setTextColor(0, 0, 0);
+    doc.setFillColor(245, 247, 250);
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, 20, 3, 3, 'F');
+    
+    doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(59, 130, 246);
+    doc.text("DITAGIHKAN KEPADA:", margin + 5, y + 8);
+    doc.setFontSize(14).setFont("helvetica", "bold").setTextColor(0, 0, 0);
+    doc.text(transaction.customerName, margin + 5, y + 16);
+    y += 35;
     const tableData = transaction.items.map(item => [item.product.name, item.quantity, new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price), new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price * item.quantity)]);
+    // Professional table with better styling
     autoTable(doc, {
       startY: y,
-      head: [['Deskripsi', 'Jumlah', 'Harga Satuan', 'Total']],
+      head: [['Deskripsi Produk', 'Qty', 'Harga Satuan', 'Total']],
       body: tableData,
-      theme: 'plain',
-      headStyles: { fillColor: [240, 240, 240], textColor: [50, 50, 50], fontStyle: 'bold', fontSize: 10 },
-      bodyStyles: { fontSize: 10 },
-      columnStyles: { 0: { cellWidth: 80 }, 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
-      didDrawPage: (data) => { doc.setFontSize(8).setTextColor(150).text(`Halaman ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' }); }
+      theme: 'striped',
+      headStyles: { 
+        fillColor: [59, 130, 246], 
+        textColor: [255, 255, 255], 
+        fontStyle: 'bold', 
+        fontSize: 11,
+        halign: 'center'
+      },
+      bodyStyles: { 
+        fontSize: 10,
+        cellPadding: 6
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      },
+      columnStyles: { 
+        0: { cellWidth: 70, halign: 'left' }, 
+        1: { cellWidth: 25, halign: 'center' }, 
+        2: { cellWidth: 40, halign: 'right' }, 
+        3: { cellWidth: 45, halign: 'right', fontStyle: 'bold' } 
+      },
+      margin: { left: margin, right: margin },
+      didDrawPage: (data) => { 
+        doc.setFontSize(8).setTextColor(150);
+        doc.text(`Halaman ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      }
     });
+    // Modern summary section with background
     const finalY = (doc as any).lastAutoTable.finalY;
-    let summaryY = finalY + 10;
-    doc.setFontSize(10).setFont("helvetica", "normal").text("Subtotal:", 140, summaryY);
-    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.subtotal), pageWidth - margin, summaryY, { align: 'right' });
-    summaryY += 5;
-    if (transaction.ppnEnabled) {
-      doc.text(`PPN (${transaction.ppnPercentage}%):`, 140, summaryY);
-      doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.ppnAmount), pageWidth - margin, summaryY, { align: 'right' });
-      summaryY += 5;
-    }
-    doc.setDrawColor(200).line(140, summaryY, pageWidth - margin, summaryY);
-    summaryY += 7;
-    doc.setFontSize(12).setFont("helvetica", "bold").text("TOTAL:", 140, summaryY);
-    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.total), pageWidth - margin, summaryY, { align: 'right' });
+    let summaryY = finalY + 15;
     
-    // Add due date if payment is not complete
-    if (transaction.paymentStatus !== 'Lunas' && transaction.dueDate) {
-      summaryY += 10;
-      doc.setDrawColor(200, 0, 0).line(140, summaryY, pageWidth - margin, summaryY);
+    // Summary background
+    const summaryWidth = 80;
+    const summaryX = pageWidth - margin - summaryWidth;
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(summaryX, summaryY - 5, summaryWidth, 35, 3, 3, 'F');
+    
+    doc.setFontSize(11).setFont("helvetica", "normal").setTextColor(0, 0, 0);
+    doc.text("Subtotal:", summaryX + 5, summaryY + 3);
+    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.subtotal), pageWidth - margin - 5, summaryY + 3, { align: 'right' });
+    summaryY += 7;
+    
+    if (transaction.ppnEnabled) {
+      doc.text(`PPN (${transaction.ppnPercentage}%):`, summaryX + 5, summaryY);
+      doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.ppnAmount), pageWidth - margin - 5, summaryY, { align: 'right' });
       summaryY += 7;
-      doc.setFontSize(11).setFont("helvetica", "bold").setTextColor(200, 0, 0).text("JATUH TEMPO:", 140, summaryY);
-      doc.text(format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id }), pageWidth - margin, summaryY, { align: 'right' });
+    }
+    
+    // Total with blue background
+    doc.setFillColor(59, 130, 246);
+    doc.roundedRect(summaryX, summaryY, summaryWidth, 12, 3, 3, 'F');
+    doc.setFontSize(12).setFont("helvetica", "bold").setTextColor(255, 255, 255);
+    doc.text("TOTAL TAGIHAN:", summaryX + 5, summaryY + 8);
+    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total), pageWidth - margin - 5, summaryY + 8, { align: 'right' });
+    summaryY += 15;
+    
+    // Due date with red background if payment is not complete
+    if (transaction.paymentStatus !== 'Lunas' && transaction.dueDate) {
+      summaryY += 5;
+      doc.setFillColor(254, 226, 226);
+      doc.roundedRect(summaryX, summaryY, summaryWidth, 10, 3, 3, 'F');
+      doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(185, 28, 28);
+      doc.text("JATUH TEMPO:", summaryX + 5, summaryY + 6);
+      doc.text(format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id }), pageWidth - margin - 5, summaryY + 6, { align: 'right' });
+      summaryY += 12;
       doc.setTextColor(0); // Reset color to black
     }
     
-    // Signature & Thank you
-    let signatureY = summaryY + 25;
-    doc.setFontSize(12).setFont("helvetica", "normal");
-    doc.text("Hormat Kami", margin, signatureY);
-    doc.setFontSize(10).setFont("helvetica", "bold");
-    doc.text((transaction.cashierName || ""), margin, signatureY + 8);
-    doc.setFontSize(10).setFont("helvetica", "normal");
-    doc.text("Terima kasih atas kepercayaan Anda.", margin, signatureY + 20);
+    // Professional footer with signature
+    let footerY = summaryY + 30;
+    
+    // Payment notes
+    doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100, 100, 100);
+    doc.text("Catatan Pembayaran:", margin, footerY);
+    doc.text("• Pembayaran dapat dilakukan melalui transfer bank", margin, footerY + 5);
+    doc.text("• Harap sertakan nomor invoice saat melakukan pembayaran", margin, footerY + 10);
+    doc.text("• Konfirmasi pembayaran ke nomor telepon di atas", margin, footerY + 15);
+    
+    // Signature section with background
+    const sigX = pageWidth - 80;
+    doc.setFillColor(59, 130, 246, 0.1);
+    doc.roundedRect(sigX - 10, footerY - 5, 70, 30, 3, 3, 'F');
+    
+    doc.setFontSize(11).setFont("helvetica", "normal").setTextColor(59, 130, 246);
+    doc.text("Hormat Kami,", sigX, footerY + 5);
+    doc.setFontSize(12).setFont("helvetica", "bold").setTextColor(0, 0, 0);
+    doc.text((transaction.cashierName || ""), sigX, footerY + 18);
+    doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100, 100, 100);
+    doc.text("Sales Representative", sigX, footerY + 23);
+    
+    // Thank you footer
+    const thankYouY = pageHeight - 30;
+    doc.setFillColor(59, 130, 246);
+    doc.rect(0, thankYouY - 5, pageWidth, 20, 'F');
+    doc.setFontSize(14).setFont("helvetica", "bold").setTextColor(255, 255, 255);
+    doc.text("Terima kasih atas kepercayaan Anda!", pageWidth / 2, thankYouY + 3, { align: 'center' });
+    doc.setFontSize(8).setFont("helvetica", "normal");
+    doc.text(`Dicetak pada: ${format(new Date(), "d MMMM yyyy, HH:mm", { locale: id })} WIB`, pageWidth / 2, thankYouY + 9, { align: 'center' });
 
     const filename = `MDIInvoice-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
     saveCompressedPDF(doc, filename, 100);

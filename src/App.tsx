@@ -77,10 +77,6 @@ function App() {
     const timer = setTimeout(() => {
       prefetchCriticalData();
       
-      // Log cache stats in development
-      if (process.env.NODE_ENV === 'development') {
-        console.log('📊 Cache Stats:', getCacheStats());
-      }
     }, 1000); // Delay to avoid blocking initial load
 
     return () => clearTimeout(timer);

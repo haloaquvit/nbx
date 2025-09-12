@@ -33,7 +33,12 @@ export const useExpenses = () => {
   const { data: expenses, isLoading } = useQuery<Expense[]>({
     queryKey: ['expenses'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('expenses').select('*').order('date', { ascending: false });
+      // Filter out commission expenses - they are handled automatically in financial reports
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .not('id', 'like', 'EXP-COMMISSION-%')
+        .order('date', { ascending: false });
       if (error) throw new Error(error.message);
       return data ? data.map(fromDbToApp) : [];
     }

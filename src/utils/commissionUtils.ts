@@ -187,33 +187,10 @@ export async function generateDeliveryCommission(delivery: Delivery) {
         throw insertError;
       }
 
-      // Create corresponding expense entries automatically
-      if (insertedEntries && insertedEntries.length > 0) {
-        for (const entry of insertedEntries) {
-          try {
-            const commissionEntry: CommissionEntry = {
-              id: entry.id,
-              userId: entry.user_id,
-              userName: entry.user_name,
-              role: entry.role,
-              productId: entry.product_id,
-              productName: entry.product_name,
-              quantity: entry.quantity,
-              ratePerQty: entry.rate_per_qty,
-              amount: entry.amount,
-              transactionId: entry.transaction_id,
-              deliveryId: entry.delivery_id,
-              ref: entry.ref,
-              status: entry.status,
-              createdAt: new Date(entry.created_at)
-            };
-            
-            await createCommissionExpense(commissionEntry);
-          } catch (expenseError) {
-            // Don't throw - commission is created successfully, expense is secondary
-          }
-        }
-      }
+      // NOTE: Delivery commission entries are NOT created as expenses
+      // They are calculated directly in financial reports from commission_entries table
+      // This prevents them from appearing in expense history while still being counted in financial reports
+      console.log(`✅ Generated ${insertedEntries?.length || 0} delivery commission entries (not added to expenses)`)
     }
 
   } catch (error) {

@@ -370,7 +370,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                     </TableHeader>
                     <TableBody>
                       {formData.items.map((item, index) => (
-                        <TableRow key={item.itemId} className={item.isBonus ? "bg-orange-50" : ""}>
+                        <TableRow key={`form-item-${item.productId}-${index}`} className={item.isBonus ? "bg-orange-50" : ""}>
                           <TableCell>
                             <div>
                               <div className="flex items-center gap-2">
@@ -489,8 +489,8 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transaction.deliverySummary.map((item) => (
-                  <TableRow key={item.productId}>
+                {transaction.deliverySummary.map((item, index) => (
+                  <TableRow key={`summary-${item.productId}-${index}`}>
                     <TableCell>
                       <div>
                         <Link 
@@ -568,8 +568,8 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                         <div>
                           <div className="text-sm font-medium mb-1">Item Diantar:</div>
                           <ul className="text-sm text-muted-foreground space-y-1">
-                            {delivery.items.map((item) => (
-                              <li key={item.id}>
+                            {delivery.items.map((item, index) => (
+                              <li key={`delivery-item-${delivery.id}-${item.productId}-${index}`}>
                                 <Link 
                                   to={`/products/${item.productId}`}
                                   className="text-blue-600 hover:text-blue-800 hover:underline"

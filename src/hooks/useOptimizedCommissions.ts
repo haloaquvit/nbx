@@ -131,13 +131,25 @@ export function useDeleteCommissionEntry() {
 
   return useMutation({
     mutationFn: async (entryId: string) => {
-      console.log('🗑️ Deleting commission entry and related expense:', entryId)
+      console.log('🗑️ Deleting commission entry:', entryId)
       
-      // Delete expense entry first
-      try {
-        await deleteCommissionExpense(entryId)
-      } catch (expenseError) {
-        console.error('❌ Failed to delete commission expense (continuing):', expenseError)
+      // Get commission entry details to check if we need to delete expense
+      const { data: commissionEntry } = await supabase
+        .from('commission_entries')
+        .select('role, delivery_id')
+        .eq('id', entryId)
+        .single()
+      
+      // Only delete expense entry for sales commission (not delivery commission)
+      if (commissionEntry && commissionEntry.role === 'sales' && !commissionEntry.delivery_id) {
+        try {
+          await deleteCommissionExpense(entryId)
+          console.log('✅ Deleted sales commission expense entry')
+        } catch (expenseError) {
+          console.error('❌ Failed to delete commission expense (continuing):', expenseError)
+        }
+      } else {
+        console.log('ℹ️ Skipped expense deletion for delivery commission')
       }
       
       // Delete commission entry

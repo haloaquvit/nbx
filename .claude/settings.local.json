@@ -41,7 +41,8 @@
       "Bash(start http://localhost:8082/commission-manage)",
       "Bash(start http://localhost:8083/commission-manage)",
       "Bash(npm install:*)",
-      "Bash(start http://localhost:8083/commission-report)"
+      "Bash(start http://localhost:8083/commission-report)",
+      "Bash(start http://localhost:8084)"
     ],
     "deny": [],
     "ask": [],

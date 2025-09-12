@@ -225,8 +225,14 @@ export function useTransactionDeliveryInfo(transactionId: string) {
         updatedAt: new Date(d.updated_at),
       }))
 
-      // Calculate delivery summary manually
+      // Calculate delivery summary manually - IMPROVED VERSION
       const deliverySummary: DeliverySummaryItem[] = []
+      
+      console.log('📊 Calculating delivery summary for transaction:', {
+        transactionId,
+        deliveriesCount: deliveries.length,
+        transactionItemsCount: (transactionData.items || []).length
+      })
       
       // Parse transaction items and filter out items without valid product IDs
       const transactionItems = transactionData.items || []
@@ -235,7 +241,7 @@ export function useTransactionDeliveryInfo(transactionId: string) {
         
         // Skip items without valid product ID
         if (!productId) {
-          console.warn('[useTransactionDeliveryInfo] Skipping item without product ID:', item)
+          console.warn('⚠️ Skipping transaction item without product ID:', item)
           continue
         }
         
@@ -247,26 +253,50 @@ export function useTransactionDeliveryInfo(transactionId: string) {
 
         // Calculate delivered quantity for this specific product name (to separate regular vs bonus)
         let deliveredQuantity = 0
+        let deliveryItemsFound = 0
+        
         for (const delivery of deliveries) {
           for (const deliveryItem of delivery.items) {
             // Match by both productId AND productName to differentiate bonus vs regular items
             if (deliveryItem.productId === productId && deliveryItem.productName === productName) {
               deliveredQuantity += deliveryItem.quantityDelivered
+              deliveryItemsFound++
             }
           }
         }
+
+        // Calculate remaining quantity with validation
+        const remainingQuantity = Math.max(0, orderedQuantity - deliveredQuantity)
+        
+        console.log(`📦 Product summary: ${productName}`, {
+          productId,
+          orderedQuantity,
+          deliveredQuantity,
+          remainingQuantity,
+          deliveryItemsFound
+        })
 
         deliverySummary.push({
           productId,
           productName,
           orderedQuantity,
           deliveredQuantity,
-          remainingQuantity: orderedQuantity - deliveredQuantity,
+          remainingQuantity,
           unit,
           width,
           height,
         })
       }
+      
+      console.log('✅ Delivery summary calculated:', {
+        summaryItemsCount: deliverySummary.length,
+        summary: deliverySummary.map(item => ({
+          name: item.productName,
+          ordered: item.orderedQuantity,
+          delivered: item.deliveredQuantity,
+          remaining: item.remainingQuantity
+        }))
+      })
 
       return {
         id: transactionData.id,
@@ -280,12 +310,12 @@ export function useTransactionDeliveryInfo(transactionId: string) {
       }
     },
     enabled: !!transactionId,
-    // Optimized for single transaction delivery info
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes cache
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    retry: 1,
+    // Optimized for single transaction delivery info - REDUCED CACHE TIME FOR BETTER CONSISTENCY
+    staleTime: 30 * 1000, // 30 seconds - shorter for more accurate delivery tracking
+    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    refetchOnWindowFocus: true, // Enable refetch on focus for better UX
+    refetchOnReconnect: true, // Enable refetch on reconnect
+    retry: 2, // More retries for delivery info
     retryDelay: 1000,
   })
 }
@@ -799,70 +829,92 @@ export function useDeliveries() {
         throw new Error('Data pengantaran tidak ditemukan')
       }
 
-      // Restore stock for each delivered item
+      // Restore stock for each delivered item - IMPROVED VERSION
       try {
-        const { StockService } = await import('@/services/stockService')
         const { data: userData } = await supabase.auth.getUser()
         
-        if (userData?.user) {
+        if (userData?.user && deliveryData.items?.length > 0) {
           const { data: profileData } = await supabase
             .from('profiles')
             .select('full_name')
             .eq('id', userData.user.id)
             .single()
 
-          // Get product data for stock restoration
-          const productIds = deliveryData.items?.map((item: any) => item.product_id) || []
-          
-          if (productIds.length > 0) {
-            const { data: productsData } = await supabase
-              .from('products')
-              .select('id, name, type, current_stock')
-              .in('id', productIds)
+          console.log('🔄 Starting stock restoration for deleted delivery:', {
+            deliveryId,
+            deliveryNumber: deliveryData.delivery_number,
+            itemsCount: deliveryData.items.length
+          })
 
-            // Create reverse stock movements to restore stock
-            const restoreItems = deliveryData.items?.map((item: any) => {
-              const productData = productsData?.find(p => p.id === item.product_id)
-              console.log(`📦 Preparing stock restoration for ${item.product_name}:`, {
-                productId: item.product_id,
-                quantityDelivered: item.quantity_delivered,
-                currentStock: productData?.current_stock,
-                restoreQuantity: -item.quantity_delivered
-              })
-              return {
-                product: {
-                  id: item.product_id,
-                  name: item.product_name,
-                  type: productData?.type || 'Stock',
-                  currentStock: productData?.current_stock || 0,
-                },
-                quantity: -item.quantity_delivered, // Negative quantity to reverse the stock movement
-                notes: `Restore stock from deleted delivery ${deliveryData.delivery_number}`,
+          // Process each item individually for better error handling
+          for (const item of deliveryData.items) {
+            try {
+              // Get current product data
+              const { data: productData, error: productError } = await supabase
+                .from('products')
+                .select('id, name, type, current_stock')
+                .eq('id', item.product_id)
+                .single()
+
+              if (productError) {
+                console.error(`❌ Error getting product data for ${item.product_name}:`, productError)
+                continue
               }
-            }) || []
 
-            console.log('🔄 Processing stock restoration for deleted delivery:', {
-              deliveryId,
-              itemsCount: restoreItems.length,
-              restoreItems: restoreItems.map(item => ({
-                productId: item.product.id,
-                productName: item.product.name,
-                quantity: item.quantity,
-                currentStock: item.product.currentStock
-              }))
-            })
+              if (!productData) {
+                console.error(`❌ Product not found for ${item.product_name} (${item.product_id})`)
+                continue
+              }
 
-            // Process reverse stock movements
-            await StockService.processTransactionStock(
-              deliveryId,
-              restoreItems,
-              userData.user.id,
-              profileData?.full_name || 'Unknown User',
-              'delivery' // This will actually process the stock changes
-            )
+              // Calculate new stock (restore delivered quantity)
+              const newStock = productData.current_stock + item.quantity_delivered
+              
+              console.log(`📦 Restoring stock for ${item.product_name}:`, {
+                productId: item.product_id,
+                currentStock: productData.current_stock,
+                quantityToRestore: item.quantity_delivered,
+                newStock: newStock
+              })
 
-            console.log('✅ Stock restoration completed for delivery:', deliveryId)
+              // Update product stock directly
+              const { error: stockUpdateError } = await supabase
+                .from('products')
+                .update({ current_stock: newStock })
+                .eq('id', item.product_id)
+
+              if (stockUpdateError) {
+                console.error(`❌ Error updating stock for ${item.product_name}:`, stockUpdateError)
+                continue
+              }
+
+              // Create stock movement record for audit trail
+              const { error: movementError } = await supabase
+                .from('stock_movements')
+                .insert({
+                  product_id: item.product_id,
+                  product_name: item.product_name,
+                  movement_type: 'restore',
+                  quantity: item.quantity_delivered,
+                  reference_id: deliveryId,
+                  reference_type: 'delivery_deletion',
+                  notes: `Stock restored from deleted delivery ${deliveryData.delivery_number}`,
+                  created_by: userData.user.id,
+                  created_by_name: profileData?.full_name || 'Unknown User'
+                })
+
+              if (movementError) {
+                console.error(`❌ Error creating stock movement for ${item.product_name}:`, movementError)
+                // Continue even if movement record fails
+              }
+
+              console.log(`✅ Stock restored successfully for ${item.product_name}`)
+            } catch (itemError) {
+              console.error(`❌ Error processing stock restoration for ${item.product_name}:`, itemError)
+              // Continue with other items
+            }
           }
+
+          console.log('✅ Stock restoration process completed for delivery:', deliveryId)
         }
       } catch (stockError) {
         console.error('❌ Failed to restore stock for deleted delivery:', stockError)
@@ -956,7 +1008,7 @@ export function useDeliveries() {
             if (totalDelivered < orderedQuantity) allItemsDelivered = false
           }
 
-          // Determine new status
+          // Determine new status - IMPROVED LOGIC
           let newStatus = 'Pesanan Masuk' // Default back to initial status
           if (allItemsDelivered && anyItemsDelivered) {
             newStatus = 'Selesai'
@@ -964,23 +1016,54 @@ export function useDeliveries() {
             newStatus = 'Diantar Sebagian'
           }
 
+          console.log('📊 Updating transaction status after delivery deletion:', {
+            transactionId,
+            oldStatus: transactionData.status,
+            newStatus,
+            allItemsDelivered,
+            anyItemsDelivered,
+            remainingDeliveriesCount: remainingDeliveries?.length || 0
+          })
+
           // Update transaction status
-          await supabase
+          const { error: statusUpdateError } = await supabase
             .from('transactions')
             .update({ status: newStatus })
             .eq('id', transactionId)
+
+          if (statusUpdateError) {
+            console.error('❌ Error updating transaction status:', statusUpdateError)
+            throw statusUpdateError // This is important enough to fail the deletion
+          }
+
+          console.log('✅ Transaction status updated successfully:', newStatus)
         }
       } catch (statusError) {
-        console.error('Error updating transaction status after delivery deletion:', statusError)
-        // Don't fail the deletion if status update fails
+        console.error('❌ Critical error updating transaction status after delivery deletion:', statusError)
+        // This is critical - if we can't update status properly, the transaction might be in an inconsistent state
+        throw new Error(`Failed to update transaction status after delivery deletion: ${statusError.message}`)
       }
     },
     onSuccess: () => {
-      // Invalidate related queries
+      // IMPROVED: Comprehensive cache invalidation
+      console.log('🧹 Invalidating caches after delivery deletion')
+      
+      // Force refetch all related queries
       queryClient.invalidateQueries({ queryKey: ['transactions-ready-for-delivery'] })
       queryClient.invalidateQueries({ queryKey: ['transaction-delivery-info'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['delivery-history'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] }) // Important for stock updates
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] }) // For audit trail
+      
+      // Also refetch data immediately to ensure UI is up-to-date
+      setTimeout(() => {
+        queryClient.refetchQueries({ queryKey: ['transactions-ready-for-delivery'] })
+        queryClient.refetchQueries({ queryKey: ['transaction-delivery-info'] })
+        queryClient.refetchQueries({ queryKey: ['transactions'] })
+      }, 500) // Small delay to ensure DB operations are complete
+      
+      console.log('✅ Cache invalidation completed')
     },
   })
 

@@ -184,14 +184,12 @@ export const PosForm = () => {
     try {
       console.log('🔄 Calculating price for product:', product.name, 'quantity:', quantity);
       let productPricing = await PricingService.getProductPricing(product.id)
-      console.log('📊 Product pricing data:', productPricing);
       
       // If no pricing data exists, create sample pricing rules (for testing)
       if (!productPricing || (productPricing.bonusPricings.length === 0 && productPricing.stockPricings.length === 0)) {
         console.log('🎯 No pricing rules found, creating sample rules...');
         await createSamplePricingRules(product.id, product.basePrice);
         productPricing = await PricingService.getProductPricing(product.id);
-        console.log('📊 Product pricing data after creating sample:', productPricing);
       }
       
       if (productPricing) {
