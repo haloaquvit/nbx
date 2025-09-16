@@ -32,6 +32,8 @@ import {
   Truck,
   Calculator,
   PieChart,
+  Building,
+  DollarSign,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState } from "react";
@@ -77,6 +79,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/production", label: "Produksi", icon: Factory, permission: PERMISSIONS.PRODUCTS },
       { href: "/customers", label: "Pelanggan", icon: Users, permission: PERMISSIONS.CUSTOMERS },
       { href: "/employees", label: "Karyawan", icon: IdCard, permission: PERMISSIONS.EMPLOYEES },
+      { href: "/suppliers", label: "Supplier", icon: Building, permission: PERMISSIONS.MATERIALS },
       { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList, permission: PERMISSIONS.MATERIALS },
     ].filter(item => hasPermission(item.permission)),
   },
@@ -86,6 +89,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/accounts", label: "Akun Keuangan", icon: Landmark, permission: PERMISSIONS.FINANCIAL },
       { href: "/cash-flow", label: "Buku Besar", icon: TrendingUp, permission: PERMISSIONS.FINANCIAL },
       { href: "/receivables", label: "Piutang", icon: ReceiptText, permission: PERMISSIONS.FINANCIAL },
+      { href: "/accounts-payable", label: "Hutang Supplier", icon: DollarSign, permission: PERMISSIONS.FINANCIAL },
       { href: "/expenses", label: "Pengeluaran", icon: FileText, permission: PERMISSIONS.FINANCIAL },
       { href: "/advances", label: "Panjar Karyawan", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
       { href: "/commission-manage", label: "Pengaturan Komisi", icon: Calculator, permission: PERMISSIONS.FINANCIAL },

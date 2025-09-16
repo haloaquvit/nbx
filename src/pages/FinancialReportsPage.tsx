@@ -556,14 +556,16 @@ const FinancialReportsPage = () => {
           {cashFlowStatement ? (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Banknote className="h-5 w-5" />
-                    LAPORAN ARUS KAS (Cash Flow Statement)
+                <div className="text-center">
+                  <CardTitle className="flex items-center justify-center gap-2 text-xl">
+                    <Banknote className="h-6 w-6" />
+                    PT AQUVIT MANUFACTURE
                   </CardTitle>
-                  <CardDescription>
-                    Periode {format(cashFlowStatement.periodFrom, 'd MMM', { locale: id })} - {format(cashFlowStatement.periodTo, 'd MMM yyyy', { locale: id })}
+                  <h3 className="text-lg font-semibold mt-2">LAPORAN ARUS KAS</h3>
+                  <CardDescription className="mt-1">
+                    Periode {format(cashFlowStatement.periodFrom, 'd MMMM', { locale: id })} sampai dengan {format(cashFlowStatement.periodTo, 'd MMMM yyyy', { locale: id })}
                   </CardDescription>
+                  <p className="text-sm text-muted-foreground mt-1">(Metode Langsung - Disajikan dalam Rupiah)</p>
                 </div>
                 <Button variant="outline" size="sm">
                   <Download className="h-4 w-4 mr-2" />
@@ -572,18 +574,59 @@ const FinancialReportsPage = () => {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
-                  {/* Operating Activities */}
-                  <div className="space-y-2">
+                  {/* Operating Activities - PSAK Format */}
+                  <div className="space-y-3">
                     <h3 className="text-lg font-semibold text-blue-700 border-b pb-2">AKTIVITAS OPERASI</h3>
-                    <div className="flex justify-between">
-                      <span>Kas masuk dari operasi</span>
-                      <span className="font-mono">{formatCurrency(Math.max(0, cashFlowStatement.operatingActivities.netCashFromOperations))}</span>
+
+                    {/* Cash Receipts */}
+                    <div className="space-y-1">
+                      <h4 className="font-medium text-blue-600">Penerimaan kas dari:</h4>
+                      <div className="flex justify-between pl-4">
+                        <span>Pelanggan</span>
+                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromCustomers || 0)}</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
+                        <span>Penerimaan operasi lain</span>
+                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromOtherOperating || 0)}</span>
+                      </div>
+                      <div className="flex justify-between font-medium text-green-600 border-b pb-1">
+                        <span className="pl-4">Total penerimaan kas</span>
+                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.total || 0)}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Kas keluar untuk operasi</span>
-                      <span className="font-mono">({formatCurrency(Math.abs(Math.min(0, cashFlowStatement.operatingActivities.netCashFromOperations)))})</span>
+
+                    {/* Cash Payments */}
+                    <div className="space-y-1">
+                      <h4 className="font-medium text-red-600">Pembayaran kas untuk:</h4>
+                      <div className="flex justify-between pl-4">
+                        <span>Pembelian bahan baku</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forRawMaterials || 0)})</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
+                        <span>Upah tenaga kerja langsung</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forDirectLabor || 0)})</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
+                        <span>Biaya overhead pabrik</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forManufacturingOverhead || 0)})</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
+                        <span>Beban operasi lainnya</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forOperatingExpenses || 0)})</span>
+                      </div>
+                      {cashFlowStatement.operatingActivities.cashPayments?.forTaxes > 0 && (
+                        <div className="flex justify-between pl-4">
+                          <span>Pajak penghasilan</span>
+                          <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments.forTaxes)})</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-medium text-red-600 border-b pb-1">
+                        <span className="pl-4">Total pembayaran kas</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.total || 0)})</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between font-medium border-t pt-2">
+
+                    <div className="flex justify-between font-bold text-lg bg-blue-50 p-3 rounded">
                       <span>Kas Bersih dari Aktivitas Operasi</span>
                       <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.netCashFromOperations)}</span>
                     </div>

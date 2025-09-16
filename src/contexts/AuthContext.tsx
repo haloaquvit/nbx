@@ -4,6 +4,7 @@ import {
   useEffect,
   useContext,
   useRef,
+  useCallback,
   ReactNode,
 } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -45,20 +46,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Update activity timestamp and reset logout timer
-  const updateActivity = () => {
+  const updateActivity = useCallback(() => {
     const now = Date.now();
+
+    // Only update if significant time has passed to avoid rapid re-renders
+    if (Math.abs(now - lastActivity) < 60000) return; // 1 minute minimum
+
     setLastActivity(now);
-    
+
     // Clear existing timer
     if (logoutTimerRef.current) {
       clearTimeout(logoutTimerRef.current);
     }
-    
+
     // Set new 8-hour logout timer
     logoutTimerRef.current = setTimeout(() => {
       signOut();
     }, 8 * 60 * 60 * 1000); // 8 hours
-  };
+  }, [lastActivity]);
 
   // Lightweight profile fetch with fast fallback - simplified for better performance
   const fetchUserProfile = async (supabaseUser: SupabaseUser) => {
@@ -120,17 +125,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Sign out
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     try {
       // Clear logout timer
       if (logoutTimerRef.current) {
         clearTimeout(logoutTimerRef.current);
         logoutTimerRef.current = null;
       }
-      
+
       // Clear cache
       profileCacheRef.current.clear();
-      
+
       await supabase.auth.signOut();
       setSession(null);
       setUser(null);
@@ -138,7 +143,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       // Silent error handling to prevent console spam
     }
-  };
+  }, []);
 
   // Initial session check on mount - simplified
   useEffect(() => {

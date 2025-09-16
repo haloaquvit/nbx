@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/popover"
 import { useMaterials } from "@/hooks/useMaterials"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
+import { useSuppliers } from "@/hooks/useSuppliers"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
 
@@ -42,8 +43,9 @@ const formSchema = z.object({
   materialId: z.string().min(1, "Material harus dipilih"),
   quantity: z.number().min(1, "Jumlah minimal 1"),
   unitPrice: z.number().min(0, "Harga satuan tidak boleh negatif"),
-  supplierName: z.string().min(1, "Nama supplier harus diisi"),
-  supplierContact: z.string().optional(),
+  supplierId: z.string().min(1, "Supplier harus dipilih"),
+  quotedPrice: z.number().min(0, "Harga quote tidak boleh negatif"),
+  expedition: z.string().optional(),
   expectedDeliveryDate: z.date().optional(),
   notes: z.string().optional(),
 })
@@ -53,12 +55,19 @@ type FormValues = z.infer<typeof formSchema>
 interface CreatePurchaseOrderDialogProps {
   materialId?: string
   children?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }
 
-export function CreatePurchaseOrderDialog({ materialId, children }: CreatePurchaseOrderDialogProps) {
-  const [open, setOpen] = React.useState(false)
+export function CreatePurchaseOrderDialog({ materialId, children, open: externalOpen, onOpenChange: externalOnOpenChange }: CreatePurchaseOrderDialogProps) {
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  
+  // Use external open state if provided, otherwise use internal state
+  const open = externalOpen !== undefined ? externalOpen : internalOpen
+  const setOpen = externalOnOpenChange || setInternalOpen
   const { materials } = useMaterials()
   const { createPurchaseOrder } = usePurchaseOrders()
+  const { activeSuppliers } = useSuppliers()
   const { user } = useAuth()
   const { toast } = useToast()
   
@@ -68,16 +77,41 @@ export function CreatePurchaseOrderDialog({ materialId, children }: CreatePurcha
       materialId: materialId || "",
       quantity: 1,
       unitPrice: 0,
-      supplierName: "",
-      supplierContact: "",
+      supplierId: "",
+      quotedPrice: 0,
+      expedition: "",
       notes: "",
     },
   })
 
+  // Auto-fill material when materialId prop changes
+  React.useEffect(() => {
+    if (materialId) {
+      form.setValue("materialId", materialId)
+    }
+  }, [materialId, form])
+
+  // Reset form when dialog closes
+  React.useEffect(() => {
+    if (!open) {
+      form.reset({
+        materialId: materialId || "",
+        quantity: 1,
+        unitPrice: 0,
+        supplierId: "",
+        quotedPrice: 0,
+        expedition: "",
+        notes: "",
+      })
+    }
+  }, [open, materialId, form])
+
   const selectedMaterial = materials?.find(m => m.id === form.watch("materialId"))
+  const selectedSupplier = activeSuppliers?.find(s => s.id === form.watch("supplierId"))
   const quantity = form.watch("quantity") || 0
   const unitPrice = form.watch("unitPrice") || 0
-  const totalCost = quantity * unitPrice
+  const quotedPrice = form.watch("quotedPrice") || 0
+  const totalCost = quantity * quotedPrice
 
   const onSubmit = async (values: FormValues) => {
     if (!user?.name) {
@@ -99,17 +133,29 @@ export function CreatePurchaseOrderDialog({ materialId, children }: CreatePurcha
       return
     }
 
+    const supplier = activeSuppliers?.find(s => s.id === values.supplierId)
+    if (!supplier) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Supplier tidak ditemukan"
+      })
+      return
+    }
+
     const poData = {
       materialId: values.materialId,
       materialName: material.name,
       quantity: values.quantity,
       unit: material.unit,
       unitPrice: values.unitPrice,
-      totalCost: quantity * values.unitPrice,
+      quotedPrice: values.quotedPrice,
+      totalCost: quantity * values.quotedPrice,
       requestedBy: user.name,
       status: 'Pending' as const,
-      supplierName: values.supplierName,
-      supplierContact: values.supplierContact,
+      supplierId: values.supplierId,
+      supplierName: supplier.name,
+      expedition: values.expedition,
       expectedDeliveryDate: values.expectedDeliveryDate,
       notes: values.notes,
     }
@@ -121,7 +167,15 @@ export function CreatePurchaseOrderDialog({ materialId, children }: CreatePurcha
         description: "Purchase Order berhasil dibuat"
       })
       setOpen(false)
-      form.reset()
+      form.reset({
+        materialId: materialId || "",
+        quantity: 1,
+        unitPrice: 0,
+        supplierId: "",
+        quotedPrice: 0,
+        expedition: "",
+        notes: "",
+      })
     } catch (error) {
       toast({
         variant: "destructive",
@@ -197,9 +251,33 @@ export function CreatePurchaseOrderDialog({ materialId, children }: CreatePurcha
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="supplier">Supplier</Label>
+            <Select
+              value={form.watch("supplierId")}
+              onValueChange={(value) => form.setValue("supplierId", value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih supplier" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeSuppliers?.map((supplier) => (
+                  <SelectItem key={supplier.id} value={supplier.id}>
+                    {supplier.code} - {supplier.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {form.formState.errors.supplierId && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.supplierId.message}
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="unitPrice">Harga Satuan</Label>
+              <Label htmlFor="unitPrice">Harga Satuan (Estimasi)</Label>
               <Input
                 id="unitPrice"
                 type="number"
@@ -216,36 +294,43 @@ export function CreatePurchaseOrderDialog({ materialId, children }: CreatePurcha
             </div>
             
             <div className="space-y-2">
-              <Label>Total Cost</Label>
-              <div className="px-3 py-2 bg-muted rounded-md">
-                Rp {totalCost.toLocaleString('id-ID')}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="supplierName">Nama Supplier</Label>
+              <Label htmlFor="quotedPrice">Harga Quote dari Supplier</Label>
               <Input
-                id="supplierName"
-                placeholder="Nama supplier"
-                {...form.register("supplierName")}
+                id="quotedPrice"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                {...form.register("quotedPrice", { valueAsNumber: true })}
               />
-              {form.formState.errors.supplierName && (
+              {form.formState.errors.quotedPrice && (
                 <p className="text-sm text-destructive">
-                  {form.formState.errors.supplierName.message}
+                  {form.formState.errors.quotedPrice.message}
                 </p>
               )}
             </div>
-            
-            <div className="space-y-2">
-              <Label htmlFor="supplierContact">Kontak Supplier</Label>
-              <Input
-                id="supplierContact"
-                placeholder="Nomor HP / Email"
-                {...form.register("supplierContact")}
-              />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Total Cost (Berdasarkan Quote)</Label>
+            <div className="px-3 py-2 bg-muted rounded-md">
+              Rp {totalCost.toLocaleString('id-ID')}
             </div>
+            {selectedSupplier && (
+              <div className="text-sm text-muted-foreground">
+                Payment Terms: {selectedSupplier.paymentTerms}
+              </div>
+            )}
+          </div>
+
+
+          <div className="space-y-2">
+            <Label htmlFor="expedition">Ekspedisi</Label>
+            <Input
+              id="expedition"
+              placeholder="Nama ekspedisi pengiriman (opsional)"
+              {...form.register("expedition")}
+            />
           </div>
 
           <div className="space-y-2">

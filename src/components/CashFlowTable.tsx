@@ -76,6 +76,8 @@ const getTypeVariant = (item: CashHistory) => {
       case 'pembayaran_po':
       case 'transfer_keluar':
       case 'panjar_pengambilan':
+      case 'gaji_karyawan':
+      case 'pembayaran_gaji':
         return 'destructive';
       default: 
         return 'outline';
@@ -110,8 +112,18 @@ const getTypeLabel = (item: CashHistory) => {
       'pembayaran_po': 'Pembayaran PO',
       'pembayaran_piutang': 'Pembayaran Piutang',
       'transfer_masuk': 'Transfer Masuk',
-      'transfer_keluar': 'Transfer Keluar'
+      'transfer_keluar': 'Transfer Keluar',
+      'gaji_karyawan': 'Pembayaran Gaji',
+      'pembayaran_gaji': 'Pembayaran Gaji'
     };
+
+    // Check if it's a payroll payment (either direct type or description contains payroll indicators)
+    if (item.type === 'kas_keluar_manual' &&
+        (item.description?.includes('Pembayaran gaji') ||
+         item.description?.includes('Payroll Payment') ||
+         item.reference_name?.includes('Payroll'))) {
+      return 'Pembayaran Gaji';
+    }
     return labels[item.type as keyof typeof labels] || item.type;
   }
   
@@ -163,7 +175,7 @@ const isIncomeType = (item: CashHistory) => {
 const isExpenseType = (item: CashHistory) => {
   // Handle new format with 'type' field
   if (item.type) {
-    return ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual'].includes(item.type);
+    return ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji'].includes(item.type);
   }
   
   // Handle format with 'transaction_type' field

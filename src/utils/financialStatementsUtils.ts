@@ -94,6 +94,19 @@ export interface CashFlowStatementData {
     netIncome: number;
     adjustments: CashFlowItem[];
     workingCapitalChanges: CashFlowItem[];
+    cashReceipts: {
+      fromCustomers: number;
+      fromOtherOperating: number;
+      total: number;
+    };
+    cashPayments: {
+      forRawMaterials: number;
+      forDirectLabor: number;
+      forManufacturingOverhead: number;
+      forOperatingExpenses: number;
+      forTaxes: number;
+      total: number;
+    };
     netCashFromOperations: number;
   };
   investingActivities: {
@@ -166,13 +179,47 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
 
   if (materialsError) throw new Error(`Failed to fetch materials: ${materialsError.message}`);
 
+  // Get accounts payable data
+  const { data: accountsPayable, error: apError } = await supabase
+    .from('accounts_payable')
+    .select('amount, paid_amount, status')
+    .lte('created_at', cutoffDateStr + 'T23:59:59');
+
+  // Ignore error if table doesn't exist
+  const apData = apError ? [] : (accountsPayable || []);
+
+  // Get payroll liabilities
+  const { data: payrollRecords, error: payrollError } = await supabase
+    .from('payroll_records')
+    .select('net_salary, status, created_at')
+    .lte('created_at', cutoffDateStr + 'T23:59:59')
+    .eq('status', 'approved');
+
+  // Ignore error if table doesn't exist
+  const payrollData = payrollError ? [] : (payrollRecords || []);
+
   // Calculate accounts receivable
   const totalReceivables = transactions?.reduce((sum, tx) => 
     sum + ((tx.total || 0) - (tx.paid_amount || 0)), 0) || 0;
 
   // Calculate inventory value
-  const totalInventory = materials?.reduce((sum, material) => 
+  const totalInventory = materials?.reduce((sum, material) =>
     sum + ((material.stock || 0) * (material.price_per_unit || 0)), 0) || 0;
+
+  // Calculate outstanding accounts payable
+  const totalAccountsPayable = apData.reduce((sum, ap) => {
+    if (ap.status === 'Outstanding') {
+      return sum + ap.amount;
+    } else if (ap.status === 'Partial') {
+      return sum + (ap.amount - (ap.paid_amount || 0));
+    }
+    return sum;
+  }, 0);
+
+  // Calculate unpaid payroll liabilities
+  const totalPayrollLiabilities = payrollData.reduce((sum, payroll) => {
+    return sum + (payroll.net_salary || 0);
+  }, 0);
 
   // Group accounts by type
   const assetAccounts = accounts?.filter(acc => acc.type === 'Aset') || [];
@@ -255,8 +302,8 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
 
   // Build liabilities
   const hutangUsaha = liabilityAccounts
-    .filter(acc => 
-      acc.name.toLowerCase().includes('hutang') && 
+    .filter(acc =>
+      acc.name.toLowerCase().includes('hutang') &&
       !acc.name.toLowerCase().includes('gaji') &&
       !acc.name.toLowerCase().includes('pajak')
     )
@@ -268,6 +315,17 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
       formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
     }));
 
+  // Add accounts payable from purchase orders
+  if (totalAccountsPayable > 0) {
+    hutangUsaha.push({
+      accountId: 'calculated-accounts-payable',
+      accountCode: '2100',
+      accountName: 'Hutang Supplier (PO)',
+      balance: totalAccountsPayable,
+      formattedBalance: formatCurrency(totalAccountsPayable)
+    });
+  }
+
   const hutangGaji = liabilityAccounts
     .filter(acc => acc.name.toLowerCase().includes('gaji'))
     .map(acc => ({
@@ -277,6 +335,17 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
       balance: Math.abs(acc.balance || 0),
       formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
     }));
+
+  // Add unpaid payroll liabilities
+  if (totalPayrollLiabilities > 0) {
+    hutangGaji.push({
+      accountId: 'calculated-payroll-liabilities',
+      accountCode: '2110',
+      accountName: 'Hutang Gaji Karyawan',
+      balance: totalPayrollLiabilities,
+      formattedBalance: formatCurrency(totalPayrollLiabilities)
+    });
+  }
 
   const hutangPajak = liabilityAccounts
     .filter(acc => acc.name.toLowerCase().includes('pajak') || acc.name.toLowerCase().includes('ppn'))
@@ -397,45 +466,65 @@ export async function generateIncomeStatement(
     source: 'transactions'
   }];
 
-  // Calculate COGS from actual data
-  // Get purchase orders (pembelian bahan baku) for the period
-  const { data: purchaseOrders, error: poError } = await supabase
-    .from('purchase_orders')
-    .select('total_cost, created_at')
+  // Calculate COGS from actual material consumption (Manufacturing Approach)
+  // Get material consumption from material_stock_movements
+  const { data: materialConsumption, error: materialError } = await supabase
+    .from('material_stock_movements')
+    .select('quantity, material_id, materials(price_per_unit)')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59')
-    .eq('status', 'Selesai');
+    .eq('type', 'OUT')
+    .eq('reason', 'PRODUCTION_CONSUMPTION');
 
-  const pembelianBahanBaku = purchaseOrders?.reduce((sum, po) => sum + (po.total_cost || 0), 0) || 0;
+  const materialCost = materialConsumption?.reduce((sum, movement) => {
+    const pricePerUnit = movement.materials?.price_per_unit || 0;
+    return sum + (movement.quantity * pricePerUnit);
+  }, 0) || 0;
 
-  // Get beginning inventory value (simplified - beginning of period)
-  const beginningDate = new Date(periodFrom);
-  beginningDate.setDate(1); // Start of month
-  
-  const { data: beginningMaterials } = await supabase
-    .from('materials')
-    .select('stock, price_per_unit');
-  
-  const persediaanAwal = beginningMaterials?.reduce((sum, material) => 
-    sum + ((material.stock || 0) * (material.price_per_unit || 0)), 0) || 0;
+  // Get direct labor cost from payroll (production workers)
+  const { data: payrollData, error: payrollError } = await supabase
+    .from('cash_history')
+    .select('amount')
+    .gte('created_at', fromDateStr)
+    .lte('created_at', toDateStr + 'T23:59:59')
+    .in('type', ['gaji_karyawan', 'pembayaran_gaji']);
 
-  // Get current inventory value (end of period)
-  const { data: currentMaterials } = await supabase
-    .from('materials')
-    .select('stock, price_per_unit');
-  
-  const persediaanAkhir = currentMaterials?.reduce((sum, material) => 
-    sum + ((material.stock || 0) * (material.price_per_unit || 0)), 0) || 0;
+  const laborCost = payrollData?.reduce((sum, record) => sum + (record.amount || 0), 0) || 0;
 
-  // Calculate COGS: Persediaan Awal + Pembelian - Persediaan Akhir
-  const totalCOGS = persediaanAwal + pembelianBahanBaku - persediaanAkhir;
+  // Get manufacturing overhead from cash_history
+  const { data: overheadData, error: overheadError } = await supabase
+    .from('cash_history')
+    .select('amount')
+    .gte('created_at', fromDateStr)
+    .lte('created_at', toDateStr + 'T23:59:59')
+    .in('type', ['pengeluaran', 'kas_keluar_manual'])
+    .or('description.ilike.%listrik%,description.ilike.%air%,description.ilike.%utilitas%,description.ilike.%overhead%');
 
-  const bahanBaku: IncomeStatementItem[] = [{
-    accountName: 'Harga Pokok Penjualan',
-    amount: totalCOGS > 0 ? totalCOGS : 0,
-    formattedAmount: formatCurrency(totalCOGS > 0 ? totalCOGS : 0),
-    source: 'calculated_from_inventory_and_purchases'
-  }];
+  const overheadCost = overheadData?.reduce((sum, record) => sum + (record.amount || 0), 0) || 0;
+
+  // Calculate COGS: Material Cost + Labor Cost + Manufacturing Overhead
+  const totalCOGS = materialCost + laborCost + overheadCost;
+
+  const bahanBaku: IncomeStatementItem[] = materialCost > 0 ? [{
+    accountName: 'Bahan Baku Terpakai',
+    amount: materialCost,
+    formattedAmount: formatCurrency(materialCost),
+    source: 'material_consumption'
+  }] : [];
+
+  const tenagaKerja: IncomeStatementItem[] = laborCost > 0 ? [{
+    accountName: 'Tenaga Kerja Langsung',
+    amount: laborCost,
+    formattedAmount: formatCurrency(laborCost),
+    source: 'payroll_records'
+  }] : [];
+
+  const overhead: IncomeStatementItem[] = overheadCost > 0 ? [{
+    accountName: 'Biaya Overhead Pabrik',
+    amount: overheadCost,
+    formattedAmount: formatCurrency(overheadCost),
+    source: 'manufacturing_expenses'
+  }] : [];
 
   const grossProfit = totalRevenue - totalCOGS;
   const grossProfitMargin = calculatePercentage(grossProfit, totalRevenue);
@@ -473,8 +562,8 @@ export async function generateIncomeStatement(
     },
     cogs: {
       bahanBaku,
-      tenagaKerja: [],
-      overhead: [],
+      tenagaKerja,
+      overhead,
       totalCOGS
     },
     grossProfit,
@@ -550,16 +639,64 @@ export async function generateCashFlowStatement(
     ch.description?.toLowerCase().includes('pinjaman')
   ) || [];
 
-  // Calculate operating cash flow
-  const operatingInflows = operatingCashFlows
-    .filter(ch => ['orderan', 'kas_masuk_manual'].includes(ch.type || ''))
+  // Calculate detailed cash receipts
+  const fromCustomers = operatingCashFlows
+    .filter(ch => ch.type === 'orderan')
     .reduce((sum, ch) => sum + (ch.amount || 0), 0);
 
-  const operatingOutflows = operatingCashFlows
-    .filter(ch => ['pengeluaran', 'kas_keluar_manual'].includes(ch.type || ''))
+  const fromOtherOperating = operatingCashFlows
+    .filter(ch => ch.type === 'kas_masuk_manual')
     .reduce((sum, ch) => sum + (ch.amount || 0), 0);
 
-  const netCashFromOperations = operatingInflows - operatingOutflows;
+  const cashReceipts = {
+    fromCustomers,
+    fromOtherOperating,
+    total: fromCustomers + fromOtherOperating
+  };
+
+  // Calculate detailed cash payments
+  const forRawMaterials = operatingCashFlows
+    .filter(ch => ch.type === 'pembayaran_po' ||
+      (ch.description?.toLowerCase().includes('bahan') ||
+       ch.description?.toLowerCase().includes('material')))
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
+  const forDirectLabor = operatingCashFlows
+    .filter(ch => ch.type === 'gaji_karyawan' || ch.type === 'pembayaran_gaji')
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
+  const forManufacturingOverhead = operatingCashFlows
+    .filter(ch =>
+      (ch.type === 'pengeluaran' || ch.type === 'kas_keluar_manual') &&
+      (ch.description?.toLowerCase().includes('listrik') ||
+       ch.description?.toLowerCase().includes('air') ||
+       ch.description?.toLowerCase().includes('utilitas') ||
+       ch.description?.toLowerCase().includes('overhead')))
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
+  const forOperatingExpenses = operatingCashFlows
+    .filter(ch =>
+      (ch.type === 'pengeluaran' || ch.type === 'kas_keluar_manual') &&
+      !(ch.description?.toLowerCase().includes('listrik') ||
+        ch.description?.toLowerCase().includes('air') ||
+        ch.description?.toLowerCase().includes('utilitas') ||
+        ch.description?.toLowerCase().includes('overhead') ||
+        ch.description?.toLowerCase().includes('bahan') ||
+        ch.description?.toLowerCase().includes('material')))
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
+  const forTaxes = 0; // TODO: Add tax-specific categorization
+
+  const cashPayments = {
+    forRawMaterials,
+    forDirectLabor,
+    forManufacturingOverhead,
+    forOperatingExpenses,
+    forTaxes,
+    total: forRawMaterials + forDirectLabor + forManufacturingOverhead + forOperatingExpenses + forTaxes
+  };
+
+  const netCashFromOperations = cashReceipts.total - cashPayments.total;
 
   // Calculate investing cash flow
   const investingOutflows = investingCashFlows.reduce((sum, ch) => sum + (ch.amount || 0), 0);
@@ -584,6 +721,8 @@ export async function generateCashFlowStatement(
       netIncome: netCashFromOperations, // Simplified
       adjustments: [],
       workingCapitalChanges: [],
+      cashReceipts,
+      cashPayments,
       netCashFromOperations
     },
     investingActivities: {

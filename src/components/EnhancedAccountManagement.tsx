@@ -17,6 +17,7 @@ import { Account, AccountCategory, NormalBalance } from "@/types/account"
 import { useAuth } from "@/hooks/useAuth"
 import { isOwner, isAdmin, isAdminOrOwner, canManageCash } from "@/utils/roleUtils"
 import { ChartOfAccountsTree } from "./ChartOfAccountsTree"
+import { CoaTableView } from "./CoaTableView"
 import { 
   STANDARD_COA_TEMPLATE, 
   generateNextAccountCode, 
@@ -413,12 +414,14 @@ export function EnhancedAccountManagement() {
           </div>
         </TabsContent>
 
-        <TabsContent value="table">
-          {/* Legacy Table View - Keep existing AccountManagement component */}
-          <div className="text-center py-8 text-muted-foreground">
-            <p>Table view coming soon...</p>
-            <p className="text-sm">Sementara gunakan Tree View untuk mengelola Chart of Accounts</p>
-          </div>
+        <TabsContent value="table" className="space-y-4">
+          <CoaTableView
+            accounts={accounts || []}
+            onAccountUpdate={handleAccountEdit}
+            onAccountDelete={userIsOwner ? handleAccountDelete : undefined}
+            canEdit={userIsAdminOrOwner}
+            updateAccount={updateAccount}
+          />
         </TabsContent>
       </Tabs>
 

@@ -1,0 +1,437 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { useEmployees } from "@/hooks/useEmployees"
+import { useAccounts } from "@/hooks/useAccounts"
+import { usePayrollRecords } from "@/hooks/usePayroll"
+import { PayrollCalculation } from "@/types/payroll"
+import { Calculator, DollarSign, AlertTriangle, Users, CreditCard } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+
+interface PayrollRecordDialogProps {
+  isOpen: boolean
+  onOpenChange: (open: boolean) => void
+  selectedYear: number
+  selectedMonth: number
+}
+
+export function PayrollRecordDialog({
+  isOpen,
+  onOpenChange,
+  selectedYear,
+  selectedMonth
+}: PayrollRecordDialogProps) {
+  const { toast } = useToast()
+  const { employees } = useEmployees()
+  const { accounts } = useAccounts()
+  const { calculatePayrollWithAdvances, createPayrollRecord } = usePayrollRecords()
+
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
+  const [calculation, setCalculation] = useState<PayrollCalculation | null>(null)
+  const [isCalculating, setIsCalculating] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+
+  // Form fields that can be adjusted
+  const [bonusAmount, setBonusAmount] = useState(0)
+  const [customAdvanceDeduction, setCustomAdvanceDeduction] = useState<number>(0) // Default 0, not auto
+  const [paymentAccountId, setPaymentAccountId] = useState<string>("")
+  const [notes, setNotes] = useState("")
+
+  // Get cash accounts for payment
+  const cashAccounts = accounts?.filter(acc => acc.type === 'Aset' &&
+    (acc.name.toLowerCase().includes('kas') || acc.name.toLowerCase().includes('bank')))
+
+  // Debug logging (removed to reduce console spam)
+
+  const handleCalculate = async () => {
+    console.log('handleCalculate called', { selectedEmployeeId, selectedYear, selectedMonth });
+
+    if (!selectedEmployeeId) {
+      console.log('No employee selected');
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Pilih karyawan terlebih dahulu"
+      })
+      return
+    }
+
+    console.log('Starting calculation...');
+    setIsCalculating(true)
+
+    try {
+      console.log('Calling calculatePayrollWithAdvances.mutateAsync');
+      const result = await calculatePayrollWithAdvances.mutateAsync({
+        employeeId: selectedEmployeeId,
+        year: selectedYear,
+        month: selectedMonth
+      })
+
+      console.log('🎯 RPC RESPONSE DETAIL:');
+      console.log('Full result object:', JSON.stringify(result, null, 2));
+      console.log('Result keys:', Object.keys(result || {}));
+      console.log('Base salary value:', result?.baseSalary);
+      console.log('Commission value:', result?.commissionAmount);
+      console.log('Outstanding advances value:', result?.outstandingAdvances);
+
+      setCalculation(result)
+      setBonusAmount(result.bonusAmount || result.bonus_amount || 0)
+
+      toast({
+        title: "Berhasil",
+        description: "Gaji berhasil dihitung"
+      })
+    } catch (error: any) {
+      console.error('Calculation error:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Gagal menghitung gaji"
+      })
+    } finally {
+      console.log('Calculation finished, setting isCalculating to false');
+      setIsCalculating(false)
+    }
+  }
+
+  const handleCreate = async () => {
+    if (!calculation || !paymentAccountId) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Lengkapi semua field yang diperlukan"
+      })
+      return
+    }
+
+    setIsCreating(true)
+    try {
+      await createPayrollRecord.mutateAsync({
+        employeeId: calculation.employeeId,
+        periodYear: calculation.periodYear,
+        periodMonth: calculation.periodMonth,
+        baseSalaryAmount: calculation.baseSalary,
+        commissionAmount: calculation.commissionAmount,
+        bonusAmount: bonusAmount,
+        deductionAmount: actualAdvanceDeduct, // Custom or auto-calculated advance deduction
+        paymentAccountId,
+        notes
+      })
+
+      toast({
+        title: "Sukses",
+        description: "Record payroll berhasil dibuat"
+      })
+
+      // Reset form
+      setSelectedEmployeeId("")
+      setCalculation(null)
+      setBonusAmount(0)
+      setCustomAdvanceDeduction(0) // Reset to default 0
+      setPaymentAccountId("")
+      setNotes("")
+      onOpenChange(false)
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Gagal membuat record payroll"
+      })
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+      minimumFractionDigits: 0,
+    }).format(amount)
+  }
+
+  // Recalculate when bonus or advance deduction changes
+  const baseSal = calculation?.baseSalary || calculation?.base_salary || 0
+  const commissionAmt = calculation?.commissionAmount || calculation?.commission_amount || 0
+  const maxAdvanceDeduct = calculation?.advanceDeduction || calculation?.advance_deduction || 0
+
+  // Always use custom advance deduction (default 0, user can change)
+  const actualAdvanceDeduct = Math.max(0, customAdvanceDeduction) // Ensure no negative values
+
+  const recalculatedGross = calculation ? baseSal + commissionAmt + bonusAmount : 0
+  const recalculatedNet = calculation ? recalculatedGross - actualAdvanceDeduct : 0
+
+  const selectedEmployee = employees?.find(emp => emp.id === selectedEmployeeId)
+  const paymentAccount = accounts?.find(acc => acc.id === paymentAccountId)
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Calculator className="h-5 w-5" />
+            Buat Record Payroll - {new Date(selectedYear, selectedMonth - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
+          </DialogTitle>
+          <DialogDescription>
+            Pilih karyawan dan hitung gaji dengan pemotongan panjar otomatis
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Input Section */}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Pilih Karyawan</Label>
+              <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih karyawan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees?.map((employee) => (
+                    <SelectItem key={employee.id} value={employee.id}>
+                      <div className="flex items-center justify-between w-full">
+                        <span>{employee.name}</span>
+                        <Badge variant="outline" className="ml-2">{employee.role}</Badge>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              onClick={() => {
+                console.log('Button clicked!');
+                handleCalculate();
+              }}
+              disabled={!selectedEmployeeId || isCalculating}
+              className="w-full"
+            >
+              <Calculator className="h-4 w-4 mr-2" />
+              {isCalculating ? "Menghitung..." : "Hitung Gaji"}
+            </Button>
+
+            {calculation && (
+              <>
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label htmlFor="bonusAmount">Bonus Tambahan</Label>
+                  <Input
+                    id="bonusAmount"
+                    type="number"
+                    value={bonusAmount}
+                    onChange={(e) => setBonusAmount(Number(e.target.value) || 0)}
+                    placeholder="0"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="advanceDeduction">Potong Panjar (Opsional)</Label>
+                  <Input
+                    id="advanceDeduction"
+                    type="number"
+                    value={customAdvanceDeduction}
+                    onChange={(e) => {
+                      const value = Number(e.target.value) || 0
+                      setCustomAdvanceDeduction(value)
+                    }}
+                    placeholder="0"
+                    max={maxAdvanceDeduct}
+                    min={0}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {maxAdvanceDeduct > 0 ? (
+                      <>Default 0 (tidak potong). Maksimal bisa potong: {formatCurrency(maxAdvanceDeduct)}</>
+                    ) : (
+                      'Karyawan tidak memiliki panjar outstanding'
+                    )}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Akun Pembayaran</Label>
+                  <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih akun pembayaran..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {cashAccounts?.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          <div className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4" />
+                            <span>{account.name}</span>
+                            <span className="text-muted-foreground">({formatCurrency(account.balance)})</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="payrollNotes">Catatan</Label>
+                  <Textarea
+                    id="payrollNotes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Catatan tambahan..."
+                    rows={3}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Calculation Result Section */}
+          <div className="space-y-4">
+            {selectedEmployee && !calculation && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-sm">
+                    <Users className="h-4 w-4" />
+                    Karyawan Dipilih
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div><strong>Nama:</strong> {selectedEmployee.name}</div>
+                    <div><strong>Email:</strong> {selectedEmployee.email}</div>
+                    <div><strong>Jabatan:</strong> {selectedEmployee.role}</div>
+                    <div><strong>Status:</strong> <Badge variant="outline">{selectedEmployee.status}</Badge></div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {calculation && (
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <DollarSign className="h-4 w-4" />
+                      Rincian Gaji
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex justify-between">
+                      <span>Gaji Pokok:</span>
+                      <span className="font-medium">
+                        {formatCurrency(calculation.baseSalary || calculation.base_salary || 0)}
+                        <small className="text-muted-foreground ml-2">
+                          ({calculation.baseSalary || calculation.base_salary || 0})
+                        </small>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Komisi:</span>
+                      <span className="font-medium text-green-600">
+                        {formatCurrency(calculation.commissionAmount || calculation.commission_amount || 0)}
+                        <small className="text-muted-foreground ml-2">
+                          ({calculation.commissionAmount || calculation.commission_amount || 0})
+                        </small>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Bonus:</span>
+                      <span className="font-medium text-blue-600">
+                        {formatCurrency(bonusAmount)}
+                        <small className="text-muted-foreground ml-2">({bonusAmount})</small>
+                      </span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between font-medium">
+                      <span>Gaji Kotor:</span>
+                      <span>
+                        {formatCurrency(recalculatedGross)}
+                        <small className="text-muted-foreground ml-2">({recalculatedGross})</small>
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-sm">
+                      <AlertTriangle className="h-4 w-4 text-orange-500" />
+                      Pemotongan
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex justify-between">
+                      <span>Sisa Panjar:</span>
+                      <span className="font-medium text-orange-600">
+                        {formatCurrency(calculation.outstandingAdvances || calculation.outstanding_advances || 0)}
+                        <small className="text-muted-foreground ml-2">
+                          ({calculation.outstandingAdvances || calculation.outstanding_advances || 0})
+                        </small>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Potong Panjar:</span>
+                      <span className={`font-medium ${actualAdvanceDeduct > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                        {actualAdvanceDeduct > 0 ?
+                          `(${formatCurrency(actualAdvanceDeduct)})` :
+                          'Tidak ada pemotongan'
+                        }
+                        <small className="text-blue-600 ml-2">
+                          ({customAdvanceDeduction === 0 ? 'tidak potong' : 'potong manual'})
+                        </small>
+                      </span>
+                    </div>
+                    {actualAdvanceDeduct > 0 && (
+                      <div className="text-xs text-muted-foreground p-2 bg-orange-50 rounded">
+                        <AlertTriangle className="h-3 w-3 inline mr-1" />
+                        Panjar akan otomatis dipotong dari gaji dan dicatat sebagai pelunasan
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card className="border-2 border-primary/20">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <DollarSign className="h-5 w-5 text-primary" />
+                      Gaji Bersih
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-primary">
+                      {formatCurrency(recalculatedNet)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      Tipe: <Badge variant="outline">{calculation.payrollType}</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Batal
+          </Button>
+          {calculation && (
+            <Button
+              onClick={handleCreate}
+              disabled={!paymentAccountId || isCreating}
+            >
+              {isCreating ? "Membuat..." : "Buat Record Payroll"}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

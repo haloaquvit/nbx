@@ -15,7 +15,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Material } from '@/types/material'
 import { useMaterials } from '@/hooks/useMaterials'
 import { useAuth } from '@/hooks/useAuth'
-import { RequestPoDialog } from './RequestPoDialog'
+import { CreatePurchaseOrderDialog } from './CreatePurchaseOrderDialog'
 import { Badge } from './ui/badge'
 import { useToast } from './ui/use-toast'
 import { Trash2, ChevronDown, ChevronUp, Package, Search, X, FileText } from 'lucide-react'
@@ -159,11 +159,13 @@ export const MaterialManagement = () => {
 
   return (
     <div className="space-y-6">
-      <RequestPoDialog
+      <CreatePurchaseOrderDialog
+        materialId={selectedMaterial?.id}
         open={isRequestPoOpen}
         onOpenChange={setIsRequestPoOpen}
-        material={selectedMaterial}
-      />
+      >
+        <div />
+      </CreatePurchaseOrderDialog>
 
       {canManageMaterials && (
         <Card>

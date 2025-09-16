@@ -29,14 +29,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 
-const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Rejected', 'Dibayar', 'Selesai'];
+const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Diterima', 'Dibayar', 'Selesai'];
 
 const getStatusVariant = (status: PurchaseOrderStatus) => {
   switch (status) {
     case 'Approved': return 'success';
-    case 'Rejected': return 'destructive';
+    case 'Diterima': return 'info';
     case 'Pending': return 'secondary';
-    case 'Dibayar': return 'info';
+    case 'Dibayar': return 'warning';
     case 'Selesai': return 'outline';
     default: return 'outline';
   }
@@ -50,7 +50,7 @@ export function PurchaseOrderTable() {
   const [selectedPo, setSelectedPo] = React.useState<PurchaseOrder | null>(null);
 
   const handleStatusChange = (po: PurchaseOrder, newStatus: PurchaseOrderStatus) => {
-    if (newStatus === 'Dibayar' && po.status === 'Approved') {
+    if (newStatus === 'Dibayar' && po.status === 'Diterima') {
       setSelectedPo(po);
       setIsPayDialogOpen(true);
     } else {
@@ -84,10 +84,21 @@ export function PurchaseOrderTable() {
       header: "Total Cost", 
       cell: ({ row }) => {
         const cost = row.original.totalCost;
-        return cost ? `Rp ${cost.toLocaleString('id-ID')}` : '-';
+        const quotedPrice = row.original.quotedPrice;
+        return cost ? (
+          <div>
+            <div className="font-medium">Rp {cost.toLocaleString('id-ID')}</div>
+            {quotedPrice && quotedPrice !== row.original.unitPrice && (
+              <div className="text-xs text-muted-foreground">
+                Quote: Rp {(quotedPrice * row.original.quantity).toLocaleString('id-ID')}
+              </div>
+            )}
+          </div>
+        ) : '-';
       }
     },
     { accessorKey: "supplierName", header: "Supplier", cell: ({ row }) => row.original.supplierName || '-' },
+    { accessorKey: "expedition", header: "Ekspedisi", cell: ({ row }) => row.original.expedition || '-' },
     { accessorKey: "requestedBy", header: "Pemohon" },
     { accessorKey: "createdAt", header: "Tgl Request", cell: ({ row }) => format(new Date(row.getValue("createdAt")), "d MMM yyyy", { locale: id }) },
     {
@@ -97,22 +108,24 @@ export function PurchaseOrderTable() {
         const po = row.original;
         const isAdmin = isAdminOrOwner(user);
         
-        if (isAdmin && po.status !== 'Selesai' && po.status !== 'Rejected') {
+        if (isAdmin && po.status !== 'Selesai') {
           return (
-            <Select
-              value={po.status}
-              onValueChange={(value: PurchaseOrderStatus) => handleStatusChange(po, value)}
-              disabled={updatePoStatus.isPending}
-            >
-              <SelectTrigger className={cn("w-[150px] border-0 focus:ring-0 focus:ring-offset-0", badgeVariants({ variant: getStatusVariant(po.status) }))}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map(status => (
-                  <SelectItem key={status} value={status}>{status}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div onClick={(e) => e.stopPropagation()}>
+              <Select
+                value={po.status}
+                onValueChange={(value: PurchaseOrderStatus) => handleStatusChange(po, value)}
+                disabled={updatePoStatus.isPending}
+              >
+                <SelectTrigger className={cn("w-[150px] border-0 focus:ring-0 focus:ring-offset-0", badgeVariants({ variant: getStatusVariant(po.status) }))}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" sideOffset={4} align="center">
+                  {statusOptions.map(status => (
+                    <SelectItem key={status} value={status}>{status}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )
         }
         return <Badge variant={getStatusVariant(po.status)}>{po.status}</Badge>

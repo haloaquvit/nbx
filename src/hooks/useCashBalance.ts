@@ -107,6 +107,22 @@ export const useCashBalance = () => {
         totalBalance += account.balance || 0;
       });
 
+      // Debug: Log payroll records found
+      const payrollRecords = (allCashFlow || []).filter(record =>
+        record.type === 'gaji_karyawan' ||
+        record.type === 'pembayaran_gaji' ||
+        (record.type === 'kas_keluar_manual' &&
+         (record.description?.includes('Pembayaran gaji') || record.description?.includes('Payroll Payment')))
+      );
+
+      console.log('💰 Debug Cash Balance Calculation:');
+      console.log('📊 Total cash flow records:', (allCashFlow || []).length);
+      console.log('💸 Payroll records found:', payrollRecords.length);
+      payrollRecords.forEach(record => {
+        console.log(`  - ${record.type}: ${record.amount} (${record.description})`);
+      });
+      console.log('📅 Today range:', todayStart, 'to', todayEnd);
+
       // Process cash flow records to calculate today's activity only
       (allCashFlow || []).forEach(record => {
         const recordDate = new Date(record.created_at);
@@ -114,6 +130,16 @@ export const useCashBalance = () => {
         
         // Only process today's transactions for income/expense calculation
         if (isToday) {
+          // Debug log today's records
+          if (record.type === 'gaji_karyawan' || record.type === 'pembayaran_gaji' ||
+              (record.type === 'kas_keluar_manual' && record.description?.includes('Pembayaran gaji'))) {
+            console.log('🎯 Processing payroll record for today:', {
+              type: record.type,
+              amount: record.amount,
+              description: record.description,
+              date: record.created_at
+            });
+          }
           // Skip transfers in total calculation (they don't change total cash, only move between accounts)
           if (record.source_type === 'transfer_masuk' || record.source_type === 'transfer_keluar') {
             // Still update per-account data for transfers
@@ -136,12 +162,17 @@ export const useCashBalance = () => {
             
           // All other types should be considered expenses
           const isExpense = record.transaction_type === 'expense' ||
-            (record.type && ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual'].includes(record.type));
+            (record.type && ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji'].includes(record.type));
 
           if (isIncome) {
             todayIncome += record.amount;
           } else if (isExpense) {
             todayExpense += record.amount;
+            // Debug: Log which records contribute to today's expenses
+            if (record.type === 'gaji_karyawan' || record.type === 'pembayaran_gaji' ||
+                (record.type === 'kas_keluar_manual' && record.description?.includes('Pembayaran gaji'))) {
+              console.log('➕ Adding payroll to today expense:', record.amount, 'Total so far:', todayExpense);
+            }
           }
 
           // Update account today data
@@ -161,6 +192,14 @@ export const useCashBalance = () => {
       // Calculate totals based on accounts table + today's activity
       const todayNet = todayIncome - todayExpense;
       const totalPreviousBalance = totalBalance - todayNet;
+
+      // Debug summary
+      console.log('📊 Final Cash Balance Summary:');
+      console.log(`💰 Today Income: Rp ${todayIncome.toLocaleString('id-ID')}`);
+      console.log(`💸 Today Expense: Rp ${todayExpense.toLocaleString('id-ID')}`);
+      console.log(`📈 Today Net: Rp ${todayNet.toLocaleString('id-ID')}`);
+      console.log(`🏦 Total Balance: Rp ${totalBalance.toLocaleString('id-ID')}`);
+      console.log('---');
 
       // Calculate previous balance for each account
       accountBalances.forEach(account => {

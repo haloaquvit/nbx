@@ -47,9 +47,12 @@ const RolesPage = lazy(() => import("@/pages/RolesPage"));
 const RetasiPage = lazy(() => import("@/pages/RetasiPage"));
 const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
 const DriverPosPage = lazy(() => import("@/pages/DriverPosPage"));
+const SupplierPage = lazy(() => import("@/pages/SupplierPage"));
+const PayrollPage = lazy(() => import("@/pages/PayrollPage"));
 const CommissionManagePage = lazy(() => import("@/pages/CommissionManagePage"));
 const CommissionReportPage = lazy(() => import("@/pages/CommissionReportPage"));
 const FinancialReportsPage = lazy(() => import("@/pages/FinancialReportsPage"));
+const AccountsPayablePage = lazy(() => import("@/pages/AccountsPayablePage"));
 
 function App() {
   // Handle chunk loading errors
@@ -121,10 +124,13 @@ function App() {
                   <Route path="/customers" element={<CustomerPage />} />
                   <Route path="/customers/:id" element={<CustomerDetailPage />} />
                   <Route path="/employees" element={<EmployeePage />} />
+                  <Route path="/payroll" element={<PayrollPage />} />
+                  <Route path="/suppliers" element={<SupplierPage />} />
                   <Route path="/purchase-orders" element={<PurchaseOrderPage />} />
                   <Route path="/accounts" element={<AccountingPage />} />
                   <Route path="/accounts/:id" element={<AccountDetailPage />} />
                   <Route path="/receivables" element={<ReceivablesPage />} />
+                  <Route path="/accounts-payable" element={<AccountsPayablePage />} />
                   <Route path="/expenses" element={<ExpensePage />} />
                   <Route path="/advances" element={<EmployeeAdvancePage />} />
                   <Route path="/settings" element={<SettingsPage />} />
