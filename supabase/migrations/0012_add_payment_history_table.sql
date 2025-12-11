@@ -1,5 +1,5 @@
 -- Add payment_history table to track detailed payment records for receivables
-CREATE TABLE public.payment_history (
+CREATE TABLE IF NOT EXISTS public.payment_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   transaction_id TEXT NOT NULL REFERENCES public.transactions(id) ON DELETE CASCADE,
   amount NUMERIC NOT NULL CHECK (amount > 0),
@@ -19,12 +19,13 @@ CREATE TABLE public.payment_history (
 ALTER TABLE public.payment_history ENABLE ROW LEVEL SECURITY;
 
 -- Create policy for payment_history
-CREATE POLICY "Authenticated users can manage payment history" ON public.payment_history 
+DROP POLICY IF EXISTS "Authenticated users can manage payment history" ON public.payment_history;
+CREATE POLICY "Authenticated users can manage payment history" ON public.payment_history
 FOR ALL USING (auth.role() = 'authenticated');
 
 -- Create index for better query performance
-CREATE INDEX idx_payment_history_transaction_id ON public.payment_history(transaction_id);
-CREATE INDEX idx_payment_history_payment_date ON public.payment_history(payment_date);
+CREATE INDEX IF NOT EXISTS idx_payment_history_transaction_id ON public.payment_history(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_payment_history_payment_date ON public.payment_history(payment_date);
 
 -- Function to automatically update payment history when receivable is paid
 CREATE OR REPLACE FUNCTION public.record_payment_history()
@@ -54,6 +55,7 @@ END;
 $$;
 
 -- Create trigger to automatically record payment history
+DROP TRIGGER IF EXISTS on_receivable_payment ON public.transactions;
 CREATE TRIGGER on_receivable_payment
   AFTER UPDATE OF paid_amount ON public.transactions
   FOR EACH ROW

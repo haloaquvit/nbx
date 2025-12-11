@@ -381,7 +381,8 @@ export function useDeliveries() {
       console.log(`📦 Creating delivery #${nextDeliveryNumber} for transaction ${request.transactionId}`);
 
       // Create delivery record (handle table not existing gracefully)
-      const { data: deliveryData, error: deliveryError } = await supabase
+      let deliveryData;
+      const { data: initialDeliveryData, error: deliveryError } = await supabase
         .from('deliveries')
         .insert({
           transaction_id: request.transactionId,
@@ -414,14 +415,14 @@ export function useDeliveries() {
           driver_id: request.driverId,
           helper_id: request.helperId,
         })
-        
+
         if (deliveryError.message.includes('relation "deliveries" does not exist')) {
           throw new Error('Tabel pengantaran belum tersedia. Silakan jalankan database migration terlebih dahulu.')
         }
-        
+
         if (deliveryError.code === '23505' && (deliveryError.message.includes('deliveries_delivery_number_key') || deliveryError.message.includes('deliveries_transaction_delivery_number_key'))) {
           console.warn('Delivery number conflict detected, retrying with next number...');
-          
+
           // Retry with next available number
           const { data: retryDeliveries } = await supabase
             .from('deliveries')
@@ -430,8 +431,8 @@ export function useDeliveries() {
             .order('delivery_number', { ascending: false })
             .limit(1);
 
-          const retryDeliveryNumber = retryDeliveries && retryDeliveries.length > 0 
-            ? retryDeliveries[0].delivery_number + 1 
+          const retryDeliveryNumber = retryDeliveries && retryDeliveries.length > 0
+            ? retryDeliveries[0].delivery_number + 1
             : 1;
 
           console.log(`🔄 Retrying with delivery #${retryDeliveryNumber}`);
@@ -458,12 +459,14 @@ export function useDeliveries() {
           if (retryError) {
             throw new Error(`Failed to create delivery after retry: ${retryError.message}`);
           }
-          
+
           // Use retry data for the rest of the function
           deliveryData = retryDeliveryData;
         } else {
           throw new Error(`Database error: ${deliveryError.message}`)
         }
+      } else {
+        deliveryData = initialDeliveryData;
       }
 
       // Validate product IDs exist in products table first
