@@ -42,7 +42,7 @@ import { useToast } from "@/components/ui/use-toast"
 const formSchema = z.object({
   materialId: z.string().min(1, "Material harus dipilih"),
   quantity: z.number().min(1, "Jumlah minimal 1"),
-  unitPrice: z.number().min(0, "Harga satuan tidak boleh negatif"),
+  unitPrice: z.number().min(0, "Harga satuan tidak boleh negatif").optional(),
   supplierId: z.string().min(1, "Supplier harus dipilih"),
   quotedPrice: z.number().min(0, "Harga quote tidak boleh negatif"),
   expedition: z.string().optional(),
@@ -73,6 +73,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
   
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
+    mode: "onChange",
     defaultValues: {
       materialId: materialId || "",
       quantity: 1,
@@ -376,9 +377,9 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Batal
             </Button>
-            <Button 
-              type="submit" 
-              disabled={createPurchaseOrder.isPending || !form.formState.isValid}
+            <Button
+              type="submit"
+              disabled={createPurchaseOrder.isPending}
             >
               {createPurchaseOrder.isPending ? "Membuat..." : "Buat PO"}
             </Button>

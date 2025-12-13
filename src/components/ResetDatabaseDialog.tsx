@@ -48,9 +48,11 @@ const dataCategories: DataCategory[] = [
       'transactions',
       'transaction_items',
       'quotations',
-      'deliveries', 
+      'deliveries',
       'delivery_items',
-      'payment_history'
+      'payment_history',
+      'stock_pricings',
+      'bonus_pricings'
     ],
     dependencies: ['customers']
   },
@@ -74,7 +76,10 @@ const dataCategories: DataCategory[] = [
       'production_records',
       'product_materials',
       'production_errors',
-      'purchase_orders'
+      'purchase_orders',
+      'suppliers',
+      'supplier_materials',
+      'accounts_payable'
     ]
   },
   {
@@ -84,10 +89,12 @@ const dataCategories: DataCategory[] = [
     icon: <DollarSign className="w-4 h-4" />,
     tables: [
       'expenses',
+      'expense_category_mapping',
       'cash_history',
       'account_transfers',
       'manual_journal_entries',
-      'manual_journal_entry_lines'
+      'manual_journal_entry_lines',
+      'balance_adjustments'
     ],
     dependencies: ['accounts']
   },
@@ -101,14 +108,16 @@ const dataCategories: DataCategory[] = [
   {
     id: 'hr',
     name: 'Human Resources',
-    description: 'Karyawan, absensi, kasbon, dan komisi',
+    description: 'Karyawan, absensi, kasbon, payroll, dan komisi',
     icon: <Users className="w-4 h-4" />,
     tables: [
       'employee_advances',
       'advance_repayments',
       'attendance',
       'commission_rules',
-      'commission_entries'
+      'commission_entries',
+      'employee_salaries',
+      'payroll_records'
     ]
   },
   {
@@ -125,7 +134,9 @@ const dataCategories: DataCategory[] = [
     icon: <Settings className="w-4 h-4" />,
     tables: [
       'audit_logs',
-      'performance_logs'
+      'performance_logs',
+      'roles',
+      'role_permissions'
     ]
   }
 ];

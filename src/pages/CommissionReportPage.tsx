@@ -13,16 +13,18 @@ import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import { 
-  BarChart3, 
-  TrendingUp, 
-  Users, 
+import * as XLSX from 'xlsx'
+import {
+  BarChart3,
+  TrendingUp,
+  Users,
   Calendar,
   Download,
   Filter,
   Loader2,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  FileSpreadsheet
 } from "lucide-react"
 
 
@@ -251,110 +253,89 @@ export default function CommissionReportPage() {
     doc.save(fileName)
   }
 
-  const exportSummaryToPDF = () => {
-    const doc = new jsPDF('portrait', 'pt', 'a4')
-    
-    // Set font for Indonesian text support
-    doc.setFont('helvetica')
-    
-    // Title
-    doc.setFontSize(20)
-    doc.text('Ringkasan Komisi Karyawan', 40, 40)
-    
-    // Filter information
-    doc.setFontSize(12)
-    const filterInfo = `Periode: ${format(start, 'dd MMM yyyy', { locale: id })} - ${format(end, 'dd MMM yyyy', { locale: id })}`
-    const userInfo = selectedUser === 'all' 
-      ? 'Semua Karyawan' 
-      : `Karyawan: ${uniqueUsers.find(u => u.id === selectedUser)?.name || 'Unknown'}`
-    
-    doc.text(filterInfo, 40, 70)
-    doc.text(userInfo, 40, 90)
-    
-    // Overall Summary
-    doc.setFontSize(16)
-    doc.text('RINGKASAN KESELURUHAN', 40, 130)
-    doc.setFontSize(12)
-    
-    // Create summary box
-    doc.setLineWidth(1)
-    doc.rect(40, 140, 500, 100)
-    doc.text(`Total Komisi: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(totals.total)}`, 50, 165)
-    doc.text(`Total Quantity: ${totals.quantity.toLocaleString("id-ID")} items`, 50, 185)
-    doc.text(`Total Entri: ${filteredEntries.length} transaksi komisi`, 50, 205)
-    doc.text(`Jumlah Karyawan: ${Object.keys(totals.byUser).length} orang`, 50, 225)
-    
-    // Summary by Role
-    doc.setFontSize(16)
-    doc.text('RINGKASAN PER PERAN', 40, 280)
-    
-    const roleTableData = Object.entries(totals.byRole).map(([role, data]) => [
-      role.toUpperCase(),
-      data.count.toString(),
-      data.quantity.toString(),
-      new Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(data.amount),
-      new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.amount)
-    ])
-    
-    autoTable(doc, {
-      head: [['Peran', 'Entri', 'Qty', 'Amount (Rp)', 'Total']],
-      body: roleTableData,
-      startY: 300,
-      styles: { fontSize: 10, cellPadding: 8 },
-      headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      columnStyles: {
-        1: { halign: 'center' },
-        2: { halign: 'center' },
-        3: { halign: 'right' },
-        4: { halign: 'right' }
+  const exportToExcel = () => {
+    // Prepare detailed data for Excel export
+    const excelData = filteredEntries.map(entry => {
+      const employee = users?.find(u => u.id === entry.userId)
+      return {
+        'Tanggal': format(entry.createdAt, "dd/MM/yyyy HH:mm", { locale: id }),
+        'Peran': entry.role.toUpperCase(),
+        'Karyawan': employee?.name || entry.userName,
+        'Produk': entry.productName,
+        'SKU': entry.productSku || '-',
+        'Qty': entry.quantity,
+        'Rate (Rp)': entry.ratePerQty,
+        'Jumlah (Rp)': entry.amount,
+        'Referensi': entry.ref,
+        'Status': entry.status === 'paid' ? 'Dibayar' : entry.status === 'pending' ? 'Pending' : 'Batal'
       }
     })
-    
-    // Summary by User
-    const finalY = (doc as any).lastAutoTable.finalY + 30
-    doc.setFontSize(16)
-    doc.text('RINGKASAN PER KARYAWAN', 40, finalY)
-    
-    const userTableData = Object.entries(totals.byUser)
-      .sort((a, b) => b[1].amount - a[1].amount) // Sort by amount descending
-      .map(([userId, data]) => [
-        data.userName,
-        data.role.toUpperCase(),
-        data.count.toString(),
-        data.quantity.toString(),
-        new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.amount)
-      ])
-    
-    autoTable(doc, {
-      head: [['Nama Karyawan', 'Peran', 'Entri', 'Qty', 'Total Komisi']],
-      body: userTableData,
-      startY: finalY + 20,
-      styles: { fontSize: 10, cellPadding: 8 },
-      headStyles: { fillColor: [59, 130, 246], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      columnStyles: {
-        2: { halign: 'center' },
-        3: { halign: 'center' },
-        4: { halign: 'right' }
-      }
+
+    // Create workbook with detailed entries
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(excelData)
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 18 }, // Tanggal
+      { wch: 10 }, // Peran
+      { wch: 20 }, // Karyawan
+      { wch: 30 }, // Produk
+      { wch: 15 }, // SKU
+      { wch: 8 },  // Qty
+      { wch: 12 }, // Rate
+      { wch: 15 }, // Jumlah
+      { wch: 25 }, // Referensi
+      { wch: 10 }  // Status
+    ]
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Detail Komisi')
+
+    // Create summary sheet
+    const summaryData = [
+      { 'Keterangan': 'Periode', 'Nilai': `${format(start, 'dd MMM yyyy', { locale: id })} - ${format(end, 'dd MMM yyyy', { locale: id })}` },
+      { 'Keterangan': 'Filter Karyawan', 'Nilai': selectedUser === 'all' ? 'Semua Karyawan' : uniqueUsers.find(u => u.id === selectedUser)?.name || 'Unknown' },
+      { 'Keterangan': '', 'Nilai': '' },
+      { 'Keterangan': 'Total Komisi', 'Nilai': new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(totals.total) },
+      { 'Keterangan': 'Total Quantity', 'Nilai': totals.quantity.toLocaleString("id-ID") },
+      { 'Keterangan': 'Total Entri', 'Nilai': filteredEntries.length },
+      { 'Keterangan': 'Jumlah Karyawan', 'Nilai': Object.keys(totals.byUser).length },
+      { 'Keterangan': '', 'Nilai': '' },
+      { 'Keterangan': 'RINGKASAN PER PERAN', 'Nilai': '' },
+    ]
+
+    // Add role summary
+    Object.entries(totals.byRole).forEach(([role, data]) => {
+      summaryData.push({
+        'Keterangan': role.toUpperCase(),
+        'Nilai': `${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.amount)} (${data.quantity} qty, ${data.count} entri)`
+      })
     })
-    
-    // Footer
-    const pageCount = (doc as any).internal.getNumberOfPages()
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i)
-      doc.setFontSize(8)
-      doc.text(
-        `Halaman ${i} dari ${pageCount} - Dibuat pada ${format(new Date(), 'dd MMM yyyy HH:mm', { locale: id })}`,
-        40,
-        doc.internal.pageSize.height - 20
-      )
-    }
-    
-    // Save the PDF
-    const fileName = `ringkasan-komisi-${format(start, 'yyyy-MM-dd')}-${format(end, 'yyyy-MM-dd')}.pdf`
-    doc.save(fileName)
+
+    summaryData.push({ 'Keterangan': '', 'Nilai': '' })
+    summaryData.push({ 'Keterangan': 'RINGKASAN PER KARYAWAN', 'Nilai': '' })
+
+    // Add user summary
+    Object.entries(totals.byUser)
+      .sort((a, b) => b[1].amount - a[1].amount)
+      .forEach(([userId, data]) => {
+        summaryData.push({
+          'Keterangan': `${data.userName} (${data.role.toUpperCase()})`,
+          'Nilai': new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(data.amount)
+        })
+      })
+
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData)
+    wsSummary['!cols'] = [
+      { wch: 30 }, // Keterangan
+      { wch: 40 }  // Nilai
+    ]
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Ringkasan')
+
+    // Generate and download Excel file
+    const fileName = `komisi-detail-${format(start, 'yyyy-MM-dd')}-${format(end, 'yyyy-MM-dd')}.xlsx`
+    XLSX.writeFile(wb, fileName)
   }
 
 
@@ -575,13 +556,13 @@ export default function CommissionReportPage() {
             Menampilkan {filteredEntries.length} entri komisi
           </div>
           <div className="flex gap-2">
-            <Button onClick={exportSummaryToPDF} variant="outline" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
-              <Download className="h-4 w-4 mr-2" />
-              Export Ringkasan
+            <Button onClick={exportToExcel} variant="outline" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Export Excel
             </Button>
             <Button onClick={exportToPDF} variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100">
               <Download className="h-4 w-4 mr-2" />
-              Export Detail
+              Export Detail PDF
             </Button>
           </div>
         </div>

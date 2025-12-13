@@ -1,4 +1,4 @@
-export type PurchaseOrderStatus = 'Pending' | 'Approved' | 'Diterima' | 'Dibayar' | 'Selesai';
+export type PurchaseOrderStatus = 'Pending' | 'Approved' | 'Dikirim' | 'Diterima' | 'Dibayar' | 'Selesai';
 
 export interface PurchaseOrder {
   id: string;
@@ -20,9 +20,4 @@ export interface PurchaseOrder {
   quotedPrice?: number;
   expedition?: string;
   expectedDeliveryDate?: Date;
-  receivedDate?: Date;
-  deliveryNotePhoto?: string;
-  receivedBy?: string;
-  receivedQuantity?: number;
-  expeditionReceiver?: string;
 }

@@ -27,11 +27,6 @@ const fromDb = (dbPo: any): PurchaseOrder => ({
   quotedPrice: dbPo.quoted_price,
   expedition: dbPo.expedition,
   expectedDeliveryDate: dbPo.expected_delivery_date ? new Date(dbPo.expected_delivery_date) : undefined,
-  receivedDate: dbPo.received_date ? new Date(dbPo.received_date) : undefined,
-  deliveryNotePhoto: dbPo.delivery_note_photo,
-  receivedBy: dbPo.received_by,
-  receivedQuantity: dbPo.received_quantity,
-  expeditionReceiver: dbPo.expedition_receiver,
 });
 
 const toDb = (appPo: Partial<PurchaseOrder>) => ({
@@ -53,11 +48,6 @@ const toDb = (appPo: Partial<PurchaseOrder>) => ({
   quoted_price: appPo.quotedPrice || null,
   expedition: appPo.expedition || null,
   expected_delivery_date: appPo.expectedDeliveryDate || null,
-  received_date: appPo.receivedDate || null,
-  delivery_note_photo: appPo.deliveryNotePhoto || null,
-  received_by: appPo.receivedBy || null,
-  received_quantity: appPo.receivedQuantity || null,
-  expedition_receiver: appPo.expeditionReceiver || null,
 });
 
 export const usePurchaseOrders = () => {
@@ -109,42 +99,48 @@ export const usePurchaseOrders = () => {
   const updatePoStatus = useMutation({
     mutationFn: async ({ poId, status, updateData }: { poId: string, status: PurchaseOrderStatus, updateData?: any }): Promise<PurchaseOrder> => {
       const dbUpdateData = { status, ...updateData };
-      // Convert any nested date objects or other data if needed
-      if (updateData?.receivedDate) {
-        dbUpdateData.received_date = updateData.receivedDate;
-        delete dbUpdateData.receivedDate;
-      }
-      if (updateData?.deliveryNotePhoto) {
-        dbUpdateData.delivery_note_photo = updateData.deliveryNotePhoto;
-        delete dbUpdateData.deliveryNotePhoto;
-      }
-      if (updateData?.receivedBy) {
-        dbUpdateData.received_by = updateData.receivedBy;
-        delete dbUpdateData.receivedBy;
-      }
-      if (updateData?.receivedQuantity) {
-        dbUpdateData.received_quantity = updateData.receivedQuantity;
-        delete dbUpdateData.receivedQuantity;
-      }
-      if (updateData?.expeditionReceiver) {
-        dbUpdateData.expedition_receiver = updateData.expeditionReceiver;
-        delete dbUpdateData.expeditionReceiver;
-      }
-      
+
       const { data, error } = await supabase.from('purchase_orders').update(dbUpdateData).eq('id', poId).select().single();
       if (error) throw new Error(error.message);
-      
+
       // Create accounts payable when PO is approved
       if (status === 'Approved' && data.total_cost && data.supplier_name) {
+        let dueDate: Date | undefined;
+
+        // Calculate due date based on supplier's payment terms
+        if (data.supplier_id) {
+          const { data: supplierData } = await supabase
+            .from('suppliers')
+            .select('payment_terms')
+            .eq('id', data.supplier_id)
+            .single();
+
+          if (supplierData?.payment_terms) {
+            const paymentTerms = supplierData.payment_terms;
+            const today = new Date();
+
+            // Parse payment terms (e.g., "Net 30", "Net 60", "Cash")
+            if (paymentTerms.toLowerCase().includes('net')) {
+              const days = parseInt(paymentTerms.match(/\d+/)?.[0] || '30');
+              dueDate = new Date(today);
+              dueDate.setDate(today.getDate() + days);
+            } else if (paymentTerms.toLowerCase() === 'cash') {
+              // For cash, due date is same day
+              dueDate = today;
+            }
+          }
+        }
+
         await createAccountsPayable.mutateAsync({
           purchaseOrderId: data.id,
           supplierName: data.supplier_name,
           amount: data.total_cost,
+          dueDate: dueDate,
           description: `Purchase Order ${data.id} - ${data.material_name}`,
           status: 'Outstanding',
         });
       }
-      
+
       return fromDb(data);
     },
     onSuccess: () => {
@@ -257,13 +253,17 @@ export const usePurchaseOrders = () => {
 
   const receivePurchaseOrder = useMutation({
     mutationFn: async (po: PurchaseOrder) => {
+      // Get current user ID
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error('User not authenticated');
+
       // Get current material data including type
       const { data: material, error: materialError } = await supabase
         .from('materials')
         .select('stock, name, type')
         .eq('id', po.materialId)
         .single();
-      
+
       if (materialError) throw materialError;
 
       const previousStock = Number(material.stock) || 0;
@@ -272,7 +272,7 @@ export const usePurchaseOrders = () => {
       // Determine movement type based on material type
       const movementType = material.type === 'Stock' ? 'IN' : 'OUT';
       const reason = material.type === 'Stock' ? 'PURCHASE' : 'PRODUCTION_CONSUMPTION';
-      const notes = material.type === 'Stock' 
+      const notes = material.type === 'Stock'
         ? `Purchase order ${po.id} - Stock received`
         : `Purchase order ${po.id} - Usage/consumption tracked`;
 
@@ -288,7 +288,7 @@ export const usePurchaseOrders = () => {
         referenceId: po.id,
         referenceType: 'purchase_order',
         notes: notes,
-        userId: po.requestedBy,
+        userId: currentUser.id,
         userName: po.requestedBy,
       });
 
@@ -310,11 +310,24 @@ export const usePurchaseOrders = () => {
 
   const deletePurchaseOrder = useMutation({
     mutationFn: async (poId: string) => {
+      // Delete related accounts payable first
+      const { error: apError } = await supabase
+        .from('accounts_payable')
+        .delete()
+        .eq('purchase_order_id', poId);
+
+      if (apError) {
+        console.warn('Failed to delete accounts payable:', apError.message);
+        // Continue anyway, accounts payable might not exist
+      }
+
+      // Delete purchase order
       const { error } = await supabase.from('purchase_orders').delete().eq('id', poId);
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
+      queryClient.invalidateQueries({ queryKey: ['accountsPayable'] });
     },
   });
 

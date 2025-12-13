@@ -16,6 +16,7 @@ import { Skeleton } from "./ui/skeleton"
 import { isAdminOrOwner, isOwner } from '@/utils/roleUtils'
 import { PayPoDialog } from "./PayPoDialog"
 import { PurchaseOrderPDF } from "./PurchaseOrderPDF"
+import { ReceivePODialog } from "./ReceivePODialog"
 import { Trash2 } from "lucide-react"
 import {
   AlertDialog,
@@ -29,12 +30,13 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 
-const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Diterima', 'Dibayar', 'Selesai'];
+const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Dikirim', 'Diterima', 'Dibayar', 'Selesai'];
 
 const getStatusVariant = (status: PurchaseOrderStatus) => {
   switch (status) {
     case 'Approved': return 'success';
-    case 'Diterima': return 'info';
+    case 'Dikirim': return 'info';
+    case 'Diterima': return 'success';
     case 'Pending': return 'secondary';
     case 'Dibayar': return 'warning';
     case 'Selesai': return 'outline';
@@ -47,6 +49,7 @@ export function PurchaseOrderTable() {
   const { user } = useAuth();
   const { purchaseOrders, isLoading, updatePoStatus, payPurchaseOrder, receivePurchaseOrder, deletePurchaseOrder } = usePurchaseOrders();
   const [isPayDialogOpen, setIsPayDialogOpen] = React.useState(false);
+  const [isReceiveDialogOpen, setIsReceiveDialogOpen] = React.useState(false);
   const [selectedPo, setSelectedPo] = React.useState<PurchaseOrder | null>(null);
 
   const handleStatusChange = (po: PurchaseOrder, newStatus: PurchaseOrderStatus) => {
@@ -140,8 +143,11 @@ export function PurchaseOrderTable() {
         return (
           <div className="flex items-center gap-1">
             <PurchaseOrderPDF purchaseOrder={po} />
+            {po.status === 'Dikirim' && (
+              <Button size="sm" onClick={() => { setSelectedPo(po); setIsReceiveDialogOpen(true); }}>Terima Barang</Button>
+            )}
             {po.status === 'Dibayar' && (
-              <Button size="sm" onClick={() => handleReceiveGoods(po)} disabled={receivePurchaseOrder.isPending}>Terima Barang</Button>
+              <Button size="sm" onClick={() => handleReceiveGoods(po)} disabled={receivePurchaseOrder.isPending}>Selesaikan</Button>
             )}
             {isOwnerRole && (
               <AlertDialog>
@@ -185,6 +191,7 @@ export function PurchaseOrderTable() {
   return (
     <>
       <PayPoDialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen} purchaseOrder={selectedPo} />
+      <ReceivePODialog open={isReceiveDialogOpen} onOpenChange={setIsReceiveDialogOpen} purchaseOrder={selectedPo} />
       <div className="rounded-md border">
         <Table>
           <TableHeader>{table.getHeaderGroups().map(hg => <TableRow key={hg.id}>{hg.headers.map(h => <TableHead key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</TableHead>)}</TableRow>)}</TableHeader>
