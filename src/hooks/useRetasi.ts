@@ -36,25 +36,54 @@ const toDb = (appRetasi: CreateRetasiData | UpdateRetasiData) => {
   return dbData;
 };
 
-// Hook to check if a driver has any retasi records
+// Hook to check if a driver has any retasi records (legacy - kept for backward compatibility)
 export const useDriverHasRetasi = (driverName?: string) => {
   return useQuery<boolean>({
     queryKey: ['driver-has-retasi', driverName],
     queryFn: async () => {
       if (!driverName) return false;
-      
+
       const { data, error } = await supabase
         .from('retasi')
         .select('id')
         .eq('driver_name', driverName)
         .limit(1);
-      
+
       if (error) {
         console.error('[useDriverHasRetasi] Error checking driver retasi:', error);
         return false;
       }
-      
+
       return (data && data.length > 0) || false;
+    },
+    enabled: !!driverName,
+  });
+};
+
+// Hook to get active retasi for a driver (is_returned = false)
+export const useActiveRetasi = (driverName?: string) => {
+  return useQuery<Retasi | null>({
+    queryKey: ['active-retasi', driverName],
+    queryFn: async () => {
+      if (!driverName) return null;
+
+      console.log('[useActiveRetasi] Checking active retasi for driver:', driverName);
+
+      const { data, error } = await supabase
+        .from('retasi')
+        .select('*')
+        .eq('driver_name', driverName)
+        .eq('is_returned', false)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[useActiveRetasi] Error fetching active retasi:', error);
+        return null;
+      }
+
+      console.log('[useActiveRetasi] Active retasi found:', data);
+
+      return data ? fromDb(data) : null;
     },
     enabled: !!driverName,
   });

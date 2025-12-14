@@ -45,14 +45,20 @@ export default function CustomerPage() {
   const handleExportExcel = () => {
     if (customers) {
       // Format data untuk export dengan kolom yang konsisten
-      const exportData = customers.map(customer => ({
-        "Nama": customer.name || '',
-        "Telepon": customer.phone || '',
-        "Alamat": customer.address || '',
-        "Latitude": customer.latitude || '',
-        "Longitude": customer.longitude || '',
-        "Jumlah Galon Titip": customer.jumlah_galon_titip || 0
-      }));
+      const exportData = customers.map(customer => {
+        // Gabungkan latitude dan longitude jadi satu kolom koordinat
+        const koordinat = (customer.latitude && customer.longitude)
+          ? `${customer.latitude}, ${customer.longitude}`
+          : '';
+
+        return {
+          "Nama": customer.name || '',
+          "Telepon": customer.phone || '',
+          "Alamat": customer.address || '',
+          "Koordinat (Latitude, Longitude)": koordinat,
+          "Jumlah Galon Titip": customer.jumlah_galon_titip || 0
+        };
+      });
       
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
@@ -85,14 +91,35 @@ export default function CustomerPage() {
         const json = XLSX.utils.sheet_to_json(worksheet) as any[];
         
         // Transform data ke format yang expected oleh database
-        const transformedData = json.map((row: any) => ({
-          name: row['Nama'] || row['name'] || '',
-          phone: row['Telepon'] || row['phone'] || '',
-          address: row['Alamat'] || row['address'] || '',
-          latitude: parseFloat(row['Latitude'] || row['latitude'] || '0') || null,
-          longitude: parseFloat(row['Longitude'] || row['longitude'] || '0') || null,
-          jumlah_galon_titip: parseInt(row['Jumlah Galon Titip'] || row['jumlah_galon_titip'] || '0') || 0
-        })).filter(customer => customer.name.trim() !== ''); // Filter out empty names
+        const transformedData = json.map((row: any) => {
+          let latitude = null;
+          let longitude = null;
+
+          // Coba parse dari kolom "Koordinat" gabungan (format: "lat, lng")
+          const koordinatGabungan = row['Koordinat (Latitude, Longitude)'] || row['Koordinat'] || '';
+          if (koordinatGabungan && typeof koordinatGabungan === 'string') {
+            const parts = koordinatGabungan.split(',').map((s: string) => s.trim());
+            if (parts.length === 2) {
+              latitude = parseFloat(parts[0]) || null;
+              longitude = parseFloat(parts[1]) || null;
+            }
+          }
+
+          // Fallback: coba dari kolom terpisah (backward compatibility)
+          if (!latitude || !longitude) {
+            latitude = parseFloat(row['Latitude'] || row['latitude'] || '0') || null;
+            longitude = parseFloat(row['Longitude'] || row['longitude'] || '0') || null;
+          }
+
+          return {
+            name: row['Nama'] || row['name'] || '',
+            phone: row['Telepon'] || row['phone'] || '',
+            address: row['Alamat'] || row['address'] || '',
+            latitude,
+            longitude,
+            jumlah_galon_titip: parseInt(row['Jumlah Galon Titip'] || row['jumlah_galon_titip'] || '0') || 0
+          };
+        }).filter(customer => customer.name.trim() !== ''); // Filter out empty names
         
         if (transformedData.length === 0) {
           throw new Error('Tidak ada data pelanggan yang valid ditemukan dalam file');

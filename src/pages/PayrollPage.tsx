@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import {
   DollarSign,
   Users,
@@ -17,8 +19,18 @@ import {
   Edit,
   CheckCircle,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  FileDown,
+  Calendar,
+  Filter,
+  X,
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns'
+import { id } from 'date-fns/locale/id'
+import { cn } from '@/lib/utils'
 import { useEmployees } from '@/hooks/useEmployees'
 import { useEmployeeSalaries, usePayrollRecords, usePayrollSummary } from '@/hooks/usePayroll'
 import { SalaryConfigDialog } from '@/components/SalaryConfigDialog'
@@ -42,6 +54,11 @@ export default function PayrollPage() {
   const [isSalaryConfigDialogOpen, setIsSalaryConfigDialogOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [selectedSalaryConfig, setSelectedSalaryConfig] = useState<EmployeeSalary | null>(null)
+
+  // Filter states for payroll history
+  const [showFilters, setShowFilters] = useState(false)
+  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined })
+  const [employeeFilter, setEmployeeFilter] = useState<string>('all')
 
   const userCanManagePayroll = isOwner(user) || isAdmin(user)
 
@@ -87,6 +104,141 @@ export default function PayrollPage() {
       default:
         return <Badge variant="outline">Unknown</Badge>
     }
+  }
+
+  // Filter payroll records
+  const filteredPayrollRecords = payrollRecords?.filter(record => {
+    // Filter by date range
+    if (dateRange.from || dateRange.to) {
+      const recordDate = new Date(record.periodYear, record.periodMonth - 1, 15) // Use mid-month as reference
+      if (dateRange.from && dateRange.to) {
+        if (!isWithinInterval(recordDate, {
+          start: startOfDay(dateRange.from),
+          end: endOfDay(dateRange.to)
+        })) return false
+      } else if (dateRange.from) {
+        if (recordDate < startOfDay(dateRange.from)) return false
+      } else if (dateRange.to) {
+        if (recordDate > endOfDay(dateRange.to)) return false
+      }
+    }
+
+    // Filter by employee
+    if (employeeFilter !== 'all' && record.employeeId !== employeeFilter) {
+      return false
+    }
+
+    return true
+  }) || []
+
+  // Export to Excel
+  const handleExportExcel = () => {
+    const exportData = filteredPayrollRecords.map((record, index) => ({
+      'No': index + 1,
+      'Periode': `${record.periodMonth}/${record.periodYear}`,
+      'Karyawan': record.employeeName,
+      'Gaji Pokok': record.baseSalary,
+      'Bonus': record.bonuses || 0,
+      'Komisi': record.commission || 0,
+      'Potongan': record.deductions || 0,
+      'Gaji Bersih': record.netSalary,
+      'Status': record.status === 'paid' ? 'Dibayar' : record.status === 'approved' ? 'Disetujui' : 'Draft',
+      'Dibayar Oleh': record.paidBy || '-',
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Riwayat Gaji')
+
+    let filename = `riwayat-gaji-${filteredPayrollRecords.length}-records`
+    if (dateRange.from && dateRange.to) {
+      filename += `-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`
+    }
+    filename += '.xlsx'
+
+    XLSX.writeFile(workbook, filename)
+  }
+
+  // Export to PDF
+  const handleExportPDF = () => {
+    const totalBaseSalary = filteredPayrollRecords.reduce((sum, r) => sum + r.baseSalary, 0)
+    const totalBonus = filteredPayrollRecords.reduce((sum, r) => sum + (r.bonuses || 0), 0)
+    const totalCommission = filteredPayrollRecords.reduce((sum, r) => sum + (r.commission || 0), 0)
+    const totalDeductions = filteredPayrollRecords.reduce((sum, r) => sum + (r.deductions || 0), 0)
+    const totalNetSalary = filteredPayrollRecords.reduce((sum, r) => sum + r.netSalary, 0)
+
+    const doc = new jsPDF()
+
+    doc.setFontSize(16)
+    doc.text('Riwayat Pembayaran Gaji', 14, 15)
+    doc.setFontSize(10)
+    doc.text(`Total Records: ${filteredPayrollRecords.length}`, 14, 25)
+    if (dateRange.from && dateRange.to) {
+      doc.text(`Periode: ${format(dateRange.from, 'd MMM yyyy', { locale: id })} - ${format(dateRange.to, 'd MMM yyyy', { locale: id })}`, 14, 30)
+      doc.text(`Export Date: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 35)
+    } else {
+      doc.text(`Export Date: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, 14, 30)
+    }
+
+    autoTable(doc, {
+      head: [['No', 'Periode', 'Karyawan', 'Gaji Pokok', 'Bonus', 'Komisi', 'Potongan', 'Gaji Bersih', 'Status']],
+      body: [
+        ...filteredPayrollRecords.map((record, index) => [
+          index + 1,
+          `${record.periodMonth}/${record.periodYear}`,
+          record.employeeName,
+          formatCurrency(record.baseSalary),
+          formatCurrency(record.bonuses || 0),
+          formatCurrency(record.commission || 0),
+          formatCurrency(record.deductions || 0),
+          formatCurrency(record.netSalary),
+          record.status === 'paid' ? 'Dibayar' : record.status === 'approved' ? 'Disetujui' : 'Draft',
+        ]),
+        // Summary row
+        [
+          '',
+          '',
+          `TOTAL (${filteredPayrollRecords.length})`,
+          formatCurrency(totalBaseSalary),
+          formatCurrency(totalBonus),
+          formatCurrency(totalCommission),
+          formatCurrency(totalDeductions),
+          formatCurrency(totalNetSalary),
+          '',
+        ]
+      ],
+      startY: dateRange.from && dateRange.to ? 40 : 35,
+      styles: {
+        fontSize: 8,
+        cellPadding: 1.5
+      },
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontSize: 8,
+        fontStyle: 'bold'
+      },
+      didParseCell: function (data: any) {
+        if (data.row.index === filteredPayrollRecords.length) {
+          data.cell.styles.fillColor = [52, 152, 219]
+          data.cell.styles.textColor = 255
+          data.cell.styles.fontStyle = 'bold'
+        }
+      }
+    })
+
+    let filename = `riwayat-gaji-${filteredPayrollRecords.length}-records`
+    if (dateRange.from && dateRange.to) {
+      filename += `-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`
+    }
+    filename += '.pdf'
+
+    doc.save(filename)
+  }
+
+  const clearFilters = () => {
+    setDateRange({ from: undefined, to: undefined })
+    setEmployeeFilter('all')
   }
 
   if (!userCanManagePayroll) {
@@ -415,17 +567,198 @@ export default function PayrollPage() {
         <TabsContent value="payroll-history" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Riwayat Pembayaran Gaji</CardTitle>
-              <CardDescription>
-                Histori semua pembayaran gaji yang telah dilakukan
-              </CardDescription>
+              <div className="flex justify-between items-center">
+                <div>
+                  <CardTitle>Riwayat Pembayaran Gaji</CardTitle>
+                  <CardDescription>
+                    Histori semua pembayaran gaji yang telah dilakukan
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleExportExcel} className="gap-2">
+                    <FileDown className="h-4 w-4" />
+                    Excel
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleExportPDF} className="gap-2">
+                    <FileDown className="h-4 w-4" />
+                    PDF
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                <History className="h-16 w-16 mx-auto mb-4" />
-                <p>Riwayat pembayaran akan ditampilkan di sini</p>
-                <p className="text-sm">Fitur ini akan segera tersedia</p>
+              {/* Filter Section */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="gap-2"
+                  >
+                    <Filter className="h-4 w-4" />
+                    Filter
+                  </Button>
+                  {(dateRange.from || dateRange.to || employeeFilter !== 'all') && (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">Filter aktif</Badge>
+                      <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-2">
+                        <X className="h-4 w-4" />
+                        Reset
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {showFilters && (
+                  <div className="border rounded-lg p-4 bg-muted/40">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Date Range Filter */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Rentang Tanggal</label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !dateRange.from && !dateRange.to && "text-muted-foreground"
+                              )}
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {dateRange.from ? (
+                                dateRange.to ? (
+                                  `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
+                                ) : (
+                                  `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
+                                )
+                              ) : (
+                                "Pilih Rentang Tanggal"
+                              )}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarComponent
+                              initialFocus
+                              mode="range"
+                              defaultMonth={dateRange.from}
+                              selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
+                              onSelect={(range) => {
+                                if (range) {
+                                  setDateRange({ from: range.from, to: range.to })
+                                } else {
+                                  setDateRange({ from: undefined, to: undefined })
+                                }
+                              }}
+                              numberOfMonths={2}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+
+                      {/* Employee Filter */}
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium">Karyawan</label>
+                        <Select value={employeeFilter} onValueChange={setEmployeeFilter}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Semua Karyawan" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">Semua Karyawan</SelectItem>
+                            {employees?.map(emp => (
+                              <SelectItem key={emp.id} value={emp.id}>
+                                {emp.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Table */}
+              {filteredPayrollRecords.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <History className="h-16 w-16 mx-auto mb-4" />
+                  <p>Tidak ada riwayat pembayaran</p>
+                  <p className="text-sm">Silakan tambahkan data gaji karyawan terlebih dahulu</p>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tanggal</TableHead>
+                        <TableHead>Karyawan</TableHead>
+                        <TableHead>Deskripsi</TableHead>
+                        <TableHead>Akun Pembayaran</TableHead>
+                        <TableHead className="text-right">Jumlah</TableHead>
+                        <TableHead>Dibayar Oleh</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredPayrollRecords.map((record) => (
+                        <TableRow key={record.id}>
+                          <TableCell>
+                            <div className="text-sm">
+                              {record.paidDate ? format(new Date(record.paidDate), 'd MMM yyyy', { locale: id }) : '-'}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {record.paidDate ? format(new Date(record.paidDate), 'HH:mm') : ''}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="font-medium">{record.employeeName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              ID: {record.employeeId.substring(0, 8)}...
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            Pembayaran gaji {record.employeeName} - {record.periodMonth}/{record.periodYear}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{record.paymentAccount || 'Kas dan Setara Kas'}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className="font-bold text-green-600">
+                              {formatCurrency(record.netSalary)}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {record.paidBy || '-'}
+                          </TableCell>
+                          <TableCell>
+                            {getPayrollStatusBadge(record.status)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {/* Summary */}
+              {filteredPayrollRecords.length > 0 && (
+                <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-green-900">Ringkasan Pembayaran Gaji</h3>
+                    <div className="text-right">
+                      <p className="text-sm text-green-700">Total Pembayaran</p>
+                      <p className="text-2xl font-bold text-green-900">
+                        {formatCurrency(filteredPayrollRecords.reduce((sum, r) => sum + r.netSalary, 0))}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-green-700 mt-2">
+                    Jumlah Transaksi: {filteredPayrollRecords.length} |
+                    Gaji: {formatCurrency(filteredPayrollRecords.reduce((sum, r) => sum + r.baseSalary, 0))} |
+                    Bonus: {formatCurrency(filteredPayrollRecords.reduce((sum, r) => sum + (r.bonuses || 0), 0))}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

@@ -15,7 +15,7 @@ import { useProducts } from "@/hooks/useProducts"
 import { useAccounts } from "@/hooks/useAccounts"
 import { useTransactions } from "@/hooks/useTransactions"
 import { useAuth } from "@/hooks/useAuth"
-import { useDriverHasRetasi } from "@/hooks/useRetasi"
+import { useActiveRetasi } from "@/hooks/useRetasi"
 import { TransactionItem, Transaction } from "@/types/transaction"
 import { DriverDeliveryDialog } from "@/components/DriverDeliveryDialog"
 import { DriverPrintDialog } from "@/components/DriverPrintDialog"
@@ -28,16 +28,19 @@ export default function DriverPosPage() {
   const { accounts, updateAccountBalance } = useAccounts()
   const { addTransaction } = useTransactions()
 
-  // Check if driver has retasi records
-  const { data: driverHasRetasi, isLoading: isCheckingRetasi } = useDriverHasRetasi(user?.name)
+  // Check if driver has active retasi (is_returned = false)
+  const { data: activeRetasi, isLoading: isCheckingRetasi } = useActiveRetasi(user?.name)
 
   // Enhanced role-based access control
   const isAdminOwner = user?.role && ['admin', 'owner'].includes(user.role)
-  
-  // Access logic: admin/owner always have access, helper always has access, driver only if they have retasi
-  const hasAccess = isAdminOwner || 
+
+  // Access logic:
+  // - Admin/Owner: always have access (can use POS without retasi)
+  // - Helper: always have access (can use POS without retasi)
+  // - Driver: only if they have ACTIVE retasi (is_returned = false)
+  const hasAccess = isAdminOwner ||
                    (user?.role === 'helper') ||
-                   (user?.role === 'driver' && driverHasRetasi)
+                   (user?.role === 'driver' && activeRetasi !== null)
 
   // Show loading state while checking retasi
   if (isCheckingRetasi && user?.role === 'driver') {
@@ -48,7 +51,7 @@ export default function DriverPosPage() {
             <div className="animate-pulse">
               <Truck className="h-8 w-8 mx-auto mb-4 text-blue-600" />
               <p className="text-lg font-medium">Memeriksa akses...</p>
-              <p className="text-sm text-muted-foreground mt-2">Validating driver permissions</p>
+              <p className="text-sm text-muted-foreground mt-2">Memvalidasi retasi aktif supir...</p>
             </div>
           </CardContent>
         </Card>
@@ -57,8 +60,8 @@ export default function DriverPosPage() {
   }
 
   if (!hasAccess) {
-    const isDriverWithoutRetasi = user?.role === 'driver' && !driverHasRetasi
-    
+    const isDriverWithoutActiveRetasi = user?.role === 'driver' && !activeRetasi
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 p-4 flex items-center justify-center">
         <div className="max-w-md mx-auto">
@@ -69,8 +72,8 @@ export default function DriverPosPage() {
                 Akses Ditolak
               </CardTitle>
               <CardDescription className="text-red-100">
-                {isDriverWithoutRetasi 
-                  ? "Anda belum memiliki data retasi terkait" 
+                {isDriverWithoutActiveRetasi
+                  ? "Anda tidak memiliki retasi aktif"
                   : "Akses terbatas untuk role tertentu"}
               </CardDescription>
             </CardHeader>
@@ -79,18 +82,27 @@ export default function DriverPosPage() {
                 <p className="text-red-100 text-sm mb-2">
                   <span className="font-semibold">Role Anda:</span> {user?.role || 'Unknown'}
                 </p>
-                {isDriverWithoutRetasi && (
-                  <p className="text-red-100 text-xs">
-                    Untuk mengakses POS Supir, Anda harus memiliki minimal satu data retasi terkait dengan nama Anda.
-                  </p>
+                {isDriverWithoutActiveRetasi && (
+                  <div className="text-red-100 text-xs space-y-2">
+                    <p className="font-semibold">Untuk mengakses POS Supir, Anda harus memiliki retasi yang AKTIF (status: Armada Berangkat).</p>
+                    <div className="bg-red-900/40 p-3 rounded mt-2 text-left">
+                      <p className="font-semibold mb-1">Kemungkinan penyebab:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>Belum ada retasi yang dibuat untuk Anda</li>
+                        <li>Retasi terakhir sudah berstatus "Kembali"</li>
+                        <li>Retasi sudah ditandai selesai oleh admin</li>
+                      </ul>
+                      <p className="mt-2 font-semibold">Solusi: Hubungi admin untuk membuat retasi baru</p>
+                    </div>
+                  </div>
                 )}
               </div>
               <div className="text-red-100 text-xs">
-                <p className="font-semibold mb-1">Yang dapat mengakses:</p>
+                <p className="font-semibold mb-1">Yang dapat mengakses POS Supir:</p>
                 <ul className="list-disc list-inside space-y-1 text-left">
-                  <li>Admin & Owner (akses penuh)</li>
-                  <li>Helper (akses penuh)</li>
-                  <li>Driver dengan data retasi</li>
+                  <li>Admin & Owner (tanpa batasan retasi)</li>
+                  <li>Helper (tanpa batasan retasi)</li>
+                  <li>Driver dengan retasi AKTIF</li>
                 </ul>
               </div>
               <Button
@@ -276,6 +288,8 @@ export default function DriverPosPage() {
         cashierId: user.id,
         cashierName: user.name || user.email || 'Driver POS',
         paymentAccountId: paymentAccount || null,
+        retasiId: activeRetasi?.id || null, // Link to active retasi (for drivers only)
+        retasiNumber: activeRetasi?.retasi_number || null, // Store retasi number for display
         orderDate,
         items,
         subtotal: total,
@@ -364,6 +378,20 @@ export default function DriverPosPage() {
             <CardDescription className="text-blue-100 text-lg mt-2">
               Point of Sale untuk Supir & Helper
             </CardDescription>
+            {activeRetasi && user?.role === 'driver' && (
+              <div className="mt-4 bg-blue-700/50 p-3 rounded-lg">
+                <div className="flex items-center gap-2 text-sm">
+                  <Package className="h-4 w-4" />
+                  <span className="font-semibold">Retasi Aktif:</span>
+                  <span>{activeRetasi.retasi_number}</span>
+                  <span className="ml-2">|</span>
+                  <span>Retasi ke-{activeRetasi.retasi_ke}</span>
+                  <span className="ml-2">|</span>
+                  <span>Bawa: {activeRetasi.total_items} item</span>
+                </div>
+                <p className="text-xs text-blue-100 mt-1">Transaksi Anda akan otomatis terhubung dengan retasi ini</p>
+              </div>
+            )}
           </CardHeader>
         </Card>
 

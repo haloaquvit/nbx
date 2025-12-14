@@ -121,13 +121,13 @@ export function DriverPrintDialog({
                   <FileDown className="h-4 w-4 mr-2" />
                   Cetak Nota (Thermal/Struk)
                 </Button>
-                <Button 
+                <Button
                   onClick={handlePrintInvoice}
-                  className="w-full justify-start" 
+                  className="w-full justify-start"
                   variant="outline"
                 >
                   <FileDown className="h-4 w-4 mr-2" />
-                  Cetak Invoice (A4)
+                  Cetak Faktur (A4)
                 </Button>
               </CardContent>
             </Card>

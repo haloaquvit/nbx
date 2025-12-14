@@ -116,10 +116,10 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
           </div>
         </div>
         <div className="text-right bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200">
-          <h2 className="text-5xl font-bold text-blue-800 mb-4">INVOICE</h2>
+          <h2 className="text-5xl font-bold text-blue-800 mb-4">FAKTUR</h2>
           <div className="space-y-2">
             <p className="text-sm text-gray-700">
-              <span className="font-semibold text-blue-800">No Invoice:</span><br/>
+              <span className="font-semibold text-blue-800">No Faktur:</span><br/>
               <span className="text-lg font-mono font-bold text-blue-900">{transaction.id}</span>
             </p>
             <p className="text-sm text-gray-700">
@@ -212,7 +212,7 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
             <h4 className="text-sm font-semibold text-gray-800 mb-4">Catatan Pembayaran:</h4>
             <div className="text-xs text-gray-600 space-y-1 max-w-md">
               <p>• Pembayaran dapat dilakukan melalui transfer bank</p>
-              <p>• Harap sertakan nomor invoice saat melakukan pembayaran</p>
+              <p>• Harap sertakan nomor faktur saat melakukan pembayaran</p>
               <p>• Konfirmasi pembayaran ke nomor telepon di atas</p>
             </div>
           </div>
@@ -228,7 +228,7 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
         </div>
         <div className="text-center py-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg">
           <p className="text-lg font-semibold mb-2">Terima kasih atas kepercayaan Anda!</p>
-          <p className="text-sm opacity-90">Invoice ini dibuat secara otomatis dan sah tanpa tanda tangan</p>
+          <p className="text-sm opacity-90">Faktur ini dibuat secara otomatis dan sah tanpa tanda tangan</p>
           <p className="text-xs opacity-75 mt-2">
             Dicetak pada: {format(new Date(), "d MMMM yyyy, HH:mm", { locale: id })} WIB
           </p>
@@ -268,9 +268,9 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.text(companyInfo?.address || 'Company Address', margin + logoWidth + 10, 32);
     doc.text(companyInfo?.phone || 'Company Phone', margin + logoWidth + 10, 37);
     
-    // Invoice title and info in white
+    // Faktur title and info in white
     doc.setFontSize(28).setFont("helvetica", "bold").setTextColor(255, 255, 255);
-    doc.text("INVOICE", pageWidth - margin, 25, { align: 'right' });
+    doc.text("FAKTUR", pageWidth - margin, 25, { align: 'right' });
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
     doc.setFontSize(11).setTextColor(255, 255, 255);
     doc.text(`No: ${transaction.id}`, pageWidth - margin, 33, { align: 'right' });
@@ -367,7 +367,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100, 100, 100);
     doc.text("Catatan Pembayaran:", margin, footerY);
     doc.text("• Pembayaran dapat dilakukan melalui transfer bank", margin, footerY + 5);
-    doc.text("• Harap sertakan nomor invoice saat melakukan pembayaran", margin, footerY + 10);
+    doc.text("• Harap sertakan nomor faktur saat melakukan pembayaran", margin, footerY + 10);
     doc.text("• Konfirmasi pembayaran ke nomor telepon di atas", margin, footerY + 15);
     
     // Signature section with background
@@ -391,65 +391,348 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.setFontSize(8).setFont("helvetica", "normal");
     doc.text(`Dicetak pada: ${format(new Date(), "d MMMM yyyy, HH:mm", { locale: id })} WIB`, pageWidth / 2, thankYouY + 9, { align: 'center' });
 
-    const filename = `MDIInvoice-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
+    const filename = `Faktur-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
     saveCompressedPDF(doc, filename, 100);
   };
 
   const handleThermalPrint = () => {
     const printWindow = window.open('', '_blank');
     const printableArea = document.getElementById('printable-area')?.innerHTML;
-    printWindow?.document.write(`<html><head><title>Cetak Nota</title><style>body{font-family:monospace;font-size:10pt;margin:0;padding:3mm;width:78mm;} table{width:100%;border-collapse:collapse;} td,th{padding:1px;} .text-center{text-align:center;} .text-right{text-align:right;} .font-bold{font-weight:bold;} .border-y{border-top:1px dashed;border-bottom:1px dashed;} .border-b{border-bottom:1px dashed;} .py-1{padding-top:4px;padding-bottom:4px;} .mb-1{margin-bottom:4px;} .mb-2{margin-bottom:8px;} .mt-2{margin-top:8px;} .mt-3{margin-top:12px;} .mx-auto{margin-left:auto;margin-right:auto;} .max-h-12{max-height:48px;} .flex{display:flex;} .justify-between{justify-content:space-between;}</style></head><body>${printableArea}</body></html>`);
-    printWindow?.document.close();
-    printWindow?.focus();
-    printWindow?.print();
-  };
-
-  // Fungsi cetak Dot Matrix
-  const handleDotMatrixPrint = () => {
-    const printWindow = window.open('', '_blank');
-    const printableArea = document.getElementById('printable-area')?.innerHTML;
     printWindow?.document.write(`
       <html>
         <head>
-          <title>Cetak Dot Matrix</title>
+          <title>Cetak Nota Thermal</title>
+          <meta charset="UTF-8">
           <style>
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              font-size: 10pt;
+            /* Reset dan setup untuk thermal printer */
+            * {
               margin: 0;
-              padding: 10mm;
-              width: 210mm;
-              background: #fff;
+              padding: 0;
+              box-sizing: border-box;
             }
-            table { width: 100%; border-collapse: collapse; }
-            td, th { padding: 2px; }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .font-bold { font-weight: bold; }
-            .border-y { border-top: 1px dashed; border-bottom: 1px dashed; }
-            .border-b { border-bottom: 1px dashed; }
-            .py-1 { padding-top: 4px; padding-bottom: 4px; }
-            .mb-1 { margin-bottom: 4px; }
-            .mb-2 { margin-bottom: 8px; }
-            .mt-2 { margin-top: 8px; }
-            .mt-3 { margin-top: 12px; }
-            .mx-auto { margin-left: auto; margin-right: auto; }
-            .max-h-12 { max-height: 48px; }
-            .flex { display: flex; }
-            .justify-between { justify-content: space-between; }
+
+            /* Setup halaman untuk thermal 80mm */
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+
             @media print {
-              body { width: 210mm; }
+              body {
+                width: 80mm;
+                margin: 0 auto;
+              }
+            }
+
+            /* Font optimal untuk thermal printer */
+            body {
+              font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+              font-size: 9pt;
+              line-height: 1.3;
+              margin: 0;
+              padding: 3mm 2mm;
+              width: 80mm;
+              background: white;
+              color: black;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            /* Typography untuk printer thermal */
+            h1 {
+              font-size: 12pt;
+              font-weight: bold;
+              margin-bottom: 2px;
+            }
+
+            p, div, span {
+              font-size: 9pt;
+            }
+
+            strong {
+              font-weight: bold;
+            }
+
+            /* Table styling */
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 2px 0;
+            }
+
+            td, th {
+              padding: 1px 2px;
+              text-align: left;
+              vertical-align: top;
+            }
+
+            /* Utility classes */
+            .text-center { text-align: center !important; }
+            .text-right { text-align: right !important; }
+            .text-left { text-align: left !important; }
+            .font-bold { font-weight: bold !important; }
+            .font-semibold { font-weight: 600 !important; }
+            .font-mono { font-family: 'Courier New', monospace !important; }
+
+            /* Borders - dashed untuk thermal */
+            .border-y {
+              border-top: 1px dashed black;
+              border-bottom: 1px dashed black;
+            }
+            .border-t {
+              border-top: 1px dashed black;
+            }
+            .border-b {
+              border-bottom: 1px dashed black;
+            }
+
+            /* Spacing */
+            .py-1 { padding-top: 2px; padding-bottom: 2px; }
+            .pt-1 { padding-top: 2px; }
+            .pb-1 { padding-bottom: 2px; }
+            .mt-1 { margin-top: 2px; }
+            .mt-2 { margin-top: 4px; }
+            .mt-3 { margin-top: 6px; }
+            .mb-1 { margin-bottom: 2px; }
+            .mb-2 { margin-bottom: 4px; }
+            .my-2 { margin-top: 4px; margin-bottom: 4px; }
+            .mx-auto { margin-left: auto; margin-right: auto; }
+
+            /* Flexbox */
+            .flex {
+              display: flex;
+              align-items: flex-start;
+            }
+            .justify-between {
+              justify-content: space-between;
+            }
+            .align-top {
+              vertical-align: top;
+            }
+
+            /* Image sizing */
+            .max-h-12 {
+              max-height: 32px;
+              width: auto;
+            }
+
+            /* Text sizes */
+            .text-xs { font-size: 8pt; }
+            .text-sm { font-size: 9pt; }
+
+            /* Space optimization */
+            .space-y-0\.5 > * + * { margin-top: 1px; }
+            .space-y-1 > * + * { margin-top: 2px; }
+
+            /* Prevent page breaks */
+            table, .flex, .border-y, .border-t {
+              page-break-inside: avoid;
             }
           </style>
         </head>
-        <body>
+        <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
           ${printableArea}
         </body>
       </html>
     `);
     printWindow?.document.close();
-    printWindow?.focus();
-    printWindow?.print();
+  };
+
+  // Fungsi cetak Dot Matrix
+  const handleDotMatrixPrint = () => {
+    if (!transaction) return;
+    const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
+
+    const dotMatrixContent = `
+      <div style="width: 100%; max-width: 241mm;">
+        <!-- Header Section -->
+        <table style="width: 100%; border-bottom: 0.5px solid #000; margin-bottom: 4mm; padding-bottom: 2mm;">
+          <tr>
+            <td style="width: 60%; vertical-align: top; padding-right: 10mm;">
+              <div style="font-size: 15.5pt; font-weight: bold; margin-bottom: 2mm;">${companyInfo?.name || 'NAMA PERUSAHAAN'}</div>
+              <div style="font-size: 10.5pt; line-height: 1.5;">
+                ${companyInfo?.address || ''}<br/>
+                ${companyInfo?.phone ? `Telp: ${companyInfo.phone}` : ''}${companyInfo?.email ? ` | Email: ${companyInfo.email}` : ''}
+              </div>
+            </td>
+            <td style="width: 40%; vertical-align: top; text-align: right;">
+              <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR</div>
+              <div style="font-size: 10.5pt; margin-top: 2mm; line-height: 1.5;">
+                <strong>No:</strong> ${transaction.id}<br/>
+                <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Customer Info -->
+        <table style="width: 100%; margin-bottom: 4mm;">
+          <tr>
+            <td style="width: 50%; vertical-align: top;">
+              <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 1mm;">KEPADA:</div>
+              <div style="font-size: 11.5pt; font-weight: bold;">${transaction.customerName}</div>
+              <div style="font-size: 10.5pt;">Pelanggan</div>
+            </td>
+            <td style="width: 50%; vertical-align: top; text-align: right;">
+              <div style="font-size: 10.5pt;"><strong>Kasir:</strong> ${transaction.cashierName}</div>
+              ${transaction.dueDate ? `<div style="font-size: 10.5pt;"><strong>Jatuh Tempo:</strong> ${format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</div>` : ''}
+            </td>
+          </tr>
+        </table>
+
+        <!-- Items Table -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 4mm;">
+          <thead>
+            <tr style="border-top: 0.5px solid #000; border-bottom: 0.5px solid #000;">
+              <th style="text-align: left; padding: 2mm 1mm; font-size: 10.5pt; width: 50%;">DESKRIPSI</th>
+              <th style="text-align: center; padding: 2mm 1mm; font-size: 10.5pt; width: 10%;">QTY</th>
+              <th style="text-align: right; padding: 2mm 1mm; font-size: 10.5pt; width: 20%;">HARGA</th>
+              <th style="text-align: right; padding: 2mm 1mm; font-size: 10.5pt; width: 20%;">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${transaction.items.map((item, idx) => `
+              <tr>
+                <td style="padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.product.name}${item.notes ? `<br/><small style="font-size: 9.5pt;">${item.notes}</small>` : ''}</td>
+                <td style="text-align: center; padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.quantity} ${item.unit}</td>
+                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price)}</td>
+                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 10.5pt; font-weight: bold; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <!-- Summary Section -->
+        <table style="width: 100%; border-top: 0.5px solid #000; padding-top: 3mm;">
+          <tr>
+            <td style="width: 60%; vertical-align: top; padding-right: 10mm;">
+              <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 2mm;">CATATAN PEMBAYARAN:</div>
+              <div style="font-size: 9.5pt; line-height: 1.5;">
+                • Pembayaran dapat dilakukan melalui transfer bank<br/>
+                • Harap sertakan nomor faktur saat melakukan pembayaran<br/>
+                • Konfirmasi pembayaran ke nomor di atas
+              </div>
+            </td>
+            <td style="width: 40%; vertical-align: top;">
+              <table style="width: 100%; font-size: 10.5pt;">
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">Subtotal:</td>
+                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.subtotal)}</td>
+                </tr>
+                ${transaction.ppnEnabled ? `
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">PPN (${transaction.ppnPercentage}%):</td>
+                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.ppnAmount)}</td>
+                </tr>
+                ` : ''}
+                <tr style="border-top: 0.5px solid #000; border-bottom: 0.5px solid #000;">
+                  <td style="padding: 2mm; text-align: left; font-size: 12.5pt; font-weight: bold;">TOTAL:</td>
+                  <td style="padding: 2mm; text-align: right; font-size: 12.5pt; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <div style="margin-top: 10mm; border-top: 0.5px solid #ccc; padding-top: 3mm;">
+          <table style="width: 100%;">
+            <tr>
+              <td style="width: 50%; text-align: center; vertical-align: bottom;">
+                <div style="font-size: 10.5pt; margin-bottom: 15mm;">Hormat Kami,</div>
+                <div style="border-top: 0.5px solid #000; display: inline-block; padding-top: 1mm; min-width: 50mm;">
+                  <strong style="font-size: 10.5pt;">${transaction.cashierName}</strong>
+                </div>
+              </td>
+              <td style="width: 50%; text-align: center; font-size: 9.5pt; color: #666; vertical-align: bottom;">
+                Dicetak: ${format(new Date(), "dd MMMM yyyy, HH:mm", { locale: id })} WIB
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    printWindow?.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Cetak Dot Matrix - Faktur ${transaction.id}</title>
+          <meta charset="UTF-8">
+          <style>
+            /* Reset */
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
+
+            /* Page setup untuk continuous form 9.5 inch */
+            @page {
+              size: 241mm auto;  /* 9.5 inch width, auto height */
+              margin: 8mm 6mm;
+            }
+
+            @media print {
+              body {
+                width: 241mm;
+                margin: 0 auto;
+              }
+              /* Force black text for dot matrix */
+              * {
+                color: #000 !important;
+                background: transparent !important;
+              }
+            }
+
+            /* Font optimal untuk dot matrix */
+            body {
+              font-family: 'Courier New', 'Courier', monospace;
+              font-size: 10pt;
+              line-height: 1.4;
+              margin: 0;
+              padding: 8mm 6mm;
+              width: 241mm;
+              background: white;
+              color: black;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            /* Typography */
+            strong, b {
+              font-weight: bold;
+            }
+
+            /* Table optimization */
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+
+            td, th {
+              vertical-align: top;
+            }
+
+            /* Prevent page breaks */
+            table, tr, td, th {
+              page-break-inside: avoid;
+            }
+
+            /* Line heights untuk efisiensi */
+            small {
+              font-size: 8pt;
+              line-height: 1.2;
+            }
+          </style>
+        </head>
+        <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
+          ${dotMatrixContent}
+        </body>
+      </html>
+    `);
+    printWindow?.document.close();
   };
 
   // Fungsi cetak Rawbt Thermal 80mm

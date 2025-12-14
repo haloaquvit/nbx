@@ -37,7 +37,10 @@ export const useProduction = () => {
         quantity: record.quantity,
         note: record.note,
         consumeBOM: record.consume_bom,
+        bomSnapshot: record.bom_snapshot ? JSON.parse(record.bom_snapshot) : undefined,
         createdBy: record.created_by,
+        createdByName: record.profiles?.name || record.user_input_name || 'Unknown',
+        user_input_name: record.user_input_name, // Include for fallback display
         createdAt: new Date(record.created_at),
         updatedAt: new Date(record.updated_at)
       })) || [];
@@ -99,6 +102,12 @@ export const useProduction = () => {
 
       if (productError) throw productError;
 
+      // Get BOM snapshot if consuming BOM
+      let bomSnapshot: BOMItem[] | null = null;
+      if (input.consumeBOM) {
+        bomSnapshot = await getBOM(input.productId);
+      }
+
       // Start transaction
       const { data: productionRecord, error: productionError } = await supabase
         .from('production_records')
@@ -108,6 +117,7 @@ export const useProduction = () => {
           quantity: input.quantity,
           note: input.note,
           consume_bom: input.consumeBOM,
+          bom_snapshot: bomSnapshot ? JSON.stringify(bomSnapshot) : null,
           created_by: input.createdBy,
           user_input_id: input.createdBy,
           user_input_name: user?.name || user?.email || 'Unknown User'

@@ -15,6 +15,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { ThemeToggle } from "../ThemeToggle";
+import { NotificationBell } from "../NotificationBell";
 import { useAuth } from "@/hooks/useAuth";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
@@ -186,6 +187,9 @@ export function Header() {
           
           <div className="scale-110">
             <ThemeToggle />
+          </div>
+          <div className="scale-110">
+            <NotificationBell />
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

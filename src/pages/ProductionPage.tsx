@@ -15,7 +15,8 @@ import { BOMItem } from "@/types/production"
 import { format } from 'date-fns'
 import { validateProductForProduction } from "@/utils/productValidation"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
-import { Trash2, Package, AlertTriangle } from "lucide-react"
+import { Trash2, Package, AlertTriangle, Printer } from "lucide-react"
+import { ProductionPrintDialog } from "@/components/ProductionPrintDialog"
 
 export default function ProductionPage() {
   const { user } = useAuth()
@@ -34,6 +35,10 @@ export default function ProductionPage() {
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>("")
   const [errorQuantity, setErrorQuantity] = useState<number>(1)
   const [errorNote, setErrorNote] = useState<string>("")
+
+  // Print dialog state
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
+  const [selectedProduction, setSelectedProduction] = useState<any>(null)
 
   // Filter only Produksi type products (finished goods)
   const finishedGoods = useMemo(() => 
@@ -144,6 +149,11 @@ export default function ProductionPage() {
     }
 
     await deleteProduction(recordId)
+  }
+
+  const handlePrintProduction = (record: any) => {
+    setSelectedProduction(record)
+    setIsPrintDialogOpen(true)
   }
 
   if (isLoadingProducts) {
@@ -343,9 +353,7 @@ export default function ProductionPage() {
                 <th className="text-left px-3 py-2">Qty</th>
                 <th className="text-left px-3 py-2">BOM</th>
                 <th className="text-left px-3 py-2">Catatan</th>
-                {user && ['owner', 'admin'].includes(user.role || '') && (
-                  <th className="text-left px-3 py-2">Action</th>
-                )}
+                <th className="text-left px-3 py-2">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -371,44 +379,58 @@ export default function ProductionPage() {
                   <td className="px-3 py-2 text-gray-600">
                     {record.note || '-'}
                   </td>
-                  {user && ['owner', 'admin'].includes(user.role || '') && (
-                    <td className="px-3 py-2">
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button 
-                            variant="destructive" 
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Hapus Data Produksi?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Data produksi <strong>{record.ref}</strong> akan dihapus dan stock bahan akan dikembalikan. 
-                              Tindakan ini tidak dapat dibatalkan.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Batal</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => handleDeleteProduction(record.id)}
-                              className="bg-red-600 hover:bg-red-700"
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {/* Print Button - Available for all users */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2"
+                        onClick={() => handlePrintProduction(record)}
+                      >
+                        <Printer className="h-3 w-3 mr-1" />
+                        Cetak
+                      </Button>
+
+                      {/* Delete Button - Only for owner and admin */}
+                      {user && ['owner', 'admin'].includes(user.role || '') && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="h-7 w-7 p-0"
                             >
-                              Hapus
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </td>
-                  )}
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Hapus Data Produksi?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Data produksi <strong>{record.ref}</strong> akan dihapus dan stock bahan akan dikembalikan.
+                                Tindakan ini tidak dapat dibatalkan.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Batal</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteProduction(record.id)}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                Hapus
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
               {productions.length === 0 && (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={user && ['owner', 'admin'].includes(user.role || '') ? 7 : 6}>
+                  <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
                     {isLoading ? 'Loading...' : 'Belum ada produksi'}
                   </td>
                 </tr>
@@ -417,6 +439,13 @@ export default function ProductionPage() {
           </table>
         </div>
       </section>
+
+      {/* Print Dialog */}
+      <ProductionPrintDialog
+        open={isPrintDialogOpen}
+        onOpenChange={setIsPrintDialogOpen}
+        production={selectedProduction}
+      />
     </div>
   )
 }

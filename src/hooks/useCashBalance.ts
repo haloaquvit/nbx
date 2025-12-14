@@ -39,10 +39,11 @@ export const useCashBalance = () => {
         if (cashFlowError.code === 'PGRST116' || cashFlowError.message.includes('does not exist')) {
           console.warn('cash_history table does not exist, calculating balance from accounts only');
           
-          // Get account balances
+          // Get account balances - ONLY payment accounts
           const { data: accounts, error: accountsError } = await supabase
             .from('accounts')
-            .select('id, name, balance')
+            .select('id, name, balance, is_payment_account')
+            .eq('is_payment_account', true) // Filter hanya akun pembayaran
             .order('name');
 
           if (accountsError) {
@@ -76,10 +77,11 @@ export const useCashBalance = () => {
         throw new Error(`Failed to fetch cash history: ${cashFlowError.message}`);
       }
 
-      // Get account balances
+      // Get account balances - ONLY payment accounts
       const { data: accounts, error: accountsError } = await supabase
         .from('accounts')
-        .select('id, name, balance')
+        .select('id, name, balance, is_payment_account')
+        .eq('is_payment_account', true) // Filter hanya akun pembayaran
         .order('name');
 
       if (accountsError) {

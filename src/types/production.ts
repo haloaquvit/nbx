@@ -9,7 +9,10 @@ export interface ProductionRecord {
   quantity: number;
   note?: string;
   consumeBOM: boolean;
+  bomSnapshot?: BOMItem[]; // Snapshot of BOM at time of production
   createdBy: string;
+  createdByName?: string; // Name of user who created this (from profiles join)
+  user_input_name?: string; // Name of user who created this (from direct input)
   createdAt: Date;
   updatedAt: Date;
 }

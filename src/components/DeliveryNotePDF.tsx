@@ -155,7 +155,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               <Printer className="h-5 w-5" />
               <div className="text-left">
                 <div className="font-medium">Cetak Dot Matrix</div>
-                <div className="text-xs text-muted-foreground">Format sesuai invoice dot matrix</div>
+                <div className="text-xs text-muted-foreground">Format sesuai faktur dot matrix</div>
               </div>
             </Button>
             <Button

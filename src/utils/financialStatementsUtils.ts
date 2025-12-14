@@ -96,12 +96,17 @@ export interface CashFlowStatementData {
     workingCapitalChanges: CashFlowItem[];
     cashReceipts: {
       fromCustomers: number;
+      fromReceivablePayments: number;
       fromOtherOperating: number;
+      fromAdvanceRepayment: number;
       total: number;
     };
     cashPayments: {
       forRawMaterials: number;
+      forPayablePayments: number;
+      forInterestExpense: number;
       forDirectLabor: number;
+      forEmployeeAdvances: number;
       forManufacturingOverhead: number;
       forOperatingExpenses: number;
       forTaxes: number;
@@ -229,6 +234,7 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
   // Build current assets
   const kasBank = assetAccounts
     .filter(acc => acc.name.toLowerCase().includes('kas') || acc.name.toLowerCase().includes('bank'))
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -255,6 +261,7 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
 
   const panjarKaryawan = assetAccounts
     .filter(acc => acc.name.toLowerCase().includes('panjar'))
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -269,13 +276,23 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
     persediaan.reduce((sum, item) => sum + item.balance, 0) +
     panjarKaryawan.reduce((sum, item) => sum + item.balance, 0);
 
-  // Build fixed assets (simplified - would need more data in real implementation)
+  // Build fixed assets - include all accounts with code 1400-1499 (Aset Tetap)
   const peralatan = assetAccounts
-    .filter(acc => 
-      acc.name.toLowerCase().includes('peralatan') || 
-      acc.name.toLowerCase().includes('kendaraan') ||
-      acc.name.toLowerCase().includes('mesin')
-    )
+    .filter(acc => {
+      // Include accounts with code starting with 14 (1400-1499 range for fixed assets)
+      if (acc.code && acc.code.startsWith('14')) return true;
+
+      // Fallback: also include by name for accounts without codes
+      return acc.name.toLowerCase().includes('peralatan') ||
+             acc.name.toLowerCase().includes('kendaraan') ||
+             acc.name.toLowerCase().includes('mesin') ||
+             acc.name.toLowerCase().includes('bangunan') ||
+             acc.name.toLowerCase().includes('tanah') ||
+             acc.name.toLowerCase().includes('komputer') ||
+             acc.name.toLowerCase().includes('furniture') ||
+             acc.name.toLowerCase().includes('aset tetap');
+    })
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -286,6 +303,7 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
 
   const akumulasiPenyusutan = assetAccounts
     .filter(acc => acc.name.toLowerCase().includes('akumulasi'))
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -307,6 +325,7 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
       !acc.name.toLowerCase().includes('gaji') &&
       !acc.name.toLowerCase().includes('pajak')
     )
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -328,6 +347,7 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
 
   const hutangGaji = liabilityAccounts
     .filter(acc => acc.name.toLowerCase().includes('gaji'))
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -349,6 +369,7 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
 
   const hutangPajak = liabilityAccounts
     .filter(acc => acc.name.toLowerCase().includes('pajak') || acc.name.toLowerCase().includes('ppn'))
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -365,13 +386,15 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
   const totalLiabilities = totalCurrentLiabilities;
 
   // Build equity
-  const modalPemilik = equityAccounts.map(acc => ({
-    accountId: acc.id,
-    accountCode: acc.code,
-    accountName: acc.name,
-    balance: acc.balance || 0,
-    formattedBalance: formatCurrency(acc.balance || 0)
-  }));
+  const modalPemilik = equityAccounts
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: acc.balance || 0,
+      formattedBalance: formatCurrency(acc.balance || 0)
+    }));
 
   // Calculate retained earnings (would need period income statement)
   const labaRugiDitahan = totalAssets - totalLiabilities - modalPemilik.reduce((sum, item) => sum + item.balance, 0);
@@ -552,7 +575,63 @@ export async function generateIncomeStatement(
 
   const totalOperatingExpenses = operatingExpenseCash + totalCommissions;
   const operatingIncome = grossProfit - totalOperatingExpenses;
-  const netIncome = operatingIncome; // Simplified - no tax calculation yet
+
+  // Calculate interest expense from accounts payable
+  const { data: accountsPayableForIncome, error: apIncomeError } = await supabase
+    .from('accounts_payable')
+    .select('amount, interest_rate, interest_type, creditor_type, created_at, status, paid_at')
+    .gte('created_at', fromDateStr)
+    .lte('created_at', toDateStr + 'T23:59:59');
+
+  let interestExpense = 0;
+
+  if (!apIncomeError && accountsPayableForIncome) {
+    accountsPayableForIncome.forEach(payable => {
+      const interestRate = payable.interest_rate || 0;
+      const amount = payable.amount || 0;
+
+      if (interestRate > 0 && amount > 0) {
+        let interestAmount = 0;
+
+        switch (payable.interest_type) {
+          case 'flat':
+            interestAmount = amount * (interestRate / 100);
+            break;
+
+          case 'per_month':
+            const createdDate = new Date(payable.created_at);
+            const endDate = payable.paid_at ? new Date(payable.paid_at) : periodTo;
+            const monthsDiff = Math.max(1,
+              (endDate.getFullYear() - createdDate.getFullYear()) * 12 +
+              (endDate.getMonth() - createdDate.getMonth())
+            );
+            interestAmount = amount * (interestRate / 100) * monthsDiff;
+            break;
+
+          case 'per_year':
+            const createdDateYear = new Date(payable.created_at);
+            const endDateYear = payable.paid_at ? new Date(payable.paid_at) : periodTo;
+            const daysDiff = Math.max(1,
+              (endDateYear.getTime() - createdDateYear.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            interestAmount = amount * (interestRate / 100) * (daysDiff / 365);
+            break;
+        }
+
+        interestExpense += interestAmount;
+      }
+    });
+  }
+
+  const bebanLainLain: IncomeStatementItem[] = interestExpense > 0 ? [{
+    accountName: 'Hutang Bunga Atas Hutang Bank',
+    amount: interestExpense,
+    formattedAmount: formatCurrency(interestExpense),
+    source: 'calculated'
+  }] : [];
+
+  const netOtherIncome = -interestExpense; // Negative because it's an expense
+  const netIncome = operatingIncome + netOtherIncome; // Simplified - no tax calculation yet
 
   return {
     revenue: {
@@ -578,8 +657,8 @@ export async function generateIncomeStatement(
     operatingIncome,
     otherIncome: {
       pendapatanLainLain: [],
-      bebanLainLain: [],
-      netOtherIncome: 0
+      bebanLainLain,
+      netOtherIncome
     },
     netIncomeBeforeTax: netIncome,
     taxExpense: 0,
@@ -644,14 +723,28 @@ export async function generateCashFlowStatement(
     .filter(ch => ch.type === 'orderan')
     .reduce((sum, ch) => sum + (ch.amount || 0), 0);
 
+  // Pembayaran piutang (receivable payments from customers)
+  const fromReceivablePayments = operatingCashFlows
+    .filter(ch => ch.type === 'pembayaran_piutang')
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
   const fromOtherOperating = operatingCashFlows
     .filter(ch => ch.type === 'kas_masuk_manual')
     .reduce((sum, ch) => sum + (ch.amount || 0), 0);
 
+  // Panjar pelunasan (employee advance repayment) - cash received back
+  const fromAdvanceRepayment = operatingCashFlows
+    .filter(ch => ch.type === 'panjar_pelunasan' ||
+      (ch.description?.toLowerCase().includes('pelunasan panjar') ||
+       ch.description?.toLowerCase().includes('advance repayment')))
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
   const cashReceipts = {
     fromCustomers,
+    fromReceivablePayments,
     fromOtherOperating,
-    total: fromCustomers + fromOtherOperating
+    fromAdvanceRepayment,
+    total: fromCustomers + fromReceivablePayments + fromOtherOperating + fromAdvanceRepayment
   };
 
   // Calculate detailed cash payments
@@ -661,8 +754,71 @@ export async function generateCashFlowStatement(
        ch.description?.toLowerCase().includes('material')))
     .reduce((sum, ch) => sum + (ch.amount || 0), 0);
 
+  // Pembayaran hutang (payable payments to suppliers/creditors)
+  const forPayablePayments = operatingCashFlows
+    .filter(ch => ch.type === 'pembayaran_utang')
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
+  // Calculate interest expense from accounts payable
+  // Fetch accounts payable data to calculate interest
+  const { data: accountsPayableData, error: apDataError } = await supabase
+    .from('accounts_payable')
+    .select('amount, interest_rate, interest_type, creditor_type, created_at, status, paid_at')
+    .gte('created_at', fromDateStr)
+    .lte('created_at', toDateStr + 'T23:59:59');
+
+  let forInterestExpense = 0;
+
+  if (!apDataError && accountsPayableData) {
+    accountsPayableData.forEach(payable => {
+      const interestRate = payable.interest_rate || 0;
+      const amount = payable.amount || 0;
+
+      if (interestRate > 0 && amount > 0) {
+        let interestAmount = 0;
+
+        switch (payable.interest_type) {
+          case 'flat':
+            // Flat interest: one-time calculation
+            interestAmount = amount * (interestRate / 100);
+            break;
+
+          case 'per_month':
+            // Monthly interest: calculate for the months in the period
+            const createdDate = new Date(payable.created_at);
+            const endDate = payable.paid_at ? new Date(payable.paid_at) : periodTo;
+            const monthsDiff = Math.max(1,
+              (endDate.getFullYear() - createdDate.getFullYear()) * 12 +
+              (endDate.getMonth() - createdDate.getMonth())
+            );
+            interestAmount = amount * (interestRate / 100) * monthsDiff;
+            break;
+
+          case 'per_year':
+            // Annual interest: calculate pro-rata for the period
+            const createdDateYear = new Date(payable.created_at);
+            const endDateYear = payable.paid_at ? new Date(payable.paid_at) : periodTo;
+            const daysDiff = Math.max(1,
+              (endDateYear.getTime() - createdDateYear.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            interestAmount = amount * (interestRate / 100) * (daysDiff / 365);
+            break;
+        }
+
+        forInterestExpense += interestAmount;
+      }
+    });
+  }
+
   const forDirectLabor = operatingCashFlows
     .filter(ch => ch.type === 'gaji_karyawan' || ch.type === 'pembayaran_gaji')
+    .reduce((sum, ch) => sum + (ch.amount || 0), 0);
+
+  // Panjar karyawan (employee advances) - included in operating expenses
+  const forEmployeeAdvances = operatingCashFlows
+    .filter(ch => ch.type === 'panjar_pengambilan' ||
+      (ch.description?.toLowerCase().includes('panjar karyawan') ||
+       ch.description?.toLowerCase().includes('employee advance')))
     .reduce((sum, ch) => sum + (ch.amount || 0), 0);
 
   const forManufacturingOverhead = operatingCashFlows
@@ -689,11 +845,14 @@ export async function generateCashFlowStatement(
 
   const cashPayments = {
     forRawMaterials,
+    forPayablePayments,
+    forInterestExpense,
     forDirectLabor,
+    forEmployeeAdvances,
     forManufacturingOverhead,
     forOperatingExpenses,
     forTaxes,
-    total: forRawMaterials + forDirectLabor + forManufacturingOverhead + forOperatingExpenses + forTaxes
+    total: forRawMaterials + forPayablePayments + forInterestExpense + forDirectLabor + forEmployeeAdvances + forManufacturingOverhead + forOperatingExpenses + forTaxes
   };
 
   const netCashFromOperations = cashReceipts.total - cashPayments.total;

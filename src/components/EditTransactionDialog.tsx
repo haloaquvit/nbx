@@ -319,10 +319,10 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
           </div>
 
           {/* Tax Settings */}
-          <div>
-            <Label>Pengaturan Pajak</Label>
-            <div className="space-y-2 mt-2">
-              <label className="flex items-center text-sm">
+          <div className="border border-blue-200 bg-blue-50 p-4 rounded-lg">
+            <Label className="text-sm font-medium text-gray-900 mb-3 block">Pengaturan Pajak</Label>
+            <div className="space-y-3">
+              <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
                 <input
                   type="radio"
                   name="taxMode"
@@ -331,11 +331,14 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                     setPpnEnabled(true)
                     setPpnMode('include')
                   }}
-                  className="mr-2"
+                  className="mr-3 w-4 h-4 text-blue-600"
                 />
-                PPN Include (sudah termasuk pajak)
+                <div>
+                  <div className="font-medium text-gray-900">PPN Include</div>
+                  <div className="text-xs text-gray-600">Harga sudah termasuk pajak {ppnPercentage}%</div>
+                </div>
               </label>
-              <label className="flex items-center text-sm">
+              <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
                 <input
                   type="radio"
                   name="taxMode"
@@ -344,20 +347,33 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                     setPpnEnabled(true)
                     setPpnMode('exclude')
                   }}
-                  className="mr-2"
+                  className="mr-3 w-4 h-4 text-blue-600"
                 />
-                PPN Exclude (belum termasuk pajak)
+                <div>
+                  <div className="font-medium text-gray-900">PPN Exclude</div>
+                  <div className="text-xs text-gray-600">Pajak {ppnPercentage}% ditambahkan ke total</div>
+                </div>
               </label>
-              <label className="flex items-center text-sm">
+              <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
                 <input
                   type="radio"
                   name="taxMode"
                   checked={!ppnEnabled}
                   onChange={() => setPpnEnabled(false)}
-                  className="mr-2"
+                  className="mr-3 w-4 h-4 text-blue-600"
                 />
-                Non Pajak
+                <div>
+                  <div className="font-medium text-gray-900">Non Pajak</div>
+                  <div className="text-xs text-gray-600">Tidak menggunakan pajak</div>
+                </div>
               </label>
+              {ppnEnabled && (
+                <div className="mt-3 pt-3 border-t border-blue-200">
+                  <div className="text-xs text-blue-700">
+                    <strong>Mode Aktif:</strong> {ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude'} ({ppnPercentage}%)
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

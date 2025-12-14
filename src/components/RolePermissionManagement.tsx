@@ -43,9 +43,9 @@ const FEATURES = [
       { id: 'transactions_create', name: 'Buat Transaksi', icon: Plus },
       { id: 'transactions_edit', name: 'Edit Transaksi', icon: Edit },
       { id: 'transactions_delete', name: 'Hapus Transaksi', icon: Trash2 },
-      { id: 'quotations_view', name: 'Lihat Penawaran', icon: Eye },
-      { id: 'quotations_create', name: 'Buat Penawaran', icon: Plus },
-      { id: 'quotations_edit', name: 'Edit Penawaran', icon: Edit },
+      { id: 'production_view', name: 'Lihat Produksi', icon: Eye },
+      { id: 'production_create', name: 'Proses Produksi', icon: Plus },
+      { id: 'production_delete', name: 'Hapus Produksi', icon: Trash2 },
     ]
   },
   {
@@ -114,7 +114,7 @@ const DEFAULT_PERMISSIONS = {
     materials_view: true, materials_create: true, materials_edit: true, materials_delete: false,
     pos_access: true,
     transactions_view: true, transactions_create: true, transactions_edit: true, transactions_delete: false,
-    quotations_view: true, quotations_create: true, quotations_edit: true,
+    production_view: true, production_create: true, production_delete: false,
     customers_view: true, customers_create: true, customers_edit: true, customers_delete: false,
     employees_view: true, employees_create: false, employees_edit: false, employees_delete: false,
     accounts_view: true, accounts_create: false, accounts_edit: false,
@@ -131,7 +131,7 @@ const DEFAULT_PERMISSIONS = {
     materials_view: true, materials_create: false, materials_edit: false, materials_delete: false,
     pos_access: true,
     transactions_view: true, transactions_create: true, transactions_edit: true, transactions_delete: false,
-    quotations_view: true, quotations_create: true, quotations_edit: true,
+    production_view: false, production_create: false, production_delete: false,
     customers_view: true, customers_create: true, customers_edit: true, customers_delete: false,
     employees_view: false, employees_create: false, employees_edit: false, employees_delete: false,
     accounts_view: false, accounts_create: false, accounts_edit: false,
@@ -148,7 +148,7 @@ const DEFAULT_PERMISSIONS = {
     materials_view: true, materials_create: false, materials_edit: false, materials_delete: false,
     pos_access: false,
     transactions_view: true, transactions_create: false, transactions_edit: false, transactions_delete: false,
-    quotations_view: true, quotations_create: true, quotations_edit: true,
+    production_view: true, production_create: false, production_delete: false,
     customers_view: true, customers_create: false, customers_edit: false, customers_delete: false,
     employees_view: false, employees_create: false, employees_edit: false, employees_delete: false,
     accounts_view: false, accounts_create: false, accounts_edit: false,
@@ -164,7 +164,7 @@ const DEFAULT_PERMISSIONS = {
     materials_view: false, materials_create: false, materials_edit: false, materials_delete: false,
     pos_access: false,
     transactions_view: false, transactions_create: false, transactions_edit: false, transactions_delete: false,
-    quotations_view: false, quotations_create: false, quotations_edit: false,
+    production_view: false, production_create: false, production_delete: false,
     customers_view: false, customers_create: false, customers_edit: false, customers_delete: false,
     employees_view: false, employees_create: false, employees_edit: false, employees_delete: false,
     accounts_view: false, accounts_create: false, accounts_edit: false,
@@ -226,16 +226,19 @@ export const RolePermissionManagement = () => {
 
     setIsSaving(true)
     try {
-      // Save to localStorage (in real app, this would be API call)
+      // Save to localStorage
       localStorage.setItem('rolePermissions', JSON.stringify(permissions))
-      
+
+      // Trigger storage event manually for same window
+      window.dispatchEvent(new Event('storage'))
+
       // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000))
-      
+
       setHasChanges(false)
       toast({
         title: "Sukses!",
-        description: "Permission berhasil disimpan.",
+        description: "Permission berhasil disimpan. Refresh halaman untuk melihat perubahan menu.",
       })
     } catch (error) {
       toast({
@@ -264,6 +267,27 @@ export const RolePermissionManagement = () => {
 
   return (
     <div className="space-y-6">
+      {/* Info Card */}
+      <Card className="bg-blue-50 border-blue-200">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
+            <div className="space-y-2 text-sm">
+              <p className="font-semibold text-blue-900">
+                Cara Kerja Permission System:
+              </p>
+              <ul className="list-disc list-inside space-y-1 text-blue-800">
+                <li>Permission yang dicentang akan menentukan <strong>menu yang tampil di sidebar</strong></li>
+                <li>Jika permission dimatikan (tidak dicentang), menu terkait akan <strong>hilang dari sidebar</strong></li>
+                <li>Perubahan akan berlaku setelah <strong>klik "Simpan Perubahan"</strong> dan <strong>refresh halaman</strong></li>
+                <li><strong>Owner</strong> selalu punya akses penuh ke semua menu</li>
+                <li><strong>Admin</strong> punya akses hampir semua kecuali Management Roles</li>
+              </ul>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -271,22 +295,22 @@ export const RolePermissionManagement = () => {
             Kelola Role & Permission
           </CardTitle>
           <CardDescription>
-            Atur akses dan permission untuk setiap role dalam sistem. 
+            Atur akses dan permission untuk setiap role dalam sistem.
             Perubahan akan berlaku untuk semua user dengan role tersebut.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2 mb-6">
-            <Button 
-              onClick={savePermissions} 
+            <Button
+              onClick={savePermissions}
               disabled={!hasChanges || isSaving}
               className="flex items-center gap-2"
             >
               <Save className="h-4 w-4" />
               {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
             </Button>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={resetToDefaults}
               className="flex items-center gap-2"
             >
@@ -297,8 +321,11 @@ export const RolePermissionManagement = () => {
 
           {hasChanges && (
             <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-800">
+              <p className="text-sm text-yellow-800 font-semibold">
                 ⚠️ Ada perubahan yang belum disimpan. Klik "Simpan Perubahan" untuk menerapkan.
+              </p>
+              <p className="text-xs text-yellow-700 mt-1">
+                Setelah simpan, refresh halaman (F5) untuk melihat perubahan menu di sidebar.
               </p>
             </div>
           )}

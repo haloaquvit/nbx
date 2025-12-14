@@ -53,6 +53,9 @@ const CommissionManagePage = lazy(() => import("@/pages/CommissionManagePage"));
 const CommissionReportPage = lazy(() => import("@/pages/CommissionReportPage"));
 const FinancialReportsPage = lazy(() => import("@/pages/FinancialReportsPage"));
 const AccountsPayablePage = lazy(() => import("@/pages/AccountsPayablePage"));
+const AssetsPage = lazy(() => import("@/pages/AssetsPage"));
+const MaintenancePage = lazy(() => import("@/pages/MaintenancePage"));
+const ZakatPage = lazy(() => import("@/pages/ZakatPage"));
 
 function App() {
   // Handle chunk loading errors
@@ -150,6 +153,9 @@ function App() {
                   <Route path="/commission-manage" element={<CommissionManagePage />} />
                   <Route path="/commission-report" element={<CommissionReportPage />} />
                   <Route path="/financial-reports" element={<FinancialReportsPage />} />
+                  <Route path="/assets" element={<AssetsPage />} />
+                  <Route path="/maintenance" element={<MaintenancePage />} />
+                  <Route path="/zakat" element={<ZakatPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

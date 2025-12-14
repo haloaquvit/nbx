@@ -63,6 +63,7 @@ export function TransactionTable() {
   const [ppnFilter, setPpnFilter] = React.useState<'all' | 'ppn' | 'non-ppn'>('all');
   const [deliveryFilter, setDeliveryFilter] = React.useState<'all' | 'pending-delivery'>('all');
   const [paymentFilter, setPaymentFilter] = React.useState<'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang'>('all');
+  const [retasiFilter, setRetasiFilter] = React.useState<string>('all'); // 'all' or retasi_number
   const [filteredTransactions, setFilteredTransactions] = React.useState<Transaction[]>([]);
   
   const { transactions, isLoading, deleteTransaction } = useTransactions();
@@ -153,15 +154,35 @@ export function TransactionTable() {
       });
     }
 
+    // Filter by retasi
+    if (retasiFilter !== 'all') {
+      filtered = filtered.filter(transaction => {
+        return transaction.retasiNumber === retasiFilter;
+      });
+    }
+
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter]);
+  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter]);
 
   const clearFilters = () => {
     setDateRange({ from: undefined, to: undefined });
     setPpnFilter('all');
     setDeliveryFilter('all');
     setPaymentFilter('all');
+    setRetasiFilter('all');
   };
+
+  // Get unique retasi numbers from transactions
+  const uniqueRetasiNumbers = React.useMemo(() => {
+    if (!transactions) return [];
+    const retasiSet = new Set<string>();
+    transactions.forEach(t => {
+      if (t.retasiNumber) {
+        retasiSet.add(t.retasiNumber);
+      }
+    });
+    return Array.from(retasiSet).sort();
+  }, [transactions]);
   
 
 
@@ -206,6 +227,20 @@ export function TransactionTable() {
           {row.getValue("customerName")}
         </div>
       ),
+    },
+    {
+      accessorKey: "retasiNumber",
+      header: "Retasi",
+      cell: ({ row }) => {
+        const retasiNumber = row.getValue("retasiNumber") as string | null;
+        if (!retasiNumber) return <span className="text-xs text-muted-foreground">-</span>;
+        return (
+          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+            <Truck className="h-3 w-3 mr-1" />
+            {retasiNumber}
+          </Badge>
+        );
+      },
     },
     {
       accessorKey: "orderDate",
@@ -554,7 +589,7 @@ export function TransactionTable() {
             Filter Transaksi
             {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
-          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all') && (
+          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all') && (
             <Badge variant="secondary" className="ml-2">
               Filter aktif
             </Badge>
@@ -664,6 +699,26 @@ export function TransactionTable() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Retasi Filter */}
+          {uniqueRetasiNumbers.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Retasi (Driver)</label>
+              <Select value={retasiFilter} onValueChange={(value: string) => setRetasiFilter(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Retasi" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Retasi</SelectItem>
+                  {uniqueRetasiNumbers.map(retasiNum => (
+                    <SelectItem key={retasiNum} value={retasiNum}>
+                      {retasiNum}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
         </div>
       )}

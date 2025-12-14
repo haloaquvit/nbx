@@ -152,8 +152,8 @@ export default function TransactionDetailPage() {
     doc.setFontSize(10).setFont("helvetica", "normal").text(companyInfo?.address || '', margin, 38).text(companyInfo?.phone || '', margin, 43);
     doc.setDrawColor(200).line(margin, 48, pageWidth - margin, 48);
     
-    // Invoice header
-    doc.setFontSize(22).setFont("helvetica", "bold").setTextColor(150).text("INVOICE", pageWidth - margin, 32, { align: 'right' });
+    // Faktur header
+    doc.setFontSize(22).setFont("helvetica", "bold").setTextColor(150).text("FAKTUR", pageWidth - margin, 32, { align: 'right' });
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
     doc.setFontSize(11).setTextColor(0).text(`No: ${transaction.id}`, pageWidth - margin, 38, { align: 'right' }).text(`Tanggal: ${format(orderDate, "d MMMM yyyy", { locale: id })}`, pageWidth - margin, 43, { align: 'right' });
     
@@ -220,7 +220,7 @@ export default function TransactionDetailPage() {
     doc.setFontSize(10).setFont("helvetica", "normal");
     doc.text("Terima kasih atas kepercayaan Anda.", margin, signatureY + 20);
 
-    const filename = `Invoice-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
+    const filename = `Faktur-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
     doc.save(filename);
   };
 
@@ -307,25 +307,55 @@ export default function TransactionDetailPage() {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Cetak Thermal Receipt</title>
+          <title>Cetak Nota Thermal</title>
+          <meta charset="UTF-8">
           <style>
-            body {
-              font-family: 'Courier New', Courier, monospace;
-              font-size: 9pt;
+            /* Reset dan setup untuk thermal printer */
+            * {
               margin: 0;
-              padding: 2mm;
-              width: 78mm;
-              background: #fff;
-              line-height: 1.2;
+              padding: 0;
+              box-sizing: border-box;
             }
+
+            /* Setup halaman untuk thermal 80mm */
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+
+            @media print {
+              body {
+                width: 80mm;
+                margin: 0 auto;
+              }
+            }
+
+            /* Font optimal untuk thermal printer */
+            body {
+              font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+              font-size: 9pt;
+              line-height: 1.3;
+              margin: 0;
+              padding: 3mm 2mm;
+              width: 80mm;
+              background: white;
+              color: black;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
             table {
               width: 100%;
               border-collapse: collapse;
+              margin: 2px 0;
             }
+
             td, th {
               padding: 1px 2px;
               font-size: 8pt;
+              vertical-align: top;
             }
+
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .text-left { text-align: left; }
@@ -424,25 +454,14 @@ export default function TransactionDetailPage() {
               font-size: 8pt;
               margin: 1px 0;
             }
-            @page {
-              size: 80mm auto;
-              margin: 2mm;
-            }
-            @media print {
-              body {
-                width: 76mm;
-                font-size: 8pt;
-              }
-              .max-h-6 {
-                max-height: 10mm;
-              }
-              .max-w-12 {
-                max-width: 18mm;
-              }
+
+            /* Prevent page breaks */
+            table, .flex, .border-y, .border-t {
+              page-break-inside: avoid;
             }
           </style>
         </head>
-        <body>
+        <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
           ${receiptContent}
         </body>
       </html>
@@ -452,213 +471,201 @@ export default function TransactionDetailPage() {
     printWindow?.print();
   };
 
-  // Cetak Dot Matrix - khusus untuk LX-310 tanpa logo
+  // Cetak Dot Matrix - optimal untuk continuous form
   const handleDotMatrixPrint = () => {
     if (!transaction) return;
-    
-    // Version khusus LX-310 - tanpa logo, nama perusahaan diperbesar
-    const invoiceContent = `
-      <div class="p-8 bg-white text-black">
-        <header class="flex justify-between items-center mb-4 pb-2 border-b-2 border-gray-200">
-          <div class="ml-2">
-            <div class="company-logo-text-compact">
-              <h1 class="text-2xl font-bold text-gray-800 mb-1 tracking-wide">${companyInfo?.name}</h1>
-              <div class="company-tagline text-sm font-semibold text-gray-600 mb-1">━━━ PROFESSIONAL SERVICES ━━━</div>
-            </div>
-            <div class="ml-1">
-              <p class="text-sm text-gray-500 leading-tight">${companyInfo?.address}</p>
-              <p class="text-sm text-gray-500 leading-tight">${companyInfo?.phone}</p>
-            </div>
-          </div>
-          <div class="text-right">
-            <h2 class="text-4xl font-bold uppercase text-gray-300">INVOICE</h2>
-            <p class="text-lg text-gray-600"><strong class="text-gray-800">No:</strong> ${transaction.id}</p>
-            <p class="text-lg text-gray-600"><strong class="text-gray-800">Tanggal:</strong> ${transaction.orderDate ? format(new Date(transaction.orderDate), "d MMMM yyyy", { locale: id }) : 'N/A'}</p>
-          </div>
-        </header>
-        <div class="mb-4">
-          <h3 class="text-base font-semibold text-gray-500 mb-1">DITAGIHKAN KEPADA:</h3>
-          <p class="text-xl font-bold text-gray-800">${transaction.customerName}</p>
-        </div>
-        <table class="w-full border-collapse border border-gray-200">
+    const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
+
+    const dotMatrixContent = `
+      <div style="width: 100%; max-width: 241mm;">
+        <!-- Header Section -->
+        <table style="width: 100%; border-bottom: 0.5px solid #000; margin-bottom: 4mm; padding-bottom: 2mm;">
+          <tr>
+            <td style="width: 60%; vertical-align: top; padding-right: 10mm;">
+              <div style="font-size: 15.5pt; font-weight: bold; margin-bottom: 2mm;">${companyInfo?.name || 'NAMA PERUSAHAAN'}</div>
+              <div style="font-size: 10.5pt; line-height: 1.5;">
+                ${companyInfo?.address || ''}<br/>
+                ${companyInfo?.phone ? `Telp: ${companyInfo.phone}` : ''}${companyInfo?.email ? ` | Email: ${companyInfo.email}` : ''}
+              </div>
+            </td>
+            <td style="width: 40%; vertical-align: top; text-align: right;">
+              <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR</div>
+              <div style="font-size: 10.5pt; margin-top: 2mm; line-height: 1.5;">
+                <strong>No:</strong> ${transaction.id}<br/>
+                <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Customer Info -->
+        <table style="width: 100%; margin-bottom: 4mm;">
+          <tr>
+            <td style="width: 50%; vertical-align: top;">
+              <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 1mm;">KEPADA:</div>
+              <div style="font-size: 11.5pt; font-weight: bold;">${transaction.customerName}</div>
+              <div style="font-size: 10.5pt;">Pelanggan</div>
+            </td>
+            <td style="width: 50%; vertical-align: top; text-align: right;">
+              <div style="font-size: 10.5pt;"><strong>Kasir:</strong> ${transaction.cashierName}</div>
+              ${transaction.dueDate ? `<div style="font-size: 10.5pt;"><strong>Jatuh Tempo:</strong> ${format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</div>` : ''}
+            </td>
+          </tr>
+        </table>
+
+        <!-- Items Table -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 4mm;">
           <thead>
-            <tr class="bg-gray-100">
-              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-left text-base">Deskripsi</th>
-              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-center text-base">Jumlah</th>
-              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-right text-base">Harga Satuan</th>
-              <th class="text-gray-600 font-bold border border-gray-200 p-3 text-right text-base">Total</th>
+            <tr style="border-top: 0.5px solid #000; border-bottom: 0.5px solid #000;">
+              <th style="text-align: left; padding: 2mm 1mm; font-size: 10.5pt; width: 50%;">DESKRIPSI</th>
+              <th style="text-align: center; padding: 2mm 1mm; font-size: 10.5pt; width: 10%;">QTY</th>
+              <th style="text-align: right; padding: 2mm 1mm; font-size: 10.5pt; width: 20%;">HARGA</th>
+              <th style="text-align: right; padding: 2mm 1mm; font-size: 10.5pt; width: 20%;">TOTAL</th>
             </tr>
           </thead>
           <tbody>
-            ${transaction.items.map(item => `
+            ${transaction.items.map((item, idx) => `
               <tr>
-                <td class="border border-gray-200 p-3 font-medium text-gray-800 text-base">${item.product.name}</td>
-                <td class="border border-gray-200 p-3 text-center text-gray-600 text-base">${item.quantity}</td>
-                <td class="border border-gray-200 p-3 text-right text-gray-600 text-base">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(item.price)}</td>
-                <td class="border border-gray-200 p-3 text-right font-medium text-gray-800 text-base">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
+                <td style="padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.product.name}${item.notes ? `<br/><small style="font-size: 9.5pt;">${item.notes}</small>` : ''}</td>
+                <td style="text-align: center; padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.quantity} ${item.unit}</td>
+                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price)}</td>
+                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 10.5pt; font-weight: bold; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
-        <div class="flex justify-end mt-6">
-          <div class="w-full max-w-sm text-gray-700 space-y-3">
-            <div class="flex justify-between text-lg"><span>Subtotal:</span><span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.subtotal)}</span></div>
-            ${transaction.ppnEnabled ? `
-              <div class="flex justify-between text-lg"><span>PPN (${transaction.ppnPercentage}%):</span><span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.ppnAmount)}</span></div>
-            ` : ''}
-            <div class="flex justify-between font-bold text-xl border-t-2 border-gray-200 pt-3 text-gray-900"><span>TOTAL:</span><span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.total)}</span></div>
-            <div class="border-t-2 border-gray-200 pt-3 space-y-3">
-              <div class="flex justify-between font-medium text-lg">
-                <span>Status Pembayaran:</span>
-                <span class="${getPaymentStatusText(transaction.paidAmount || 0, transaction.total) === 'Lunas' ? 'text-green-600 font-semibold' : 'text-orange-600 font-semibold'}">${getPaymentStatusText(transaction.paidAmount || 0, transaction.total)}</span>
+
+        <!-- Summary Section -->
+        <table style="width: 100%; border-top: 0.5px solid #000; padding-top: 3mm;">
+          <tr>
+            <td style="width: 60%; vertical-align: top; padding-right: 10mm;">
+              <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 2mm;">CATATAN PEMBAYARAN:</div>
+              <div style="font-size: 9.5pt; line-height: 1.5;">
+                • Pembayaran dapat dilakukan melalui transfer bank<br/>
+                • Harap sertakan nomor faktur saat melakukan pembayaran<br/>
+                • Konfirmasi pembayaran ke nomor di atas
               </div>
-              <div class="flex justify-between text-lg">
-                <span>Jumlah Dibayar:</span>
-                <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</span>
-              </div>
-              ${transaction.total > (transaction.paidAmount || 0) ? `
-                <div class="flex justify-between font-medium text-red-600 text-lg">
-                  <span>Sisa Tagihan:</span>
-                  <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</span>
+            </td>
+            <td style="width: 40%; vertical-align: top;">
+              <table style="width: 100%; font-size: 10.5pt;">
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">Subtotal:</td>
+                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.subtotal)}</td>
+                </tr>
+                ${transaction.ppnEnabled ? `
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">PPN (${transaction.ppnPercentage}%):</td>
+                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.ppnAmount)}</td>
+                </tr>
+                ` : ''}
+                <tr style="border-top: 0.5px solid #000; border-bottom: 0.5px solid #000;">
+                  <td style="padding: 2mm; text-align: left; font-size: 12.5pt; font-weight: bold;">TOTAL:</td>
+                  <td style="padding: 2mm; text-align: right; font-size: 12.5pt; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <div style="margin-top: 10mm; border-top: 0.5px solid #ccc; padding-top: 3mm;">
+          <table style="width: 100%;">
+            <tr>
+              <td style="width: 50%; text-align: center; vertical-align: bottom;">
+                <div style="font-size: 10.5pt; margin-bottom: 15mm;">Hormat Kami,</div>
+                <div style="border-top: 0.5px solid #000; display: inline-block; padding-top: 1mm; min-width: 50mm;">
+                  <strong style="font-size: 10.5pt;">${transaction.cashierName}</strong>
                 </div>
-              ` : ''}
-            </div>
-          </div>
+              </td>
+              <td style="width: 50%; text-align: center; font-size: 9.5pt; vertical-align: bottom;">
+                Dicetak: ${format(new Date(), "dd MMMM yyyy, HH:mm", { locale: id })} WIB
+              </td>
+            </tr>
+          </table>
         </div>
-        <footer class="text-center text-xs text-gray-400 mt-16 pt-4 border-t border-gray-200">
-          <div class="flex flex-col items-center gap-2">
-            <span class="font-bold text-gray-700">Hormat Kami</span>
-            <span class="font-semibold text-gray-800">${transaction.cashierName}</span>
-          </div>
-          <p class="mt-4">Terima kasih atas kepercayaan Anda.</p>
-        </footer>
       </div>
     `;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0px';
-    iframe.style.height = '0px';
-    iframe.style.left = '-9999px';
-    iframe.style.top = '-9999px';
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow?.document;
-    if (!doc) return;
-
-    doc.open();
-    doc.write(`
+    const printWindow = window.open('', '_blank');
+    printWindow?.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Cetak Dot Matrix</title>
+          <title>Cetak Dot Matrix - Faktur ${transaction.id}</title>
+          <meta charset="UTF-8">
           <style>
-            body { font-family: 'Courier New', Courier, monospace; font-size: 12pt; margin: 0; padding: 10mm; width: 9.5in; background: #fff; }
-            table { width: 100%; border-collapse: collapse; }
-            td, th { padding: 3px; font-size: 11pt; }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .text-left { text-align: left; }
-            .font-bold { font-weight: bold; }
-            .font-semibold { font-weight: 600; }
-            .border-y { border-top: 1px dashed; border-bottom: 1px dashed; }
-            .border-b { border-bottom: 1px dashed; }
-            .border-t { border-top: 1px dashed; }
-            .border-t-2 { border-top: 2px solid; }
-            .border-b-2 { border-bottom: 2px solid; }
-            .flex { display: flex; }
-            .items-center { align-items: center; }
-            .items-start { align-items: flex-start; }
-            .justify-between { justify-content: space-between; }
-            .gap-4 { gap: 8px; }
-            .gap-6 { gap: 12px; }
-            .ml-2 { margin-left: 4px; }
-            .ml-4 { margin-left: 8px; }
-            .mb-1 { margin-bottom: 2px; }
-            .mb-4 { margin-bottom: 8px; }
-            .mb-8 { margin-bottom: 16px; }
-            .mt-8 { margin-top: 16px; }
-            .mt-16 { margin-top: 32px; }
-            .pt-2 { padding-top: 4px; }
-            .pt-4 { padding-top: 8px; }
-            .pb-2 { padding-bottom: 4px; }
-            .pb-4 { padding-bottom: 8px; }
-            .p-2 { padding: 4px; }
-            .text-xs { font-size: 9pt; }
-            .text-sm { font-size: 10pt; }
-            .text-base { font-size: 12pt; }
-            .text-lg { font-size: 14pt; }
-            .text-2xl { font-size: 16pt; }
-            .text-3xl { font-size: 20pt; }
-            .text-4xl { font-size: 24pt; }
-            .text-5xl { font-size: 30pt; }
-            .text-xl { font-size: 16pt; }
-            .leading-tight { line-height: 1.1; }
-            .tracking-wide { letter-spacing: 0.025em; }
-            .company-logo-text {
-              border: 2px solid #374151;
-              padding: 8px 12px;
-              background-color: #f9fafb;
-              border-radius: 4px;
+            /* Reset */
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
             }
-            .company-logo-text-compact {
-              border: 2px solid #374151;
-              padding: 6px 8px;
-              background-color: #f9fafb;
-              border-radius: 4px;
+
+            /* Page setup untuk continuous form 9.5 inch */
+            @page {
+              size: 241mm auto;  /* 9.5 inch width, auto height */
+              margin: 8mm 6mm;
             }
-            .company-tagline {
-              text-align: center;
-              font-family: 'Courier New', Courier, monospace;
-            }
-            .text-gray-300 { color: #d1d5db; }
-            .text-gray-400 { color: #9ca3af; }
-            .text-gray-500 { color: #6b7280; }
-            .text-gray-600 { color: #4b5563; }
-            .text-gray-700 { color: #374151; }
-            .text-gray-800 { color: #1f2937; }
-            .text-gray-900 { color: #111827; }
-            .text-green-600 { color: #059669; }
-            .text-orange-600 { color: #ea580c; }
-            .text-red-600 { color: #dc2626; }
-            .bg-gray-100 { background-color: #f3f4f6; }
-            .border-gray-200 { border-color: #e5e7eb; }
-            .uppercase { text-transform: uppercase; }
-            .w-full { width: 100%; }
-            .max-w-xs { max-width: 200px; }
-            .space-y-2 > * + * { margin-top: 4px; }
-            .flex-col { flex-direction: column; }
-            .border { border: 1px solid; }
-            .border-b-2 { border-bottom: 2px solid; }
-            .border-collapse { border-collapse: collapse; }
-            .border-radius { border-radius: 4px; }
-            .bg-gray-50 { background-color: #f9fafb; }
-            @page { size: 9.5in 11in; margin: 10mm; }
+
             @media print {
-              body { width: 9.5in; height: 11in; font-size: 11pt; }
-              .company-logo-text {
-                border: 2px solid #000 !important;
-                background-color: #fff !important;
-                print-color-adjust: exact;
+              body {
+                width: 241mm;
+                margin: 0 auto;
               }
-              td, th { font-size: 10pt; }
+              /* Force black text for dot matrix */
+              * {
+                color: #000 !important;
+                background: transparent !important;
+              }
+            }
+
+            /* Font optimal untuk dot matrix */
+            body {
+              font-family: 'Courier New', 'Courier', monospace;
+              font-size: 10pt;
+              line-height: 1.4;
+              margin: 0;
+              padding: 8mm 6mm;
+              width: 241mm;
+              background: white;
+              color: black;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+
+            /* Typography */
+            strong, b {
+              font-weight: bold;
+            }
+
+            /* Table optimization */
+            table {
+              width: 100%;
+              border-collapse: collapse;
+            }
+
+            td, th {
+              vertical-align: top;
+            }
+
+            /* Prevent page breaks */
+            table, tr, td, th {
+              page-break-inside: avoid;
+            }
+
+            /* Line heights untuk efisiensi */
+            small {
+              font-size: 8pt;
+              line-height: 1.2;
             }
           </style>
         </head>
-        <body>
-          ${invoiceContent}
+        <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
+          ${dotMatrixContent}
         </body>
       </html>
     `);
-    doc.close();
-
-    setTimeout(() => {
-      iframe.contentWindow?.focus();
-      iframe.contentWindow?.print();
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 1000);
-    }, 500);
+    printWindow?.document.close();
   };
 
   // Fungsi cetak Rawbt Thermal 80mm

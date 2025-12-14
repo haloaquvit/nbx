@@ -43,6 +43,8 @@ export interface Transaction {
   designerId?: string | null;
   operatorId?: string | null;
   paymentAccountId?: string | null;
+  retasiId?: string | null; // ID retasi terkait (untuk transaksi driver)
+  retasiNumber?: string | null; // Nomor retasi (untuk display)
   orderDate: Date;
   finishDate?: Date | null;
   items: TransactionItem[];

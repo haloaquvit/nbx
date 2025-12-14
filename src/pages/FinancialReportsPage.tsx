@@ -586,6 +586,14 @@ const FinancialReportsPage = () => {
                         <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromCustomers || 0)}</span>
                       </div>
                       <div className="flex justify-between pl-4">
+                        <span>Pembayaran piutang</span>
+                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromReceivablePayments || 0)}</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
+                        <span>Pelunasan panjar karyawan</span>
+                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment || 0)}</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
                         <span>Penerimaan operasi lain</span>
                         <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromOtherOperating || 0)}</span>
                       </div>
@@ -603,8 +611,20 @@ const FinancialReportsPage = () => {
                         <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forRawMaterials || 0)})</span>
                       </div>
                       <div className="flex justify-between pl-4">
+                        <span>Pembayaran hutang (Supplier, Bank, dll)</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments || 0)})</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
+                        <span>Hutang Bunga Atas Hutang Bank</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forInterestExpense || 0)})</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
                         <span>Upah tenaga kerja langsung</span>
                         <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forDirectLabor || 0)})</span>
+                      </div>
+                      <div className="flex justify-between pl-4">
+                        <span>Panjar karyawan</span>
+                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances || 0)})</span>
                       </div>
                       <div className="flex justify-between pl-4">
                         <span>Biaya overhead pabrik</span>

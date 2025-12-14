@@ -34,9 +34,14 @@ import {
   PieChart,
   Building,
   DollarSign,
+  Search,
+  X,
+  Wrench,
+  Sparkles,
+  HandHeart,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
@@ -89,11 +94,19 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/accounts", label: "Akun Keuangan", icon: Landmark, permission: PERMISSIONS.FINANCIAL },
       { href: "/cash-flow", label: "Buku Besar", icon: TrendingUp, permission: PERMISSIONS.FINANCIAL },
       { href: "/receivables", label: "Piutang", icon: ReceiptText, permission: PERMISSIONS.FINANCIAL },
-      { href: "/accounts-payable", label: "Hutang Supplier", icon: DollarSign, permission: PERMISSIONS.FINANCIAL },
+      { href: "/accounts-payable", label: "Hutang", icon: DollarSign, permission: PERMISSIONS.FINANCIAL },
       { href: "/expenses", label: "Pengeluaran", icon: FileText, permission: PERMISSIONS.FINANCIAL },
       { href: "/advances", label: "Panjar Karyawan", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
       { href: "/commission-manage", label: "Pengaturan Komisi", icon: Calculator, permission: PERMISSIONS.FINANCIAL },
       { href: "/financial-reports", label: "Laporan Keuangan", icon: PieChart, permission: PERMISSIONS.FINANCIAL },
+    ].filter(item => hasPermission(item.permission)),
+  },
+  {
+    title: "Aset & Zakat",
+    items: [
+      { href: "/assets", label: "Aset & Maintenance", icon: Wrench, permission: PERMISSIONS.FINANCIAL },
+      { href: "/maintenance", label: "Jadwal Maintenance", icon: Wrench, permission: PERMISSIONS.FINANCIAL },
+      { href: "/zakat", label: "Zakat & Sedekah", icon: Sparkles, permission: PERMISSIONS.FINANCIAL },
     ].filter(item => hasPermission(item.permission)),
   },
   {
@@ -134,10 +147,13 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   const { settings } = useCompanySettings();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
-  
+
   // Get filtered menu items based on user permissions and role
   const menuItems = getMenuItems(hasPermission, user?.role);
-  
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Track expanded/collapsed state for each top‑level menu section. When
   // `true` the section's links are visible, otherwise they are hidden. Use
   // section titles as keys since they are stable.
@@ -152,6 +168,27 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   function toggleSection(title: string) {
     setOpenSections((prev) => ({ ...prev, [title]: !prev[title] }));
   }
+
+  // Filter menu items based on search query
+  const filteredMenuItems = searchQuery.trim() === ""
+    ? menuItems
+    : menuItems.map(section => ({
+        ...section,
+        items: section.items.filter(item =>
+          item.label.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      })).filter(section => section.items.length > 0);
+
+  // Auto-expand sections with search results
+  useEffect(() => {
+    if (searchQuery.trim() !== "") {
+      const newOpenSections: Record<string, boolean> = {};
+      filteredMenuItems.forEach((section) => {
+        newOpenSections[section.title] = true; // auto-expand sections with results
+      });
+      setOpenSections(newOpenSections);
+    }
+  }, [searchQuery]); // Only depend on searchQuery, not filteredMenuItems
 
   return (
     <div className="border-r bg-muted/40">
@@ -168,8 +205,33 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
               <span className={cn(isCollapsed && "hidden")}>{settings?.name || 'Aquvit POS'}</span>
             </Link>
           </div>
+
+          {/* Search Menu */}
+          {!isCollapsed && (
+            <div className="px-3 py-2 border-b">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Cari menu..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background pl-8 pr-8 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <nav className="flex-1 space-y-2 overflow-auto py-4 px-2">
-            {menuItems.map((section) => (
+            {filteredMenuItems.map((section) => (
               <div key={section.title} className="space-y-1">
                 {/* Section header */}
                 {!isCollapsed && (

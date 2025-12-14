@@ -16,6 +16,7 @@ import { formatCurrency } from '@/lib/utils'
 import { DollarSign, FileText, Calendar, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
+import { AddDebtDialog } from '@/components/AddDebtDialog'
 
 export default function AccountsPayablePage() {
   const [paymentDialog, setPaymentDialog] = useState({ open: false, payable: null as any })
@@ -105,11 +106,12 @@ export default function AccountsPayablePage() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Hutang Supplier</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Hutang (Supplier, Bank, dll)</h1>
           <p className="text-muted-foreground">
-            Kelola pembayaran hutang kepada supplier
+            Kelola pembayaran hutang kepada supplier, bank, dan kreditor lainnya
           </p>
         </div>
+        <AddDebtDialog onSuccess={() => window.location.reload()} />
       </div>
 
       {/* Summary Cards */}
@@ -168,9 +170,9 @@ export default function AccountsPayablePage() {
       {/* Accounts Payable Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Daftar Hutang Supplier</CardTitle>
+          <CardTitle>Daftar Hutang</CardTitle>
           <CardDescription>
-            Kelola pembayaran hutang berdasarkan Purchase Order
+            Kelola pembayaran hutang dari Purchase Order, Bank, dan kreditor lainnya
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -183,9 +185,11 @@ export default function AccountsPayablePage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>ID Hutang</TableHead>
-                  <TableHead>Supplier</TableHead>
+                  <TableHead>Jenis</TableHead>
+                  <TableHead>Kreditor</TableHead>
                   <TableHead>Deskripsi</TableHead>
                   <TableHead className="text-right">Jumlah</TableHead>
+                  <TableHead className="text-right">Bunga</TableHead>
                   <TableHead className="text-right">Dibayar</TableHead>
                   <TableHead className="text-right">Sisa</TableHead>
                   <TableHead>Jatuh Tempo</TableHead>
@@ -198,10 +202,28 @@ export default function AccountsPayablePage() {
                   const remainingAmount = payable.amount - (payable.paidAmount || 0)
                   const overdueDays = getOverdueDays(payable.dueDate)
 
+                  const getCreditorTypeBadge = (type?: string) => {
+                    switch (type) {
+                      case 'bank': return <Badge variant="outline" className="bg-blue-50">Bank</Badge>
+                      case 'credit_card': return <Badge variant="outline" className="bg-purple-50">Kartu Kredit</Badge>
+                      case 'supplier': return <Badge variant="outline" className="bg-green-50">Supplier</Badge>
+                      default: return <Badge variant="outline">Lainnya</Badge>
+                    }
+                  }
+
+                  const getInterestLabel = (rate?: number, type?: string) => {
+                    if (!rate || rate === 0) return '-'
+                    const typeLabel = type === 'per_month' ? '/bln' : type === 'per_year' ? '/thn' : ''
+                    return `${rate}%${typeLabel}`
+                  }
+
                   return (
                     <TableRow key={payable.id}>
                       <TableCell className="font-mono text-sm">
                         {payable.id}
+                      </TableCell>
+                      <TableCell>
+                        {getCreditorTypeBadge(payable.creditorType)}
                       </TableCell>
                       <TableCell className="font-medium">
                         {payable.supplierName}
@@ -213,6 +235,9 @@ export default function AccountsPayablePage() {
                       </TableCell>
                       <TableCell className="text-right font-mono">
                         {formatCurrency(payable.amount)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {getInterestLabel(payable.interestRate, payable.interestType)}
                       </TableCell>
                       <TableCell className="text-right font-mono">
                         {formatCurrency(payable.paidAmount || 0)}
@@ -258,8 +283,8 @@ export default function AccountsPayablePage() {
                 })}
                 {(!accountsPayable || accountsPayable.length === 0) && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      Tidak ada data hutang supplier
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                      Tidak ada data hutang
                     </TableCell>
                   </TableRow>
                 )}
