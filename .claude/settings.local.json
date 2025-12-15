@@ -57,7 +57,9 @@
       "Bash(docker:*)",
       "Bash(test:*)",
       "Bash(rm:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(start http://localhost:8082)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": [],

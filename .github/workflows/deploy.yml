@@ -1,0 +1,46 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Production VPS
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script: |
+            echo "🚀 Starting deployment..."
+
+            # Navigate to project directory
+            cd ~/aquvit-production || exit 1
+
+            # Pull latest changes
+            echo "📥 Pulling latest code from GitHub..."
+            git pull origin main
+
+            # Install dependencies
+            echo "📦 Installing dependencies..."
+            npm install
+
+            # Build the application
+            echo "🔨 Building application..."
+            npm run build
+
+            # Restart services
+            echo "♻️ Restarting services..."
+            sudo systemctl restart nginx
+
+            # Optional: Restart PostgREST if needed
+            sudo systemctl restart postgrest || true
+
+            echo "✅ Deployment completed successfully!"
+            echo "🌐 Application is live at http://erp.aquvit.id"
