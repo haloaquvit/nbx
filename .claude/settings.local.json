@@ -59,7 +59,11 @@
       "Bash(rm:*)",
       "Bash(awk:*)",
       "Bash(start http://localhost:8082)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(git config:*)",
+      "Bash(cat:*)",
+      "Bash(ssh:*)",
+      "Bash(git remote set-url:*)"
     ],
     "deny": [],
     "ask": [],
