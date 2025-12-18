@@ -167,9 +167,9 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               {account.type}
             </Badge>
           </div>
-          
-          {/* Balance (for non-header accounts) */}
-          {!account.isHeader && (
+
+          {/* Balance hidden - view balances in Buku Besar (Cash Flow) page instead */}
+          {/* {!account.isHeader && (
             <div className="text-xs text-muted-foreground mt-0.5">
               Balance: {new Intl.NumberFormat('id-ID', {
                 style: 'currency',
@@ -177,7 +177,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
                 minimumFractionDigits: 0
               }).format(account.balance)}
             </div>
-          )}
+          )} */}
         </div>
 
         {/* Actions */}

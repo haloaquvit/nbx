@@ -97,14 +97,24 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
       ...prev,
       items: prev.items.map(item => {
         if (item.itemId === itemId) {
+          // Enforce strict limit: cannot exceed remaining quantity
           const clampedQuantity = Math.max(0, Math.min(quantityToDeliver, item.remainingQuantity))
-          
+
+          // Show toast warning if user tries to exceed limit
+          if (quantityToDeliver > item.remainingQuantity) {
+            toast({
+              variant: "destructive",
+              title: "Jumlah Melebihi Batas",
+              description: `Jumlah antar untuk ${item.productName} tidak boleh melebihi sisa pesanan (${item.remainingQuantity} ${item.unit})`,
+            })
+          }
+
           console.log(`📦 Updating quantity for ${item.productName}:`, {
             requested: quantityToDeliver,
             remaining: item.remainingQuantity,
             clamped: clampedQuantity
           })
-          
+
           return { ...item, quantityToDeliver: clampedQuantity }
         }
         return item
@@ -302,20 +312,21 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
                 <TableCell>{item.deliveredQuantity} {item.unit}</TableCell>
                 <TableCell>{item.remainingQuantity} {item.unit}</TableCell>
                 <TableCell>
-                  <Input
-                    type="number"
-                    min="0"
-                    max={item.remainingQuantity}
-                    value={item.quantityToDeliver}
-                    onChange={(e) => handleItemQuantityChange(item.itemId, parseInt(e.target.value) || 0)}
-                    placeholder={`Maks: ${item.remainingQuantity}`}
-                    className="w-20"
-                  />
-                  {item.quantityToDeliver > item.remainingQuantity && (
-                    <p className="text-xs text-red-600 mt-1">
-                      Melebihi sisa ({item.remainingQuantity})
+                  <div className="space-y-1">
+                    <Input
+                      type="number"
+                      min="0"
+                      max={item.remainingQuantity}
+                      value={item.quantityToDeliver}
+                      onChange={(e) => handleItemQuantityChange(item.itemId, parseInt(e.target.value) || 0)}
+                      placeholder={`0`}
+                      className={`w-24 ${item.quantityToDeliver > item.remainingQuantity ? 'border-red-500' : ''}`}
+                      disabled={item.remainingQuantity === 0}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Maks: {item.remainingQuantity} {item.unit}
                     </p>
-                  )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Input

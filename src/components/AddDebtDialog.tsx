@@ -21,7 +21,7 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
     creditorType: 'other' as 'supplier' | 'bank' | 'credit_card' | 'other',
     amount: '',
     interestRate: '0',
-    interestType: 'flat' as 'flat' | 'per_month' | 'per_year',
+    interestType: 'flat' as 'flat' | 'per_month' | 'per_year' | 'decreasing',
     dueDate: '',
     description: '',
     notes: ''
@@ -105,6 +105,7 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
       case 'flat': return 'Flat (Sekali)';
       case 'per_month': return 'Per Bulan';
       case 'per_year': return 'Per Tahun';
+      case 'decreasing': return 'Bunga Menurun';
       default: return type;
     }
   };
@@ -198,6 +199,7 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
                   <SelectItem value="flat">Flat (Sekali)</SelectItem>
                   <SelectItem value="per_month">Per Bulan</SelectItem>
                   <SelectItem value="per_year">Per Tahun</SelectItem>
+                  <SelectItem value="decreasing">Bunga Menurun</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -3,6 +3,7 @@ import { AccountsPayable, PayablePayment } from '@/types/accountsPayable'
 import { supabase } from '@/integrations/supabase/client'
 import { useExpenses } from './useExpenses'
 import { useAuth } from './useAuth'
+import { useBranch } from '@/contexts/BranchContext'
 
 const fromDb = (dbPayable: any): AccountsPayable => ({
   id: dbPayable.id,
@@ -37,18 +38,33 @@ export const useAccountsPayable = () => {
   const queryClient = useQueryClient()
   const { addExpense } = useExpenses()
   const { user } = useAuth()
+  const { currentBranch } = useBranch()
 
   const { data: accountsPayable, isLoading } = useQuery<AccountsPayable[]>({
-    queryKey: ['accountsPayable'],
+    queryKey: ['accountsPayable', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('accounts_payable')
         .select('*')
-        .order('created_at', { ascending: false })
-      
-      if (error) throw new Error(error.message)
-      return data ? data.map(fromDb) : []
-    }
+        .order('created_at', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return data ? data.map(fromDb) : [];
+    },
+    enabled: !!currentBranch,
+    // Optimized for accounts payable management
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   })
 
   const createAccountsPayable = useMutation({
@@ -130,10 +146,10 @@ export const useAccountsPayable = () => {
       // Record in cash_history for accounts payable payment tracking
       if (paymentAccountId && user) {
         try {
-          // Get account name for the payment account
+          // Get account data for the payment account
           const { data: account } = await supabase
             .from('accounts')
-            .select('name')
+            .select('name, balance')
             .eq('id', paymentAccountId)
             .single();
 
@@ -160,6 +176,25 @@ export const useAccountsPayable = () => {
             console.error('Failed to record accounts payable payment in cash flow:', cashFlowError.message);
           } else {
             console.log('Successfully recorded accounts payable payment in cash history');
+          }
+
+          // Update account balance (deduct payment amount)
+          const currentBalance = account?.balance || 0;
+          const newBalance = currentBalance - amount;
+
+          const { error: balanceError } = await supabase
+            .from('accounts')
+            .update({ balance: newBalance })
+            .eq('id', paymentAccountId);
+
+          if (balanceError) {
+            console.error('Failed to update account balance:', balanceError.message);
+          } else {
+            console.log('Successfully updated account balance:', {
+              accountId: paymentAccountId,
+              oldBalance: currentBalance,
+              newBalance
+            });
           }
         } catch (error) {
           console.error('Error recording accounts payable payment cash flow:', error);

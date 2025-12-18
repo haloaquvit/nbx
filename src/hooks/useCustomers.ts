@@ -1,20 +1,30 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Customer } from '@/types/customer'
 import { supabase } from '@/integrations/supabase/client'
+import { useBranch } from '@/contexts/BranchContext'
 
 export const useCustomers = () => {
   const queryClient = useQueryClient();
+  const { currentBranch, canAccessAllBranches } = useBranch();
 
   const { data: customers, isLoading } = useQuery<Customer[]>({
-    queryKey: ['customers'],
+    queryKey: ['customers', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('customers')
         .select('*')
         .order('name', { ascending: true });
+
+      // Apply branch filter (only if not head office viewing all branches)
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data || [];
     },
+    enabled: !!currentBranch,
     // Optimized for POS and customer management usage
     staleTime: 5 * 60 * 1000, // 5 minutes - customers change less frequently
     gcTime: 10 * 60 * 1000, // 10 minutes cache

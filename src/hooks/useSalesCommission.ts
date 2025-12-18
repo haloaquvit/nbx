@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/integrations/supabase/client'
+import { useBranch } from '@/contexts/BranchContext'
 import { SalesCommissionSetting, SalesCommissionReport, SalesCommissionTransaction } from '@/types/commission'
 import { Employee } from '@/types/employee'
 
@@ -141,8 +142,10 @@ export const useSalesCommissionSettings = () => {
 }
 
 export const useSalesCommissionReport = (salesId?: string, startDate?: Date, endDate?: Date) => {
+  const { currentBranch } = useBranch();
+
   return useQuery<SalesCommissionReport | null>({
-    queryKey: ['sales-commission-report', salesId, startDate, endDate],
+    queryKey: ['sales-commission-report', salesId, startDate, endDate, currentBranch?.id],
     queryFn: async () => {
       if (!salesId || !startDate || !endDate) return null
 
@@ -157,7 +160,7 @@ export const useSalesCommissionReport = (salesId?: string, startDate?: Date, end
       if (!setting) return null
 
       // Get transactions for the sales person in the date range
-      const { data: transactions, error } = await supabase
+      let transactionsQuery = supabase
         .from('transactions')
         .select(`
           id,
@@ -169,7 +172,14 @@ export const useSalesCommissionReport = (salesId?: string, startDate?: Date, end
         .eq('sales_id', salesId)
         .gte('order_date', startDate.toISOString())
         .lte('order_date', endDate.toISOString())
-        .order('order_date', { ascending: false })
+        .order('order_date', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        transactionsQuery = transactionsQuery.eq('branch_id', currentBranch.id);
+      }
+
+      const { data: transactions, error } = await transactionsQuery;
 
       if (error) {
         console.error('[useSalesCommissionReport] Error:', error)
@@ -228,6 +238,7 @@ export const useSalesCommissionReport = (salesId?: string, startDate?: Date, end
         transactions: commissionTransactions,
       }
     },
-    enabled: !!salesId && !!startDate && !!endDate,
+    enabled: !!salesId && !!startDate && !!endDate && !!currentBranch,
+    refetchOnMount: true, // Auto-refetch when switching branches
   })
 }

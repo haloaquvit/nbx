@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useBranch } from '@/contexts/BranchContext';
 import { startOfDay, endOfDay, format } from 'date-fns';
 
 export interface DailyReportData {
@@ -32,30 +33,39 @@ export interface DailyReportData {
 }
 
 export function useDailyReport(selectedDate: Date) {
+  const { currentBranch } = useBranch();
+
   const {
     data: dailyReport,
     isLoading,
     error
   } = useQuery({
-    queryKey: ['dailyReport', format(selectedDate, 'yyyy-MM-dd')],
+    queryKey: ['dailyReport', format(selectedDate, 'yyyy-MM-dd'), currentBranch?.id],
     queryFn: async (): Promise<DailyReportData> => {
       const startDate = startOfDay(selectedDate);
       const endDate = endOfDay(selectedDate);
-      
+
       // Fetch transactions for the selected date
-      const { data: transactions, error: transactionError } = await supabase
+      let transactionsQuery = supabase
         .from('transactions')
         .select('*')
         .gte('order_date', startDate.toISOString())
         .lte('order_date', endDate.toISOString())
         .order('created_at', { ascending: false });
 
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        transactionsQuery = transactionsQuery.eq('branch_id', currentBranch.id);
+      }
+
+      const { data: transactions, error: transactionError } = await transactionsQuery;
+
       if (transactionError) {
         throw new Error(`Failed to fetch transactions: ${transactionError.message}`);
       }
 
       // Fetch cash flow for the selected date
-      const { data: cashFlow, error: cashFlowError } = await supabase
+      let cashFlowQuery = supabase
         .from('cash_history')
         .select(`
           *,
@@ -66,6 +76,13 @@ export function useDailyReport(selectedDate: Date) {
         .gte('created_at', startDate.toISOString())
         .lte('created_at', endDate.toISOString())
         .order('created_at', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        cashFlowQuery = cashFlowQuery.eq('branch_id', currentBranch.id);
+      }
+
+      const { data: cashFlow, error: cashFlowError } = await cashFlowQuery;
 
       if (cashFlowError) {
         throw new Error(`Failed to fetch cash flow: ${cashFlowError.message}`);
@@ -131,7 +148,9 @@ export function useDailyReport(selectedDate: Date) {
         cashFlowByAccount,
         transactions: formattedTransactions,
       };
-    }
+    },
+    enabled: !!currentBranch,
+    refetchOnMount: true, // Auto-refetch when switching branches
   });
 
   return {

@@ -77,7 +77,8 @@
       "Bash(wc:*)",
       "Bash(ls:*)",
       "Bash(npx vercel:*)",
-      "Bash(start https://supabase.com/dashboard/project/emfvoassfrsokqwspuml/sql/new)"
+      "Bash(start https://supabase.com/dashboard/project/emfvoassfrsokqwspuml/sql/new)",
+      "Bash(start http://localhost:8085)"
     ],
     "deny": [],
     "ask": [],

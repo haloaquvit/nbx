@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
@@ -248,7 +249,7 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
             </div>
             <div className="space-y-2">
               <Label htmlFor="basePrice">Harga Dasar (Rp)</Label>
-              <Input id="basePrice" type="number" value={formData.basePrice} onChange={(e) => setFormData({...formData, basePrice: Number(e.target.value)})} required />
+              <NumberInput id="basePrice" value={formData.basePrice} onChange={(value) => setFormData({...formData, basePrice: value || 0})} min={0} decimalPlaces={2} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="unit">Satuan</Label>
@@ -268,7 +269,7 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
             </div> */}
             <div className="space-y-2">
               <Label htmlFor="minOrder">Min. Order</Label>
-              <Input id="minOrder" type="number" value={formData.minOrder} onChange={(e) => setFormData({...formData, minOrder: Number(e.target.value)})} required />
+              <NumberInput id="minOrder" value={formData.minOrder} onChange={(value) => setFormData({...formData, minOrder: value || 1})} min={1} decimalPlaces={0} required />
             </div>
           </div>
           
@@ -305,7 +306,7 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                           <SelectContent>{materials.map(m => <SelectItem key={m.id} value={m.id}>{m.name} ({m.unit})</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell><Input type="number" step="any" placeholder="Jumlah" value={bom.quantity} onChange={(e) => handleBomChange(index, 'quantity', Number(e.target.value))} /></TableCell>
+                      <TableCell><NumberInput placeholder="Jumlah" value={bom.quantity} onChange={(value) => handleBomChange(index, 'quantity', value || 0)} min={0} decimalPlaces={2} /></TableCell>
                       <TableCell><Input placeholder="Opsional" value={bom.notes || ''} onChange={(e) => handleBomChange(index, 'notes', e.target.value)} /></TableCell>
                       <TableCell>
                         <Button type="button" variant="ghost" size="icon" onClick={() => removeBomItem(index)}><Trash2 className="h-4 w-4 text-destructive" /></Button>

@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { NumberInput } from "@/components/ui/number-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import * as XLSX from "xlsx"
@@ -294,12 +295,13 @@ export default function ProductPage() {
                     <Label htmlFor="basePrice" className="text-sm">
                       Harga Jual
                     </Label>
-                    <Input
+                    <NumberInput
                       id="basePrice"
-                      type="number"
                       placeholder="Harga Jual"
                       value={form.basePrice}
-                      onChange={(e) => setForm({ ...form, basePrice: Number(e.target.value || 0) })}
+                      onChange={(value) => setForm({ ...form, basePrice: value || 0 })}
+                      min={0}
+                      decimalPlaces={2}
                       className="text-sm mt-1"
                     />
                   </div>
@@ -309,12 +311,13 @@ export default function ProductPage() {
                       <Label htmlFor="minStock" className="text-sm">
                         Min Stock
                       </Label>
-                      <Input
+                      <NumberInput
                         id="minStock"
-                        type="number"
                         placeholder="0"
                         value={form.minStock}
-                        onChange={(e) => setForm({ ...form, minStock: Number(e.target.value || 0) })}
+                        onChange={(value) => setForm({ ...form, minStock: value || 0 })}
+                        min={0}
+                        decimalPlaces={0}
                         className="text-sm mt-1"
                       />
                     </div>
@@ -322,12 +325,13 @@ export default function ProductPage() {
                       <Label htmlFor="minOrder" className="text-sm">
                         Min Order
                       </Label>
-                      <Input
+                      <NumberInput
                         id="minOrder"
-                        type="number"
                         placeholder="1"
                         value={form.minOrder}
-                        onChange={(e) => setForm({ ...form, minOrder: Number(e.target.value || 1) })}
+                        onChange={(value) => setForm({ ...form, minOrder: value || 1 })}
+                        min={1}
+                        decimalPlaces={0}
                         className="text-sm mt-1"
                       />
                     </div>
@@ -485,12 +489,13 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
             <Label htmlFor="edit-basePrice" className="text-sm">
               Harga Jual
             </Label>
-            <Input
+            <NumberInput
               id="edit-basePrice"
-              type="number"
               placeholder="Harga Jual"
               value={form.basePrice}
-              onChange={(e) => setForm({ ...form, basePrice: Number(e.target.value || 0) })}
+              onChange={(value) => setForm({ ...form, basePrice: value || 0 })}
+              min={0}
+              decimalPlaces={2}
               className="text-sm mt-1"
             />
           </div>
@@ -500,12 +505,13 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
               <Label htmlFor="edit-minStock" className="text-sm">
                 Min Stock
               </Label>
-              <Input
+              <NumberInput
                 id="edit-minStock"
-                type="number"
                 placeholder="0"
                 value={form.minStock}
-                onChange={(e) => setForm({ ...form, minStock: Number(e.target.value || 0) })}
+                onChange={(value) => setForm({ ...form, minStock: value || 0 })}
+                min={0}
+                decimalPlaces={0}
                 className="text-sm mt-1"
               />
             </div>
@@ -513,12 +519,13 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
               <Label htmlFor="edit-minOrder" className="text-sm">
                 Min Order
               </Label>
-              <Input
+              <NumberInput
                 id="edit-minOrder"
-                type="number"
                 placeholder="1"
                 value={form.minOrder}
-                onChange={(e) => setForm({ ...form, minOrder: Number(e.target.value || 1) })}
+                onChange={(value) => setForm({ ...form, minOrder: value || 1 })}
+                min={1}
+                decimalPlaces={0}
                 className="text-sm mt-1"
               />
             </div>

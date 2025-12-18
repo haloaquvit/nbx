@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -915,11 +916,11 @@ export const PosForm = () => {
                           )}
                         </td>
                         <td className="px-2 md:px-4 py-2 md:py-3 text-center">
-                          <Input
-                            type="number"
-                            min="1"
+                          <NumberInput
                             value={item.qty}
-                            onChange={(e) => handleItemChange(index, 'qty', Number(e.target.value) || 1)}
+                            onChange={(value) => handleItemChange(index, 'qty', value || 1)}
+                            min={1}
+                            decimalPlaces={0}
                             className="w-16 md:w-20 text-center text-xs"
                             disabled={retasiBlocked}
                           />
@@ -930,10 +931,11 @@ export const PosForm = () => {
                             <div className="text-center text-xs text-green-600 font-medium">GRATIS</div>
                           ) : (
                             <div className="relative">
-                              <Input
-                                type="number"
+                              <NumberInput
                                 value={item.harga}
-                                onChange={(e) => handleItemChange(index, 'harga', Number(e.target.value) || 0)}
+                                onChange={(value) => handleItemChange(index, 'harga', value || 0)}
+                                min={0}
+                                decimalPlaces={2}
                                 className="w-20 md:w-32 text-right text-xs"
                                 disabled={retasiBlocked || loadingPrices[item.id]}
                               />
@@ -1099,10 +1101,11 @@ export const PosForm = () => {
                   </div>
                   <div>
                     <label className="text-xs md:text-sm text-gray-600">Diskon</label>
-                    <Input
-                      type="number"
+                    <NumberInput
                       value={diskon}
-                      onChange={(e) => setDiskon(Number(e.target.value) || 0)}
+                      onChange={(value) => setDiskon(value || 0)}
+                      min={0}
+                      decimalPlaces={2}
                       className="text-right text-sm"
                       disabled={retasiBlocked}
                     />
@@ -1137,10 +1140,11 @@ export const PosForm = () => {
                   </div>
                   <div>
                     <label className="text-xs md:text-sm text-gray-600">Jumlah Bayar</label>
-                    <Input
-                      type="number"
+                    <NumberInput
                       value={paidAmount}
-                      onChange={(e) => setPaidAmount(Number(e.target.value) || 0)}
+                      onChange={(value) => setPaidAmount(value || 0)}
+                      min={0}
+                      decimalPlaces={2}
                       className="text-right font-medium text-sm w-full"
                       disabled={retasiBlocked}
                     />

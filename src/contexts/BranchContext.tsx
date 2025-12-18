@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { Branch, Company } from '@/types/branch';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/components/ui/use-toast';
 
 interface BranchContextType {
   currentBranch: Branch | null;
@@ -18,6 +20,8 @@ const BranchContext = createContext<BranchContextType | undefined>(undefined);
 
 export function BranchProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [currentBranch, setCurrentBranch] = useState<Branch | null>(null);
   const [availableBranches, setAvailableBranches] = useState<Branch[]>([]);
   const [currentCompany, setCurrentCompany] = useState<Company | null>(null);
@@ -150,6 +154,15 @@ export function BranchProvider({ children }: { children: ReactNode }) {
       setCurrentBranch(branch);
       // Save to localStorage for persistence
       localStorage.setItem('selectedBranchId', branchId);
+
+      // Invalidate all queries to refetch with new branch filter
+      queryClient.invalidateQueries();
+
+      // Show notification
+      toast({
+        title: 'Cabang berhasil dipindah',
+        description: `Sekarang menampilkan data untuk ${branch.name}`,
+      });
     }
   };
 

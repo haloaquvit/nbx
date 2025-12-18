@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MaterialMovement, CreateMaterialMovementData } from '@/types/materialMovement'
 import { supabase } from '@/integrations/supabase/client'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Helper to map from DB (snake_case) to App (camelCase)
 const fromDbToApp = (dbMovement: any): MaterialMovement => ({
@@ -38,14 +39,22 @@ const fromAppToDb = (appMovement: CreateMaterialMovementData) => ({
 
 export const useMaterialMovements = () => {
   const queryClient = useQueryClient()
+  const { currentBranch } = useBranch()
 
   const { data: stockMovements, isLoading } = useQuery({
-    queryKey: ['materialMovements'],
+    queryKey: ['materialMovements', currentBranch?.id],
     queryFn: async (): Promise<MaterialMovement[]> => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('material_stock_movements')
         .select('*')
         .order('created_at', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching material movements:', error);
@@ -57,7 +66,15 @@ export const useMaterialMovements = () => {
         throw new Error(error.message);
       }
       return data ? data.map(fromDbToApp) : [];
-    }
+    },
+    enabled: !!currentBranch,
+    // Optimized for material movements
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   const createMaterialMovement = useMutation({
@@ -82,11 +99,18 @@ export const useMaterialMovements = () => {
   });
 
   const getMovementsByMaterial = async (materialId: string): Promise<MaterialMovement[]> => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('material_stock_movements')
       .select('*')
       .eq('material_id', materialId)
       .order('created_at', { ascending: false });
+
+    // Apply branch filter
+    if (currentBranch?.id) {
+      query = query.eq('branch_id', currentBranch.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       if (error.code === '42P01' || error.code === 'PGRST205') {
@@ -98,12 +122,19 @@ export const useMaterialMovements = () => {
   };
 
   const getMovementsByDateRange = async (from: Date, to: Date): Promise<MaterialMovement[]> => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('material_stock_movements')
       .select('*')
       .gte('created_at', from.toISOString())
       .lte('created_at', to.toISOString())
       .order('created_at', { ascending: false });
+
+    // Apply branch filter
+    if (currentBranch?.id) {
+      query = query.eq('branch_id', currentBranch.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       if (error.code === '42P01' || error.code === 'PGRST205') {

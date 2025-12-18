@@ -2,11 +2,12 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { FileDown, Printer } from "lucide-react"
-import { PurchaseOrder } from "@/types/purchaseOrder"
+import { PurchaseOrder, PurchaseOrderItem } from "@/types/purchaseOrder"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useCompanySettings } from "@/hooks/useCompanySettings"
 import { createCompressedPDF } from "@/utils/pdfUtils"
+import { supabase } from "@/integrations/supabase/client"
 
 interface PurchaseOrderPDFProps {
   purchaseOrder: PurchaseOrder
@@ -16,6 +17,76 @@ interface PurchaseOrderPDFProps {
 export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFProps) {
   const { settings } = useCompanySettings()
   const printRef = React.useRef<HTMLDivElement>(null)
+  const [poItems, setPoItems] = React.useState<PurchaseOrderItem[]>([])
+  const [isLoadingItems, setIsLoadingItems] = React.useState(false)
+
+  // Fetch PO items from database
+  React.useEffect(() => {
+    const fetchPoItems = async () => {
+      setIsLoadingItems(true)
+      try {
+        const { data, error } = await supabase
+          .from('purchase_order_items')
+          .select(`
+            id,
+            material_id,
+            quantity,
+            unit_price,
+            quantity_received,
+            notes,
+            materials:material_id (
+              name,
+              unit
+            )
+          `)
+          .eq('purchase_order_id', purchaseOrder.id)
+
+        if (error) throw error
+
+        if (data && data.length > 0) {
+          // Map database items to PurchaseOrderItem type
+          const items: PurchaseOrderItem[] = data.map((item: any) => ({
+            id: item.id,
+            materialId: item.material_id,
+            materialName: item.materials?.name,
+            unit: item.materials?.unit,
+            quantity: item.quantity,
+            unitPrice: item.unit_price,
+            quantityReceived: item.quantity_received,
+            notes: item.notes,
+          }))
+          setPoItems(items)
+        } else {
+          // Fallback to legacy single-item PO
+          if (purchaseOrder.materialId) {
+            setPoItems([{
+              materialId: purchaseOrder.materialId,
+              materialName: purchaseOrder.materialName,
+              unit: purchaseOrder.unit,
+              quantity: purchaseOrder.quantity || 0,
+              unitPrice: purchaseOrder.unitPrice || 0,
+            }])
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching PO items:', error)
+        // Fallback to legacy data
+        if (purchaseOrder.materialId) {
+          setPoItems([{
+            materialId: purchaseOrder.materialId,
+            materialName: purchaseOrder.materialName,
+            unit: purchaseOrder.unit,
+            quantity: purchaseOrder.quantity || 0,
+            unitPrice: purchaseOrder.unitPrice || 0,
+          }])
+        }
+      } finally {
+        setIsLoadingItems(false)
+      }
+    }
+
+    fetchPoItems()
+  }, [purchaseOrder.id, purchaseOrder.materialId, purchaseOrder.materialName, purchaseOrder.unit, purchaseOrder.quantity, purchaseOrder.unitPrice])
 
   const handlePrintPDF = async () => {
     if (!printRef.current) return
@@ -116,26 +187,63 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td className="border border-gray-300 px-4 py-2">1</td>
-                  <td className="border border-gray-300 px-4 py-2">{purchaseOrder.materialName}</td>
-                  <td className="border border-gray-300 px-4 py-2 text-center">{purchaseOrder.quantity}</td>
-                  <td className="border border-gray-300 px-4 py-2 text-center">{purchaseOrder.unit}</td>
-                  <td className="border border-gray-300 px-4 py-2 text-right">
-                    {purchaseOrder.unitPrice ? `Rp ${purchaseOrder.unitPrice.toLocaleString('id-ID')}` : '-'}
-                  </td>
-                  <td className="border border-gray-300 px-4 py-2 text-right font-semibold">
-                    {purchaseOrder.totalCost ? `Rp ${purchaseOrder.totalCost.toLocaleString('id-ID')}` : '-'}
-                  </td>
-                </tr>
+                {poItems.length > 0 ? (
+                  poItems.map((item, index) => {
+                    const itemTotal = item.quantity * item.unitPrice
+                    return (
+                      <tr key={item.id || index}>
+                        <td className="border border-gray-300 px-4 py-2">{index + 1}</td>
+                        <td className="border border-gray-300 px-4 py-2">{item.materialName || '-'}</td>
+                        <td className="border border-gray-300 px-4 py-2 text-center">{item.quantity}</td>
+                        <td className="border border-gray-300 px-4 py-2 text-center">{item.unit || '-'}</td>
+                        <td className="border border-gray-300 px-4 py-2 text-right">
+                          Rp {item.unitPrice.toLocaleString('id-ID')}
+                        </td>
+                        <td className="border border-gray-300 px-4 py-2 text-right">
+                          Rp {itemTotal.toLocaleString('id-ID')}
+                        </td>
+                      </tr>
+                    )
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="border border-gray-300 px-4 py-2 text-center text-gray-500">
+                      {isLoadingItems ? 'Memuat data...' : 'Tidak ada item'}
+                    </td>
+                  </tr>
+                )}
               </tbody>
               <tfoot>
+                {/* Subtotal */}
+                <tr className="bg-gray-50">
+                  <td colSpan={5} className="border border-gray-300 px-4 py-2 text-right">
+                    Subtotal:
+                  </td>
+                  <td className="border border-gray-300 px-4 py-2 text-right">
+                    Rp {(() => {
+                      const subtotal = poItems.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+                      return subtotal.toLocaleString('id-ID')
+                    })()}
+                  </td>
+                </tr>
+                {/* PPN if applicable */}
+                {purchaseOrder.includePpn && (
+                  <tr className="bg-gray-50">
+                    <td colSpan={5} className="border border-gray-300 px-4 py-2 text-right">
+                      PPN 11%:
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2 text-right">
+                      Rp {(purchaseOrder.ppnAmount || 0).toLocaleString('id-ID')}
+                    </td>
+                  </tr>
+                )}
+                {/* Grand Total */}
                 <tr className="bg-gray-50">
                   <td colSpan={5} className="border border-gray-300 px-4 py-2 text-right font-semibold">
                     GRAND TOTAL:
                   </td>
                   <td className="border border-gray-300 px-4 py-2 text-right font-bold">
-                    {purchaseOrder.totalCost ? `Rp ${purchaseOrder.totalCost.toLocaleString('id-ID')}` : 'Rp 0'}
+                    Rp {(purchaseOrder.totalCost || 0).toLocaleString('id-ID')}
                   </td>
                 </tr>
               </tfoot>

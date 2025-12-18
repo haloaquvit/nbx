@@ -11,6 +11,7 @@ import {
   CommissionCalculation
 } from '@/types/payroll'
 import { useToast } from '@/hooks/use-toast'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Helper functions for data transformation
 const fromDbToEmployeeSalary = (dbData: any): EmployeeSalary => ({
@@ -192,13 +193,19 @@ export const useEmployeeSalaries = () => {
 export const usePayrollRecords = (filters?: PayrollFilters) => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { currentBranch } = useBranch();
 
   const { data: payrollRecords, isLoading, error } = useQuery<PayrollRecord[]>({
-    queryKey: ['payrollRecords', filters],
+    queryKey: ['payrollRecords', filters, currentBranch?.id],
     queryFn: async () => {
       let query = supabase
         .from('payroll_summary')
         .select('*');
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
 
       // Apply filters
       if (filters?.year) {
@@ -225,7 +232,9 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
       return (data || []).map(fromDbToPayrollRecord);
     },
+    enabled: !!currentBranch,
     staleTime: 2 * 60 * 1000, // 2 minutes
+    refetchOnMount: true, // Auto-refetch when switching branches
   });
 
   const calculateCommission = useMutation({
@@ -581,18 +590,27 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
 // Hook for Payroll Summary/Dashboard
 export const usePayrollSummary = (year?: number, month?: number) => {
+  const { currentBranch } = useBranch();
+
   const { data: summary, isLoading } = useQuery<PayrollSummary>({
-    queryKey: ['payrollSummary', year, month],
+    queryKey: ['payrollSummary', year, month, currentBranch?.id],
     queryFn: async () => {
       const currentDate = new Date();
       const targetYear = year || currentDate.getFullYear();
       const targetMonth = month || (currentDate.getMonth() + 1);
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('payroll_summary')
         .select('*')
         .eq('period_year', targetYear)
         .eq('period_month', targetMonth);
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Failed to fetch payroll summary:', error);
@@ -635,7 +653,9 @@ export const usePayrollSummary = (year?: number, month?: number) => {
         draftCount: records.filter(r => r.status === 'draft').length,
       };
     },
+    enabled: !!currentBranch,
     staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchOnMount: true, // Auto-refetch when switching branches
   });
 
   return {

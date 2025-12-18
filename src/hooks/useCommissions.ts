@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { CommissionRule, CommissionEntry } from '@/types/commission'
 import { useAuth } from './useAuth'
 import { deleteCommissionExpense, deleteTransactionCommissionExpenses } from '@/utils/financialIntegration'
+import { useBranch } from '@/contexts/BranchContext'
 
 export function useCommissionRules() {
   const [rules, setRules] = useState<CommissionRule[]>([])
@@ -175,10 +176,16 @@ export function useCommissionRules() {
 
 export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: string) {
   const { user } = useAuth()
+  const { currentBranch, canAccessAllBranches } = useBranch()
   const [entries, setEntries] = useState<CommissionEntry[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const fetchEntries = useCallback(async (startDate?: Date, endDate?: Date, role?: string) => {
+    // Skip if branch is not loaded yet
+    if (!currentBranch) {
+      console.log('Branch not loaded yet, skipping commission entries fetch');
+      return;
+    }
     const callId = Math.random().toString(36).substring(7);
     console.log(`🚀 [${callId}] fetchEntries called with:`, { 
       startDate: startDate?.toISOString(), 
@@ -221,6 +228,11 @@ export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: st
       }
       if (role && role !== 'all') {
         query = query.eq('role', role)
+      }
+
+      // Apply branch filter (only if not head office viewing all branches)
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id)
       }
 
       // If user is not admin/owner, only show their own entries
@@ -269,7 +281,7 @@ export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: st
       console.log(`🏁 [${callId}] Setting loading to false`);
       setIsLoading(false)
     }
-  }, [user])
+  }, [user, currentBranch, canAccessAllBranches])
 
   const createCommissionEntry = async (entry: Omit<CommissionEntry, 'id' | 'createdAt'>) => {
     try {

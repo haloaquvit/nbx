@@ -1,19 +1,28 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Employee } from '@/types/employee'
 import { supabase } from '@/integrations/supabase/client'
+import { useBranch } from '@/contexts/BranchContext'
 
 export const useEmployees = () => {
   const queryClient = useQueryClient();
+  const { currentBranch, canAccessAllBranches } = useBranch();
 
   const { data: employees, isLoading, error, isError } = useQuery<Employee[]>({
-    queryKey: ['employees'],
+    queryKey: ['employees', currentBranch?.id],
     queryFn: async () => {
       try {
         // Simple approach - just get profiles data, don't crash on error
-        const { data, error } = await supabase
+        let query = supabase
           .from('profiles')
-          .select('id, email, full_name, username, role, phone, address, status')
+          .select('id, email, full_name, username, role, phone, address, status, branch_id')
           .neq('status', 'Nonaktif');
+
+        // Apply branch filter - ALWAYS filter by selected branch
+        if (currentBranch?.id) {
+          query = query.eq('branch_id', currentBranch.id);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
           console.warn('[useEmployees] Profiles query failed:', error);
@@ -38,6 +47,7 @@ export const useEmployees = () => {
         return [];
       }
     },
+    enabled: !!currentBranch, // Only run when branch is loaded
     // Optimized for employee management pages
     staleTime: 10 * 60 * 1000, // 10 minutes - employees don't change frequently
     gcTime: 15 * 60 * 1000, // 15 minutes cache

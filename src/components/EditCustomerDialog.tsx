@@ -360,6 +360,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
                       ref={fileInputRef}
                       onChange={handlePhotoUpload}
                       accept="image/*"
+                      capture="environment"
                       className="hidden"
                     />
                     <Button 

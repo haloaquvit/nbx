@@ -116,10 +116,10 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
           </div>
         </div>
         <div className="text-right bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg border border-blue-200">
-          <h2 className="text-5xl font-bold text-blue-800 mb-4">FAKTUR</h2>
+          <h2 className="text-5xl font-bold text-blue-800 mb-4">FAKTUR PENJUALAN</h2>
           <div className="space-y-2">
             <p className="text-sm text-gray-700">
-              <span className="font-semibold text-blue-800">No Faktur:</span><br/>
+              <span className="font-semibold text-blue-800">No Faktur Penjualan:</span><br/>
               <span className="text-lg font-mono font-bold text-blue-900">{transaction.id}</span>
             </p>
             <p className="text-sm text-gray-700">
@@ -212,7 +212,7 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
             <h4 className="text-sm font-semibold text-gray-800 mb-4">Catatan Pembayaran:</h4>
             <div className="text-xs text-gray-600 space-y-1 max-w-md">
               <p>• Pembayaran dapat dilakukan melalui transfer bank</p>
-              <p>• Harap sertakan nomor faktur saat melakukan pembayaran</p>
+              <p>• Harap sertakan nomor faktur penjualan saat melakukan pembayaran</p>
               <p>• Konfirmasi pembayaran ke nomor telepon di atas</p>
             </div>
           </div>
@@ -268,9 +268,9 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.text(companyInfo?.address || 'Company Address', margin + logoWidth + 10, 32);
     doc.text(companyInfo?.phone || 'Company Phone', margin + logoWidth + 10, 37);
     
-    // Faktur title and info in white
-    doc.setFontSize(28).setFont("helvetica", "bold").setTextColor(255, 255, 255);
-    doc.text("FAKTUR", pageWidth - margin, 25, { align: 'right' });
+    // Faktur Penjualan title and info in white
+    doc.setFontSize(24).setFont("helvetica", "bold").setTextColor(255, 255, 255);
+    doc.text("FAKTUR PENJUALAN", pageWidth - margin, 25, { align: 'right' });
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
     doc.setFontSize(11).setTextColor(255, 255, 255);
     doc.text(`No: ${transaction.id}`, pageWidth - margin, 33, { align: 'right' });
@@ -367,7 +367,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100, 100, 100);
     doc.text("Catatan Pembayaran:", margin, footerY);
     doc.text("• Pembayaran dapat dilakukan melalui transfer bank", margin, footerY + 5);
-    doc.text("• Harap sertakan nomor faktur saat melakukan pembayaran", margin, footerY + 10);
+    doc.text("• Harap sertakan nomor faktur penjualan saat melakukan pembayaran", margin, footerY + 10);
     doc.text("• Konfirmasi pembayaran ke nomor telepon di atas", margin, footerY + 15);
     
     // Signature section with background
@@ -391,7 +391,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.setFontSize(8).setFont("helvetica", "normal");
     doc.text(`Dicetak pada: ${format(new Date(), "d MMMM yyyy, HH:mm", { locale: id })} WIB`, pageWidth / 2, thankYouY + 9, { align: 'center' });
 
-    const filename = `Faktur-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
+    const filename = `Faktur_Penjualan-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
     saveCompressedPDF(doc, filename, 100);
   };
 
@@ -556,7 +556,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
               </div>
             </td>
             <td style="width: 40%; vertical-align: top; text-align: right;">
-              <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR</div>
+              <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR PENJUALAN</div>
               <div style="font-size: 10.5pt; margin-top: 2mm; line-height: 1.5;">
                 <strong>No:</strong> ${transaction.id}<br/>
                 <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}
@@ -609,7 +609,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
               <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 2mm;">CATATAN PEMBAYARAN:</div>
               <div style="font-size: 9.5pt; line-height: 1.5;">
                 • Pembayaran dapat dilakukan melalui transfer bank<br/>
-                • Harap sertakan nomor faktur saat melakukan pembayaran<br/>
+                • Harap sertakan nomor faktur penjualan saat melakukan pembayaran<br/>
                 • Konfirmasi pembayaran ke nomor di atas
               </div>
             </td>
@@ -658,7 +658,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Cetak Dot Matrix - Faktur ${transaction.id}</title>
+          <title>Cetak Dot Matrix - Faktur Penjualan ${transaction.id}</title>
           <meta charset="UTF-8">
           <style>
             /* Reset */

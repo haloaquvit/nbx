@@ -1,14 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/integrations/supabase/client'
-import { 
-  Supplier, 
-  SupplierMaterial, 
-  SupplierMaterialWithDetails, 
-  CreateSupplierData, 
-  UpdateSupplierData, 
+import {
+  Supplier,
+  SupplierMaterial,
+  SupplierMaterialWithDetails,
+  CreateSupplierData,
+  UpdateSupplierData,
   CreateSupplierMaterialData,
   SupplierOption
 } from '@/types/supplier'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Helper functions for data transformation
 const fromDbSupplier = (data: any): Supplier => ({
@@ -51,39 +52,68 @@ const toDbSupplier = (data: CreateSupplierData | UpdateSupplierData) => ({
 // Hook for suppliers management
 export const useSuppliers = () => {
   const queryClient = useQueryClient()
+  const { currentBranch } = useBranch()
 
   // Get all suppliers
   const { data: suppliers, isLoading } = useQuery<Supplier[]>({
-    queryKey: ['suppliers'],
+    queryKey: ['suppliers', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('suppliers')
         .select('*')
-        .order('name')
-      
-      if (error) throw new Error(error.message)
-      return data ? data.map(fromDbSupplier) : []
-    }
+        .order('name');
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return data ? data.map(fromDbSupplier) : [];
+    },
+    enabled: !!currentBranch,
+    // Optimized for supplier management
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 15 * 60 * 1000, // 15 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   })
 
   // Get active suppliers for dropdowns
   const { data: activeSuppliers } = useQuery<SupplierOption[]>({
-    queryKey: ['suppliers', 'active'],
+    queryKey: ['suppliers', 'active', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('suppliers')
         .select('id, code, name, payment_terms')
         .eq('is_active', true)
-        .order('name')
-      
-      if (error) throw new Error(error.message)
+        .order('name');
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
       return data ? data.map(item => ({
         id: item.id,
         code: item.code,
         name: item.name,
         paymentTerms: item.payment_terms
-      })) : []
-    }
+      })) : [];
+    },
+    enabled: !!currentBranch,
+    // Optimized for dropdown usage
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 15 * 60 * 1000, // 15 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   })
 
   // Create supplier

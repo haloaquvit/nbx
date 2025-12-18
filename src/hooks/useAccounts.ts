@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Account } from '@/types/account'
 import { supabase } from '@/integrations/supabase/client'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Helper to map from DB (snake_case) to App (camelCase)
 const fromDbToApp = (dbAccount: any): Account => ({
@@ -67,17 +68,78 @@ const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => 
 
 export const useAccounts = () => {
   const queryClient = useQueryClient()
+  const { currentBranch } = useBranch()
 
   const { data: accounts, isLoading } = useQuery<Account[]>({
-    queryKey: ['accounts'],
+    queryKey: ['accounts', currentBranch?.id], // Include branch to recalculate balances
     queryFn: async () => {
-      const { data, error } = await supabase.from('accounts').select('*');
+      // Get all accounts structure (same for all branches)
+      const { data: accountsData, error } = await supabase.from('accounts').select('*');
       if (error) throw new Error(error.message);
-      return data ? data.map(fromDbToApp) : [];
+
+      const baseAccounts = accountsData ? accountsData.map(fromDbToApp) : [];
+
+      // Calculate balance from cash_history per branch
+      if (currentBranch?.id) {
+        // Get all cash_history for current branch
+        const { data: cashHistory, error: cashError } = await supabase
+          .from('cash_history')
+          .select('account_id, amount, transaction_type, type, source_type')
+          .eq('branch_id', currentBranch.id);
+
+        if (cashError && cashError.code !== 'PGRST116') {
+          console.warn('Error fetching cash_history:', cashError);
+        }
+
+        // Calculate balance per account from cash_history
+        const accountBalances: Record<string, number> = {};
+
+        if (cashHistory) {
+          cashHistory.forEach(record => {
+            if (!record.account_id) return;
+
+            // Skip transfers (they don't change total cash, only move between accounts)
+            if (record.source_type === 'transfer_masuk' || record.source_type === 'transfer_keluar') {
+              return;
+            }
+
+            const amount = Number(record.amount) || 0;
+            const currentBalance = accountBalances[record.account_id] || 0;
+
+            // Determine if income or expense
+            const isIncome = record.transaction_type === 'income' ||
+              (record.type && ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(record.type));
+
+            const isExpense = record.transaction_type === 'expense' ||
+              (record.type && ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji'].includes(record.type));
+
+            if (isIncome) {
+              accountBalances[record.account_id] = currentBalance + amount;
+            } else if (isExpense) {
+              accountBalances[record.account_id] = currentBalance - amount;
+            }
+          });
+        }
+
+        // Update accounts with calculated balances
+        return baseAccounts.map(account => ({
+          ...account,
+          balance: accountBalances[account.id] || 0
+        }));
+      }
+
+      // If no branch selected, return accounts with 0 balance
+      return baseAccounts.map(account => ({
+        ...account,
+        balance: 0
+      }));
     },
-    // Optimized for Dashboard and POS usage  
-    staleTime: 10 * 60 * 1000, // 10 minutes - accounts change infrequently
-    gcTime: 15 * 60 * 1000, // 15 minutes cache
+    // Enable when branch is selected
+    enabled: !!currentBranch,
+    // Optimized for Dashboard and POS usage
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnMount: true, // Auto-refetch when switching branches
     refetchOnWindowFocus: false, // Don't refetch on window focus
     refetchOnReconnect: false, // Don't refetch on reconnect
     retry: 1, // Only retry once

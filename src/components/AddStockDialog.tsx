@@ -1,10 +1,11 @@
 "use client"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { NumberInput } from "@/components/ui/number-input"
 import { Label } from "@/components/ui/label"
 import { useMaterials } from "@/hooks/useMaterials"
 import { useToast } from "./ui/use-toast"
@@ -25,7 +26,7 @@ interface AddStockDialogProps {
 export function AddStockDialog({ open, onOpenChange, material }: AddStockDialogProps) {
   const { toast } = useToast()
   const { addStock: addStockMutation } = useMaterials()
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<AddStockFormData>({
+  const { control, handleSubmit, reset, formState: { errors } } = useForm<AddStockFormData>({
     resolver: zodResolver(addStockSchema),
     defaultValues: { quantity: 1 }
   })
@@ -65,7 +66,19 @@ export function AddStockDialog({ open, onOpenChange, material }: AddStockDialogP
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="quantity">Jumlah Tambahan</Label>
-              <Input id="quantity" type="number" step="any" {...register("quantity", { valueAsNumber: true })} />
+              <Controller
+                name="quantity"
+                control={control}
+                render={({ field }) => (
+                  <NumberInput
+                    id="quantity"
+                    value={field.value}
+                    onChange={(value) => field.onChange(value || 1)}
+                    min={0.01}
+                    decimalPlaces={2}
+                  />
+                )}
+              />
               {errors.quantity && <p className="text-red-500 text-sm">{errors.quantity.message}</p>}
             </div>
           </div>

@@ -1,19 +1,29 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { AssetMaintenance, MaintenanceFormData, MaintenanceSummary } from '@/types/assets';
+import { useBranch } from '@/contexts/BranchContext';
 
 // Fetch all maintenance records
 export function useMaintenance() {
+  const { currentBranch } = useBranch();
+
   return useQuery({
-    queryKey: ['maintenance'],
+    queryKey: ['maintenance', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('asset_maintenance')
         .select(`
           *,
           assets(asset_name)
         `)
         .order('scheduled_date', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -51,7 +61,13 @@ export function useMaintenance() {
         updatedAt: new Date(maint.updated_at),
       })) as AssetMaintenance[];
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    enabled: !!currentBranch,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 }
 
@@ -109,12 +125,21 @@ export function useMaintenanceByAsset(assetId?: string) {
 
 // Get maintenance summary
 export function useMaintenanceSummary() {
+  const { currentBranch } = useBranch();
+
   return useQuery({
-    queryKey: ['maintenance', 'summary'],
+    queryKey: ['maintenance', 'summary', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('asset_maintenance')
         .select('*');
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -178,6 +203,13 @@ export function useMaintenanceSummary() {
         averageCompletionTime: Math.round(avgCompletionDays),
       } as MaintenanceSummary;
     },
+    enabled: !!currentBranch,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 }
 

@@ -30,7 +30,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 
-const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Dikirim', 'Diterima', 'Dibayar', 'Selesai'];
+// Status yang bisa dipilih manual (tidak termasuk Diterima dan Selesai karena diatur otomatis)
+const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Dikirim', 'Dibayar'];
 
 const getStatusVariant = (status: PurchaseOrderStatus) => {
   switch (status) {
@@ -64,9 +65,9 @@ export function PurchaseOrderTable() {
     }
   };
 
-  const handleReceiveGoods = (po: PurchaseOrder) => {
-    receivePurchaseOrder.mutate(po, {
-      onSuccess: () => toast({ title: "Sukses", description: "Stok berhasil diterima dan ditambahkan." }),
+  const handleCompletePo = (po: PurchaseOrder) => {
+    updatePoStatus.mutate({ poId: po.id, status: 'Selesai' }, {
+      onSuccess: () => toast({ title: "Sukses", description: "Purchase Order telah diselesaikan." }),
       onError: (error) => toast({ variant: "destructive", title: "Gagal", description: error.message }),
     });
   };
@@ -80,24 +81,12 @@ export function PurchaseOrderTable() {
 
   const columns: ColumnDef<PurchaseOrder>[] = [
     { accessorKey: "id", header: "No. PO" },
-    { accessorKey: "materialName", header: "Nama Bahan" },
-    { accessorKey: "quantity", header: "Jumlah", cell: ({ row }) => `${row.original.quantity} ${row.original.unit}` },
-    { 
-      accessorKey: "totalCost", 
-      header: "Total Cost", 
+    {
+      accessorKey: "totalCost",
+      header: "Total Cost",
       cell: ({ row }) => {
         const cost = row.original.totalCost;
-        const quotedPrice = row.original.quotedPrice;
-        return cost ? (
-          <div>
-            <div className="font-medium">Rp {cost.toLocaleString('id-ID')}</div>
-            {quotedPrice && quotedPrice !== row.original.unitPrice && (
-              <div className="text-xs text-muted-foreground">
-                Quote: Rp {(quotedPrice * row.original.quantity).toLocaleString('id-ID')}
-              </div>
-            )}
-          </div>
-        ) : '-';
+        return cost ? `Rp ${cost.toLocaleString('id-ID')}` : '-';
       }
     },
     { accessorKey: "supplierName", header: "Supplier", cell: ({ row }) => row.original.supplierName || '-' },
@@ -110,8 +99,10 @@ export function PurchaseOrderTable() {
       cell: ({ row }) => {
         const po = row.original;
         const isAdmin = isAdminOrOwner(user);
-        
-        if (isAdmin && po.status !== 'Selesai') {
+
+        // Allow manual status change only for: Pending, Approved, Dikirim, Dibayar
+        // Diterima and Selesai are managed by buttons
+        if (isAdmin && !['Diterima', 'Selesai'].includes(po.status)) {
           return (
             <div onClick={(e) => e.stopPropagation()}>
               <Select
@@ -146,8 +137,11 @@ export function PurchaseOrderTable() {
             {po.status === 'Dikirim' && (
               <Button size="sm" onClick={() => { setSelectedPo(po); setIsReceiveDialogOpen(true); }}>Terima Barang</Button>
             )}
+            {po.status === 'Diterima' && (
+              <Button size="sm" onClick={() => { setSelectedPo(po); setIsPayDialogOpen(true); }}>Tandai Dibayar</Button>
+            )}
             {po.status === 'Dibayar' && (
-              <Button size="sm" onClick={() => handleReceiveGoods(po)} disabled={receivePurchaseOrder.isPending}>Selesaikan</Button>
+              <Button size="sm" onClick={() => handleCompletePo(po)} disabled={updatePoStatus.isPending}>Selesaikan</Button>
             )}
             {isOwnerRole && (
               <AlertDialog>

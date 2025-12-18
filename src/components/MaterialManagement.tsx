@@ -6,6 +6,7 @@ import * as z from "zod"
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
@@ -209,12 +210,36 @@ export const MaterialManagement = () => {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="pricePerUnit">Harga per Satuan</Label>
-                <Input id="pricePerUnit" type="number" step="any" {...register("pricePerUnit")} />
+                <Controller
+                  name="pricePerUnit"
+                  control={control}
+                  render={({ field }) => (
+                    <NumberInput
+                      id="pricePerUnit"
+                      value={field.value}
+                      onChange={(value) => field.onChange(value || 0)}
+                      min={0}
+                      decimalPlaces={2}
+                    />
+                  )}
+                />
                 {errors.pricePerUnit && <p className="text-sm text-destructive">{errors.pricePerUnit.message}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="stock">Stok Saat Ini</Label>
-                <Input id="stock" type="number" step="any" {...register("stock")} />
+                <Controller
+                  name="stock"
+                  control={control}
+                  render={({ field }) => (
+                    <NumberInput
+                      id="stock"
+                      value={field.value}
+                      onChange={(value) => field.onChange(value || 0)}
+                      min={0}
+                      decimalPlaces={2}
+                    />
+                  )}
+                />
                 {errors.stock && <p className="text-sm text-destructive">{errors.stock.message}</p>}
               </div>
             </div>
@@ -222,7 +247,19 @@ export const MaterialManagement = () => {
               {selectedType === 'Stock' && (
                 <div className="space-y-2">
                   <Label htmlFor="minStock">Stok Minimal</Label>
-                  <Input id="minStock" type="number" step="any" {...register("minStock")} />
+                  <Controller
+                    name="minStock"
+                    control={control}
+                    render={({ field }) => (
+                      <NumberInput
+                        id="minStock"
+                        value={field.value}
+                        onChange={(value) => field.onChange(value || 0)}
+                        min={0}
+                        decimalPlaces={0}
+                      />
+                    )}
+                  />
                   {errors.minStock && <p className="text-sm text-destructive">{errors.minStock.message}</p>}
                 </div>
               )}

@@ -202,21 +202,33 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
 
   if (materialsError) throw new Error(`Failed to fetch materials: ${materialsError.message}`);
 
-  // Get accounts payable data
-  const { data: accountsPayable, error: apError } = await supabase
+  // Get accounts payable data (filtered by branch)
+  let apQuery = supabase
     .from('accounts_payable')
     .select('amount, paid_amount, status')
     .lte('created_at', cutoffDateStr + 'T23:59:59');
 
+  if (branchId) {
+    apQuery = apQuery.eq('branch_id', branchId);
+  }
+
+  const { data: accountsPayable, error: apError } = await apQuery;
+
   // Ignore error if table doesn't exist
   const apData = apError ? [] : (accountsPayable || []);
 
-  // Get payroll liabilities
-  const { data: payrollRecords, error: payrollError } = await supabase
+  // Get payroll liabilities (filtered by branch)
+  let payrollQuery = supabase
     .from('payroll_records')
     .select('net_salary, status, created_at')
     .lte('created_at', cutoffDateStr + 'T23:59:59')
     .eq('status', 'approved');
+
+  if (branchId) {
+    payrollQuery = payrollQuery.eq('branch_id', branchId);
+  }
+
+  const { data: payrollRecords, error: payrollError } = await payrollQuery;
 
   // Ignore error if table doesn't exist
   const payrollData = payrollError ? [] : (payrollRecords || []);
@@ -526,39 +538,67 @@ export async function generateIncomeStatement(
     source: 'transactions'
   }];
 
-  // Calculate COGS from actual material consumption (Manufacturing Approach)
-  // Get material consumption from material_stock_movements
-  const { data: materialConsumption, error: materialError } = await supabase
+  // ============================================================================
+  // CALCULATE HPP (COGS) - PERPETUAL INVENTORY SYSTEM
+  // ============================================================================
+  // HPP dihitung dari semua bahan yang KELUAR dari inventory, termasuk:
+  // 1. PRODUCTION_CONSUMPTION - Bahan yang digunakan dalam produksi
+  // 2. RUSAK/WASTE/DAMAGED - Bahan rusak/terbuang (ini adalah loss, masuk HPP)
+  //
+  // BUKAN dari pembelian bahan! Pembelian dicatat di expenses untuk cash flow,
+  // tapi TIDAK langsung masuk HPP. HPP dihitung saat bahan keluar dari inventory.
+  // ============================================================================
+
+  let materialConsumptionQuery = supabase
     .from('material_stock_movements')
-    .select('quantity, material_id, materials(price_per_unit)')
+    .select('quantity, material_id, materials(price_per_unit), branch_id, reason')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59')
     .eq('type', 'OUT')
-    .eq('reason', 'PRODUCTION_CONSUMPTION');
+    .in('reason', ['PRODUCTION_CONSUMPTION', 'RUSAK', 'WASTE', 'DAMAGED', 'LOSS']);
 
+  if (branchId) {
+    materialConsumptionQuery = materialConsumptionQuery.eq('branch_id', branchId);
+  }
+
+  const { data: materialConsumption, error: materialError } = await materialConsumptionQuery;
+
+  // HPP = Semua bahan yang keluar dari inventory (produksi + rusak/waste)
   const materialCost = materialConsumption?.reduce((sum, movement) => {
     const pricePerUnit = movement.materials?.price_per_unit || 0;
     return sum + (movement.quantity * pricePerUnit);
   }, 0) || 0;
 
   // Get direct labor cost from payroll (production workers)
-  const { data: payrollData, error: payrollError } = await supabase
+  let payrollQuery = supabase
     .from('cash_history')
-    .select('amount')
+    .select('amount, branch_id')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59')
     .in('type', ['gaji_karyawan', 'pembayaran_gaji']);
 
+  if (branchId) {
+    payrollQuery = payrollQuery.eq('branch_id', branchId);
+  }
+
+  const { data: payrollData, error: payrollError } = await payrollQuery;
+
   const laborCost = payrollData?.reduce((sum, record) => sum + (record.amount || 0), 0) || 0;
 
   // Get manufacturing overhead from cash_history
-  const { data: overheadData, error: overheadError } = await supabase
+  let overheadQuery = supabase
     .from('cash_history')
-    .select('amount')
+    .select('amount, branch_id')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59')
     .in('type', ['pengeluaran', 'kas_keluar_manual'])
     .or('description.ilike.%listrik%,description.ilike.%air%,description.ilike.%utilitas%,description.ilike.%overhead%');
+
+  if (branchId) {
+    overheadQuery = overheadQuery.eq('branch_id', branchId);
+  }
+
+  const { data: overheadData, error: overheadError } = await overheadQuery;
 
   const overheadCost = overheadData?.reduce((sum, record) => sum + (record.amount || 0), 0) || 0;
 
@@ -589,10 +629,31 @@ export async function generateIncomeStatement(
   const grossProfit = totalRevenue - totalCOGS;
   const grossProfitMargin = calculatePercentage(grossProfit, totalRevenue);
 
-  // Calculate operating expenses
-  const operatingExpenseCash = cashHistory?.filter(ch => 
-    ch.type === 'pengeluaran' || ch.type === 'kas_keluar_manual'
-  ).reduce((sum, ch) => sum + (ch.amount || 0), 0) || 0;
+  // ============================================================================
+  // CALCULATE OPERATING EXPENSES
+  // ============================================================================
+  // Semua expenses (termasuk pembelian bahan) adalah biaya operasional
+  // yang mengurangi cash. Pembelian bahan TIDAK masuk HPP, tapi masuk
+  // operating expenses karena ini adalah cash outflow.
+  //
+  // Catatan: Dalam accounting yang benar, pembelian bahan seharusnya masuk
+  // ke "Inventory" di balance sheet, bukan langsung ke expense. Tapi untuk
+  // simplicity, kita treat semua sebagai operating expenses.
+  // ============================================================================
+
+  let operatingExpensesQuery = supabase
+    .from('expenses')
+    .select('amount, branch_id')
+    .gte('date', fromDateStr)
+    .lte('date', toDateStr + 'T23:59:59');
+
+  if (branchId) {
+    operatingExpensesQuery = operatingExpensesQuery.eq('branch_id', branchId);
+  }
+
+  const { data: operatingExpensesData, error: opExpensesError } = await operatingExpensesQuery;
+
+  const operatingExpenseCash = operatingExpensesData?.reduce((sum, expense) => sum + (expense.amount || 0), 0) || 0;
 
   const totalCommissions = commissionData.reduce((sum, comm) => sum + (comm.amount || 0), 0);
 
@@ -613,12 +674,18 @@ export async function generateIncomeStatement(
   const totalOperatingExpenses = operatingExpenseCash + totalCommissions;
   const operatingIncome = grossProfit - totalOperatingExpenses;
 
-  // Calculate interest expense from accounts payable
-  const { data: accountsPayableForIncome, error: apIncomeError } = await supabase
+  // Calculate interest expense from accounts payable (filtered by branch)
+  let apIncomeQuery = supabase
     .from('accounts_payable')
     .select('amount, interest_rate, interest_type, creditor_type, created_at, status, paid_at')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59');
+
+  if (branchId) {
+    apIncomeQuery = apIncomeQuery.eq('branch_id', branchId);
+  }
+
+  const { data: accountsPayableForIncome, error: apIncomeError } = await apIncomeQuery;
 
   let interestExpense = 0;
 
@@ -810,12 +877,18 @@ export async function generateCashFlowStatement(
     .reduce((sum, ch) => sum + (ch.amount || 0), 0);
 
   // Calculate interest expense from accounts payable
-  // Fetch accounts payable data to calculate interest
-  const { data: accountsPayableData, error: apDataError } = await supabase
+  // Fetch accounts payable data to calculate interest (filtered by branch)
+  let apInterestQuery = supabase
     .from('accounts_payable')
     .select('amount, interest_rate, interest_type, creditor_type, created_at, status, paid_at')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59');
+
+  if (branchId) {
+    apInterestQuery = apInterestQuery.eq('branch_id', branchId);
+  }
+
+  const { data: accountsPayableData, error: apDataError } = await apInterestQuery;
 
   let forInterestExpense = 0;
 

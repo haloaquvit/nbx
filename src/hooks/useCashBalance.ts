@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useBranch } from '@/contexts/BranchContext';
+import { useAccounts } from '@/hooks/useAccounts';
 
 interface CashBalance {
   currentBalance: number;
@@ -20,38 +22,40 @@ interface CashBalance {
 }
 
 export const useCashBalance = () => {
+  const { currentBranch } = useBranch();
+  const { accounts } = useAccounts(); // Get accounts with calculated balances per branch
+
   const { data: cashBalance, isLoading, error } = useQuery<CashBalance>({
-    queryKey: ['cashBalance'],
+    queryKey: ['cashBalance', currentBranch?.id, accounts?.length],
     queryFn: async () => {
       // Get today's date range
       const today = new Date();
       const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
-      // Get all cash flow records
-      const { data: allCashFlow, error: cashFlowError } = await supabase
+      // Get all cash flow records (filtered by branch)
+      let cashFlowQuery = supabase
         .from('cash_history')
         .select('*')
         .order('created_at', { ascending: true });
+
+      // Apply branch filter
+      if (currentBranch?.id) {
+        cashFlowQuery = cashFlowQuery.eq('branch_id', currentBranch.id);
+      }
+
+      const { data: allCashFlow, error: cashFlowError } = await cashFlowQuery;
 
       if (cashFlowError) {
         // If table doesn't exist, return basic balance data from accounts only
         if (cashFlowError.code === 'PGRST116' || cashFlowError.message.includes('does not exist')) {
           console.warn('cash_history table does not exist, calculating balance from accounts only');
-          
-          // Get account balances - ONLY payment accounts
-          const { data: accounts, error: accountsError } = await supabase
-            .from('accounts')
-            .select('id, name, balance, is_payment_account')
-            .eq('is_payment_account', true) // Filter hanya akun pembayaran
-            .order('name');
 
-          if (accountsError) {
-            throw new Error(`Failed to fetch accounts: ${accountsError.message}`);
-          }
+          // Use accounts from useAccounts (already filtered and calculated per branch)
+          const paymentAccounts = (accounts || []).filter(acc => acc.isPaymentAccount);
 
           let totalBalance = 0;
-          const accountBalances = (accounts || []).map(account => {
+          const accountBalances = paymentAccounts.map(account => {
             totalBalance += account.balance || 0;
             return {
               accountId: account.id,
@@ -77,16 +81,8 @@ export const useCashBalance = () => {
         throw new Error(`Failed to fetch cash history: ${cashFlowError.message}`);
       }
 
-      // Get account balances - ONLY payment accounts
-      const { data: accounts, error: accountsError } = await supabase
-        .from('accounts')
-        .select('id, name, balance, is_payment_account')
-        .eq('is_payment_account', true) // Filter hanya akun pembayaran
-        .order('name');
-
-      if (accountsError) {
-        throw new Error(`Failed to fetch accounts: ${accountsError.message}`);
-      }
+      // Use accounts from useAccounts (already filtered and calculated per branch)
+      const paymentAccounts = (accounts || []).filter(acc => acc.isPaymentAccount);
 
       // Initialize tracking variables
       let todayIncome = 0;
@@ -94,8 +90,8 @@ export const useCashBalance = () => {
       let totalBalance = 0;
       const accountBalances = new Map();
 
-      // Initialize account data with current balances from accounts table
-      (accounts || []).forEach(account => {
+      // Initialize account data with calculated balances from useAccounts
+      paymentAccounts.forEach(account => {
         accountBalances.set(account.id, {
           accountId: account.id,
           accountName: account.name,
@@ -217,7 +213,14 @@ export const useCashBalance = () => {
         accountBalances: Array.from(accountBalances.values())
       };
     },
+    enabled: !!currentBranch, // Only run when branch is selected
     staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnMount: true, // Auto-refetch when switching branches
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   return {

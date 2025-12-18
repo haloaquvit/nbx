@@ -1,16 +1,26 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Asset, AssetFormData, AssetSummary } from '@/types/assets';
+import { useBranch } from '@/contexts/BranchContext';
 
 // Fetch all assets
 export function useAssets() {
+  const { currentBranch } = useBranch();
+
   return useQuery({
-    queryKey: ['assets'],
+    queryKey: ['assets', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('assets')
         .select('*')
         .order('created_at', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -43,7 +53,13 @@ export function useAssets() {
         updatedAt: new Date(asset.updated_at),
       })) as Asset[];
     },
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    enabled: !!currentBranch,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 }
 
@@ -97,12 +113,21 @@ export function useAsset(id?: string) {
 
 // Get assets summary
 export function useAssetsSummary() {
+  const { currentBranch } = useBranch();
+
   return useQuery({
-    queryKey: ['assets', 'summary'],
+    queryKey: ['assets', 'summary', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('assets')
         .select('*');
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -140,6 +165,13 @@ export function useAssetsSummary() {
         byCategory,
       } as AssetSummary;
     },
+    enabled: !!currentBranch,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 }
 

@@ -3,6 +3,7 @@ import { Expense } from '@/types/expense'
 import { supabase } from '@/integrations/supabase/client'
 import { useAccounts } from './useAccounts'
 import { useAuth } from './useAuth'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Helper to map from DB (snake_case) to App (camelCase)
 const fromDbToApp = (dbExpense: any): Expense => ({
@@ -33,19 +34,35 @@ export const useExpenses = () => {
   const queryClient = useQueryClient();
   const { updateAccountBalance } = useAccounts();
   const { user } = useAuth();
+  const { currentBranch } = useBranch();
 
   const { data: expenses, isLoading } = useQuery<Expense[]>({
-    queryKey: ['expenses'],
+    queryKey: ['expenses', currentBranch?.id],
     queryFn: async () => {
       // Filter out commission expenses - they are handled automatically in financial reports
-      const { data, error } = await supabase
+      let query = supabase
         .from('expenses')
         .select('*')
         .not('id', 'like', 'EXP-COMMISSION-%')
         .order('date', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data ? data.map(fromDbToApp) : [];
-    }
+    },
+    enabled: !!currentBranch,
+    // Optimized for expense management
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   const addExpense = useMutation({

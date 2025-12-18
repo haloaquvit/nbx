@@ -5,6 +5,7 @@ import { Product } from '@/types/product';
 import { Material } from '@/types/material';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useBranch } from '@/contexts/BranchContext';
 import { format } from 'date-fns';
 
 export const useProduction = () => {
@@ -12,12 +13,14 @@ export const useProduction = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
+  const { currentBranch } = useBranch();
 
   // Fetch production history - memoized for stability
   const fetchProductions = useCallback(async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase
+
+      let query = supabase
         .from('production_records')
         .select(`
           *,
@@ -26,6 +29,13 @@ export const useProduction = () => {
         `)
         .order('created_at', { ascending: false })
         .limit(50);
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -56,7 +66,7 @@ export const useProduction = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]); // Only depends on toast
+  }, [toast, currentBranch]); // Depends on toast and currentBranch for auto-refresh
 
   // Get BOM for a product - memoized to prevent infinite re-renders
   const getBOM = useCallback(async (productId: string): Promise<BOMItem[]> => {

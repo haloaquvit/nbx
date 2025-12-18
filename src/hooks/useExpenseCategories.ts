@@ -73,19 +73,40 @@ export const getExpenseAccountForCategory = async (categoryName: string): Promis
   };
 };
 
-// Get predefined expense categories
+// Get predefined expense categories (grouped by type)
 export const getExpenseCategoryOptions = () => {
-  return [
-    'Gaji',
-    'Operasional', 
-    'Administrasi',
-    'Listrik',
-    'Transportasi',
-    'Komunikasi',
-    'Pemeliharaan',
-    'Komisi',
-    'Pembayaran PO',
-    'Penghapusan Piutang',
-    'Lain-lain'
-  ];
+  return {
+    // Kategori untuk Pembelian Persediaan (BUKAN HPP - hanya tracking cash flow)
+    // HPP dihitung dari pemakaian aktual (material_stock_movements)
+    persediaan: [
+      'Pembelian Bahan',
+      'Pembayaran PO',
+      'Pembayaran Utang',
+    ],
+    // Kategori untuk Biaya Operasional
+    operasional: [
+      'Gaji',
+      'Operasional',
+      'Administrasi',
+      'Listrik',
+      'Transportasi',
+      'Komunikasi',
+      'Pemeliharaan',
+      'Komisi',
+      'Penghapusan Piutang',
+      'Lain-lain'
+    ]
+  };
+};
+
+// Check if a category is for inventory purchases (NOT for HPP calculation)
+export const isInventoryPurchaseCategory = (category: string): boolean => {
+  const categories = getExpenseCategoryOptions();
+  return categories.persediaan.includes(category);
+};
+
+// Get all expense categories as a flat array
+export const getAllExpenseCategories = (): string[] => {
+  const categories = getExpenseCategoryOptions();
+  return [...categories.persediaan, ...categories.operasional];
 };

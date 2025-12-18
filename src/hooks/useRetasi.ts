@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Retasi, RetasiItem, CreateRetasiData, UpdateRetasiData, ReturnItemsData } from '@/types/retasi';
+import { useBranch } from '@/contexts/BranchContext';
 
 // Database to App mapping
 const fromDb = (dbRetasi: any): Retasi => ({
@@ -96,15 +97,21 @@ export const useRetasi = (filters?: {
   date_to?: string;
 }) => {
   const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
 
   // Get all retasi
   const { data: retasiList, isLoading } = useQuery<Retasi[]>({
-    queryKey: ['retasi', filters],
+    queryKey: ['retasi', currentBranch?.id, filters],
     queryFn: async () => {
       let query = supabase
         .from('retasi')
         .select('*')
         .order('created_at', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
 
       if (filters?.is_returned !== undefined) {
         query = query.eq('is_returned', filters.is_returned);
@@ -120,14 +127,22 @@ export const useRetasi = (filters?: {
       }
 
       const { data, error } = await query;
-      
+
       if (error) {
         console.error('Error fetching retasi:', error);
         throw new Error(error.message);
       }
-      
+
       return data ? data.map(fromDb) : [];
-    }
+    },
+    enabled: !!currentBranch,
+    // Optimized for retasi management
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   // Get retasi statistics

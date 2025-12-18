@@ -6,9 +6,11 @@ import { useMaterials } from './useMaterials'
 import { useMaterialMovements } from './useMaterialMovements'
 import { useAccountsPayable } from './useAccountsPayable'
 import { useAuth } from './useAuth'
+import { useBranch } from '@/contexts/BranchContext'
 
 const fromDb = (dbPo: any): PurchaseOrder => ({
   id: dbPo.id,
+  poNumber: dbPo.po_number,
   materialId: dbPo.material_id,
   materialName: dbPo.material_name,
   quantity: dbPo.quantity,
@@ -19,7 +21,11 @@ const fromDb = (dbPo: any): PurchaseOrder => ({
   createdAt: new Date(dbPo.created_at),
   notes: dbPo.notes,
   totalCost: dbPo.total_cost,
+  includePpn: dbPo.include_ppn,
+  ppnAmount: dbPo.ppn_amount,
   paymentAccountId: dbPo.payment_account_id,
+  orderDate: dbPo.order_date ? new Date(dbPo.order_date) : undefined,
+  receivedDate: dbPo.received_date ? new Date(dbPo.received_date) : undefined,
   paymentDate: dbPo.payment_date ? new Date(dbPo.payment_date) : undefined,
   supplierName: dbPo.supplier_name,
   supplierContact: dbPo.supplier_contact,
@@ -27,10 +33,15 @@ const fromDb = (dbPo: any): PurchaseOrder => ({
   quotedPrice: dbPo.quoted_price,
   expedition: dbPo.expedition,
   expectedDeliveryDate: dbPo.expected_delivery_date ? new Date(dbPo.expected_delivery_date) : undefined,
+  branchId: dbPo.branch_id,
+  updatedAt: dbPo.updated_at ? new Date(dbPo.updated_at) : undefined,
+  approvedAt: dbPo.approved_at ? new Date(dbPo.approved_at) : undefined,
+  approvedBy: dbPo.approved_by,
 });
 
 const toDb = (appPo: Partial<PurchaseOrder>) => ({
   id: appPo.id,
+  po_number: appPo.poNumber || null,
   material_id: appPo.materialId,
   material_name: appPo.materialName,
   quantity: appPo.quantity,
@@ -40,7 +51,11 @@ const toDb = (appPo: Partial<PurchaseOrder>) => ({
   status: appPo.status,
   notes: appPo.notes || null,
   total_cost: appPo.totalCost || null,
+  include_ppn: appPo.includePpn || false,
+  ppn_amount: appPo.ppnAmount || 0,
   payment_account_id: appPo.paymentAccountId || null,
+  order_date: appPo.orderDate || null,
+  received_date: appPo.receivedDate || null,
   payment_date: appPo.paymentDate || null,
   supplier_name: appPo.supplierName || null,
   supplier_contact: appPo.supplierContact || null,
@@ -48,6 +63,9 @@ const toDb = (appPo: Partial<PurchaseOrder>) => ({
   quoted_price: appPo.quotedPrice || null,
   expedition: appPo.expedition || null,
   expected_delivery_date: appPo.expectedDeliveryDate || null,
+  branch_id: appPo.branchId || null,
+  approved_by: appPo.approvedBy || null,
+  approved_at: appPo.approvedAt || null,
 });
 
 export const usePurchaseOrders = () => {
@@ -57,39 +75,109 @@ export const usePurchaseOrders = () => {
   const { createMaterialMovement } = useMaterialMovements();
   const { createAccountsPayable, payAccountsPayable } = useAccountsPayable();
   const { user } = useAuth();
+  const { currentBranch, canAccessAllBranches } = useBranch();
 
   const { data: purchaseOrders, isLoading } = useQuery<PurchaseOrder[]>({
-    queryKey: ['purchaseOrders'],
+    queryKey: ['purchaseOrders', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('purchase_orders').select('*').order('created_at', { ascending: false });
+      let query = supabase
+        .from('purchase_orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      // Apply branch filter (only if not head office viewing all branches)
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data ? data.map(fromDb) : [];
-    }
+    },
+    enabled: !!currentBranch,
   });
 
   const addPurchaseOrder = useMutation({
-    mutationFn: async (newPoData: Omit<PurchaseOrder, 'id' | 'createdAt' | 'status'>): Promise<PurchaseOrder> => {
+    mutationFn: async (newPoData: any): Promise<PurchaseOrder> => {
       console.log('[addPurchaseOrder] Input data:', newPoData);
-      
+
       const poId = `PO-${Date.now()}`;
-      const dbData = toDb({
-        ...newPoData,
-        id: poId,
-        status: 'Pending',
-        createdAt: new Date(),
-      });
-      
-      console.log('[addPurchaseOrder] DB data to insert:', dbData);
-      
-      const { data, error } = await supabase.from('purchase_orders').insert(dbData).select().single();
-      
-      if (error) {
-        console.error('[addPurchaseOrder] Database error:', error);
-        throw new Error(error.message);
+
+      // If multi-item PO (has items array)
+      if (newPoData.items && newPoData.items.length > 0) {
+        // Insert PO header
+        const poHeader = {
+          id: poId,
+          status: 'Pending',
+          requested_by: newPoData.requestedBy,
+          supplier_id: newPoData.supplierId,
+          supplier_name: newPoData.supplierName,
+          total_cost: newPoData.totalCost,
+          include_ppn: newPoData.includePpn || false,
+          ppn_amount: newPoData.ppnAmount || 0,
+          expedition: newPoData.expedition || null,
+          order_date: newPoData.orderDate || new Date(),
+          expected_delivery_date: newPoData.expectedDeliveryDate || null,
+          notes: newPoData.notes || null,
+          created_at: new Date(),
+        };
+
+        console.log('[addPurchaseOrder] Inserting PO header:', poHeader);
+
+        const { data: poData, error: poError } = await supabase
+          .from('purchase_orders')
+          .insert(poHeader)
+          .select()
+          .single();
+
+        if (poError) {
+          console.error('[addPurchaseOrder] PO header insert error:', poError);
+          throw new Error(poError.message);
+        }
+
+        // Insert PO items
+        const poItems = newPoData.items.map((item: any) => ({
+          purchase_order_id: poId,
+          material_id: item.materialId,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          notes: item.notes || null,
+        }));
+
+        console.log('[addPurchaseOrder] Inserting PO items:', poItems);
+
+        const { error: itemsError } = await supabase
+          .from('purchase_order_items')
+          .insert(poItems);
+
+        if (itemsError) {
+          console.error('[addPurchaseOrder] PO items insert error:', itemsError);
+          throw new Error(itemsError.message);
+        }
+
+        console.log('[addPurchaseOrder] Multi-item PO created successfully');
+        return fromDb(poData);
+      } else {
+        // Legacy single-item PO
+        const dbData = toDb({
+          ...newPoData,
+          id: poId,
+          status: 'Pending',
+          createdAt: new Date(),
+        });
+
+        console.log('[addPurchaseOrder] DB data to insert (legacy):', dbData);
+
+        const { data, error } = await supabase.from('purchase_orders').insert(dbData).select().single();
+
+        if (error) {
+          console.error('[addPurchaseOrder] Database error:', error);
+          throw new Error(error.message);
+        }
+
+        console.log('[addPurchaseOrder] Success:', data);
+        return fromDb(data);
       }
-      
-      console.log('[addPurchaseOrder] Success:', data);
-      return fromDb(data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
@@ -257,46 +345,107 @@ export const usePurchaseOrders = () => {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error('User not authenticated');
 
-      // Get current material data including type
-      const { data: material, error: materialError } = await supabase
-        .from('materials')
-        .select('stock, name, type')
-        .eq('id', po.materialId)
+      // Fetch PO items from database
+      const { data: poItemsData, error: itemsError } = await supabase
+        .from('purchase_order_items')
+        .select('*, materials:material_id(name, type)')
+        .eq('purchase_order_id', po.id);
+
+      if (itemsError) throw itemsError;
+
+      let itemsToProcess: Array<{ materialId: string, quantity: number, materialName: string, materialType: string }> = [];
+
+      // Check if we have items in database or fall back to legacy
+      if (poItemsData && poItemsData.length > 0) {
+        // Multi-item PO
+        itemsToProcess = poItemsData.map((item: any) => ({
+          materialId: item.material_id,
+          quantity: item.quantity,
+          materialName: item.materials?.name || 'Unknown',
+          materialType: item.materials?.type || 'Stock',
+        }));
+      } else if (po.materialId) {
+        // Legacy single-item PO
+        const { data: material } = await supabase
+          .from('materials')
+          .select('name, type')
+          .eq('id', po.materialId)
+          .single();
+
+        itemsToProcess = [{
+          materialId: po.materialId,
+          quantity: po.quantity || 0,
+          materialName: material?.name || po.materialName || 'Unknown',
+          materialType: material?.type || 'Stock',
+        }];
+      } else {
+        throw new Error('No items found in this PO');
+      }
+
+      // Process each item: create movements and update stock
+      for (const item of itemsToProcess) {
+        // Get current stock
+        const { data: material } = await supabase
+          .from('materials')
+          .select('stock')
+          .eq('id', item.materialId)
+          .single();
+
+        const previousStock = Number(material?.stock) || 0;
+        const newStock = previousStock + item.quantity;
+
+        // Determine movement type based on material type
+        const movementType = item.materialType === 'Stock' ? 'IN' : 'OUT';
+        const reason = item.materialType === 'Stock' ? 'PURCHASE' : 'PRODUCTION_CONSUMPTION';
+        const notes = item.materialType === 'Stock'
+          ? `Purchase order ${po.id} - Stock received`
+          : `Purchase order ${po.id} - Usage/consumption tracked`;
+
+        // Create material movement
+        console.log('Creating material movement:', {
+          materialId: item.materialId,
+          materialName: item.materialName,
+          type: movementType,
+          reason: reason,
+          quantity: item.quantity,
+          previousStock,
+          newStock,
+          referenceId: po.id,
+          referenceType: 'purchase_order',
+        });
+
+        const movementResult = await createMaterialMovement.mutateAsync({
+          materialId: item.materialId,
+          materialName: item.materialName,
+          type: movementType,
+          reason: reason,
+          quantity: item.quantity,
+          previousStock,
+          newStock,
+          referenceId: po.id,
+          referenceType: 'purchase_order',
+          notes: notes,
+          userId: currentUser.id,
+          userName: po.requestedBy,
+        });
+
+        console.log('Material movement created:', movementResult);
+
+        // Update material stock/usage counter
+        await addStock.mutateAsync({ materialId: item.materialId, quantity: item.quantity });
+      }
+
+      // Update PO status to Diterima with received_date
+      const { data, error } = await supabase
+        .from('purchase_orders')
+        .update({
+          status: 'Diterima',
+          received_date: po.receivedDate || new Date()
+        })
+        .eq('id', po.id)
+        .select()
         .single();
 
-      if (materialError) throw materialError;
-
-      const previousStock = Number(material.stock) || 0;
-      const newStock = previousStock + po.quantity;
-
-      // Determine movement type based on material type
-      const movementType = material.type === 'Stock' ? 'IN' : 'OUT';
-      const reason = material.type === 'Stock' ? 'PURCHASE' : 'PRODUCTION_CONSUMPTION';
-      const notes = material.type === 'Stock'
-        ? `Purchase order ${po.id} - Stock received`
-        : `Purchase order ${po.id} - Usage/consumption tracked`;
-
-      // 1. Create material movement with proper reference
-      await createMaterialMovement.mutateAsync({
-        materialId: po.materialId,
-        materialName: material.name,
-        type: movementType,
-        reason: reason,
-        quantity: po.quantity,
-        previousStock,
-        newStock,
-        referenceId: po.id,
-        referenceType: 'purchase_order',
-        notes: notes,
-        userId: currentUser.id,
-        userName: po.requestedBy,
-      });
-
-      // 2. Update material stock/usage counter
-      await addStock.mutateAsync({ materialId: po.materialId, quantity: po.quantity });
-
-      // 3. Update PO status
-      const { data, error } = await supabase.from('purchase_orders').update({ status: 'Selesai' }).eq('id', po.id).select().single();
       if (error) throw error;
 
       return fromDb(data);
@@ -304,6 +453,7 @@ export const usePurchaseOrders = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
       queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['receiveGoods'] });
       queryClient.invalidateQueries({ queryKey: ['materialMovements'] });
     }
   });

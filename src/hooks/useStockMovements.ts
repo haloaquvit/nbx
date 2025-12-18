@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { StockMovement, CreateStockMovementData, StockConsumptionReport } from '@/types/stockMovement'
 import { supabase } from '@/integrations/supabase/client'
 import { startOfMonth, endOfMonth } from 'date-fns'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Helper to map from DB (snake_case) to App (camelCase)
 // Note: Now using material_stock_movements table
@@ -41,14 +42,22 @@ const fromAppToDb = (appMovement: CreateStockMovementData) => ({
 
 export const useStockMovements = () => {
   const queryClient = useQueryClient()
+  const { currentBranch } = useBranch()
 
   const { data: movements, isLoading } = useQuery({
-    queryKey: ['stockMovements'],
+    queryKey: ['stockMovements', currentBranch?.id],
     queryFn: async (): Promise<StockMovement[]> => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('material_stock_movements')
         .select('*')
         .order('created_at', { ascending: false });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching stock movements:', error);
@@ -60,7 +69,15 @@ export const useStockMovements = () => {
         throw new Error(error.message);
       }
       return data ? data.map(fromDbToApp) : [];
-    }
+    },
+    enabled: !!currentBranch,
+    // Optimized for stock movements
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   const createStockMovement = useMutation({
@@ -85,11 +102,18 @@ export const useStockMovements = () => {
   });
 
   const getMovementsByProduct = async (productId: string): Promise<StockMovement[]> => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('material_stock_movements')
       .select('*')
       .eq('material_id', productId) // Updated to material_id
       .order('created_at', { ascending: false });
+
+    // Apply branch filter
+    if (currentBranch?.id) {
+      query = query.eq('branch_id', currentBranch.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       if (error.code === '42P01' || error.code === 'PGRST205') {
@@ -101,12 +125,19 @@ export const useStockMovements = () => {
   };
 
   const getMovementsByDateRange = async (from: Date, to: Date): Promise<StockMovement[]> => {
-    const { data, error } = await supabase
+    let query = supabase
       .from('material_stock_movements')
       .select('*')
       .gte('created_at', from.toISOString())
       .lte('created_at', to.toISOString())
       .order('created_at', { ascending: false });
+
+    // Apply branch filter
+    if (currentBranch?.id) {
+      query = query.eq('branch_id', currentBranch.id);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       if (error.code === '42P01' || error.code === 'PGRST205') {
@@ -124,10 +155,17 @@ export const useStockMovements = () => {
     // Get all movements for the month
     const movements = await getMovementsByDateRange(startDate, endDate);
 
-    // Get all materials (since we're now using material_stock_movements)
-    const { data: materials, error: materialsError } = await supabase
+    // Get all materials with branch filter
+    let materialsQuery = supabase
       .from('materials')
       .select('id, name, type, unit, stock');
+
+    // Apply branch filter
+    if (currentBranch?.id) {
+      materialsQuery = materialsQuery.eq('branch_id', currentBranch.id);
+    }
+
+    const { data: materials, error: materialsError } = await materialsQuery;
 
     if (materialsError) throw new Error(materialsError.message);
 

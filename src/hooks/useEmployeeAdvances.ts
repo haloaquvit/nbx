@@ -3,6 +3,7 @@ import { EmployeeAdvance, AdvanceRepayment } from '@/types/employeeAdvance'
 import { useAccounts } from './useAccounts';
 import { useAuth } from './useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { useBranch } from '@/contexts/BranchContext';
 
 const fromDbToApp = (dbAdvance: any): EmployeeAdvance => ({
   id: dbAdvance.id,
@@ -41,25 +42,39 @@ export const useEmployeeAdvances = () => {
   const queryClient = useQueryClient();
   const { updateAccountBalance } = useAccounts();
   const { user } = useAuth();
+  const { currentBranch } = useBranch();
 
   const { data: advances, isLoading, isError, error } = useQuery<EmployeeAdvance[]>({
-    queryKey: ['employeeAdvances', user?.id],
+    queryKey: ['employeeAdvances', currentBranch?.id, user?.id],
     queryFn: async () => {
       let query = supabase.from('employee_advances').select('*, advance_repayments:advance_repayments(*)');
-      
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
       // Role-based filtering: only kasir, admin, owner can see all data
       // Other users can only see their own advances
       if (user && !['kasir', 'admin', 'owner'].includes(user.role || '')) {
         query = query.eq('employee_id', user.id);
       }
-      
+
       const { data, error } = await query;
       if (error) {
         console.error("❌ Gagal mengambil data panjar:", error.message);
         throw new Error(error.message);
       }
       return data ? data.map(fromDbToApp) : [];
-    }
+    },
+    enabled: !!currentBranch,
+    // Optimized for panjar management
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
   });
 
   const addAdvance = useMutation({

@@ -152,8 +152,8 @@ export default function TransactionDetailPage() {
     doc.setFontSize(10).setFont("helvetica", "normal").text(companyInfo?.address || '', margin, 38).text(companyInfo?.phone || '', margin, 43);
     doc.setDrawColor(200).line(margin, 48, pageWidth - margin, 48);
     
-    // Faktur header
-    doc.setFontSize(22).setFont("helvetica", "bold").setTextColor(150).text("FAKTUR", pageWidth - margin, 32, { align: 'right' });
+    // Faktur Penjualan header
+    doc.setFontSize(18).setFont("helvetica", "bold").setTextColor(150).text("FAKTUR PENJUALAN", pageWidth - margin, 32, { align: 'right' });
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
     doc.setFontSize(11).setTextColor(0).text(`No: ${transaction.id}`, pageWidth - margin, 38, { align: 'right' }).text(`Tanggal: ${format(orderDate, "d MMMM yyyy", { locale: id })}`, pageWidth - margin, 43, { align: 'right' });
     
@@ -220,7 +220,7 @@ export default function TransactionDetailPage() {
     doc.setFontSize(10).setFont("helvetica", "normal");
     doc.text("Terima kasih atas kepercayaan Anda.", margin, signatureY + 20);
 
-    const filename = `Faktur-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
+    const filename = `Faktur_Penjualan-${transaction.id}-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`;
     doc.save(filename);
   };
 
@@ -489,7 +489,7 @@ export default function TransactionDetailPage() {
               </div>
             </td>
             <td style="width: 40%; vertical-align: top; text-align: right;">
-              <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR</div>
+              <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR PENJUALAN</div>
               <div style="font-size: 10.5pt; margin-top: 2mm; line-height: 1.5;">
                 <strong>No:</strong> ${transaction.id}<br/>
                 <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}
@@ -542,7 +542,7 @@ export default function TransactionDetailPage() {
               <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 2mm;">CATATAN PEMBAYARAN:</div>
               <div style="font-size: 9.5pt; line-height: 1.5;">
                 • Pembayaran dapat dilakukan melalui transfer bank<br/>
-                • Harap sertakan nomor faktur saat melakukan pembayaran<br/>
+                • Harap sertakan nomor faktur penjualan saat melakukan pembayaran<br/>
                 • Konfirmasi pembayaran ke nomor di atas
               </div>
             </td>
@@ -591,7 +591,7 @@ export default function TransactionDetailPage() {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Cetak Dot Matrix - Faktur ${transaction.id}</title>
+          <title>Cetak Dot Matrix - Faktur Penjualan ${transaction.id}</title>
           <meta charset="UTF-8">
           <style>
             /* Reset */

@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Product } from '@/types/product'
 import { supabase } from '@/integrations/supabase/client'
 import { logError, logDebug } from '@/utils/debugUtils'
+import { useBranch } from '@/contexts/BranchContext'
 
 // DB to App mapping
 const fromDb = (dbProduct: any): Product => ({
@@ -40,17 +41,26 @@ const toDb = (appProduct: Partial<Product>) => {
 
 export const useProducts = () => {
   const queryClient = useQueryClient();
+  const { currentBranch, canAccessAllBranches } = useBranch();
 
   const { data: products, isLoading } = useQuery<Product[]>({
-    queryKey: ['products'],
+    queryKey: ['products', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('products')
         .select('*')
         .order('name', { ascending: true });
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data ? data.map(fromDb) : [];
     },
+    enabled: !!currentBranch, // Only run when branch is loaded
     // Optimized for high-frequency POS usage
     staleTime: 10 * 60 * 1000, // 10 minutes - products don't change frequently
     gcTime: 15 * 60 * 1000, // 15 minutes cache

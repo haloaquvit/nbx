@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { Material } from '@/types/material'
 import { supabase } from '@/integrations/supabase/client'
+import { useBranch } from '@/contexts/BranchContext'
 
 const fromDbToApp = (dbMaterial: any): Material => ({
   id: dbMaterial.id,
@@ -34,16 +35,25 @@ const fromAppToDb = (appMaterial: Partial<Omit<Material, 'id' | 'createdAt' | 'u
 
 export const useMaterials = () => {
   const queryClient = useQueryClient();
+  const { currentBranch, canAccessAllBranches } = useBranch();
 
   const { data: materials, isLoading } = useQuery<Material[]>({
-    queryKey: ['materials'],
+    queryKey: ['materials', currentBranch?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('materials')
         .select('*');
+
+      // Apply branch filter (only if not head office viewing all branches)
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data ? data.map(fromDbToApp) : [];
     },
+    enabled: !!currentBranch,
     // Optimized for material management pages
     staleTime: 5 * 60 * 1000, // 5 minutes - materials change more frequently than products
     gcTime: 10 * 60 * 1000, // 10 minutes cache
@@ -55,17 +65,39 @@ export const useMaterials = () => {
 
   const addStock = useMutation({
     mutationFn: async ({ materialId, quantity }: { materialId: string, quantity: number }): Promise<Material> => {
+      console.log('[addStock] Calling RPC with:', { materialId, quantity });
+
       // Simplified: just add stock using the RPC function
       // Type handling will be implemented when database migration is complete
-      const { error } = await supabase.rpc('add_material_stock', {
+      const { data, error } = await supabase.rpc('add_material_stock', {
         material_id: materialId,
         quantity_to_add: quantity
       });
-      if (error) throw new Error(error.message);
-      
+
+      if (error) {
+        console.error('[addStock] RPC error:', error);
+        throw new Error(error.message);
+      }
+
+      console.log('[addStock] RPC call successful, response:', data);
+
+      // Fetch the updated material to verify the update
+      const { data: updatedMaterial, error: fetchError } = await supabase
+        .from('materials')
+        .select('*')
+        .eq('id', materialId)
+        .single();
+
+      if (fetchError) {
+        console.error('[addStock] Error fetching updated material:', fetchError);
+      } else {
+        console.log('[addStock] Updated material stock:', updatedMaterial.stock);
+      }
+
       return {} as Material;
     },
     onSuccess: () => {
+      console.log('[addStock] Success! Invalidating materials query...');
       queryClient.invalidateQueries({ queryKey: ['materials'] });
     },
   });

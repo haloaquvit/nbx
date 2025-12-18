@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/integrations/supabase/client'
 import { CommissionEntry } from '@/types/commission'
 import { useAuth } from './useAuth'
+import { useBranch } from '@/contexts/BranchContext'
 import { deleteCommissionExpense, deleteTransactionCommissionExpenses } from '@/utils/financialIntegration'
 
 // Query keys for consistent caching
@@ -15,12 +16,13 @@ export const commissionKeys = {
 
 // Optimized commission entries hook with React Query
 export function useOptimizedCommissionEntries(
-  startDate?: Date, 
-  endDate?: Date, 
+  startDate?: Date,
+  endDate?: Date,
   role?: string
 ) {
   const { user } = useAuth()
-  
+  const { currentBranch } = useBranch()
+
   // Create stable query key based on parameters
   const queryKey = commissionKeys.entriesFiltered({
     startDate: startDate?.toISOString().split('T')[0],
@@ -30,7 +32,7 @@ export function useOptimizedCommissionEntries(
   })
 
   return useQuery({
-    queryKey,
+    queryKey: [...queryKey, currentBranch?.id],
     queryFn: async () => {
       console.log('🔄 Fetching commission entries with params:', {
         startDate: startDate?.toISOString(),
@@ -38,6 +40,7 @@ export function useOptimizedCommissionEntries(
         role,
         userId: user?.id,
         userRole: user?.role,
+        branchId: currentBranch?.id,
         isAdminOrOwner: user?.role === 'admin' || user?.role === 'owner'
       })
 
@@ -57,6 +60,11 @@ export function useOptimizedCommissionEntries(
         .from('commission_entries')
         .select('*')
         .order('created_at', { ascending: false })
+
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id)
+      }
 
       // Apply filters
       if (startDate) {
@@ -121,7 +129,7 @@ export function useOptimizedCommissionEntries(
     gcTime: 15 * 60 * 1000, // 15 minutes
     refetchOnMount: false, // Don't auto-refetch on mount
     refetchOnWindowFocus: false, // Don't auto-refetch on focus
-    enabled: !!user, // Only run when user is available
+    enabled: !!user && !!currentBranch, // Only run when user and branch are available
   })
 }
 

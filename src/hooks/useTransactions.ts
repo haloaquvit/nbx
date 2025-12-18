@@ -5,6 +5,7 @@ import { useExpenses } from './useExpenses'
 import { StockService } from '@/services/stockService'
 import { MaterialStockService } from '@/services/materialStockService'
 import { generateSalesCommission } from '@/utils/commissionUtils'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Helper to extract sales info from items array
 const extractSalesFromItems = (items: any[]) => {
@@ -106,19 +107,25 @@ export const useTransactions = (filters?: {
 }) => {
   const queryClient = useQueryClient()
   const { addExpense } = useExpenses()
+  const { currentBranch, canAccessAllBranches } = useBranch()
 
   const { data: transactions, isLoading } = useQuery<Transaction[]>({
-    queryKey: ['transactions', filters],
+    queryKey: ['transactions', filters, currentBranch?.id],
     queryFn: async () => {
       // Use only essential columns that definitely exist in the original schema
       const selectFields = '*'; // Let Supabase handle available columns automatically
-      
+
       let query = supabase
         .from('transactions')
         .select(selectFields)
         .order('created_at', { ascending: false });
 
-      // Apply filters
+      // Apply branch filter - ALWAYS filter by selected branch
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      // Apply other filters
       if (filters?.status && filters.status !== 'all') {
         query = query.eq('status', filters.status);
       }
@@ -139,6 +146,7 @@ export const useTransactions = (filters?: {
       if (error) throw new Error(error.message);
       return data ? data.map(fromDb) : [];
     },
+    enabled: !!currentBranch, // Only run query when branch is loaded
     // Optimized settings to reduce unnecessary traffic
     staleTime: 2 * 60 * 1000, // 2 minutes - data considered fresh
     gcTime: 5 * 60 * 1000, // 5 minutes - cache garbage collection

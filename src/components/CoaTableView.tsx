@@ -123,8 +123,7 @@ export function CoaTableView({ accounts, onAccountUpdate, onAccountDelete, canEd
                 <TableHead className="w-[100px]">Kode</TableHead>
                 <TableHead>Nama Akun</TableHead>
                 <TableHead>Tipe</TableHead>
-                <TableHead className="text-right">Saldo Awal</TableHead>
-                <TableHead className="text-right">Saldo Saat Ini</TableHead>
+                <TableHead className="text-right">Saldo (Per Cabang)</TableHead>
                 <TableHead>Normal Balance</TableHead>
                 <TableHead>Status</TableHead>
                 {canEdit && <TableHead className="w-[120px]">Aksi</TableHead>}
@@ -133,7 +132,7 @@ export function CoaTableView({ accounts, onAccountUpdate, onAccountDelete, canEd
             <TableBody>
               {sortedAccounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={canEdit ? 8 : 7} className="h-24 text-center">
+                  <TableCell colSpan={canEdit ? 7 : 6} className="h-24 text-center">
                     Belum ada akun keuangan.
                   </TableCell>
                 </TableRow>
@@ -164,44 +163,11 @@ export function CoaTableView({ accounts, onAccountUpdate, onAccountDelete, canEd
                       </Badge>
                     </TableCell>
 
-                    {/* Saldo Awal */}
+                    {/* Saldo (calculated per branch from cash_history) */}
                     <TableCell className="text-right">
-                      {editing.accountId === account.id ? (
-                        <Input
-                          type="number"
-                          value={editing.initialBalance}
-                          onChange={(e) => setEditing(prev => ({
-                            ...prev,
-                            initialBalance: Number(e.target.value)
-                          }))}
-                          className="w-32 text-right"
-                          step="1000"
-                        />
-                      ) : (
-                        <span className={account.initialBalance > 0 ? "font-medium" : "text-muted-foreground"}>
-                          {formatCurrency(account.initialBalance || 0)}
-                        </span>
-                      )}
-                    </TableCell>
-
-                    {/* Saldo Saat Ini */}
-                    <TableCell className="text-right">
-                      {editing.accountId === account.id ? (
-                        <Input
-                          type="number"
-                          value={editing.balance}
-                          onChange={(e) => setEditing(prev => ({
-                            ...prev,
-                            balance: Number(e.target.value)
-                          }))}
-                          className="w-32 text-right"
-                          step="1000"
-                        />
-                      ) : (
-                        <span className={account.balance > 0 ? "font-medium" : "text-muted-foreground"}>
-                          {formatCurrency(account.balance)}
-                        </span>
-                      )}
+                      <span className={account.balance > 0 ? "font-medium" : "text-muted-foreground"}>
+                        {formatCurrency(account.balance)}
+                      </span>
                     </TableCell>
 
                     {/* Normal Balance */}
@@ -298,10 +264,9 @@ export function CoaTableView({ accounts, onAccountUpdate, onAccountDelete, canEd
           <div className="mt-4 text-sm text-muted-foreground">
             <p><strong>Tips:</strong></p>
             <ul className="mt-2 space-y-1 list-disc list-inside">
-              <li>Klik tombol <Edit className="inline h-3 w-3" /> untuk mengedit saldo awal dan saldo saat ini</li>
               <li>Klik tombol <Check className="inline h-3 w-3" /> untuk mengedit detail akun lengkap</li>
-              <li>Saldo awal digunakan untuk opening balance saat periode baru</li>
-              <li>Saldo saat ini menampilkan balance terkini setelah transaksi</li>
+              <li>Saldo dihitung otomatis dari transaksi di cabang yang dipilih</li>
+              <li>Chart of Accounts menampilkan struktur akun yang sama untuk semua cabang</li>
             </ul>
           </div>
         )}

@@ -334,6 +334,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
                   ref={fileInputRef}
                   onChange={handlePhotoUpload}
                   accept="image/*"
+                  capture="environment"
                   className="hidden"
                 />
                 <Button 

@@ -673,11 +673,11 @@ export default function DeliveryPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredDeliveryHistory.map((delivery: any) => (
+                          {filteredDeliveryHistory.map((delivery: any, index: number) => (
                             <TableRow key={delivery.id} className="hover:bg-muted">
                               <TableCell>
                                 <Badge variant="outline" className="text-xs">
-                                  #{delivery.deliveryNumber || delivery.id.slice(-6)}
+                                  #{index + 1}
                                 </Badge>
                               </TableCell>
                               <TableCell>

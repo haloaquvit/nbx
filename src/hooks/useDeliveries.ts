@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/integrations/supabase/client'
-import { 
-  Delivery, 
-  DeliveryItem, 
-  TransactionDeliveryInfo, 
-  CreateDeliveryRequest, 
+import {
+  Delivery,
+  DeliveryItem,
+  TransactionDeliveryInfo,
+  CreateDeliveryRequest,
   DeliverySummaryItem,
-  DeliveryEmployee 
+  DeliveryEmployee
 } from '@/types/delivery'
 import { PhotoUploadService } from '@/services/photoUploadService'
+import { useBranch } from '@/contexts/BranchContext'
 
 // Fetch employees with driver and helper roles from profiles table
 export function useDeliveryEmployees() {
@@ -40,16 +41,25 @@ export function useDeliveryEmployees() {
 
 // Fetch transactions ready for delivery (exclude office sales)
 export function useTransactionsReadyForDelivery() {
+  const { currentBranch, canAccessAllBranches } = useBranch();
+
   return useQuery({
-    queryKey: ['transactions-ready-for-delivery'],
+    queryKey: ['transactions-ready-for-delivery', currentBranch?.id],
     queryFn: async (): Promise<TransactionDeliveryInfo[]> => {
       // Get transactions that are ready for delivery (simplified approach without custom functions)
-      const { data: transactions, error } = await supabase
+      let query = supabase
         .from('transactions')
         .select('*')
         .in('status', ['Pesanan Masuk', 'Diantar Sebagian'])
         .neq('is_office_sale', true)
-        .order('order_date', { ascending: true })
+        .order('order_date', { ascending: true });
+
+      // Apply branch filter (only if not head office viewing all branches)
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data: transactions, error } = await query;
       
       if (error) throw error
       if (!transactions) return []
@@ -157,6 +167,7 @@ export function useTransactionsReadyForDelivery() {
 
       return transactionsWithDeliveryInfo
     },
+    enabled: !!currentBranch,
     // Optimized for complex delivery queries
     staleTime: 3 * 60 * 1000, // 3 minutes - delivery data changes more frequently
     gcTime: 10 * 60 * 1000, // 10 minutes cache
@@ -1078,10 +1089,12 @@ export function useDeliveries() {
 
 // Fetch all delivery history for admin/owner
 export function useDeliveryHistory() {
+  const { currentBranch, canAccessAllBranches } = useBranch();
+
   return useQuery({
-    queryKey: ['delivery-history'],
+    queryKey: ['delivery-history', currentBranch?.id],
     queryFn: async (): Promise<Delivery[]> => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('deliveries')
         .select(`
           *,
@@ -1090,8 +1103,15 @@ export function useDeliveryHistory() {
           helper:profiles!helper_id(id, full_name),
           transaction:transactions!transaction_id(id, customer_name, total, order_date)
         `)
-        .order('created_at', { ascending: false })
-        .limit(100) // Limit for performance
+        .order('delivery_date', { ascending: false })
+        .limit(100); // Limit for performance
+
+      // Apply branch filter (only if not head office viewing all branches)
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
       
       if (error) {
         console.error('[useDeliveryHistory] Error fetching delivery history:', error)
@@ -1138,5 +1158,6 @@ export function useDeliveryHistory() {
         transactionDate: Date
       }))
     },
+    enabled: !!currentBranch,
   })
 }
