@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Package, Search, FileDown, Printer } from "lucide-react"
 import * as XLSX from 'xlsx'
 import { useCompanySettings } from "@/hooks/useCompanySettings"
+import { useBranch } from "@/contexts/BranchContext"
 
 interface ReceiveGoodsRecord {
   id: string
@@ -31,15 +32,16 @@ interface ReceiveGoodsRecord {
 export function ReceiveGoodsTab() {
   const [searchTerm, setSearchTerm] = React.useState("")
   const { settings } = useCompanySettings()
+  const { currentBranch } = useBranch()
   const printRef = React.useRef<HTMLDivElement>(null)
 
   const { data: receiveRecords, isLoading, error: queryError } = useQuery<ReceiveGoodsRecord[]>({
-    queryKey: ['receiveGoods'],
+    queryKey: ['receiveGoods', currentBranch?.id],
     queryFn: async () => {
       console.log('Fetching receive goods records...')
 
       // Fetch material movements with reason 'PURCHASE'
-      const { data, error } = await supabase
+      let query = supabase
         .from('material_stock_movements')
         .select(`
           id,
@@ -53,6 +55,7 @@ export function ReceiveGoodsTab() {
           notes,
           created_at,
           user_name,
+          branch_id,
           materials:material_id (
             unit
           )
@@ -60,6 +63,13 @@ export function ReceiveGoodsTab() {
         .eq('reason', 'PURCHASE')
         .eq('type', 'IN')
         .order('created_at', { ascending: false })
+
+      // Apply branch filter - Show records for selected branch OR records without branch_id (legacy data)
+      if (currentBranch?.id) {
+        query = query.or(`branch_id.eq.${currentBranch.id},branch_id.is.null`)
+      }
+
+      const { data, error } = await query
 
       console.log('Material movements query result:', { data, error })
 
@@ -100,7 +110,9 @@ export function ReceiveGoodsTab() {
       )
 
       return enrichedData
-    }
+    },
+    enabled: !!currentBranch,
+    refetchOnMount: true, // Auto-refetch when switching branches
   })
 
   // Filter records by search term
