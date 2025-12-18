@@ -149,19 +149,17 @@ export async function createCompressedPDF(
   const html2canvas = (await import('html2canvas')).default
   
   try {
-    // Temporarily move element to visible area for rendering
-    const originalPosition = element.style.position
-    const originalLeft = element.style.left
-    const originalTop = element.style.top
+    // Temporarily make element visible for rendering
+    const originalOpacity = element.style.opacity
     const originalZIndex = element.style.zIndex
-    
-    element.style.position = 'absolute'
-    element.style.left = '0px'
-    element.style.top = '0px'
+    const originalPointerEvents = element.style.pointerEvents
+
+    element.style.opacity = '1'
     element.style.zIndex = '9999'
-    
+    element.style.pointerEvents = 'auto'
+
     // Wait a bit for rendering
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise(resolve => setTimeout(resolve, 200))
 
     // Create canvas from the element with optimized settings
     const canvas = await html2canvas(element, {
@@ -172,17 +170,16 @@ export async function createCompressedPDF(
       removeContainer: false,
       foreignObjectRendering: false,
       logging: false,
-      width: element.offsetWidth,
-      height: element.offsetHeight,
-      windowWidth: element.offsetWidth,
-      windowHeight: element.offsetHeight
+      width: element.offsetWidth || 794,
+      height: element.offsetHeight || 1122,
+      windowWidth: element.offsetWidth || 794,
+      windowHeight: element.offsetHeight || 1122
     })
 
-    // Restore original position
-    element.style.position = originalPosition
-    element.style.left = originalLeft
-    element.style.top = originalTop
+    // Restore original styles
+    element.style.opacity = originalOpacity
     element.style.zIndex = originalZIndex
+    element.style.pointerEvents = originalPointerEvents
 
     // Check if canvas is empty
     if (canvas.width === 0 || canvas.height === 0) {

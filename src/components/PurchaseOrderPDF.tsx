@@ -19,6 +19,7 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
   const printRef = React.useRef<HTMLDivElement>(null)
   const [poItems, setPoItems] = React.useState<PurchaseOrderItem[]>([])
   const [isLoadingItems, setIsLoadingItems] = React.useState(false)
+  const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false)
 
   // Fetch PO items from database
   React.useEffect(() => {
@@ -89,17 +90,38 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
   }, [purchaseOrder.id, purchaseOrder.materialId, purchaseOrder.materialName, purchaseOrder.unit, purchaseOrder.quantity, purchaseOrder.unitPrice])
 
   const handlePrintPDF = async () => {
-    if (!printRef.current) return
+    if (!printRef.current) {
+      console.error('Print reference not found')
+      alert('Error: Tidak dapat menemukan konten untuk dicetak')
+      return
+    }
+
+    if (isLoadingItems) {
+      alert('Mohon tunggu, data sedang dimuat...')
+      return
+    }
+
+    if (poItems.length === 0) {
+      alert('Error: Tidak ada item untuk dicetak')
+      return
+    }
+
+    setIsGeneratingPdf(true)
 
     try {
+      console.log('Starting PDF generation...')
       await createCompressedPDF(
         printRef.current,
         `PO-${purchaseOrder.id}.pdf`,
         [210, 297], // A4 format
         100 // Max 100KB
       )
+      console.log('PDF generated successfully!')
     } catch (error) {
       console.error('Error generating PDF:', error)
+      alert(`Gagal membuat PDF: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsGeneratingPdf(false)
     }
   }
 
@@ -110,14 +132,29 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
         size="sm"
         variant="outline"
         className="gap-2"
+        disabled={isLoadingItems || isGeneratingPdf}
       >
-        <FileDown className="h-4 w-4" />
-        Cetak PO
+        {isGeneratingPdf ? (
+          <>
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+            Membuat PDF...
+          </>
+        ) : isLoadingItems ? (
+          <>
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+            Memuat...
+          </>
+        ) : (
+          <>
+            <FileDown className="h-4 w-4" />
+            Cetak PO
+          </>
+        )}
       </Button>
 
       {/* Hidden printable content */}
-      <div className="fixed -left-[9999px] top-0">
-        <div ref={printRef} className="w-[794px] bg-white p-8">
+      <div className="fixed left-0 top-0 -z-50 opacity-0 pointer-events-none">
+        <div ref={printRef} className="w-[794px] bg-white p-8" style={{ minHeight: '1122px' }}>
           {/* Header */}
           <div className="flex justify-between items-start mb-8">
             <div>
