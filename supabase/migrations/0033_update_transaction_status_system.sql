@@ -2,20 +2,27 @@
 -- Migration: 0033_update_transaction_status_system.sql
 -- Date: 2025-01-19
 
--- Update transaction status enum to include new statuses
-ALTER TYPE transaction_status DROP CONSTRAINT IF EXISTS transaction_status_check;
+-- Drop old constraint if exists
+ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transaction_status_check;
 
 -- Create new status check constraint
-ALTER TABLE public.transactions 
-ADD CONSTRAINT transaction_status_check CHECK (
-  status IN (
-    'Pesanan Masuk',     -- Order baru dibuat
-    'Siap Antar',        -- Produksi selesai, siap diantar
-    'Diantar Sebagian',  -- Sebagian sudah diantar
-    'Selesai',           -- Semua sudah berhasil diantar
-    'Dibatalkan'         -- Order dibatalkan
-  )
-);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.constraint_column_usage
+    WHERE table_name = 'transactions' AND constraint_name = 'transaction_status_check'
+  ) THEN
+    ALTER TABLE public.transactions
+    ADD CONSTRAINT transaction_status_check CHECK (
+      status IN (
+        'Pesanan Masuk',     -- Order baru dibuat
+        'Siap Antar',        -- Produksi selesai, siap diantar
+        'Diantar Sebagian',  -- Sebagian sudah diantar
+        'Selesai',           -- Semua sudah berhasil diantar
+        'Dibatalkan'         -- Order dibatalkan
+      )
+    );
+  END IF;
+END $$;
 
 -- Create function to auto-update transaction status based on delivery progress
 CREATE OR REPLACE FUNCTION update_transaction_status_from_delivery()
@@ -40,12 +47,13 @@ BEGIN
   WHERE id = transaction_id;
   
   -- Count delivered items from all deliveries for this transaction
-  SELECT 
-    COALESCE(SUM(CASE WHEN d.status = 'delivered' THEN di.quantity_delivered ELSE 0 END), 0),
-    COUNT(CASE WHEN d.status = 'cancelled' THEN 1 END)
+  -- Note: deliveries table doesn't have status column, count all delivered items
+  SELECT
+    COALESCE(SUM(di.quantity_delivered), 0),
+    0  -- No cancelled tracking in current schema
   INTO delivered_items, cancelled_deliveries
   FROM public.deliveries d
-  LEFT JOIN public.delivery_items di ON d.id = di.delivery_id  
+  LEFT JOIN public.delivery_items di ON d.id = di.delivery_id
   WHERE d.transaction_id = transaction_id;
   
   -- Update transaction status based on delivery progress
@@ -78,13 +86,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Drop existing triggers if they exist
+DROP TRIGGER IF EXISTS trigger_update_transaction_status_from_delivery ON public.deliveries;
+DROP TRIGGER IF EXISTS trigger_update_transaction_status_from_delivery_items ON public.delivery_items;
+DROP TRIGGER IF EXISTS trigger_update_payment_status ON public.transactions;
+
 -- Create trigger for delivery status changes
 CREATE TRIGGER trigger_update_transaction_status_from_delivery
   AFTER INSERT OR UPDATE OR DELETE ON public.deliveries
   FOR EACH ROW
   EXECUTE FUNCTION update_transaction_status_from_delivery();
 
--- Create trigger for delivery item changes  
+-- Create trigger for delivery item changes
 CREATE TRIGGER trigger_update_transaction_status_from_delivery_items
   AFTER INSERT OR UPDATE OR DELETE ON public.delivery_items
   FOR EACH ROW
@@ -122,23 +135,22 @@ CREATE INDEX IF NOT EXISTS idx_transactions_customer_id ON public.transactions(c
 
 -- Create view for transaction summary with delivery info
 CREATE OR REPLACE VIEW transaction_summary AS
-SELECT 
+SELECT
   t.*,
   c.name as customer_name,
   c.phone as customer_phone,
   c.address as customer_address,
-  -- Delivery summary
+  -- Delivery summary (deliveries table doesn't have status column)
   COUNT(d.id) as total_deliveries,
-  COUNT(CASE WHEN d.status = 'pending' THEN 1 END) as pending_deliveries,
-  COUNT(CASE WHEN d.status = 'in_transit' THEN 1 END) as in_transit_deliveries,
-  COUNT(CASE WHEN d.status = 'delivered' THEN 1 END) as completed_deliveries,
-  COUNT(CASE WHEN d.status = 'cancelled' THEN 1 END) as cancelled_deliveries,
+  -- Delivered items count
+  COALESCE(SUM(di.quantity_delivered), 0) as total_delivered_items,
   -- Payment calculation
   ROUND((t.paid_amount * 100.0 / NULLIF(t.total, 0)), 2) as payment_percentage,
   (t.total - t.paid_amount) as remaining_amount
 FROM public.transactions t
 LEFT JOIN public.customers c ON t.customer_id = c.id
 LEFT JOIN public.deliveries d ON t.id = d.transaction_id
+LEFT JOIN public.delivery_items di ON d.id = di.delivery_id
 GROUP BY t.id, c.name, c.phone, c.address;
 
 -- Grant access to the view

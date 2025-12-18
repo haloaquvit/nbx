@@ -39,6 +39,7 @@ import {
   Wrench,
   Sparkles,
   HandHeart,
+  Building2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useEffect } from "react";
@@ -122,8 +123,9 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
   {
     title: "Pengaturan",
     items: [
-      { href: "/settings", label: "Info Perusahaan", icon: Settings, permission: PERMISSIONS.SETTINGS },
+      { href: "/settings", label: "Pengaturan", icon: Settings, permission: PERMISSIONS.SETTINGS },
       { href: "/roles", label: "Manajemen Roles", icon: Shield, permission: PERMISSIONS.ROLES },
+      { href: "/branches", label: "Manajemen Cabang", icon: Building2, permission: PERMISSIONS.SETTINGS },
     ].filter(item => hasPermission(item.permission)),
   },
 ].filter(section => section.items.length > 0);

@@ -17,6 +17,8 @@ export interface Product {
   description?: string;
   specifications: ProductSpecification[];
   materials: ProductMaterial[]; // Ini adalah BOM (Bill of Materials)
+  branchId?: string; // Branch ID untuk multi-branch support
+  isShared?: boolean; // True jika produk dapat digunakan oleh semua cabang
   createdAt: Date;
   updatedAt: Date;
 }

@@ -42,7 +42,7 @@ CREATE OR REPLACE FUNCTION public.calculate_payroll_with_advances(
 )
 RETURNS JSONB AS $$
 DECLARE
-  salary_config public.employee_salaries;
+  salary_config RECORD;
   period_start DATE;
   period_end DATE;
   base_salary DECIMAL(15,2) := 0;
@@ -209,7 +209,8 @@ CREATE TRIGGER payroll_advance_repayment_trigger
   EXECUTE FUNCTION public.trigger_process_advance_repayment();
 
 -- Step 5: Add advance-related columns to payroll views
-CREATE OR REPLACE VIEW public.payroll_summary AS
+DROP VIEW IF EXISTS public.payroll_summary CASCADE;
+CREATE VIEW public.payroll_summary AS
 SELECT
   pr.id as payroll_id,
   pr.employee_id,
@@ -243,6 +244,9 @@ JOIN public.profiles p ON p.id = pr.employee_id
 LEFT JOIN public.accounts a ON a.id = pr.payment_account_id
 WHERE p.status != 'Nonaktif'
 ORDER BY pr.period_year DESC, pr.period_month DESC, p.full_name;
+
+-- Grant permissions on the view
+GRANT SELECT ON public.payroll_summary TO authenticated;
 
 -- Step 6: Grant permissions
 GRANT EXECUTE ON FUNCTION public.get_outstanding_advances(UUID, DATE) TO authenticated;

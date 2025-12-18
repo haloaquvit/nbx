@@ -12,7 +12,7 @@ COMMENT ON COLUMN public.products.min_stock IS 'Stock minimum untuk alert';
 -- Create stock_movements table to track all stock changes
 CREATE TABLE IF NOT EXISTS public.stock_movements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id TEXT NOT NULL,
+  product_id UUID NOT NULL,
   product_name TEXT NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('IN', 'OUT', 'ADJUSTMENT')),
   reason TEXT NOT NULL CHECK (reason IN ('PURCHASE', 'PRODUCTION', 'SALES', 'ADJUSTMENT', 'RETURN')),
@@ -32,9 +32,9 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
     REFERENCES public.products(id) 
     ON DELETE CASCADE,
     
-  CONSTRAINT fk_stock_movement_user 
-    FOREIGN KEY (user_id) 
-    REFERENCES public.users(id) 
+  CONSTRAINT fk_stock_movement_user
+    FOREIGN KEY (user_id)
+    REFERENCES public.profiles(id)
     ON DELETE CASCADE,
     
   -- Ensure positive quantity
@@ -45,14 +45,26 @@ CREATE TABLE IF NOT EXISTS public.stock_movements (
 ALTER TABLE public.stock_movements ENABLE ROW LEVEL SECURITY;
 
 -- Create policy for authenticated users to view stock movements
-CREATE POLICY IF NOT EXISTS "Authenticated users can view stock movements" 
-ON public.stock_movements FOR SELECT 
-USING (auth.role() = 'authenticated');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'stock_movements' AND policyname = 'Authenticated users can view stock movements'
+  ) THEN
+    CREATE POLICY "Authenticated users can view stock movements"
+    ON public.stock_movements FOR SELECT
+    USING (auth.role() = 'authenticated');
+  END IF;
+END $$;
 
 -- Create policy for authenticated users to insert stock movements
-CREATE POLICY IF NOT EXISTS "Authenticated users can create stock movements" 
-ON public.stock_movements FOR INSERT 
-USING (auth.role() = 'authenticated');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE tablename = 'stock_movements' AND policyname = 'Authenticated users can create stock movements'
+  ) THEN
+    CREATE POLICY "Authenticated users can create stock movements"
+    ON public.stock_movements FOR INSERT
+    WITH CHECK (auth.role() = 'authenticated');
+  END IF;
+END $$;
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON public.stock_movements(product_id);

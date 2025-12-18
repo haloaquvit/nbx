@@ -16,6 +16,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { ThemeToggle } from "../ThemeToggle";
 import { NotificationBell } from "../NotificationBell";
+import { BranchSelector } from "../BranchSelector";
 import { useAuth } from "@/hooks/useAuth";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
@@ -184,7 +185,10 @@ export function Header() {
               {currentTime.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
             </span>
           </div>
-          
+
+          {/* Branch Selector */}
+          <BranchSelector />
+
           <div className="scale-110">
             <ThemeToggle />
           </div>

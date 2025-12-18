@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS public.payroll_records (
   -- Status and Payment
   status VARCHAR(20) DEFAULT 'draft' NOT NULL,
   payment_date DATE NULL,
-  payment_account_id UUID REFERENCES public.accounts(id),
+  payment_account_id TEXT REFERENCES public.accounts(id),
 
   -- Integration with cash_history
   cash_history_id UUID NULL,
@@ -189,9 +189,9 @@ CREATE POLICY "Admin and owner can manage payroll records" ON public.payroll_rec
 
 -- Step 6: Create helper functions
 CREATE OR REPLACE FUNCTION public.get_active_salary_config(emp_id UUID, check_date DATE DEFAULT CURRENT_DATE)
-RETURNS public.employee_salaries AS $$
+RETURNS RECORD AS $$
 DECLARE
-  result public.employee_salaries;
+  result RECORD;
 BEGIN
   SELECT * INTO result
   FROM public.employee_salaries
@@ -213,28 +213,29 @@ CREATE OR REPLACE FUNCTION public.calculate_commission_for_period(
 )
 RETURNS DECIMAL(15,2) AS $$
 DECLARE
-  salary_config public.employee_salaries;
+  salary_config RECORD;
   total_commission DECIMAL(15,2) := 0;
   commission_base DECIMAL(15,2) := 0;
 BEGIN
   -- Get active salary configuration
-  SELECT * INTO salary_config FROM public.get_active_salary_config(emp_id, start_date);
+  SELECT * INTO salary_config
+  FROM public.employee_salaries
+  WHERE employee_id = emp_id
+    AND is_active = true
+    AND effective_from <= start_date
+    AND (effective_until IS NULL OR effective_until >= start_date)
+  ORDER BY effective_from DESC
+  LIMIT 1;
 
   IF salary_config IS NULL OR salary_config.commission_rate = 0 THEN
     RETURN 0;
   END IF;
 
   -- Calculate commission base from various sources
-  -- 1. From deliveries (for drivers/helpers)
-  SELECT COALESCE(SUM(d.total_amount), 0) INTO commission_base
-  FROM deliveries d
-  WHERE (d.driver_id = emp_id OR d.helper_id = emp_id)
-    AND d.delivery_date >= start_date
-    AND d.delivery_date <= end_date
-    AND d.status = 'completed';
-
-  -- 2. From sales transactions (for sales staff) - can be added later
-  -- Add more commission sources here as needed
+  -- Note: deliveries table doesn't have driver_id, helper_id, total_amount, or status columns
+  -- Commission calculation should be done manually or through other means
+  -- This is a placeholder for future implementation
+  commission_base := 0;
 
   -- Calculate commission based on type
   IF salary_config.commission_type = 'percentage' THEN

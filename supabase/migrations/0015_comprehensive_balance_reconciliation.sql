@@ -78,6 +78,13 @@ USING (
 -- 3. CREATE BALANCE RECONCILIATION FUNCTION
 -- ========================================
 
+-- Drop existing functions first to avoid return type conflicts
+DROP FUNCTION IF EXISTS get_account_balance_analysis(TEXT);
+DROP FUNCTION IF EXISTS get_all_accounts_balance_analysis();
+DROP FUNCTION IF EXISTS reconcile_account_balance(TEXT, NUMERIC, TEXT, UUID, TEXT);
+DROP FUNCTION IF EXISTS set_account_initial_balance(TEXT, NUMERIC, TEXT, UUID, TEXT);
+DROP FUNCTION IF EXISTS test_balance_reconciliation_functions();
+
 CREATE OR REPLACE FUNCTION reconcile_account_balance(
   p_account_id TEXT,
   p_new_balance NUMERIC,
@@ -391,12 +398,13 @@ CREATE INDEX IF NOT EXISTS idx_balance_adjustments_status ON balance_adjustments
 ALTER TABLE balance_adjustments ENABLE ROW LEVEL SECURITY;
 
 -- Create policy for owners only
-CREATE POLICY "Only owners can manage balance adjustments" 
-ON balance_adjustments FOR ALL 
+DROP POLICY IF EXISTS "Only owners can manage balance adjustments" ON balance_adjustments;
+CREATE POLICY "Only owners can manage balance adjustments"
+ON balance_adjustments FOR ALL
 USING (
   EXISTS (
-    SELECT 1 FROM profiles 
-    WHERE profiles.id = auth.uid() 
+    SELECT 1 FROM profiles
+    WHERE profiles.id = auth.uid()
     AND profiles.role = 'owner'
   )
 );

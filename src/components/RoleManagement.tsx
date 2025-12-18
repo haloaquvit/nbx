@@ -6,12 +6,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table'
 import { Badge } from './ui/badge'
-import { PlusCircle, Trash2, Edit, Shield, Users } from 'lucide-react'
+import { PlusCircle, Trash2, Edit, Users } from 'lucide-react'
 import { useToast } from './ui/use-toast'
 import { useRoles } from '@/hooks/useRoles'
-import { CreateRoleData, DEFAULT_PERMISSIONS, PermissionKey } from '@/types/role'
+import { CreateRoleData } from '@/types/role'
 import { Skeleton } from './ui/skeleton'
-import { Switch } from './ui/switch'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,60 +30,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Checkbox } from './ui/checkbox'
-
-const PERMISSION_CATEGORIES = {
-  'User Management': ['manage_users', 'create_users', 'edit_users', 'delete_users', 'view_users'],
-  'Product Management': ['manage_products', 'create_products', 'edit_products', 'delete_products', 'view_products'],
-  'Transaction Management': ['manage_transactions', 'create_transactions', 'edit_transactions', 'delete_transactions', 'view_transactions'],
-  'Customer Management': ['manage_customers', 'create_customers', 'edit_customers', 'delete_customers', 'view_customers'],
-  'Material Management': ['manage_materials', 'create_materials', 'edit_materials', 'delete_materials', 'view_materials'],
-  'Financial Management': ['manage_finances', 'view_reports', 'manage_accounts'],
-  'Quotation Management': ['create_quotations', 'edit_quotations', 'delete_quotations', 'view_quotations'],
-  'Production': ['update_production', 'view_production'],
-  'System Settings': ['manage_settings', 'manage_roles'],
-  'Special': ['all']
-};
-
-const PERMISSION_LABELS: Record<PermissionKey, string> = {
-  manage_users: 'Kelola Karyawan',
-  create_users: 'Tambah Karyawan',
-  edit_users: 'Edit Karyawan',
-  delete_users: 'Hapus Karyawan',
-  view_users: 'Lihat Karyawan',
-  manage_products: 'Kelola Produk',
-  create_products: 'Tambah Produk',
-  edit_products: 'Edit Produk',
-  delete_products: 'Hapus Produk',
-  view_products: 'Lihat Produk',
-  manage_transactions: 'Kelola Transaksi',
-  create_transactions: 'Buat Transaksi',
-  edit_transactions: 'Edit Transaksi',
-  delete_transactions: 'Hapus Transaksi',
-  view_transactions: 'Lihat Transaksi',
-  manage_customers: 'Kelola Customer',
-  create_customers: 'Tambah Customer',
-  edit_customers: 'Edit Customer',
-  delete_customers: 'Hapus Customer',
-  view_customers: 'Lihat Customer',
-  manage_materials: 'Kelola Bahan',
-  create_materials: 'Tambah Bahan',
-  edit_materials: 'Edit Bahan',
-  delete_materials: 'Hapus Bahan',
-  view_materials: 'Lihat Bahan',
-  manage_finances: 'Kelola Keuangan',
-  view_reports: 'Lihat Laporan',
-  manage_accounts: 'Kelola Akun',
-  create_quotations: 'Buat Quotation',
-  edit_quotations: 'Edit Quotation',
-  delete_quotations: 'Hapus Quotation',
-  view_quotations: 'Lihat Quotation',
-  update_production: 'Update Produksi',
-  view_production: 'Lihat Produksi',
-  manage_settings: 'Kelola Pengaturan',
-  manage_roles: 'Kelola Role',
-  all: 'Akses Penuh (Super Admin)'
-};
 
 export const RoleManagement = () => {
   const { toast } = useToast()
@@ -170,40 +115,6 @@ export const RoleManagement = () => {
     setIsEditDialogOpen(true)
   }
 
-  const handlePermissionChange = (permission: PermissionKey, checked: boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      permissions: {
-        ...prev.permissions,
-        [permission]: checked
-      }
-    }))
-  }
-
-  const PermissionSection = ({ permissions }: { permissions: Record<string, boolean> }) => (
-    <div className="space-y-6">
-      {Object.entries(PERMISSION_CATEGORIES).map(([category, perms]) => (
-        <div key={category} className="space-y-3">
-          <h4 className="font-medium text-sm text-muted-foreground">{category}</h4>
-          <div className="grid grid-cols-2 gap-3">
-            {perms.map((perm) => (
-              <div key={perm} className="flex items-center space-x-2">
-                <Checkbox
-                  id={perm}
-                  checked={permissions[perm] || false}
-                  onCheckedChange={(checked) => handlePermissionChange(perm as PermissionKey, checked as boolean)}
-                />
-                <Label htmlFor={perm} className="text-sm">
-                  {PERMISSION_LABELS[perm as PermissionKey]}
-                </Label>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-
   return (
     <div className="space-y-6">
       <Card>
@@ -233,6 +144,12 @@ export const RoleManagement = () => {
                   </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleCreateRole} className="space-y-4">
+                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      <strong>Note:</strong> Setelah membuat role, Anda dapat mengatur permission-nya di tab <strong>"Permission"</strong> di atas.
+                    </p>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="name">Nama Role (ID)</Label>
@@ -263,10 +180,6 @@ export const RoleManagement = () => {
                       onChange={(e) => setFormData({...formData, description: e.target.value})}
                       placeholder="Deskripsi role ini..."
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Permission</Label>
-                    <PermissionSection permissions={formData.permissions || {}} />
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
@@ -337,10 +250,16 @@ export const RoleManagement = () => {
                           <DialogHeader>
                             <DialogTitle>Edit Role: {role.displayName}</DialogTitle>
                             <DialogDescription>
-                              Ubah permission dan setting untuk role ini. System role tidak dapat dihapus tapi permission bisa diubah.
+                              Ubah nama dan deskripsi role ini. Untuk mengatur permission, gunakan tab <strong>"Permission"</strong> di atas.
                             </DialogDescription>
                           </DialogHeader>
                           <form onSubmit={handleEditRole} className="space-y-4">
+                            <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                              <p className="text-sm text-blue-800 dark:text-blue-200">
+                                <strong>Note:</strong> Permission untuk role ini dapat diatur di tab <strong>"Permission"</strong> di atas untuk kontrol yang lebih detail.
+                              </p>
+                            </div>
+
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <Label htmlFor="editName">Nama Role (ID)</Label>
@@ -368,10 +287,6 @@ export const RoleManagement = () => {
                                 value={formData.description}
                                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                               />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Permission</Label>
-                              <PermissionSection permissions={formData.permissions || {}} />
                             </div>
                             <div className="flex justify-end gap-2">
                               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>

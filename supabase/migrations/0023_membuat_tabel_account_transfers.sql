@@ -20,9 +20,9 @@ CREATE TABLE public.account_transfers (
     REFERENCES public.accounts(id) 
     ON DELETE CASCADE,
     
-  CONSTRAINT fk_user 
-    FOREIGN KEY (user_id) 
-    REFERENCES public.users(id) 
+  CONSTRAINT fk_user
+    FOREIGN KEY (user_id)
+    REFERENCES public.profiles(id)
     ON DELETE CASCADE,
     
   -- Ensure positive transfer amount
@@ -41,9 +41,9 @@ ON public.account_transfers FOR SELECT
 USING (auth.role() = 'authenticated');
 
 -- Create policy for authenticated users to insert transfers
-CREATE POLICY "Authenticated users can create account transfers" 
-ON public.account_transfers FOR INSERT 
-USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can create account transfers"
+ON public.account_transfers FOR INSERT
+WITH CHECK (auth.role() = 'authenticated');
 
 -- Create indexes for better performance
 CREATE INDEX idx_account_transfers_from_account ON public.account_transfers(from_account_id);

@@ -16,6 +16,7 @@ import { AuditLogViewer } from '@/components/AuditLogViewer'
 import { SystemHealthCheck } from '@/components/SystemHealthCheck'
 import { isOwner } from '@/utils/roleUtils'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import BranchManagementPage from './BranchManagementPage'
 
 export default function SettingsPage() {
   const { settings, isLoading, updateSettings } = useCompanySettings();
@@ -101,8 +102,9 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="company" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="company">Company</TabsTrigger>
+          <TabsTrigger value="branches">Branches</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="audit">Audit Logs</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
@@ -211,7 +213,11 @@ export default function SettingsPage() {
             </Card>
           )}
         </TabsContent>
-        
+
+        <TabsContent value="branches" className="space-y-6">
+          <BranchManagementPage />
+        </TabsContent>
+
         <TabsContent value="integrations" className="space-y-6">
           <GoogleDriveServiceAccountSettings />
         </TabsContent>

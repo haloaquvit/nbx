@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { BranchProvider } from "@/contexts/BranchContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Layout } from "@/components/layout/Layout";
 import MobileLayout from "@/components/layout/MobileLayout";
@@ -56,6 +57,7 @@ const AccountsPayablePage = lazy(() => import("@/pages/AccountsPayablePage"));
 const AssetsPage = lazy(() => import("@/pages/AssetsPage"));
 const MaintenancePage = lazy(() => import("@/pages/MaintenancePage"));
 const ZakatPage = lazy(() => import("@/pages/ZakatPage"));
+const BranchManagementPage = lazy(() => import("@/pages/BranchManagementPage"));
 
 function App() {
   // Handle chunk loading errors
@@ -91,11 +93,12 @@ function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" storageKey="vite-ui-theme">
       <AuthProvider>
-        <BrowserRouter future={{ 
-          v7_startTransition: true, 
-          v7_relativeSplatPath: true 
-        }}>
-          <Suspense fallback={<PageLoader />}>
+        <BranchProvider>
+          <BrowserRouter future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               
@@ -156,12 +159,14 @@ function App() {
                   <Route path="/assets" element={<AssetsPage />} />
                   <Route path="/maintenance" element={<MaintenancePage />} />
                   <Route path="/zakat" element={<ZakatPage />} />
+                  <Route path="/branches" element={<BranchManagementPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}
             </Routes>
           </Suspense>
         </BrowserRouter>
+        </BranchProvider>
       </AuthProvider>
     </ThemeProvider>
   );

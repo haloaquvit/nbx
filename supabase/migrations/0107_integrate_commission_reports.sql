@@ -7,68 +7,7 @@
 
 -- Step 1: Create view to combine delivery commissions and payroll commissions
 CREATE OR REPLACE VIEW public.unified_commission_report AS
-WITH delivery_commissions AS (
-  -- Get commissions from deliveries (existing system)
-  SELECT
-    d.driver_id as employee_id,
-    p1.full_name as employee_name,
-    p1.role as employee_role,
-    'delivery' as commission_source,
-    d.delivery_date as commission_date,
-    EXTRACT(YEAR FROM d.delivery_date) as commission_year,
-    EXTRACT(MONTH FROM d.delivery_date) as commission_month,
-    d.total_amount as base_amount,
-    COALESCE(
-      CASE
-        WHEN es.commission_type = 'percentage' THEN d.total_amount * (es.commission_rate / 100)
-        WHEN es.commission_type = 'fixed_amount' THEN es.commission_rate
-        ELSE 0
-      END, 0
-    ) as commission_amount,
-    es.commission_rate,
-    es.commission_type,
-    d.id as reference_id,
-    'Delivery #' || d.id as reference_name,
-    d.created_at
-  FROM deliveries d
-  JOIN profiles p1 ON p1.id = d.driver_id
-  LEFT JOIN employee_salaries es ON es.employee_id = d.driver_id
-    AND es.is_active = true
-    AND d.delivery_date BETWEEN es.effective_from AND COALESCE(es.effective_until, '9999-12-31')
-  WHERE d.status = 'completed'
-
-  UNION ALL
-
-  -- Helper commissions
-  SELECT
-    d.helper_id as employee_id,
-    p2.full_name as employee_name,
-    p2.role as employee_role,
-    'delivery' as commission_source,
-    d.delivery_date as commission_date,
-    EXTRACT(YEAR FROM d.delivery_date) as commission_year,
-    EXTRACT(MONTH FROM d.delivery_date) as commission_month,
-    d.total_amount as base_amount,
-    COALESCE(
-      CASE
-        WHEN es.commission_type = 'percentage' THEN d.total_amount * (es.commission_rate / 100)
-        WHEN es.commission_type = 'fixed_amount' THEN es.commission_rate
-        ELSE 0
-      END, 0
-    ) as commission_amount,
-    es.commission_rate,
-    es.commission_type,
-    d.id as reference_id,
-    'Delivery #' || d.id as reference_name,
-    d.created_at
-  FROM deliveries d
-  JOIN profiles p2 ON p2.id = d.helper_id
-  LEFT JOIN employee_salaries es ON es.employee_id = d.helper_id
-    AND es.is_active = true
-    AND d.delivery_date BETWEEN es.effective_from AND COALESCE(es.effective_until, '9999-12-31')
-  WHERE d.status = 'completed' AND d.helper_id IS NOT NULL
-),
-payroll_commissions AS (
+WITH payroll_commissions AS (
   -- Get commissions from payroll records (new system)
   SELECT
     pr.employee_id,
@@ -85,9 +24,9 @@ payroll_commissions AS (
     pr.id as reference_id,
     'Payroll ' || TO_CHAR(DATE(pr.period_year || '-' || pr.period_month || '-01'), 'Month YYYY') as reference_name,
     pr.created_at
-  FROM payroll_records pr
-  JOIN profiles p ON p.id = pr.employee_id
-  LEFT JOIN employee_salaries es ON es.id = pr.salary_config_id
+  FROM public.payroll_records pr
+  JOIN public.profiles p ON p.id = pr.employee_id
+  LEFT JOIN public.employee_salaries es ON es.id = pr.salary_config_id
   WHERE pr.commission_amount > 0
 )
 SELECT
@@ -112,35 +51,8 @@ SELECT
     ELSE 'Komisi Lain'
   END as commission_source_display,
   TO_CHAR(commission_date, 'Month YYYY') as period_display
-FROM delivery_commissions
-WHERE commission_amount > 0
-
-UNION ALL
-
-SELECT
-  employee_id,
-  employee_name,
-  employee_role,
-  commission_source,
-  commission_date,
-  commission_year,
-  commission_month,
-  base_amount,
-  commission_amount,
-  commission_rate,
-  commission_type,
-  reference_id,
-  reference_name,
-  created_at,
-  CASE
-    WHEN commission_source = 'delivery' THEN 'Komisi Pengantaran'
-    WHEN commission_source = 'payroll' THEN 'Komisi Gaji'
-    ELSE 'Komisi Lain'
-  END as commission_source_display,
-  TO_CHAR(commission_date, 'Month YYYY') as period_display
 FROM payroll_commissions
 WHERE commission_amount > 0
-
 ORDER BY commission_date DESC, employee_name ASC;
 
 -- Step 2: Create function to get commission summary by employee and period
@@ -195,17 +107,17 @@ BEGIN
       pr.*,
       p.full_name as employee_name,
       p.role as employee_role
-    FROM payroll_records pr
-    JOIN profiles p ON p.id = pr.employee_id
+    FROM public.payroll_records pr
+    JOIN public.profiles p ON p.id = pr.employee_id
     WHERE pr.commission_amount > 0
       AND pr.status = 'paid'
       AND NOT EXISTS (
-        SELECT 1 FROM commission_entries ce
+        SELECT 1 FROM public.commission_entries ce
         WHERE ce.source_id = pr.id AND ce.source_type = 'payroll'
       )
   LOOP
     -- Insert commission entry for the payroll commission
-    INSERT INTO commission_entries (
+    INSERT INTO public.commission_entries (
       id,
       user_id,
       user_name,
@@ -246,7 +158,7 @@ BEGIN
   IF NEW.status = 'paid' AND OLD.status != 'paid' AND NEW.commission_amount > 0 THEN
     -- Check if commission entry doesn't already exist
     IF NOT EXISTS (
-      SELECT 1 FROM commission_entries ce
+      SELECT 1 FROM public.commission_entries ce
       WHERE ce.source_id = NEW.id AND ce.source_type = 'payroll'
     ) THEN
       -- Get employee info
@@ -255,10 +167,10 @@ BEGIN
         emp_role TEXT;
       BEGIN
         SELECT p.full_name, p.role INTO emp_name, emp_role
-        FROM profiles p WHERE p.id = NEW.employee_id;
+        FROM public.profiles p WHERE p.id = NEW.employee_id;
 
         -- Insert commission entry
-        INSERT INTO commission_entries (
+        INSERT INTO public.commission_entries (
           id,
           user_id,
           user_name,

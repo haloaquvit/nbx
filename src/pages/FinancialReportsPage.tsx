@@ -7,9 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { 
-  TrendingUp, 
-  DollarSign, 
+import {
+  TrendingUp,
+  DollarSign,
   BarChart3,
   FileText,
   Calendar,
@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   Building,
   CreditCard,
-  Banknote
+  Banknote,
+  Building2
 } from 'lucide-react';
 import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { id } from 'date-fns/locale/id';
@@ -33,14 +34,25 @@ import {
   formatCurrency
 } from '@/utils/financialStatementsUtils';
 import { useToast } from '@/hooks/use-toast';
+import { downloadCashFlowPDF } from '@/components/CashFlowPDF';
+import { downloadBalanceSheetPDF } from '@/components/BalanceSheetPDF';
+import { downloadIncomeStatementPDF } from '@/components/IncomeStatementPDF';
+import { useBranch } from '@/contexts/BranchContext';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const FinancialReportsPage = () => {
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetData | null>(null);
   const [incomeStatement, setIncomeStatement] = useState<IncomeStatementData | null>(null);
   const [cashFlowStatement, setCashFlowStatement] = useState<CashFlowStatementData | null>(null);
-  
+
   const [loading, setLoading] = useState({ balanceSheet: false, incomeStatement: false, cashFlow: false });
-  
+
   // Default to current month
   const [periodFrom, setPeriodFrom] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [periodTo, setPeriodTo] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -48,10 +60,22 @@ const FinancialReportsPage = () => {
 
   const { toast } = useToast();
 
+  // Branch context
+  const { currentBranch, availableBranches, canAccessAllBranches } = useBranch();
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(currentBranch?.id || '');
+
   const handleGenerateBalanceSheet = async () => {
+    if (!selectedBranchId) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal',
+        description: 'Silakan pilih cabang terlebih dahulu'
+      });
+      return;
+    }
     setLoading(prev => ({ ...prev, balanceSheet: true }));
     try {
-      const data = await generateBalanceSheet(new Date(asOfDate));
+      const data = await generateBalanceSheet(new Date(asOfDate), selectedBranchId);
       setBalanceSheet(data);
       toast({
         title: 'Sukses',
@@ -69,9 +93,17 @@ const FinancialReportsPage = () => {
   };
 
   const handleGenerateIncomeStatement = async () => {
+    if (!selectedBranchId) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal',
+        description: 'Silakan pilih cabang terlebih dahulu'
+      });
+      return;
+    }
     setLoading(prev => ({ ...prev, incomeStatement: true }));
     try {
-      const data = await generateIncomeStatement(new Date(periodFrom), new Date(periodTo));
+      const data = await generateIncomeStatement(new Date(periodFrom), new Date(periodTo), selectedBranchId);
       setIncomeStatement(data);
       toast({
         title: 'Sukses',
@@ -89,9 +121,17 @@ const FinancialReportsPage = () => {
   };
 
   const handleGenerateCashFlow = async () => {
+    if (!selectedBranchId) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal',
+        description: 'Silakan pilih cabang terlebih dahulu'
+      });
+      return;
+    }
     setLoading(prev => ({ ...prev, cashFlow: true }));
     try {
-      const data = await generateCashFlowStatement(new Date(periodFrom), new Date(periodTo));
+      const data = await generateCashFlowStatement(new Date(periodFrom), new Date(periodTo), selectedBranchId);
       setCashFlowStatement(data);
       toast({
         title: 'Sukses',
@@ -133,10 +173,32 @@ const FinancialReportsPage = () => {
         <CardHeader>
           <CardTitle className="text-lg">Pengaturan Periode</CardTitle>
           <CardDescription>
-            Pilih periode untuk Laporan Laba Rugi dan Arus Kas
+            Pilih cabang dan periode untuk laporan keuangan
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Branch Selector */}
+          {canAccessAllBranches && availableBranches.length > 1 && (
+            <div className="space-y-2">
+              <Label htmlFor="branchSelect" className="flex items-center gap-2">
+                <Building2 className="w-4 h-4" />
+                Pilih Cabang
+              </Label>
+              <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+                <SelectTrigger id="branchSelect">
+                  <SelectValue placeholder="Pilih cabang..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBranches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="periodFrom">Dari Tanggal</Label>
@@ -272,7 +334,11 @@ const FinancialReportsPage = () => {
                       Tidak Seimbang
                     </Badge>
                   )}
-                  <Button variant="outline" size="sm">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadBalanceSheetPDF(balanceSheet, new Date(asOfDate), currentBranch?.name || 'PT AQUVIT MANUFACTURE')}
+                  >
                     <Download className="h-4 w-4 mr-2" />
                     Export PDF
                   </Button>
@@ -438,7 +504,11 @@ const FinancialReportsPage = () => {
                     Periode {format(incomeStatement.periodFrom, 'd MMM', { locale: id })} - {format(incomeStatement.periodTo, 'd MMM yyyy', { locale: id })}
                   </CardDescription>
                 </div>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadIncomeStatementPDF(incomeStatement, currentBranch?.name || 'PT AQUVIT MANUFACTURE')}
+                >
                   <Download className="h-4 w-4 mr-2" />
                   Export PDF
                 </Button>
@@ -567,7 +637,11 @@ const FinancialReportsPage = () => {
                   </CardDescription>
                   <p className="text-sm text-muted-foreground mt-1">(Metode Langsung - Disajikan dalam Rupiah)</p>
                 </div>
-                <Button variant="outline" size="sm">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadCashFlowPDF(cashFlowStatement, currentBranch?.name || 'PT AQUVIT MANUFACTURE')}
+                >
                   <Download className="h-4 w-4 mr-2" />
                   Export PDF
                 </Button>

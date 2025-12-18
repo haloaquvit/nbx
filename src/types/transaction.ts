@@ -45,6 +45,7 @@ export interface Transaction {
   paymentAccountId?: string | null;
   retasiId?: string | null; // ID retasi terkait (untuk transaksi driver)
   retasiNumber?: string | null; // Nomor retasi (untuk display)
+  branchId?: string; // Branch ID untuk multi-branch support
   orderDate: Date;
   finishDate?: Date | null;
   items: TransactionItem[];

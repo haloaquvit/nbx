@@ -10,5 +10,6 @@ export interface Customer {
   store_photo_drive_id?: string;
   jumlah_galon_titip?: number; // Jumlah galon yang dititip di pelanggan
   orderCount: number; // Menambahkan jumlah orderan
+  branchId?: string; // Branch ID untuk multi-branch support
   createdAt: Date;
 }

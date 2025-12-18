@@ -1,8 +1,7 @@
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@radix-ui/react-tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useEffect, useState } from 'react';
 import { RolePermissionManagement } from './RolePermissionManagement';
 import { RoleManagement } from './RoleManagement';
-import { UserPermissionTab } from './UserPermissionTab';
 import { getRolePermissions, updateRolePermissions, getRLSStatus, enableRLS, disableRLS, getRLSPolicies } from '@/services/rolePermissionService';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -116,16 +115,11 @@ const RolesTab = () => {
         <Tabs defaultValue="roles">
           <TabsList>
             <TabsTrigger value="roles">Kelola Role</TabsTrigger>
-            <TabsTrigger value="user-permissions">User Permissions</TabsTrigger>
             <TabsTrigger value="permission">Permission</TabsTrigger>
             <TabsTrigger value="rls">RLS Security</TabsTrigger>
-            <TabsTrigger value="info">Info Role</TabsTrigger>
           </TabsList>
           <TabsContent value="roles">
             <RoleManagement />
-          </TabsContent>
-          <TabsContent value="user-permissions">
-            <UserPermissionTab />
           </TabsContent>
           <TabsContent value="permission">
             {loading ? (
@@ -139,7 +133,7 @@ const RolesTab = () => {
               />
             )}
           </TabsContent>
-          
+
           <TabsContent value="rls">
             {user?.role !== 'owner' ? (
               <Card>
@@ -275,11 +269,6 @@ const RolesTab = () => {
                 )}
               </div>
             )}
-          </TabsContent>
-          
-          <TabsContent value="info">
-            {/* Tampilkan detail role dari database atau info statis */}
-            <div className="p-4 text-muted-foreground">Pilih role untuk melihat detail dan deskripsi.</div>
           </TabsContent>
         </Tabs>
       </CardContent>

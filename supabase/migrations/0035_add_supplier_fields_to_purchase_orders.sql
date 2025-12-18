@@ -6,10 +6,10 @@ ADD COLUMN IF NOT EXISTS supplier_contact TEXT,
 ADD COLUMN IF NOT EXISTS expected_delivery_date TIMESTAMPTZ;
 
 -- Update existing records to have total_cost if missing (calculate from quantity * estimated unit price from materials)
-UPDATE purchase_orders 
+UPDATE purchase_orders
 SET total_cost = COALESCE(total_cost, (
-  SELECT COALESCE(po.quantity * m.price_per_unit, 0)
-  FROM materials m 
+  SELECT COALESCE(purchase_orders.quantity * m.price_per_unit, 0)
+  FROM materials m
   WHERE m.id = purchase_orders.material_id
 ))
 WHERE total_cost IS NULL;
