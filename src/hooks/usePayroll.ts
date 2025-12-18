@@ -325,6 +325,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
           deduction_amount: data.deductionAmount || 0,
           payment_account_id: data.paymentAccountId,
           notes: data.notes,
+          branch_id: currentBranch?.id || null,
         })
         .select()
         .single();
@@ -370,7 +371,9 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
       return result;
     },
     onSuccess: () => {
+      // Invalidate all payroll-related queries
       queryClient.invalidateQueries({ queryKey: ['payrollRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['payrollSummary'] });
       toast({
         title: 'Success',
         description: 'Payroll record updated successfully',
@@ -433,6 +436,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
         reference_name: `Payroll ${payrollRecord.employee_name}`,
         user_id: user.id,
         user_name: user.user_metadata?.full_name || user.email || 'Admin',
+        branch_id: currentBranch?.id || null,
       };
 
       // Debug logging
@@ -565,11 +569,102 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
       return { payrollRecord, cashHistoryData };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payrollRecords'] });
+    onSuccess: async () => {
+      // Invalidate all payroll-related queries (like piutang system)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['payrollRecords'] }),
+        queryClient.invalidateQueries({ queryKey: ['payrollSummary'] }),
+        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+        queryClient.invalidateQueries({ queryKey: ['cashFlow'] }),
+        queryClient.invalidateQueries({ queryKey: ['cashBalance'] }),
+      ]);
+
+      // Force immediate refetch to update UI without waiting for background refetch
+      await queryClient.refetchQueries({
+        queryKey: ['payrollRecords'],
+        type: 'active' // Only refetch currently mounted queries
+      });
+
       toast({
         title: 'Success',
         description: 'Payment processed successfully',
+      });
+    },
+  });
+
+  const deletePayrollRecord = useMutation({
+    mutationFn: async (payrollId: string) => {
+      // Get payroll record details first
+      const { data: payrollRecord, error: fetchError } = await supabase
+        .from('payroll_records')
+        .select('*, employee_id, net_salary, status')
+        .eq('id', payrollId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // If payroll was paid, we need to:
+      // 1. Delete cash_history record
+      // 2. Restore account balance
+      if (payrollRecord.status === 'paid' && payrollRecord.payment_account_id) {
+        // Delete cash_history record
+        const { error: cashError } = await supabase
+          .from('cash_history')
+          .delete()
+          .eq('reference_id', payrollId)
+          .eq('type', 'gaji_karyawan');
+
+        if (cashError) {
+          console.warn('Failed to delete cash history:', cashError);
+          // Try alternative type
+          await supabase
+            .from('cash_history')
+            .delete()
+            .eq('reference_id', payrollId)
+            .eq('type', 'kas_keluar_manual');
+        }
+
+        // Restore account balance (add back the payment amount)
+        const { data: account, error: accountFetchError } = await supabase
+          .from('accounts')
+          .select('balance')
+          .eq('id', payrollRecord.payment_account_id)
+          .single();
+
+        if (!accountFetchError && account) {
+          const restoredBalance = (account.balance || 0) + payrollRecord.net_salary;
+          await supabase
+            .from('accounts')
+            .update({ balance: restoredBalance })
+            .eq('id', payrollRecord.payment_account_id);
+        }
+      }
+
+      // Delete payroll record
+      const { error: deleteError } = await supabase
+        .from('payroll_records')
+        .delete()
+        .eq('id', payrollId);
+
+      if (deleteError) throw deleteError;
+
+      return payrollId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payrollRecords'] });
+      queryClient.invalidateQueries({ queryKey: ['payrollSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['cashHistory'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast({
+        title: 'Success',
+        description: 'Payroll record deleted successfully',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error',
+        description: `Failed to delete payroll record: ${error.message}`,
+        variant: 'destructive',
       });
     },
   });
@@ -585,6 +680,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
     updatePayrollRecord,
     approvePayrollRecord,
     processPayment,
+    deletePayrollRecord,
   };
 };
 

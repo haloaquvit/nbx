@@ -31,4 +31,5 @@ export interface CreateMaterialMovementData {
   notes?: string;
   userId: string;
   userName: string;
+  branchId?: string | null;
 }

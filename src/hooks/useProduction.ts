@@ -130,7 +130,8 @@ export const useProduction = () => {
           bom_snapshot: bomSnapshot ? JSON.stringify(bomSnapshot) : null,
           created_by: input.createdBy,
           user_input_id: input.createdBy,
-          user_input_name: user?.name || user?.email || 'Unknown User'
+          user_input_name: user?.name || user?.email || 'Unknown User',
+          branch_id: currentBranch?.id || null
         })
         .select()
         .single();
@@ -224,7 +225,8 @@ export const useProduction = () => {
                 reference_id: productionRecord.id,
                 reference_type: 'production',
                 user_id: input.createdBy,
-                user_name: user?.name || user?.email || 'Unknown User'
+                user_name: user?.name || user?.email || 'Unknown User',
+                branch_id: currentBranch?.id || null
               });
 
             if (movementError) {
@@ -301,7 +303,8 @@ export const useProduction = () => {
             consume_bom: false,
             created_by: input.createdBy,
             user_input_id: input.createdBy,
-            user_input_name: user?.name || user?.email || 'Unknown User'
+            user_input_name: user?.name || user?.email || 'Unknown User',
+            branch_id: currentBranch?.id || null
           })
           .select('id')
           .single()
@@ -348,7 +351,8 @@ export const useProduction = () => {
             reference_id: productionRecord.id,
             reference_type: 'production',
             user_id: input.createdBy,
-            user_name: user?.name || user?.email || 'Unknown User'
+            user_name: user?.name || user?.email || 'Unknown User',
+            branch_id: currentBranch?.id || null
           });
 
         if (movementError) {
@@ -480,7 +484,8 @@ export const useProduction = () => {
                 reference_id: record.id,
                 reference_type: 'production',
                 user_id: user?.id,
-                user_name: user?.name || user?.email || 'Unknown User'
+                user_name: user?.name || user?.email || 'Unknown User',
+                branch_id: currentBranch?.id || null
               });
           }
         }

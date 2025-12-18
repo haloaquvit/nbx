@@ -46,9 +46,8 @@ export function PayrollRecordDialog({
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
   const [notes, setNotes] = useState("")
 
-  // Get cash accounts for payment
-  const cashAccounts = accounts?.filter(acc => acc.type === 'Aset' &&
-    (acc.name.toLowerCase().includes('kas') || acc.name.toLowerCase().includes('bank')))
+  // Get payment accounts (accounts with isPaymentAccount = true)
+  const cashAccounts = accounts?.filter(acc => acc.isPaymentAccount === true)
 
   // Debug logging (removed to reduce console spam)
 
@@ -270,7 +269,9 @@ export function PayrollRecordDialog({
                           <div className="flex items-center gap-2">
                             <CreditCard className="h-4 w-4" />
                             <span>{account.name}</span>
-                            <span className="text-muted-foreground">({formatCurrency(account.balance)})</span>
+                            <span className={account.balance < 0 ? 'text-red-600 font-medium' : 'text-muted-foreground'}>
+                              {formatCurrency(account.balance)}
+                            </span>
                           </div>
                         </SelectItem>
                       ))}

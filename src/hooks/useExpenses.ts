@@ -70,7 +70,11 @@ export const useExpenses = () => {
       const dbData = fromAppToDb(newExpenseData);
       const { data, error } = await supabase
         .from('expenses')
-        .insert({ ...dbData, id: `exp-${Date.now()}` })
+        .insert({
+          ...dbData,
+          id: `exp-${Date.now()}`,
+          branch_id: currentBranch?.id || null,
+        })
         .select()
         .single();
       if (error) throw new Error(error.message);
@@ -110,7 +114,8 @@ export const useExpenses = () => {
             reference_id: data.id,
             reference_name: `Pengeluaran ${data.id}`,
             user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User'
+            user_name: user.name || user.email || 'Unknown User',
+            branch_id: currentBranch?.id || null,
           };
 
           console.log('Recording expense in cash history:', cashFlowRecord);

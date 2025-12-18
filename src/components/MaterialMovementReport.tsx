@@ -116,26 +116,24 @@ export function MaterialMovementReport() {
   // Combine both data sources (prioritize transaction-based for accuracy)
   const allMovements = useMemo(() => {
     const combined = [...transactionBasedMovements]
-    
+
     // Add only valid material movements (purchases, manual adjustments, production errors - NOT product transactions/deliveries)
     enrichedMovements.forEach(movement => {
       // Include material-related movements: purchases, adjustments, production errors, and production consumption
-      if (movement.referenceType !== 'transaction' && 
+      if (movement.referenceType !== 'transaction' &&
           movement.referenceType !== 'delivery' &&
-          (movement.reason === 'PURCHASE' || 
-           movement.reason === 'ADJUSTMENT' || 
+          (movement.reason === 'PURCHASE' ||
+           movement.reason === 'ADJUSTMENT' ||
            movement.reason === 'PRODUCTION_CONSUMPTION' ||
            movement.reason === 'PRODUCTION_ERROR')) {
         combined.push(movement)
       }
-      // Also include production reference type if it's specifically for production errors or consumption
-      else if (movement.referenceType === 'production' &&
-               (movement.reason === 'PRODUCTION_ERROR' || 
-                movement.reason === 'PRODUCTION_CONSUMPTION')) {
+      // IMPORTANT: Include ALL production reference type (production errors AND production consumption)
+      else if (movement.referenceType === 'production') {
         combined.push(movement)
       }
     })
-    
+
     return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }, [enrichedMovements, transactionBasedMovements])
 

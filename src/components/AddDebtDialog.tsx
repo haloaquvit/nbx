@@ -8,12 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useBranch } from '@/contexts/BranchContext';
+import { generateSequentialId } from '@/utils/idGenerator';
 
 interface AddDebtDialogProps {
   onSuccess?: () => void;
 }
 
 export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
+  const { currentBranch } = useBranch();
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -45,8 +48,13 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
         return;
       }
 
-      // Generate unique ID
-      const id = `DEBT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Generate unique ID with sequential number
+      const id = await generateSequentialId({
+        branchName: currentBranch?.name,
+        tableName: 'accounts_payable',
+        pageCode: 'HT-AP',
+        branchId: currentBranch?.id || null,
+      });
 
       // Insert into accounts_payable
       const { error } = await supabase.from('accounts_payable').insert({
@@ -61,7 +69,8 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
         description: formData.description,
         status: 'Outstanding',
         paid_amount: 0,
-        notes: formData.notes || null
+        notes: formData.notes || null,
+        branch_id: currentBranch?.id || null
       });
 
       if (error) throw error;

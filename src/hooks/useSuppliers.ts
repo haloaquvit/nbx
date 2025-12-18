@@ -119,13 +119,16 @@ export const useSuppliers = () => {
   // Create supplier
   const createSupplier = useMutation({
     mutationFn: async (data: CreateSupplierData): Promise<Supplier> => {
-      const dbData = toDbSupplier(data)
+      const dbData = {
+        ...toDbSupplier(data),
+        branch_id: currentBranch?.id || null,
+      }
       const { data: result, error } = await supabase
         .from('suppliers')
         .insert(dbData)
         .select()
         .single()
-      
+
       if (error) throw new Error(error.message)
       return fromDbSupplier(result)
     },

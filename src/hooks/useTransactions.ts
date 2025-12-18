@@ -158,8 +158,11 @@ export const useTransactions = (filters?: {
 
   const addTransaction = useMutation({
     mutationFn: async ({ newTransaction, quotationId }: { newTransaction: Omit<Transaction, 'createdAt'>, quotationId?: string | null }): Promise<Transaction> => {
-      let dbData = toDb(newTransaction);
-      
+      let dbData = {
+        ...toDb(newTransaction),
+        branch_id: currentBranch?.id || null,
+      };
+
       // Insert transaction - sales info is now embedded in notes field
       const { data: savedTransaction, error } = await supabase
         .from('transactions')
@@ -226,7 +229,8 @@ export const useTransactions = (filters?: {
             reference_id: savedTransaction.id,
             reference_name: `Orderan ${savedTransaction.id}`,
             user_id: newTransaction.cashierId,
-            user_name: newTransaction.cashierName
+            user_name: newTransaction.cashierName,
+            branch_id: currentBranch?.id || null,
           };
 
           const { error: cashFlowError } = await supabase

@@ -35,6 +35,7 @@ const fromAppToDb = (appMovement: CreateMaterialMovementData) => ({
   notes: appMovement.notes,
   user_id: appMovement.userId,
   user_name: appMovement.userName,
+  branch_id: appMovement.branchId,
 });
 
 export const useMaterialMovements = () => {
@@ -79,13 +80,17 @@ export const useMaterialMovements = () => {
 
   const createMaterialMovement = useMutation({
     mutationFn: async (movementData: CreateMaterialMovementData): Promise<MaterialMovement> => {
-      const dbData = fromAppToDb(movementData);
+      const dbData = {
+        ...fromAppToDb(movementData),
+        // Override branch_id with current branch if not provided
+        branch_id: movementData.branchId || currentBranch?.id || null,
+      };
       const { data, error } = await supabase
         .from('material_stock_movements')
         .insert(dbData)
         .select()
         .single();
-      
+
       if (error) {
         console.error('Error creating material movement:', error);
         throw new Error(error.message);
@@ -95,6 +100,7 @@ export const useMaterialMovements = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['materialMovements'] });
       queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['receiveGoods'] });
     },
   });
 

@@ -13,16 +13,23 @@ import { useAccountsPayable } from '@/hooks/useAccountsPayable'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useToast } from '@/components/ui/use-toast'
 import { formatCurrency } from '@/lib/utils'
-import { DollarSign, FileText, Calendar, AlertCircle } from 'lucide-react'
+import { DollarSign, FileText, Calendar, AlertCircle, Download, Edit, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { AddDebtDialog } from '@/components/AddDebtDialog'
+import { useBranch } from '@/contexts/BranchContext'
+import * as XLSX from 'xlsx'
+import { supabase } from '@/integrations/supabase/client'
+import { formatNumberWithCommas, parseNumberWithCommas } from '@/utils/formatNumber'
 
 export default function AccountsPayablePage() {
+  const { currentBranch } = useBranch();
   const [paymentDialog, setPaymentDialog] = useState({ open: false, payable: null as any })
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState('')
   const [paymentNotes, setPaymentNotes] = useState('')
+  const [deleteDialog, setDeleteDialog] = useState({ open: false, payable: null as any })
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const { accountsPayable, isLoading, payAccountsPayable } = useAccountsPayable()
   const { accounts } = useAccounts()
@@ -48,9 +55,12 @@ export default function AccountsPayablePage() {
     }
 
     try {
+      // Parse nilai dengan koma menjadi angka murni
+      const parsedAmount = parseNumberWithCommas(paymentAmount);
+
       await payAccountsPayable.mutateAsync({
         payableId: paymentDialog.payable.id,
-        amount: Number(paymentAmount),
+        amount: parsedAmount,
         paymentAccountId,
         notes: paymentNotes
       })
@@ -101,6 +111,95 @@ export default function AccountsPayablePage() {
     return diffDays > 0 ? diffDays : null
   }
 
+  const handleDelete = async () => {
+    if (!deleteDialog.payable) return
+
+    // Check if debt has been paid
+    if (deleteDialog.payable.status === 'Paid' || (deleteDialog.payable.paidAmount && deleteDialog.payable.paidAmount > 0)) {
+      toast({
+        variant: "destructive",
+        title: "Tidak Dapat Dihapus",
+        description: "Hutang yang sudah dibayar (sebagian/lunas) tidak dapat dihapus"
+      })
+      setDeleteDialog({ open: false, payable: null })
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      const { error } = await supabase
+        .from('accounts_payable')
+        .delete()
+        .eq('id', deleteDialog.payable.id)
+
+      if (error) throw error
+
+      toast({
+        title: "Sukses",
+        description: "Hutang berhasil dihapus"
+      })
+
+      setDeleteDialog({ open: false, payable: null })
+      window.location.reload()
+    } catch (error: any) {
+      console.error('Error deleting debt:', error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Gagal menghapus hutang: ${error.message}`
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const exportToExcel = () => {
+    if (!accountsPayable || accountsPayable.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Tidak ada data untuk di-export"
+      })
+      return
+    }
+
+    const exportData = accountsPayable.map(payable => {
+      const remainingAmount = payable.amount - (payable.paidAmount || 0)
+      const overdueDays = getOverdueDays(payable.dueDate)
+
+      return {
+        'ID Hutang': payable.id,
+        'Jenis': payable.creditorType === 'bank' ? 'Bank' :
+                payable.creditorType === 'credit_card' ? 'Kartu Kredit' :
+                payable.creditorType === 'supplier' ? 'Supplier' : 'Lainnya',
+        'Kreditor': payable.supplierName,
+        'Deskripsi': payable.description,
+        'Jumlah': payable.amount,
+        'Bunga (%)': payable.interestRate || 0,
+        'Tipe Bunga': payable.interestType || '-',
+        'Dibayar': payable.paidAmount || 0,
+        'Sisa': remainingAmount,
+        'Jatuh Tempo': payable.dueDate ? format(payable.dueDate, 'dd/MM/yyyy') : '-',
+        'Terlambat (hari)': overdueDays || '-',
+        'Status': payable.status === 'Outstanding' ? 'Belum Dibayar' :
+                  payable.status === 'Partial' ? 'Sebagian' : 'Lunas',
+        'Catatan': payable.notes || '-'
+      }
+    })
+
+    const ws = XLSX.utils.json_to_sheet(exportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Hutang')
+
+    const fileName = `Laporan_Hutang_${currentBranch?.name || 'Semua'}_${format(new Date(), 'ddMMyyyy')}.xlsx`
+    XLSX.writeFile(wb, fileName)
+
+    toast({
+      title: "Sukses",
+      description: "Data berhasil di-export ke Excel"
+    })
+  }
+
   return (
     <div className="container mx-auto py-6 space-y-6">
       {/* Header */}
@@ -111,7 +210,13 @@ export default function AccountsPayablePage() {
             Kelola pembayaran hutang kepada supplier, bank, dan kreditor lainnya
           </p>
         </div>
-        <AddDebtDialog onSuccess={() => window.location.reload()} />
+        <div className="flex gap-2">
+          <Button onClick={exportToExcel} variant="outline" className="gap-2">
+            <Download className="h-4 w-4" />
+            Export Excel
+          </Button>
+          <AddDebtDialog onSuccess={() => window.location.reload()} />
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -181,20 +286,20 @@ export default function AccountsPayablePage() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+              <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID Hutang</TableHead>
-                  <TableHead>Jenis</TableHead>
-                  <TableHead>Kreditor</TableHead>
-                  <TableHead>Deskripsi</TableHead>
-                  <TableHead className="text-right">Jumlah</TableHead>
-                  <TableHead className="text-right">Bunga</TableHead>
-                  <TableHead className="text-right">Dibayar</TableHead>
-                  <TableHead className="text-right">Sisa</TableHead>
-                  <TableHead>Jatuh Tempo</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Aksi</TableHead>
+                  <TableHead className="w-[100px]">ID</TableHead>
+                  <TableHead className="w-[80px]">Jenis</TableHead>
+                  <TableHead className="w-[120px]">Kreditor</TableHead>
+                  <TableHead className="w-[150px]">Deskripsi</TableHead>
+                  <TableHead className="text-right w-[100px]">Jumlah</TableHead>
+                  <TableHead className="text-right w-[100px]">Dibayar</TableHead>
+                  <TableHead className="text-right w-[100px]">Sisa</TableHead>
+                  <TableHead className="w-[100px]">Tempo</TableHead>
+                  <TableHead className="w-[80px]">Status</TableHead>
+                  <TableHead className="w-[120px]">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -211,38 +316,29 @@ export default function AccountsPayablePage() {
                     }
                   }
 
-                  const getInterestLabel = (rate?: number, type?: string) => {
-                    if (!rate || rate === 0) return '-'
-                    const typeLabel = type === 'per_month' ? '/bln' : type === 'per_year' ? '/thn' : ''
-                    return `${rate}%${typeLabel}`
-                  }
-
                   return (
                     <TableRow key={payable.id}>
-                      <TableCell className="font-mono text-sm">
-                        {payable.id}
+                      <TableCell className="font-mono text-xs">
+                        {payable.id.substring(0, 12)}...
                       </TableCell>
                       <TableCell>
                         {getCreditorTypeBadge(payable.creditorType)}
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium text-sm">
                         {payable.supplierName}
                       </TableCell>
                       <TableCell>
-                        <div className="max-w-[200px] truncate">
+                        <div className="max-w-[150px] truncate text-sm">
                           {payable.description}
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="text-right font-mono text-sm">
                         {formatCurrency(payable.amount)}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">
-                        {getInterestLabel(payable.interestRate, payable.interestType)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono">
                         {formatCurrency(payable.paidAmount || 0)}
                       </TableCell>
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="text-right font-mono text-sm">
                         {formatCurrency(remainingAmount)}
                       </TableCell>
                       <TableCell>
@@ -268,15 +364,27 @@ export default function AccountsPayablePage() {
                         {getStatusBadge(payable.status)}
                       </TableCell>
                       <TableCell>
-                        {payable.status !== 'Paid' && (
+                        <div className="flex gap-1">
+                          {payable.status !== 'Paid' && (
+                            <Button
+                              size="sm"
+                              onClick={() => openPaymentDialog(payable)}
+                              className="h-7 px-2 text-xs"
+                            >
+                              Bayar
+                            </Button>
+                          )}
                           <Button
                             size="sm"
-                            onClick={() => openPaymentDialog(payable)}
-                            className="bg-green-600 hover:bg-green-700"
+                            variant="destructive"
+                            onClick={() => setDeleteDialog({ open: true, payable })}
+                            className="h-7 px-2"
+                            disabled={payable.status === 'Paid' || (payable.paidAmount && payable.paidAmount > 0)}
+                            title={payable.status === 'Paid' || (payable.paidAmount && payable.paidAmount > 0) ? 'Hutang yang sudah dibayar tidak dapat dihapus' : 'Hapus hutang'}
                           >
-                            Bayar
+                            <Trash2 className="h-3 w-3" />
                           </Button>
-                        )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -290,6 +398,7 @@ export default function AccountsPayablePage() {
                 )}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -360,6 +469,38 @@ export default function AccountsPayablePage() {
             </Button>
             <Button onClick={handlePayment} disabled={payAccountsPayable.isPending}>
               {payAccountsPayable.isPending ? 'Memproses...' : 'Bayar Hutang'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialog.open} onOpenChange={(open) => setDeleteDialog({ open, payable: null })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hapus Hutang</DialogTitle>
+            <DialogDescription>
+              Apakah Anda yakin ingin menghapus hutang ini? Tindakan ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteDialog.payable && (
+            <div className="bg-muted p-3 rounded">
+              <div className="space-y-1 text-sm">
+                <div><strong>ID:</strong> {deleteDialog.payable.id}</div>
+                <div><strong>Kreditor:</strong> {deleteDialog.payable.supplierName}</div>
+                <div><strong>Jumlah:</strong> {formatCurrency(deleteDialog.payable.amount)}</div>
+                <div><strong>Deskripsi:</strong> {deleteDialog.payable.description}</div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog({ open: false, payable: null })} disabled={isDeleting}>
+              Batal
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={isDeleting}>
+              {isDeleting ? 'Menghapus...' : 'Hapus Hutang'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -79,60 +79,9 @@ export const useAccounts = () => {
 
       const baseAccounts = accountsData ? accountsData.map(fromDbToApp) : [];
 
-      // Calculate balance from cash_history per branch
-      if (currentBranch?.id) {
-        // Get all cash_history for current branch
-        const { data: cashHistory, error: cashError } = await supabase
-          .from('cash_history')
-          .select('account_id, amount, transaction_type, type, source_type')
-          .eq('branch_id', currentBranch.id);
-
-        if (cashError && cashError.code !== 'PGRST116') {
-          console.warn('Error fetching cash_history:', cashError);
-        }
-
-        // Calculate balance per account from cash_history
-        const accountBalances: Record<string, number> = {};
-
-        if (cashHistory) {
-          cashHistory.forEach(record => {
-            if (!record.account_id) return;
-
-            // Skip transfers (they don't change total cash, only move between accounts)
-            if (record.source_type === 'transfer_masuk' || record.source_type === 'transfer_keluar') {
-              return;
-            }
-
-            const amount = Number(record.amount) || 0;
-            const currentBalance = accountBalances[record.account_id] || 0;
-
-            // Determine if income or expense
-            const isIncome = record.transaction_type === 'income' ||
-              (record.type && ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(record.type));
-
-            const isExpense = record.transaction_type === 'expense' ||
-              (record.type && ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji'].includes(record.type));
-
-            if (isIncome) {
-              accountBalances[record.account_id] = currentBalance + amount;
-            } else if (isExpense) {
-              accountBalances[record.account_id] = currentBalance - amount;
-            }
-          });
-        }
-
-        // Update accounts with calculated balances
-        return baseAccounts.map(account => ({
-          ...account,
-          balance: accountBalances[account.id] || 0
-        }));
-      }
-
-      // If no branch selected, return accounts with 0 balance
-      return baseAccounts.map(account => ({
-        ...account,
-        balance: 0
-      }));
+      // Simply return accounts with their balance from database
+      // Balance is already maintained by the system through transactions
+      return baseAccounts;
     },
     // Enable when branch is selected
     enabled: !!currentBranch,

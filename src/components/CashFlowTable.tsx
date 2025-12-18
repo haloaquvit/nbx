@@ -191,6 +191,12 @@ interface CashFlowTableProps {
   isLoading: boolean;
 }
 
+// Extended type to include calculated balances
+interface CashHistoryWithBalance extends CashHistory {
+  previousBalance?: number;
+  afterBalance?: number;
+}
+
 export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -198,43 +204,100 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const [selectedRecord, setSelectedRecord] = React.useState<CashHistory | null>(null);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = React.useState(false);
   const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
-  const [filteredData, setFilteredData] = React.useState<CashHistory[]>([]);
+  const [filteredData, setFilteredData] = React.useState<CashHistoryWithBalance[]>([]);
+  const [accountBalances, setAccountBalances] = React.useState<Record<string, number>>({});
 
-  // Initialize filtered data when data changes
+  // Fetch current account balances
   React.useEffect(() => {
-    if (Array.isArray(data)) {
-      setFilteredData(data);
-    } else {
+    const fetchAccountBalances = async () => {
+      const { data: accounts, error } = await supabase
+        .from('accounts')
+        .select('id, balance');
+
+      if (error) {
+        console.error('Error fetching account balances:', error);
+        return;
+      }
+
+      const balances: Record<string, number> = {};
+      accounts?.forEach(account => {
+        balances[account.id] = account.balance || 0;
+      });
+      setAccountBalances(balances);
+    };
+
+    fetchAccountBalances();
+  }, []);
+
+  // Initialize filtered data with calculated balances
+  React.useEffect(() => {
+    if (!Array.isArray(data) || Object.keys(accountBalances).length === 0) {
       setFilteredData([]);
-    }
-  }, [data]);
-
-  // Filter data based on date range
-  React.useEffect(() => {
-    if (!Array.isArray(data)) {
       return;
     }
 
-    if (!dateRange.from) {
-      setFilteredData(data);
-      return;
+    // Calculate balances for each transaction
+    // We need to process from newest to oldest to calculate previous balances
+    const dataWithBalances: CashHistoryWithBalance[] = [];
+    const accountRunningBalances: Record<string, number> = { ...accountBalances };
+
+    // Process from newest to oldest (data is already sorted by created_at DESC)
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i];
+      const accountId = item.account_id;
+
+      // Current balance for this account
+      const currentBalance = accountRunningBalances[accountId] || 0;
+
+      // Calculate the effect of this transaction
+      let transactionEffect = 0;
+      if (isIncomeType(item)) {
+        transactionEffect = item.amount;
+      } else if (isExpenseType(item)) {
+        transactionEffect = -item.amount;
+      } else if (item.source_type === 'transfer_masuk') {
+        transactionEffect = item.amount;
+      } else if (item.source_type === 'transfer_keluar') {
+        transactionEffect = -item.amount;
+      }
+
+      // After balance is the current balance
+      const afterBalance = currentBalance;
+      // Previous balance is current balance minus the transaction effect
+      const previousBalance = currentBalance - transactionEffect;
+
+      dataWithBalances.push({
+        ...item,
+        previousBalance,
+        afterBalance
+      });
+
+      // Update running balance for next iteration (going backwards in time)
+      accountRunningBalances[accountId] = previousBalance;
+    }
+
+    setFilteredData(dataWithBalances);
+  }, [data, accountBalances]);
+
+  // Compute filtered and display data based on date range
+  const displayData = React.useMemo(() => {
+    if (!dateRange.from || !Array.isArray(filteredData)) {
+      return filteredData;
     }
 
     try {
       if (dateRange.from && !dateRange.to) {
         // Only start date selected
-        const filtered = data.filter(item => {
+        return filteredData.filter(item => {
           if (!item.created_at) return false;
           const itemDate = new Date(item.created_at);
           return itemDate >= startOfDay(dateRange.from!);
         });
-        setFilteredData(filtered);
-        return;
       }
 
       if (dateRange.from && dateRange.to) {
         // Both dates selected
-        const filtered = data.filter(item => {
+        return filteredData.filter(item => {
           if (!item.created_at) return false;
           const itemDate = new Date(item.created_at);
           return isWithinInterval(itemDate, {
@@ -242,16 +305,14 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
             end: endOfDay(dateRange.to!)
           });
         });
-        setFilteredData(filtered);
-        return;
       }
 
-      setFilteredData(data);
+      return filteredData;
     } catch (error) {
       console.error('Error filtering cash flow data:', error);
-      setFilteredData(data);
+      return filteredData;
     }
-  }, [data, dateRange]);
+  }, [filteredData, dateRange]);
 
   const clearDateFilter = () => {
     setDateRange({ from: undefined, to: undefined });
@@ -330,7 +391,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       setSelectedRecord(null);
     }
   };
-  const columns: ColumnDef<CashHistory>[] = [
+  const columns: ColumnDef<CashHistoryWithBalance>[] = [
     {
       accessorKey: "created_at",
       header: "Tanggal",
@@ -344,6 +405,14 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     {
       accessorKey: "account_name",
       header: "Akun Keuangan",
+      cell: ({ row }) => {
+        const accountName = row.getValue("account_name") as string;
+        return (
+          <div className="max-w-[120px] truncate" title={accountName}>
+            {accountName}
+          </div>
+        );
+      },
     },
     {
       id: "transactionType",
@@ -351,7 +420,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <Badge variant={getTypeVariant(item)}>
+          <Badge variant={getTypeVariant(item)} className="text-xs whitespace-nowrap">
             {getTypeLabel(item)}
           </Badge>
         );
@@ -363,7 +432,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       cell: ({ row }) => {
         const description = row.getValue("description") as string;
         return (
-          <div className="max-w-[300px] truncate" title={description}>
+          <div className="max-w-[200px] truncate" title={description}>
             {description}
           </div>
         );
@@ -375,11 +444,16 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       cell: ({ row }) => {
         const refName = row.getValue("reference_name") as string;
         const refId = row.original.reference_id;
-        if (!refName && !refId) return "-";
+        const refNumber = row.original.reference_number;
+
+        // Use reference_name or reference_number, whichever is available
+        const displayRef = refName || refNumber || refId;
+
+        if (!displayRef) return "-";
+
         return (
-          <div className="text-sm">
-            {refName && <div className="font-medium">{refName}</div>}
-            {refId && <div className="text-muted-foreground">{refId}</div>}
+          <div className="max-w-[150px] truncate text-sm" title={displayRef}>
+            {displayRef}
           </div>
         );
       },
@@ -411,7 +485,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       cell: ({ row }) => {
         const item = row.original;
         const amount = item.amount;
-        
+
         if (isExpenseType(item)) {
           return (
             <div className="text-right font-medium text-red-600">
@@ -427,11 +501,60 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       },
     },
     {
+      id: "previousBalance",
+      header: "Saldo Sebelumnya",
+      cell: ({ row }) => {
+        const item = row.original;
+        const balance = item.previousBalance;
+
+        if (balance === undefined || balance === null) {
+          return <div className="text-right text-muted-foreground">-</div>;
+        }
+
+        return (
+          <div className={`text-right font-medium ${balance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+            {new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              minimumFractionDigits: 0,
+            }).format(balance)}
+          </div>
+        );
+      },
+    },
+    {
+      id: "afterBalance",
+      header: "Saldo Setelah",
+      cell: ({ row }) => {
+        const item = row.original;
+        const balance = item.afterBalance;
+
+        if (balance === undefined || balance === null) {
+          return <div className="text-right text-muted-foreground">-</div>;
+        }
+
+        return (
+          <div className={`text-right font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`}>
+            {new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              minimumFractionDigits: 0,
+            }).format(balance)}
+          </div>
+        );
+      },
+    },
+    {
       id: "createdBy",
       header: "Dibuat Oleh",
       cell: ({ row }) => {
         const item = row.original;
-        return item.user_name || item.created_by_name || 'Unknown';
+        const userName = item.user_name || item.created_by_name || 'Unknown';
+        return (
+          <div className="max-w-[100px] truncate text-sm" title={userName}>
+            {userName}
+          </div>
+        );
       },
     },
     {
@@ -474,16 +597,21 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   ]
 
   const table = useReactTable({
-    data: filteredData || [],
+    data: displayData || [],
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    initialState: {
+      pagination: {
+        pageSize: 7, // Show 7 rows per page
+      },
+    },
   })
 
   const handleExportExcel = () => {
-    const exportData = (filteredData || []).map(item => ({
+    const exportData = (displayData || []).map(item => ({
       'Tanggal': item.created_at ? format(new Date(item.created_at), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
       'Akun Keuangan': item.account_name || 'Unknown Account',
       'Jenis Transaksi': getTypeLabel(item),
@@ -491,6 +619,8 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       'Referensi': item.reference_name || item.reference_id || item.reference_number || '-',
       'Kas Masuk': isIncomeType(item) ? item.amount : 0,
       'Kas Keluar': isExpenseType(item) ? item.amount : 0,
+      'Saldo Sebelumnya': item.previousBalance || 0,
+      'Saldo Setelah': item.afterBalance || 0,
       'Dibuat Oleh': item.user_name || item.created_by_name || 'Unknown'
     }));
     
@@ -507,10 +637,10 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   };
 
   const handleExportPdf = () => {
-    const doc = new jsPDF('p', 'mm', 'a4'); // portrait orientation
-    
+    const doc = new jsPDF('l', 'mm', 'a4'); // landscape orientation for wider table
+
     // Calculate totals for filtered data
-    const totalIncome = filteredData
+    const totalIncome = displayData
       .filter(item => {
         if (isIncomeType(item)) {
           // Exclude only internal transfers
@@ -522,8 +652,8 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         return false;
       })
       .reduce((sum, item) => sum + item.amount, 0);
-    
-    const totalExpense = filteredData
+
+    const totalExpense = displayData
       .filter(item => {
         if (isExpenseType(item)) {
           // Exclude only internal transfers
@@ -573,63 +703,67 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     doc.setTextColor(0, 0, 0); // Reset to black
     currentY += 15;
     
-    // Table with larger fonts and portrait layout
+    // Table with larger fonts and landscape layout
     autoTable(doc, {
       startY: currentY,
-      head: [['Tanggal', 'Jenis', 'Deskripsi', 'Kas Masuk', 'Kas Keluar']],
-      body: (filteredData || []).map(item => [
+      head: [['Tanggal', 'Jenis', 'Deskripsi', 'Kas Masuk', 'Kas Keluar', 'Saldo Sebelum', 'Saldo Setelah']],
+      body: (displayData || []).map(item => [
         item.created_at ? format(new Date(item.created_at), "d MMM yyyy", { locale: id }) : 'N/A',
         getTypeLabel(item),
-        item.description?.length > 25 ? item.description.substring(0, 25) + '...' : item.description || '',
+        item.description?.length > 20 ? item.description.substring(0, 20) + '...' : item.description || '',
         isIncomeType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
-        isExpenseType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-'
+        isExpenseType(item) ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.amount) : '-',
+        item.previousBalance !== undefined ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.previousBalance) : '-',
+        item.afterBalance !== undefined ? new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.afterBalance) : '-'
       ]),
-      styles: { 
-        fontSize: 10,
-        cellPadding: 3
+      styles: {
+        fontSize: 8,
+        cellPadding: 2
       },
-      headStyles: { 
+      headStyles: {
         fillColor: [71, 85, 105],
-        fontSize: 11,
+        fontSize: 9,
         fontStyle: 'bold'
       },
       columnStyles: {
         0: { cellWidth: 25 }, // Tanggal
-        1: { cellWidth: 35 }, // Jenis
-        2: { cellWidth: 50 }, // Deskripsi
-        3: { cellWidth: 35, halign: 'right' }, // Kas Masuk
-        4: { cellWidth: 35, halign: 'right' }  // Kas Keluar
+        1: { cellWidth: 30 }, // Jenis
+        2: { cellWidth: 45 }, // Deskripsi
+        3: { cellWidth: 30, halign: 'right' }, // Kas Masuk
+        4: { cellWidth: 30, halign: 'right' }, // Kas Keluar
+        5: { cellWidth: 35, halign: 'right' }, // Saldo Sebelum
+        6: { cellWidth: 35, halign: 'right' }  // Saldo Setelah
       }
     });
     
     // Add total row at the end - aligned with table columns
     const finalY = (doc as any).lastAutoTable.finalY + 5;
-    
-    // Draw a line separator
+
+    // Draw a line separator (landscape width)
     doc.setLineWidth(0.5);
-    doc.line(20, finalY, 190, finalY);
-    
+    doc.line(20, finalY, 277, finalY); // 297mm is landscape width, leaving margin
+
     const totalRowY = finalY + 8;
-    
+
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
     doc.text('TOTAL:', 20, totalRowY);
-    
+
     // Position total amounts to align with table columns
-    // Column positions: 20 (start) + 25 (tanggal) + 35 (jenis) + 50 (deskripsi) = 130 for kas masuk column
-    // 130 + 35 (kas masuk width) = 165 for kas keluar column
+    // Landscape layout column positions: 20 + 25 (tanggal) + 30 (jenis) + 45 (deskripsi) = 120 for kas masuk
+    // 120 + 30 (kas masuk) = 150 for kas keluar
     doc.setTextColor(0, 128, 0); // Green for income
-    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalIncome), 155, totalRowY, { align: 'right' });
-    
-    doc.setTextColor(255, 0, 0); // Red for expense  
-    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalExpense), 190, totalRowY, { align: 'right' });
-    
+    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalIncome), 145, totalRowY, { align: 'right' });
+
+    doc.setTextColor(255, 0, 0); // Red for expense
+    doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalExpense), 175, totalRowY, { align: 'right' });
+
     doc.setTextColor(0, 0, 0); // Reset to black
-    
-    // Add generation timestamp
+
+    // Add generation timestamp (landscape - center at 148.5mm)
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Dicetak pada: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 105, 285, { align: 'center' });
+    doc.text(`Dicetak pada: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 148.5, 200, { align: 'center' });
     
     // Add date range to filename if filtered
     const filename = dateRange.from && dateRange.to 
@@ -704,7 +838,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
               {/* Filter Info */}
               <div className="flex items-center gap-2">
                 <div className="text-sm text-muted-foreground">
-                  Menampilkan {filteredData.length} dari {data?.length || 0} transaksi
+                  Menampilkan {displayData.length} dari {data?.length || 0} transaksi
                 </div>
               </div>
             </div>
@@ -750,23 +884,18 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
                     </TableRow>
                   ))
                 ) : table.getRowModel().rows?.length ? (
-                  <>
-                    {table.getRowModel().rows.map((row) => {
-                      console.log('Rendering row:', row.id, row.original);
-                      return (
-                        <TableRow key={row.id}>
-                          {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id} className="text-base py-4">
-                              {flexRender(
-                                cell.column.columnDef.cell,
-                                cell.getContext()
-                              )}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      );
-                    })}
-                  </>
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow key={row.id}>
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className="text-base py-4">
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
                 ) : (
                   <TableRow>
                     <TableCell colSpan={columns.length} className="h-24 text-center text-base">
@@ -779,23 +908,45 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
           </div>
           
           {/* Pagination */}
-          <div className="flex items-center justify-end space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              Next
-            </Button>
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              Halaman {table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}
+              {' '}(Menampilkan {table.getRowModel().rows.length} dari {displayData.length} baris)
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.setPageIndex(0)}
+                disabled={!table.getCanPreviousPage()}
+              >
+                First
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                Next
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                disabled={!table.getCanNextPage()}
+              >
+                Last
+              </Button>
+            </div>
           </div>
 
       {/* Delete Confirmation Dialog */}

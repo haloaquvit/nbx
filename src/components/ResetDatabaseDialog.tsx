@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
-import { Trash2, AlertTriangle, Database, ShoppingCart, Package, DollarSign, Users, Truck, Settings } from 'lucide-react';
+import { Trash2, AlertTriangle, Database, ShoppingCart, Package, DollarSign, Users, Truck, Settings, Building2, HandCoins, Heart } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
@@ -47,6 +47,7 @@ const dataCategories: DataCategory[] = [
     tables: [
       'transactions',
       'transaction_items',
+      'transaction_payments',
       'quotations',
       'deliveries',
       'delivery_items',
@@ -65,18 +66,36 @@ const dataCategories: DataCategory[] = [
   },
   {
     id: 'inventory',
-    name: 'Inventory & Production',
-    description: 'Produk, material, produksi, dan pergerakan stok',
+    name: 'Inventory & Materials',
+    description: 'Produk, material, dan pergerakan stok',
     icon: <Package className="w-4 h-4" />,
     tables: [
       'products',
       'materials',
       'material_stock_movements',
+      'material_inventory_batches',
+      'material_usage_history',
       'stock_movements',
-      'production_records',
-      'product_materials',
-      'production_errors',
+      'product_materials'
+    ]
+  },
+  {
+    id: 'production',
+    name: 'Production History',
+    description: 'Riwayat produksi',
+    icon: <Package className="w-4 h-4" />,
+    tables: [
+      'production_records'
+    ]
+  },
+  {
+    id: 'purchasing',
+    name: 'Purchasing & Suppliers',
+    description: 'Purchase orders, suppliers, dan hutang dagang',
+    icon: <Truck className="w-4 h-4" />,
+    tables: [
       'purchase_orders',
+      'purchase_order_items',
       'suppliers',
       'supplier_materials',
       'accounts_payable'
@@ -89,6 +108,7 @@ const dataCategories: DataCategory[] = [
     icon: <DollarSign className="w-4 h-4" />,
     tables: [
       'expenses',
+      'expense_categories',
       'expense_category_mapping',
       'cash_history',
       'account_transfers',
@@ -101,7 +121,7 @@ const dataCategories: DataCategory[] = [
   {
     id: 'accounts',
     name: 'Chart of Accounts',
-    description: 'Struktur akun keuangan (CoA)',
+    description: 'Reset saldo akun ke 0 (struktur akun tetap)',
     icon: <DollarSign className="w-4 h-4" />,
     tables: ['accounts']
   },
@@ -130,13 +150,56 @@ const dataCategories: DataCategory[] = [
   {
     id: 'system',
     name: 'System & Monitoring',
-    description: 'Log audit dan monitoring sistem',
+    description: 'Log audit, notifikasi, dan monitoring sistem',
     icon: <Settings className="w-4 h-4" />,
     tables: [
       'audit_logs',
       'performance_logs',
+      'notifications',
       'roles',
       'role_permissions'
+    ]
+  },
+  {
+    id: 'branches',
+    name: 'Branch Management',
+    description: 'Data cabang dan transfer antar cabang',
+    icon: <Building2 className="w-4 h-4" />,
+    tables: [
+      'companies',
+      'branches',
+      'branch_transfers'
+    ]
+  },
+  {
+    id: 'assets',
+    name: 'Asset Management',
+    description: 'Aset perusahaan dan maintenance',
+    icon: <Package className="w-4 h-4" />,
+    tables: [
+      'assets',
+      'asset_maintenance'
+    ]
+  },
+  {
+    id: 'loans',
+    name: 'Loans & Financing',
+    description: 'Pinjaman dan pembayaran cicilan',
+    icon: <HandCoins className="w-4 h-4" />,
+    tables: [
+      'loans',
+      'loan_payments',
+      'loan_payment_schedules'
+    ]
+  },
+  {
+    id: 'zakat',
+    name: 'Zakat & Charity',
+    description: 'Pencatatan zakat dan nishab',
+    icon: <Heart className="w-4 h-4" />,
+    tables: [
+      'zakat_records',
+      'nishab_reference'
     ]
   }
 ];
@@ -191,33 +254,33 @@ export const ResetDatabaseDialog = () => {
   };
 
   // Get all tables to be cleared based on selected categories
-  const getTablesToClear = () => {
+  const getTablesToClear = (categories: string[] = selectedCategories) => {
     const tables: string[] = [];
     const processedCategories = new Set<string>();
-    
+
     // Helper function to add category tables including dependencies
     const addCategoryTables = (categoryId: string) => {
       if (processedCategories.has(categoryId)) return;
-      
+
       const category = dataCategories.find(cat => cat.id === categoryId);
       if (!category) return;
-      
+
       // Add dependency tables first (to maintain referential integrity during deletion)
       if (category.dependencies) {
         category.dependencies.forEach(depId => {
-          if (selectedCategories.includes(depId)) {
+          if (categories.includes(depId)) {
             addCategoryTables(depId);
           }
         });
       }
-      
+
       // Add this category's tables
       tables.push(...category.tables);
       processedCategories.add(categoryId);
     };
 
     // Process all selected categories
-    selectedCategories.forEach(categoryId => {
+    categories.forEach(categoryId => {
       addCategoryTables(categoryId);
     });
 
@@ -225,6 +288,10 @@ export const ResetDatabaseDialog = () => {
   };
 
   const resetDatabase = async () => {
+    console.log('resetDatabase called');
+    console.log('Password:', password ? '(provided)' : '(empty)');
+    console.log('Selected categories:', selectedCategories);
+
     if (!password) {
       toast.error('Masukkan password untuk konfirmasi');
       return;
@@ -235,32 +302,41 @@ export const ResetDatabaseDialog = () => {
       return;
     }
 
-    // Safety check: Prevent deletion of critical system data
+    // Safety check: Prevent deletion of critical system data - auto remove system from selection
     const criticalCategories = ['system'];
-    const hasCriticalData = selectedCategories.some(cat => criticalCategories.includes(cat));
-    if (hasCriticalData) {
-      toast.error('System & Monitoring data tidak dapat direset untuk menjaga integritas audit trail.');
+    const filteredCategories = selectedCategories.filter(cat => !criticalCategories.includes(cat));
+    if (filteredCategories.length === 0) {
+      toast.error('Tidak ada kategori yang dapat direset (System & Monitoring tidak dapat dihapus)');
       return;
+    }
+    if (filteredCategories.length !== selectedCategories.length) {
+      toast.warning('System & Monitoring dilewati untuk menjaga integritas audit trail.');
     }
 
     setIsLoading(true);
+    toast.info('Memulai proses reset database...');
 
     try {
       // Verify password by attempting to sign in
+      console.log('Verifying password for:', user?.email);
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: user?.email || '',
         password: password
       });
 
       if (authError) {
+        console.error('Auth error:', authError);
         toast.error('Password salah');
         setIsLoading(false);
         return;
       }
 
-      // Get tables to clear based on selection
-      const tablesToClear = getTablesToClear();
+      console.log('Password verified successfully');
+
+      // Get tables to clear based on filtered selection (excludes system)
+      const tablesToClear = getTablesToClear(filteredCategories);
       console.log('Tables to clear:', tablesToClear);
+      console.log('Filtered categories:', filteredCategories);
       
       // Validation: Check if tables exist before attempting to clear
       const validTables: string[] = [];
@@ -273,86 +349,75 @@ export const ResetDatabaseDialog = () => {
             .from(table)
             .select('id')
             .limit(0);
-            
+
           if (!error) {
             validTables.push(table);
+            console.log(`Table ${table} is valid`);
           } else {
             invalidTables.push(table);
-            console.warn(`Table ${table} does not exist or is not accessible`);
+            console.warn(`Table ${table} does not exist or is not accessible:`, error.message);
           }
         } catch (err) {
           invalidTables.push(table);
           console.warn(`Table ${table} validation failed:`, err);
         }
       }
-      
+
+      console.log('Valid tables:', validTables);
+      console.log('Invalid tables:', invalidTables);
+
       let clearedTables: string[] = [];
       let failedTables: string[] = [];
 
       // Clear each valid table in reverse order (to handle foreign key constraints)
-      const reversedTables = [...validTables].reverse();
-      
+      // Skip 'accounts' table - we only reset balances, not delete accounts
+      const reversedTables = [...validTables].reverse().filter(t => t !== 'accounts');
+
       for (const table of reversedTables) {
         try {
-          // Use more robust deletion approach
-          let hasMore = true;
-          let totalDeleted = 0;
-          
-          // Delete in batches to avoid timeout on large tables
-          while (hasMore) {
-            const { data, error } = await supabase
-              .from(table)
-              .select('id')
-              .limit(1000);
-              
-            if (error || !data || data.length === 0) {
-              hasMore = false;
-              break;
-            }
-            
-            const ids = data.map(row => row.id);
-            const { error: deleteError } = await supabase
-              .from(table)
-              .delete()
-              .in('id', ids);
-              
-            if (deleteError) {
-              console.warn(`Error deleting batch from ${table}:`, deleteError);
-              failedTables.push(table);
-              break;
-            }
-            
-            totalDeleted += ids.length;
-            
-            // If we deleted less than the batch size, we're done
-            if (ids.length < 1000) {
-              hasMore = false;
-            }
-          }
-          
-          if (!failedTables.includes(table)) {
+          console.log(`Attempting to clear table: ${table}`);
+
+          // First count how many records exist
+          const { count, error: countError } = await supabase
+            .from(table)
+            .select('*', { count: 'exact', head: true });
+
+          console.log(`Table ${table} has ${count} records`);
+
+          // Delete all records using neq on a column that always exists
+          const { error: deleteError } = await supabase
+            .from(table)
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000'); // This matches all rows
+
+          if (deleteError) {
+            console.error(`Error deleting from ${table}:`, deleteError);
+            failedTables.push(table);
+          } else {
             clearedTables.push(table);
-            console.log(`Successfully cleared ${totalDeleted} records from ${table}`);
+            console.log(`Successfully cleared ${count || 0} records from ${table}`);
+            toast.success(`Berhasil menghapus ${count || 0} data dari ${table}`);
           }
-          
+
         } catch (err) {
-          console.warn(`Error clearing table ${table}:`, err);
+          console.error(`Error clearing table ${table}:`, err);
           failedTables.push(table);
         }
       }
 
-      // Reset account balances to 0 if accounts category is selected
-      if (selectedCategories.includes('accounts')) {
+      // Reset account balances to 0 if accounts category is selected (don't delete, just reset balance)
+      if (filteredCategories.includes('accounts')) {
         try {
           const { error } = await supabase
             .from('accounts')
-            .update({ balance: 0 })
+            .update({ balance: 0, initial_balance: 0 })
             .neq('id', '');
-            
+
           if (error) {
             console.warn('Could not reset account balances:', error);
           } else {
-            console.log('Successfully reset account balances');
+            clearedTables.push('accounts (balance reset)');
+            console.log('Successfully reset account balances to 0');
           }
         } catch (err) {
           console.warn('Could not reset account balances:', err);
@@ -523,36 +588,41 @@ export const ResetDatabaseDialog = () => {
             <AlertDialogTitle className="text-red-600">
               Konfirmasi Reset Database
             </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
-              <p>Apakah Anda YAKIN ingin menghapus data berikut? Tindakan ini TIDAK DAPAT DIBATALKAN!</p>
-              
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded text-blue-700 text-sm">
-                <strong>Kategori yang akan direset:</strong>
-                <ul className="mt-2 space-y-1">
-                  {selectedCategories.map(catId => {
-                    const category = dataCategories.find(cat => cat.id === catId);
-                    return (
-                      <li key={catId} className="flex items-center gap-2">
-                        {category?.icon}
-                        {category?.name}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-              
-              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                <strong>⚠️ PERINGATAN:</strong> {getTablesToClear().length} tabel akan dihapus permanen!
-                <div className="mt-1 text-xs">
-                  Tables: {getTablesToClear().join(', ')}
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>Apakah Anda YAKIN ingin menghapus data berikut? Tindakan ini TIDAK DAPAT DIBATALKAN!</p>
+
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded text-blue-700 text-sm">
+                  <strong>Kategori yang akan direset:</strong>
+                  <ul className="mt-2 space-y-1">
+                    {selectedCategories.map(catId => {
+                      const category = dataCategories.find(cat => cat.id === catId);
+                      return (
+                        <li key={catId} className="flex items-center gap-2">
+                          {category?.icon}
+                          {category?.name}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+
+                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                  <strong>⚠️ PERINGATAN:</strong> {getTablesToClear().length} tabel akan dihapus permanen!
+                  <span className="mt-1 text-xs block">
+                    Tables: {getTablesToClear().join(', ')}
+                  </span>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Batal</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={resetDatabase}
+            <AlertDialogCancel disabled={isLoading}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                resetDatabase();
+              }}
               disabled={isLoading}
               className="bg-red-600 hover:bg-red-700"
             >

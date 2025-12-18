@@ -1,5 +1,6 @@
 "use client"
 
+// Payroll Page with delete functionality
 import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,7 +25,18 @@ import {
   Calendar,
   Filter,
   X,
+  Trash2,
 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -45,7 +57,7 @@ export default function PayrollPage() {
   const { salaryConfigs, isLoading: isLoadingSalaries } = useEmployeeSalaries()
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
-  const { payrollRecords } = usePayrollRecords({
+  const { payrollRecords, deletePayrollRecord } = usePayrollRecords({
     year: selectedYear,
     month: selectedMonth,
   })
@@ -54,6 +66,10 @@ export default function PayrollPage() {
   const [isSalaryConfigDialogOpen, setIsSalaryConfigDialogOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [selectedSalaryConfig, setSelectedSalaryConfig] = useState<EmployeeSalary | null>(null)
+
+  // Delete dialog state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [payrollToDelete, setPayrollToDelete] = useState<PayrollRecord | null>(null)
 
   // Filter states for payroll history
   const [showFilters, setShowFilters] = useState(false)
@@ -66,6 +82,19 @@ export default function PayrollPage() {
     setSelectedEmployee(employee)
     setSelectedSalaryConfig(existingConfig || null)
     setIsSalaryConfigDialogOpen(true)
+  }
+
+  const handleDeleteClick = (record: PayrollRecord) => {
+    setPayrollToDelete(record)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!payrollToDelete) return
+
+    await deletePayrollRecord.mutateAsync(payrollToDelete.id)
+    setIsDeleteDialogOpen(false)
+    setPayrollToDelete(null)
   }
 
   const getSalaryConfig = (employeeId: string) => {
@@ -550,9 +579,21 @@ export default function PayrollPage() {
                           {getPayrollStatusBadge(record.status)}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button size="sm" variant="outline">
-                            <Edit className="h-3 w-3" />
-                          </Button>
+                          <div className="flex items-center justify-end gap-2">
+                            <Button size="sm" variant="outline">
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            {isOwner(user) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteClick(record)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -697,6 +738,7 @@ export default function PayrollPage() {
                         <TableHead className="text-right">Jumlah</TableHead>
                         <TableHead>Dibayar Oleh</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -732,6 +774,18 @@ export default function PayrollPage() {
                           </TableCell>
                           <TableCell>
                             {getPayrollStatusBadge(record.status)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {isOwner(user) && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => handleDeleteClick(record)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -771,6 +825,45 @@ export default function PayrollPage() {
         employee={selectedEmployee}
         existingConfig={selectedSalaryConfig}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Record Gaji</AlertDialogTitle>
+            <AlertDialogDescription>
+              {payrollToDelete && (
+                <>
+                  Apakah Anda yakin ingin menghapus record gaji untuk{' '}
+                  <span className="font-semibold">{payrollToDelete.employeeName}</span>?
+                  <br />
+                  <br />
+                  {payrollToDelete.status === 'paid' && (
+                    <span className="text-amber-600 font-medium">
+                      ⚠️ Gaji ini sudah dibayar. Menghapus akan:
+                      <ul className="list-disc ml-6 mt-2">
+                        <li>Menghapus record dari arus kas</li>
+                        <li>Mengembalikan saldo akun pembayaran</li>
+                      </ul>
+                    </span>
+                  )}
+                  <br />
+                  Tindakan ini tidak dapat dibatalkan.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

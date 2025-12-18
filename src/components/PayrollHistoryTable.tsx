@@ -12,8 +12,21 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import { History, DollarSign, Printer } from 'lucide-react'
+import { History, DollarSign, Printer, Trash2 } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
+import { usePayrollRecords } from '@/hooks/usePayroll'
+import { isOwner } from '@/utils/roleUtils'
 
 interface PayrollPayment {
   id: string
@@ -27,6 +40,11 @@ interface PayrollPayment {
 }
 
 export const PayrollHistoryTable = () => {
+  const { user } = useAuth()
+  const { deletePayrollRecord } = usePayrollRecords({})
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [paymentToDelete, setPaymentToDelete] = useState<PayrollPayment | null>(null)
+
   // Fetch payroll payment history from cash_history
   const { data: payrollHistory, isLoading } = useQuery<PayrollPayment[]>({
     queryKey: ['payrollHistory'],
@@ -51,6 +69,18 @@ export const PayrollHistoryTable = () => {
     },
     staleTime: 2 * 60 * 1000, // 2 minutes
   })
+
+  const handleDeleteClick = (payment: PayrollPayment) => {
+    setPaymentToDelete(payment)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!paymentToDelete) return
+    await deletePayrollRecord.mutateAsync(paymentToDelete.reference_id)
+    setIsDeleteDialogOpen(false)
+    setPaymentToDelete(null)
+  }
 
   const handlePrintAll = () => {
     if (!payrollHistory || payrollHistory.length === 0) return
@@ -620,21 +650,74 @@ export const PayrollHistoryTable = () => {
                   </Badge>
                 </TableCell>
                 <TableCell className="text-center">
-                  <Button
-                    onClick={() => handlePrintSingle(payment)}
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1 hover:bg-blue-50"
-                  >
-                    <Printer className="h-3 w-3" />
-                    Cetak
-                  </Button>
+                  <div className="flex items-center justify-center gap-2">
+                    <Button
+                      onClick={() => handlePrintSingle(payment)}
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 hover:bg-blue-50"
+                    >
+                      <Printer className="h-3 w-3" />
+                      Cetak
+                    </Button>
+                    {isOwner(user) && (
+                      <Button
+                        onClick={() => handleDeleteClick(payment)}
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Hapus
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Pembayaran Gaji</AlertDialogTitle>
+            <AlertDialogDescription>
+              {paymentToDelete && (
+                <>
+                  Apakah Anda yakin ingin menghapus pembayaran gaji untuk{' '}
+                  <span className="font-semibold">
+                    {paymentToDelete.reference_name?.replace('Payroll ', '') || 'karyawan ini'}
+                  </span>
+                  ?
+                  <br /><br />
+                  <span className="text-amber-600 font-medium">
+                    ⚠️ Menghapus pembayaran ini akan:
+                    <ul className="list-disc ml-6 mt-2">
+                      <li>Menghapus record gaji dari sistem</li>
+                      <li>Menghapus catatan dari arus kas</li>
+                      <li>Mengembalikan saldo akun pembayaran sebesar {formatCurrency(paymentToDelete.amount)}</li>
+                    </ul>
+                  </span>
+                  <br />
+                  Tindakan ini tidak dapat dibatalkan.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Hapus
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

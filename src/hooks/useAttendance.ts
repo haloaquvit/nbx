@@ -43,6 +43,7 @@ export const useAttendance = () => {
           check_in_time: new Date().toISOString(),
           status: 'Hadir',
           location_check_in: location,
+          branch_id: currentBranch?.id || null,
         })
         .select()
         .single();

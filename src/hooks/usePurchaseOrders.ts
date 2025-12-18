@@ -95,6 +95,10 @@ export const usePurchaseOrders = () => {
       return data ? data.map(fromDb) : [];
     },
     enabled: !!currentBranch,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const addPurchaseOrder = useMutation({
@@ -119,6 +123,7 @@ export const usePurchaseOrders = () => {
           order_date: newPoData.orderDate || new Date(),
           expected_delivery_date: newPoData.expectedDeliveryDate || null,
           notes: newPoData.notes || null,
+          branch_id: currentBranch?.id || null,
           created_at: new Date(),
         };
 
@@ -226,6 +231,7 @@ export const usePurchaseOrders = () => {
           dueDate: dueDate,
           description: `Purchase Order ${data.id} - ${data.material_name}`,
           status: 'Outstanding',
+          paidAmount: 0, // Always start with 0
         });
       }
 
@@ -303,7 +309,8 @@ export const usePurchaseOrders = () => {
             reference_name: `Purchase Order ${poId}`,
             user_id: user.id,
             user_name: user.name || user.email || 'Unknown User',
-            transaction_type: 'expense'
+            transaction_type: 'expense',
+            branch_id: currentBranch?.id || null,
           };
 
           console.log('Recording PO payment in cash history:', cashFlowRecord);
@@ -427,6 +434,7 @@ export const usePurchaseOrders = () => {
           notes: notes,
           userId: currentUser.id,
           userName: po.requestedBy,
+          branchId: currentBranch?.id || null,
         });
 
         console.log('Material movement created:', movementResult);

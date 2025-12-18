@@ -17,7 +17,8 @@ import { isAdminOrOwner, isOwner } from '@/utils/roleUtils'
 import { PayPoDialog } from "./PayPoDialog"
 import { PurchaseOrderPDF } from "./PurchaseOrderPDF"
 import { ReceivePODialog } from "./ReceivePODialog"
-import { Trash2 } from "lucide-react"
+import { EditPurchaseOrderDialog } from "./EditPurchaseOrderDialog"
+import { Trash2, Pencil } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,6 +52,7 @@ export function PurchaseOrderTable() {
   const { purchaseOrders, isLoading, updatePoStatus, payPurchaseOrder, receivePurchaseOrder, deletePurchaseOrder } = usePurchaseOrders();
   const [isPayDialogOpen, setIsPayDialogOpen] = React.useState(false);
   const [isReceiveDialogOpen, setIsReceiveDialogOpen] = React.useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [selectedPo, setSelectedPo] = React.useState<PurchaseOrder | null>(null);
 
   const handleStatusChange = (po: PurchaseOrder, newStatus: PurchaseOrderStatus) => {
@@ -87,6 +89,31 @@ export function PurchaseOrderTable() {
       cell: ({ row }) => {
         const cost = row.original.totalCost;
         return cost ? `Rp ${cost.toLocaleString('id-ID')}` : '-';
+      }
+    },
+    {
+      accessorKey: "includePpn",
+      header: "PPN",
+      cell: ({ row }) => {
+        const po = row.original;
+        if (po.includePpn && po.ppnAmount) {
+          return `Rp ${po.ppnAmount.toLocaleString('id-ID')}`;
+        }
+        return '-';
+      }
+    },
+    {
+      accessorKey: "nonPpn",
+      header: "Non-PPN",
+      cell: ({ row }) => {
+        const po = row.original;
+        if (po.includePpn && po.ppnAmount && po.totalCost) {
+          const nonPpn = po.totalCost - po.ppnAmount;
+          return `Rp ${nonPpn.toLocaleString('id-ID')}`;
+        } else if (po.totalCost) {
+          return `Rp ${po.totalCost.toLocaleString('id-ID')}`;
+        }
+        return '-';
       }
     },
     { accessorKey: "supplierName", header: "Supplier", cell: ({ row }) => row.original.supplierName || '-' },
@@ -131,9 +158,20 @@ export function PurchaseOrderTable() {
       cell: ({ row }) => {
         const po = row.original;
         const isOwnerRole = isOwner(user);
+        const isAdmin = isAdminOrOwner(user);
         return (
           <div className="flex items-center gap-1">
             <PurchaseOrderPDF purchaseOrder={po} />
+            {isAdmin && po.status === 'Pending' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setSelectedPo(po); setIsEditDialogOpen(true); }}
+                title="Edit PO"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            )}
             {po.status === 'Dikirim' && (
               <Button size="sm" onClick={() => { setSelectedPo(po); setIsReceiveDialogOpen(true); }}>Terima Barang</Button>
             )}
@@ -186,6 +224,7 @@ export function PurchaseOrderTable() {
     <>
       <PayPoDialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen} purchaseOrder={selectedPo} />
       <ReceivePODialog open={isReceiveDialogOpen} onOpenChange={setIsReceiveDialogOpen} purchaseOrder={selectedPo} />
+      <EditPurchaseOrderDialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} purchaseOrder={selectedPo} />
       <div className="rounded-md border">
         <Table>
           <TableHeader>{table.getHeaderGroups().map(hg => <TableRow key={hg.id}>{hg.headers.map(h => <TableHead key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</TableHead>)}</TableRow>)}</TableHeader>

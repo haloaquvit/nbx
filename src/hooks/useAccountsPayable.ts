@@ -4,12 +4,16 @@ import { supabase } from '@/integrations/supabase/client'
 import { useExpenses } from './useExpenses'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
+import { generateSequentialId } from '@/utils/idGenerator'
 
 const fromDb = (dbPayable: any): AccountsPayable => ({
   id: dbPayable.id,
   purchaseOrderId: dbPayable.purchase_order_id,
   supplierName: dbPayable.supplier_name,
+  creditorType: dbPayable.creditor_type,
   amount: dbPayable.amount,
+  interestRate: dbPayable.interest_rate,
+  interestType: dbPayable.interest_type,
   dueDate: dbPayable.due_date ? new Date(dbPayable.due_date) : undefined,
   description: dbPayable.description,
   status: dbPayable.status,
@@ -20,7 +24,7 @@ const fromDb = (dbPayable: any): AccountsPayable => ({
   notes: dbPayable.notes,
 })
 
-const toDb = (appPayable: Partial<AccountsPayable>) => ({
+const toDb = (appPayable: Partial<AccountsPayable> & { branchId?: string }) => ({
   id: appPayable.id,
   purchase_order_id: appPayable.purchaseOrderId,
   supplier_name: appPayable.supplierName,
@@ -29,9 +33,10 @@ const toDb = (appPayable: Partial<AccountsPayable>) => ({
   description: appPayable.description,
   status: appPayable.status,
   paid_at: appPayable.paidAt || null,
-  paid_amount: appPayable.paidAmount || null,
+  paid_amount: appPayable.paidAmount !== undefined ? appPayable.paidAmount : 0, // Default to 0, not null
   payment_account_id: appPayable.paymentAccountId || null,
   notes: appPayable.notes || null,
+  branch_id: appPayable.branchId || null,
 })
 
 export const useAccountsPayable = () => {
@@ -69,11 +74,20 @@ export const useAccountsPayable = () => {
 
   const createAccountsPayable = useMutation({
     mutationFn: async (newPayable: Omit<AccountsPayable, 'id' | 'createdAt'>): Promise<AccountsPayable> => {
-      const payableId = `AP-${Date.now()}`
+      // Generate ID with sequential number using utility function
+      const payableId = await generateSequentialId({
+        branchName: currentBranch?.name,
+        tableName: 'accounts_payable',
+        pageCode: 'HT-AP',
+        branchId: currentBranch?.id || null,
+      })
+
       const dbData = toDb({
         ...newPayable,
         id: payableId,
         createdAt: new Date(),
+        paidAmount: newPayable.paidAmount ?? 0, // Ensure paidAmount is always set to 0 if not provided
+        branchId: currentBranch?.id,
       })
 
       const { data, error } = await supabase
@@ -133,7 +147,7 @@ export const useAccountsPayable = () => {
 
       if (updateError) throw updateError
 
-      // Create expense record
+      // Create expense record (this also records in cash_history and updates account balance)
       await addExpense.mutateAsync({
         description: `Pembayaran utang supplier - ${currentPayable.description}`,
         amount: amount,
@@ -142,69 +156,6 @@ export const useAccountsPayable = () => {
         date: paymentDate,
         category: 'Pembayaran Utang',
       })
-
-      // Record in cash_history for accounts payable payment tracking
-      if (paymentAccountId && user) {
-        try {
-          // Get account data for the payment account
-          const { data: account } = await supabase
-            .from('accounts')
-            .select('name, balance')
-            .eq('id', paymentAccountId)
-            .single();
-
-          const cashFlowRecord = {
-            account_id: paymentAccountId,
-            account_name: account?.name || 'Unknown Account',
-            type: 'pembayaran_utang',
-            amount: amount,
-            description: `Pembayaran utang supplier - ${currentPayable.description}`,
-            reference_id: payableId,
-            reference_name: `Accounts Payable ${payableId}`,
-            user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User',
-            transaction_type: 'expense'
-          };
-
-          console.log('Recording accounts payable payment in cash history:', cashFlowRecord);
-
-          const { error: cashFlowError } = await supabase
-            .from('cash_history')
-            .insert(cashFlowRecord);
-
-          if (cashFlowError) {
-            console.error('Failed to record accounts payable payment in cash flow:', cashFlowError.message);
-          } else {
-            console.log('Successfully recorded accounts payable payment in cash history');
-          }
-
-          // Update account balance (deduct payment amount)
-          const currentBalance = account?.balance || 0;
-          const newBalance = currentBalance - amount;
-
-          const { error: balanceError } = await supabase
-            .from('accounts')
-            .update({ balance: newBalance })
-            .eq('id', paymentAccountId);
-
-          if (balanceError) {
-            console.error('Failed to update account balance:', balanceError.message);
-          } else {
-            console.log('Successfully updated account balance:', {
-              accountId: paymentAccountId,
-              oldBalance: currentBalance,
-              newBalance
-            });
-          }
-        } catch (error) {
-          console.error('Error recording accounts payable payment cash flow:', error);
-        }
-      } else {
-        console.log('Skipping accounts payable payment cash flow record - missing paymentAccountId or user:', {
-          paymentAccountId,
-          user: user ? 'exists' : 'missing'
-        });
-      }
 
       return fromDb(updatedPayable)
     },

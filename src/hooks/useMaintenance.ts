@@ -216,6 +216,7 @@ export function useMaintenanceSummary() {
 // Create maintenance record
 export function useCreateMaintenance() {
   const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
 
   return useMutation({
     mutationFn: async (formData: MaintenanceFormData) => {
@@ -238,6 +239,7 @@ export function useCreateMaintenance() {
           service_provider: formData.serviceProvider,
           technician_name: formData.technicianName,
           notify_before_days: formData.notifyBeforeDays,
+          branch_id: currentBranch?.id || null,
         });
 
       if (error) throw error;

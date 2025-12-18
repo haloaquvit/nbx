@@ -19,7 +19,7 @@ export const useCompanySettings = () => {
     queryFn: async () => {
       const { data, error } = await supabase.from('company_settings').select('key, value');
       if (error) throw new Error(error.message);
-      
+
       const settingsObj = data.reduce((acc, { key, value }) => {
         acc[key] = value;
         return acc;
@@ -34,7 +34,11 @@ export const useCompanySettings = () => {
         longitude: settingsObj.company_longitude ? parseFloat(settingsObj.company_longitude) : null,
         attendanceRadius: settingsObj.company_attendance_radius ? parseInt(settingsObj.company_attendance_radius, 10) : null,
       };
-    }
+    },
+    staleTime: 60 * 60 * 1000, // 1 hour (settings rarely change)
+    gcTime: 2 * 60 * 60 * 1000, // 2 hours cache
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const updateSettings = useMutation({

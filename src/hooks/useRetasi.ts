@@ -278,7 +278,8 @@ export const useRetasi = (filters?: {
         ...toDb(mainData),
         retasi_number: retasiNumber,
         retasi_ke: nextRetasiKe,
-        created_by: (await supabase.auth.getUser()).data.user?.id
+        created_by: (await supabase.auth.getUser()).data.user?.id,
+        branch_id: currentBranch?.id || null
       };
       
       console.log('[useRetasi] Inserting retasi with data:', insertData);

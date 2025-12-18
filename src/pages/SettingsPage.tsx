@@ -12,8 +12,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { GoogleDriveServiceAccountSettings } from '@/components/GoogleDriveServiceAccountSettingsSecure'
 import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog'
-import { AuditLogViewer } from '@/components/AuditLogViewer'
-import { SystemHealthCheck } from '@/components/SystemHealthCheck'
 import { isOwner } from '@/utils/roleUtils'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import BranchManagementPage from './BranchManagementPage'
@@ -102,12 +100,10 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="company" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="branches">Branches</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
-          <TabsTrigger value="audit">Audit Logs</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
         
         <TabsContent value="company">
@@ -220,48 +216,6 @@ export default function SettingsPage() {
 
         <TabsContent value="integrations" className="space-y-6">
           <GoogleDriveServiceAccountSettings />
-        </TabsContent>
-        
-        <TabsContent value="audit">
-          {isOwner(user) ? (
-            <AuditLogViewer />
-          ) : (
-            <Card>
-              <CardContent className="p-6">
-                <div className="text-center">
-                  <h3 className="text-lg font-semibold mb-2">Access Restricted</h3>
-                  <p className="text-muted-foreground">
-                    Only owners can view audit logs for security purposes.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-        
-        <TabsContent value="system" className="space-y-6">
-          <SystemHealthCheck />
-          
-          {isOwner(user) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-red-600">Reset Database</CardTitle>
-                <CardDescription>
-                  Hapus semua data bisnis dan mulai dari awal (hanya untuk testing).
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="text-sm text-muted-foreground">
-                    Gunakan fitur ini dengan hati-hati. Semua data bisnis akan dihapus secara permanen.
-                  </div>
-                  <div className="flex justify-start">
-                    <ResetDatabaseDialog />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
       </Tabs>
     </div>

@@ -27,6 +27,8 @@ import { EmployeeDialog } from "@/components/EmployeeDialog"
 import { ResetPasswordDialog } from "@/components/ResetPasswordDialog"
 import { SalaryConfigDialog } from "@/components/SalaryConfigDialog"
 import { PayrollRecordDialog } from "@/components/PayrollRecordDialog"
+import { EditPayrollDialog } from "@/components/EditPayrollDialog"
+import { PaymentConfirmationDialog } from "@/components/PaymentConfirmationDialog"
 import { PayrollHistoryTable } from "@/components/PayrollHistoryTable"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
@@ -51,8 +53,11 @@ export default function EmployeePage() {
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false)
   const [isSalaryConfigDialogOpen, setIsSalaryConfigDialogOpen] = useState(false)
   const [isPayrollRecordDialogOpen, setIsPayrollRecordDialogOpen] = useState(false)
+  const [isEditPayrollDialogOpen, setIsEditPayrollDialogOpen] = useState(false)
+  const [isPaymentConfirmDialogOpen, setIsPaymentConfirmDialogOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [selectedSalaryConfig, setSelectedSalaryConfig] = useState<EmployeeSalary | null>(null)
+  const [selectedPayrollRecord, setSelectedPayrollRecord] = useState<PayrollRecord | null>(null)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
 
@@ -151,21 +156,41 @@ export default function EmployeePage() {
     }
   }
 
-  const handlePayPayroll = async (payrollId: string) => {
-    // Find the payroll record to get account info
-    const record = payrollRecords?.find(r => r.id === payrollId)
-    if (!record) return
+  const handlePayPayroll = (record: PayrollRecord) => {
+    // Validate that payment account is set
+    if (!record.paymentAccountId) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Akun pembayaran belum dipilih. Silakan edit record payroll terlebih dahulu."
+      })
+      return
+    }
+
+    // Set selected record and open confirmation dialog
+    setSelectedPayrollRecord(record)
+    setIsPaymentConfirmDialogOpen(true)
+  }
+
+  const handleConfirmPayment = async () => {
+    if (!selectedPayrollRecord) return
 
     try {
       await processPayment.mutateAsync({
-        id: payrollId,
-        paymentAccountId: record.paymentAccountId || 'acc-1100', // Default cash account
+        id: selectedPayrollRecord.id,
+        paymentAccountId: selectedPayrollRecord.paymentAccountId!,
         paymentDate: new Date()
       })
       toast({
         title: "Sukses",
         description: "Pembayaran gaji berhasil diproses"
       })
+
+      // Close dialog after a short delay to allow query invalidation
+      setTimeout(() => {
+        setIsPaymentConfirmDialogOpen(false)
+        setSelectedPayrollRecord(null)
+      }, 300)
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -173,6 +198,11 @@ export default function EmployeePage() {
         description: error.message || "Gagal memproses pembayaran"
       })
     }
+  }
+
+  const handleEditPayroll = (record: PayrollRecord) => {
+    setSelectedPayrollRecord(record)
+    setIsEditPayrollDialogOpen(true)
   }
 
   if (isError) {
@@ -215,6 +245,18 @@ export default function EmployeePage() {
         onOpenChange={setIsPayrollRecordDialogOpen}
         selectedYear={selectedYear}
         selectedMonth={selectedMonth}
+      />
+      <EditPayrollDialog
+        isOpen={isEditPayrollDialogOpen}
+        onOpenChange={setIsEditPayrollDialogOpen}
+        payrollRecord={selectedPayrollRecord}
+      />
+      <PaymentConfirmationDialog
+        isOpen={isPaymentConfirmDialogOpen}
+        onOpenChange={setIsPaymentConfirmDialogOpen}
+        payrollRecord={selectedPayrollRecord}
+        onConfirm={handleConfirmPayment}
+        isProcessing={processPayment.isPending}
       />
 
       {/* Header */}
@@ -633,22 +675,37 @@ export default function EmployeePage() {
                                   >
                                     <CheckCircle className="h-3 w-3" />
                                   </Button>
-                                  <Button size="sm" variant="outline" title="Edit">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    title="Edit"
+                                    onClick={() => handleEditPayroll(record)}
+                                  >
                                     <Edit className="h-3 w-3" />
                                   </Button>
                                 </>
                               )}
                               {record.status === 'approved' && (
-                                <Button
-                                  size="sm"
-                                  variant="default"
-                                  onClick={() => handlePayPayroll(record.id)}
-                                  title="Bayar"
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    title="Edit"
+                                    onClick={() => handleEditPayroll(record)}
+                                  >
+                                    <Edit className="h-3 w-3" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    onClick={() => handlePayPayroll(record)}
+                                    title="Bayar"
+                                    className="bg-green-600 hover:bg-green-700"
+                                  >
                                   <DollarSign className="h-3 w-3 mr-1" />
                                   Bayar
                                 </Button>
+                                </>
                               )}
                               {record.status === 'paid' && (
                                 <span className="text-xs text-green-600 font-medium">

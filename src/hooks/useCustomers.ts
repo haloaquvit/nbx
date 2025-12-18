@@ -46,6 +46,7 @@ export const useCustomers = () => {
         store_photo_url: newCustomerData.store_photo_url,
         store_photo_drive_id: newCustomerData.store_photo_drive_id,
         jumlah_galon_titip: newCustomerData.jumlah_galon_titip,
+        branch_id: currentBranch?.id || null,
       };
       
       const { data, error } = await supabase

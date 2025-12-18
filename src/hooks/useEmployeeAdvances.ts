@@ -111,7 +111,8 @@ export const useEmployeeAdvances = () => {
             reference_id: data.id,
             reference_name: `Panjar ${data.id}`,
             user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User'
+            user_name: user.name || user.email || 'Unknown User',
+            branch_id: currentBranch?.id || null,
           };
 
           console.log('Recording advance in cash history:', cashFlowRecord);
@@ -181,7 +182,8 @@ export const useEmployeeAdvances = () => {
             reference_id: newRepayment.id,
             reference_name: `Pelunasan Panjar ${newRepayment.id}`,
             user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User'
+            user_name: user.name || user.email || 'Unknown User',
+            branch_id: currentBranch?.id || null,
           };
 
           console.log('Recording repayment in cash history:', cashFlowRecord);

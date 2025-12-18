@@ -104,7 +104,10 @@ export const useMaterials = () => {
 
   const upsertMaterial = useMutation({
     mutationFn: async (material: Partial<Material>): Promise<Material> => {
-      const dbData = fromAppToDb(material);
+      const dbData = {
+        ...fromAppToDb(material),
+        branch_id: currentBranch?.id || null,
+      };
       const { data, error } = await supabase
         .from('materials')
         .upsert(dbData)

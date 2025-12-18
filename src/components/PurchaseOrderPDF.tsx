@@ -6,6 +6,7 @@ import { PurchaseOrder, PurchaseOrderItem } from "@/types/purchaseOrder"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useCompanySettings } from "@/hooks/useCompanySettings"
+import { useBranch } from "@/contexts/BranchContext"
 import { createCompressedPDF } from "@/utils/pdfUtils"
 import { supabase } from "@/integrations/supabase/client"
 
@@ -16,62 +17,38 @@ interface PurchaseOrderPDFProps {
 
 export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFProps) {
   const { settings } = useCompanySettings()
+  const { currentBranch } = useBranch()
   const printRef = React.useRef<HTMLDivElement>(null)
   const [poItems, setPoItems] = React.useState<PurchaseOrderItem[]>([])
   const [isLoadingItems, setIsLoadingItems] = React.useState(false)
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false)
+  const [hasLoadedItems, setHasLoadedItems] = React.useState(false)
 
-  // Fetch PO items from database
-  React.useEffect(() => {
-    const fetchPoItems = async () => {
-      setIsLoadingItems(true)
-      try {
-        const { data, error } = await supabase
-          .from('purchase_order_items')
-          .select(`
-            id,
-            material_id,
-            quantity,
-            unit_price,
-            quantity_received,
-            notes,
-            materials:material_id (
-              name,
-              unit
-            )
-          `)
-          .eq('purchase_order_id', purchaseOrder.id)
+  // Fetch PO items from database - LAZY LOAD (only when print button is clicked)
+  const fetchPoItems = React.useCallback(async () => {
+    if (hasLoadedItems) return // Don't fetch if already loaded
 
-        if (error) throw error
+    setIsLoadingItems(true)
+    try {
+      const { data, error } = await supabase
+        .from('purchase_order_items')
+        .select(`
+          id,
+          material_id,
+          quantity,
+          unit_price,
+          quantity_received,
+          notes,
+          materials:material_id (
+            name,
+            unit
+          )
+        `)
+        .eq('purchase_order_id', purchaseOrder.id)
 
-        if (data && data.length > 0) {
-          // Map database items to PurchaseOrderItem type
-          const items: PurchaseOrderItem[] = data.map((item: any) => ({
-            id: item.id,
-            materialId: item.material_id,
-            materialName: item.materials?.name,
-            unit: item.materials?.unit,
-            quantity: item.quantity,
-            unitPrice: item.unit_price,
-            quantityReceived: item.quantity_received,
-            notes: item.notes,
-          }))
-          setPoItems(items)
-        } else {
-          // Fallback to legacy single-item PO
-          if (purchaseOrder.materialId) {
-            setPoItems([{
-              materialId: purchaseOrder.materialId,
-              materialName: purchaseOrder.materialName,
-              unit: purchaseOrder.unit,
-              quantity: purchaseOrder.quantity || 0,
-              unitPrice: purchaseOrder.unitPrice || 0,
-            }])
-          }
-        }
-      } catch (error) {
+      if (error) {
         console.error('Error fetching PO items:', error)
-        // Fallback to legacy data
+        // If table doesn't exist or permission error, fallback to legacy
         if (purchaseOrder.materialId) {
           setPoItems([{
             materialId: purchaseOrder.materialId,
@@ -81,13 +58,53 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
             unitPrice: purchaseOrder.unitPrice || 0,
           }])
         }
-      } finally {
         setIsLoadingItems(false)
+        setHasLoadedItems(true)
+        return
       }
-    }
 
-    fetchPoItems()
-  }, [purchaseOrder.id, purchaseOrder.materialId, purchaseOrder.materialName, purchaseOrder.unit, purchaseOrder.quantity, purchaseOrder.unitPrice])
+      if (data && data.length > 0) {
+        // Map database items to PurchaseOrderItem type
+        const items: PurchaseOrderItem[] = data.map((item: any) => ({
+          id: item.id,
+          materialId: item.material_id,
+          materialName: item.materials?.name,
+          unit: item.materials?.unit,
+          quantity: item.quantity,
+          unitPrice: item.unit_price,
+          quantityReceived: item.quantity_received,
+          notes: item.notes,
+        }))
+        setPoItems(items)
+      } else {
+        // Fallback to legacy single-item PO
+        if (purchaseOrder.materialId) {
+          setPoItems([{
+            materialId: purchaseOrder.materialId,
+            materialName: purchaseOrder.materialName,
+            unit: purchaseOrder.unit,
+            quantity: purchaseOrder.quantity || 0,
+            unitPrice: purchaseOrder.unitPrice || 0,
+          }])
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching PO items:', error)
+      // Fallback to legacy data
+      if (purchaseOrder.materialId) {
+        setPoItems([{
+          materialId: purchaseOrder.materialId,
+          materialName: purchaseOrder.materialName,
+          unit: purchaseOrder.unit,
+          quantity: purchaseOrder.quantity || 0,
+          unitPrice: purchaseOrder.unitPrice || 0,
+        }])
+      }
+    } finally {
+      setIsLoadingItems(false)
+      setHasLoadedItems(true)
+    }
+  }, [hasLoadedItems, purchaseOrder.id, purchaseOrder.materialId, purchaseOrder.materialName, purchaseOrder.unit, purchaseOrder.quantity, purchaseOrder.unitPrice])
 
   const handlePrintPDF = async () => {
     if (!printRef.current) {
@@ -96,10 +113,13 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
       return
     }
 
-    if (isLoadingItems) {
-      alert('Mohon tunggu, data sedang dimuat...')
-      return
+    // Fetch PO items if not already loaded
+    if (!hasLoadedItems) {
+      await fetchPoItems()
     }
+
+    // Wait a bit for state to update
+    await new Promise(resolve => setTimeout(resolve, 100))
 
     if (poItems.length === 0) {
       alert('Error: Tidak ada item untuk dicetak')
@@ -167,7 +187,7 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
               )}
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  {settings?.companyName || 'PT. Aquavit'}
+                  {currentBranch?.name || settings?.companyName || 'Nama Perusahaan'}
                 </h1>
                 <p className="text-sm text-gray-600">
                   {settings?.address || 'Alamat Perusahaan'}

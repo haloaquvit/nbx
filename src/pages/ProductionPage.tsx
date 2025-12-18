@@ -17,6 +17,7 @@ import { validateProductForProduction } from "@/utils/productValidation"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { Trash2, Package, AlertTriangle, Printer } from "lucide-react"
 import { ProductionPrintDialog } from "@/components/ProductionPrintDialog"
+import { formatNumber, formatMoney } from "@/utils/formatNumber"
 
 export default function ProductionPage() {
   const { user } = useAuth()
@@ -366,7 +367,7 @@ export default function ProductionPage() {
                     {record.ref}
                   </td>
                   <td className="px-3 py-2">{record.productName}</td>
-                  <td className="px-3 py-2 font-medium">{record.quantity}</td>
+                  <td className="px-3 py-2 font-medium">{formatNumber(record.quantity)}</td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-1 rounded-full text-xs ${
                       record.consumeBOM 

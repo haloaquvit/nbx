@@ -97,10 +97,13 @@ export const useProducts = () => {
         return fromDb(data);
       } else {
         // Insert new product - let database generate UUID automatically
-        const insertData = { ...dbData };
-        
+        const insertData = {
+          ...dbData,
+          branch_id: currentBranch?.id || null,
+        };
+
         logDebug('Product Insert', { insertData });
-        
+
         const { data, error } = await supabase
           .from('products')
           .insert(insertData)

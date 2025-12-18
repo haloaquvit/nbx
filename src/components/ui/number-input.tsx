@@ -26,17 +26,45 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     onBlur,
     ...props
   }, ref) => {
+    // Format number with thousand separators, hide unnecessary decimals
+    const formatNumber = (val: string | number): string => {
+      if (val === undefined || val === null || val === '') return '';
+
+      const strVal = String(val);
+      const parts = strVal.split('.');
+
+      // Add thousand separators to integer part
+      if (parts[0]) {
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      }
+
+      // Only include decimal part if it's not .00
+      if (parts.length > 1 && parts[1] && parseFloat('0.' + parts[1]) > 0) {
+        return parts[0] + '.' + parts[1];
+      }
+
+      return parts[0];
+    };
+
+    // Remove thousand separators
+    const removeFormatting = (val: string): string => {
+      return val.replace(/,/g, '');
+    };
+
     const [inputValue, setInputValue] = React.useState<string>(() => {
       if (value === undefined || value === null || value === '') return ''
-      return String(value)
+      return formatNumber(String(value))
     })
 
     // Sync with external value changes
     React.useEffect(() => {
       if (value === undefined || value === null || value === '') {
         setInputValue('')
-      } else if (String(value) !== inputValue) {
-        setInputValue(String(value))
+      } else {
+        const rawValue = removeFormatting(inputValue);
+        if (String(value) !== rawValue) {
+          setInputValue(formatNumber(String(value)))
+        }
       }
     }, [value])
 
@@ -58,20 +86,23 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
         return
       }
 
-      // Validate number format
+      // Remove commas for validation
+      const rawValue = removeFormatting(newValue);
+
+      // Validate number format (without commas)
       const numberPattern = allowNegative
         ? /^-?\d*\.?\d*$/
         : /^\d*\.?\d*$/
 
-      if (!numberPattern.test(newValue)) {
+      if (!numberPattern.test(rawValue)) {
         return // Reject invalid input
       }
 
-      // Set the input value (allows partial input like "12.")
-      setInputValue(newValue)
+      // Set the formatted input value
+      setInputValue(formatNumber(rawValue))
 
       // Parse and validate the number
-      const parsedValue = parseFloat(newValue)
+      const parsedValue = parseFloat(rawValue)
 
       if (!isNaN(parsedValue)) {
         // Check min/max constraints
@@ -97,14 +128,17 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       if (currentValue === '' || currentValue === '-') {
         if (!allowEmpty) {
           const defaultValue = min !== undefined ? min : 0
-          setInputValue(String(defaultValue))
+          setInputValue(formatNumber(String(defaultValue)))
           if (onChange) {
             onChange(defaultValue)
           }
         }
       } else {
+        // Remove formatting before parsing
+        const rawValue = removeFormatting(currentValue);
+
         // Format the number on blur
-        const parsedValue = parseFloat(currentValue)
+        const parsedValue = parseFloat(rawValue)
         if (!isNaN(parsedValue)) {
           let finalValue = parsedValue
 
@@ -116,8 +150,9 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             finalValue = max
           }
 
-          // Format with decimal places
-          const formatted = finalValue.toFixed(decimalPlaces)
+          // Format with decimal places and thousand separators
+          const withDecimals = finalValue.toFixed(decimalPlaces)
+          const formatted = formatNumber(withDecimals)
           setInputValue(formatted)
 
           if (onChange && finalValue !== parsedValue) {

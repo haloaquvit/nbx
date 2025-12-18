@@ -333,7 +333,8 @@ export function useTransactionDeliveryInfo(transactionId: string) {
 
 // Create new delivery
 export function useDeliveries() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
 
   const createDelivery = useMutation({
     mutationFn: async (request: CreateDeliveryRequest): Promise<Delivery> => {
@@ -407,6 +408,7 @@ export function useDeliveries() {
           notes: request.notes,
           driver_id: request.driverId,
           helper_id: request.helperId,
+          branch_id: currentBranch?.id || null,
         })
         .select()
         .single()
@@ -463,6 +465,7 @@ export function useDeliveries() {
               notes: request.notes,
               driver_id: request.driverId,
               helper_id: request.helperId,
+              branch_id: currentBranch?.id || null,
             })
             .select()
             .single();

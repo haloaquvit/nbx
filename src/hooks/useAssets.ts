@@ -178,6 +178,7 @@ export function useAssetsSummary() {
 // Create asset
 export function useCreateAsset() {
   const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
 
   return useMutation({
     mutationFn: async (formData: AssetFormData) => {
@@ -234,6 +235,7 @@ export function useCreateAsset() {
         photo_url: formData.photoUrl,
         current_value: formData.purchasePrice, // Set initial current_value to purchase price
         account_id: accountId, // Always set account_id
+        branch_id: currentBranch?.id || null,
       };
 
       if (formData.warrantyExpiry) {

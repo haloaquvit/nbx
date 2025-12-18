@@ -14,6 +14,7 @@ import { Transaction } from "@/types/transaction"
 import { useTransactions } from "@/hooks/useTransactions"
 import { useAccounts } from "@/hooks/useAccounts"
 import { useAuth } from "@/hooks/useAuth"
+import { useBranch } from "@/contexts/BranchContext"
 import { useQueryClient } from "@tanstack/react-query"
 import { supabase } from "@/integrations/supabase/client"
 import { Wallet } from "lucide-react"
@@ -42,6 +43,7 @@ interface PayReceivableDialogProps {
 export function PayReceivableDialog({ open, onOpenChange, transaction }: PayReceivableDialogProps) {
   const { toast } = useToast()
   const { user } = useAuth()
+  const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
   const { accounts, updateAccountBalance } = useAccounts()
   
@@ -103,7 +105,8 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         reference_id: transaction.id,
         reference_name: `Piutang ${transaction.id}`,
         user_id: user.id || null, // Allow null if user.id is undefined
-        user_name: user.name || user.email || 'Unknown User'
+        user_name: user.name || user.email || 'Unknown User',
+        branch_id: currentBranch?.id || null, // ADD BRANCH ID
       };
 
       console.log('Attempting to insert cash_history record:', paymentRecord);

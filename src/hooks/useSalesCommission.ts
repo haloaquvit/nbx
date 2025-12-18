@@ -84,6 +84,7 @@ export const useSalesCommissionSettings = () => {
           commission_value: data.commissionValue,
           is_active: data.isActive,
           created_by: data.createdBy,
+          branch_id: currentBranch?.id || null,
         })
         .select()
         .single()
