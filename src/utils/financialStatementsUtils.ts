@@ -156,31 +156,49 @@ export function calculatePercentage(part: number, whole: number): number {
 /**
  * Generate Balance Sheet from existing data
  */
-export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceSheetData> {
+export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): Promise<BalanceSheetData> {
   const cutoffDate = asOfDate || new Date();
   const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
-  // Get all accounts with current balances
-  const { data: accounts, error: accountsError } = await supabase
+  // Get all accounts with current balances (filtered by branch if provided)
+  let accountsQuery = supabase
     .from('accounts')
-    .select('id, name, type, balance, initial_balance, code')
+    .select('id, name, type, balance, initial_balance, code, branch_id')
     .order('code');
+
+  if (branchId) {
+    accountsQuery = accountsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: accounts, error: accountsError } = await accountsQuery;
 
   if (accountsError) throw new Error(`Failed to fetch accounts: ${accountsError.message}`);
 
-  // Get account receivables from transactions
-  const { data: transactions, error: transactionsError } = await supabase
+  // Get account receivables from transactions (filtered by branch)
+  let transactionsQuery = supabase
     .from('transactions')
-    .select('id, total, paid_amount, payment_status, order_date')
+    .select('id, total, paid_amount, payment_status, order_date, branch_id')
     .lte('order_date', cutoffDateStr)
     .in('payment_status', ['Belum Lunas', 'Kredit']);
 
+  if (branchId) {
+    transactionsQuery = transactionsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: transactions, error: transactionsError } = await transactionsQuery;
+
   if (transactionsError) throw new Error(`Failed to fetch transactions: ${transactionsError.message}`);
 
-  // Get inventory value from materials
-  const { data: materials, error: materialsError } = await supabase
+  // Get inventory value from materials (filtered by branch)
+  let materialsQuery = supabase
     .from('materials')
-    .select('id, name, stock, price_per_unit');
+    .select('id, name, stock, price_per_unit, branch_id');
+
+  if (branchId) {
+    materialsQuery = materialsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: materials, error: materialsError } = await materialsQuery;
 
   if (materialsError) throw new Error(`Failed to fetch materials: ${materialsError.message}`);
 
@@ -446,36 +464,55 @@ export async function generateBalanceSheet(asOfDate?: Date): Promise<BalanceShee
  */
 export async function generateIncomeStatement(
   periodFrom: Date,
-  periodTo: Date
+  periodTo: Date,
+  branchId?: string
 ): Promise<IncomeStatementData> {
   const fromDateStr = periodFrom.toISOString().split('T')[0];
   const toDateStr = periodTo.toISOString().split('T')[0];
 
-  // Get revenue from transactions
-  const { data: transactions, error: transactionsError } = await supabase
+  // Get revenue from transactions (filtered by branch)
+  let transactionsQuery = supabase
     .from('transactions')
-    .select('id, total, subtotal, ppn_amount, order_date, items')
+    .select('id, total, subtotal, ppn_amount, order_date, items, branch_id')
     .gte('order_date', fromDateStr)
     .lte('order_date', toDateStr);
 
+  if (branchId) {
+    transactionsQuery = transactionsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: transactions, error: transactionsError } = await transactionsQuery;
+
   if (transactionsError) throw new Error(`Failed to fetch transactions: ${transactionsError.message}`);
 
-  // Get expenses from cash_history and expenses table
-  const { data: cashHistory, error: cashError } = await supabase
+  // Get expenses from cash_history (filtered by branch)
+  let cashHistoryQuery = supabase
     .from('cash_history')
     .select('*')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59')
     .in('type', ['pengeluaran', 'kas_keluar_manual', 'pembayaran_po']);
 
+  if (branchId) {
+    cashHistoryQuery = cashHistoryQuery.eq('branch_id', branchId);
+  }
+
+  const { data: cashHistory, error: cashError } = await cashHistoryQuery;
+
   if (cashError) throw new Error(`Failed to fetch cash history: ${cashError.message}`);
 
-  // Get commission data
-  const { data: commissions, error: commissionsError } = await supabase
+  // Get commission data (filtered by branch)
+  let commissionsQuery = supabase
     .from('commission_entries')
     .select('*')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59');
+
+  if (branchId) {
+    commissionsQuery = commissionsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: commissions, error: commissionsError } = await commissionsQuery;
 
   // Ignore commission errors as table might not exist
   const commissionData = commissionsError ? [] : (commissions || []);
@@ -675,27 +712,40 @@ export async function generateIncomeStatement(
  */
 export async function generateCashFlowStatement(
   periodFrom: Date,
-  periodTo: Date
+  periodTo: Date,
+  branchId?: string
 ): Promise<CashFlowStatementData> {
   const fromDateStr = periodFrom.toISOString().split('T')[0];
   const toDateStr = periodTo.toISOString().split('T')[0];
 
-  // Get all cash movements
-  const { data: cashHistory, error: cashError } = await supabase
+  // Get all cash movements (filtered by branch)
+  let cashHistoryQuery = supabase
     .from('cash_history')
     .select('*')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59')
     .order('created_at');
 
+  if (branchId) {
+    cashHistoryQuery = cashHistoryQuery.eq('branch_id', branchId);
+  }
+
+  const { data: cashHistory, error: cashError } = await cashHistoryQuery;
+
   if (cashError) throw new Error(`Failed to fetch cash history: ${cashError.message}`);
 
-  // Get beginning and ending cash balances
-  const { data: cashAccounts, error: accountsError } = await supabase
+  // Get beginning and ending cash balances (filtered by branch)
+  let cashAccountsQuery = supabase
     .from('accounts')
-    .select('id, name, balance, initial_balance')
+    .select('id, name, balance, initial_balance, branch_id')
     .ilike('name', '%kas%')
     .or('name.ilike.%bank%');
+
+  if (branchId) {
+    cashAccountsQuery = cashAccountsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: cashAccounts, error: accountsError } = await cashAccountsQuery;
 
   if (accountsError) throw new Error(`Failed to fetch cash accounts: ${accountsError.message}`);
 
