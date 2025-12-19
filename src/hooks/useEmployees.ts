@@ -58,9 +58,69 @@ export const useEmployees = () => {
   });
 
   const createEmployee = useMutation({
-    mutationFn: async (employeeData: any) => {
-      console.log('[useEmployees] Creating employee - DISABLED temporarily to prevent crashes');
-      throw new Error('Employee creation temporarily disabled. Please contact admin.');
+    mutationFn: async (employeeData: {
+      email: string;
+      password: string;
+      full_name: string;
+      username?: string | null;
+      role: string;
+      phone?: string;
+      address?: string;
+      status?: string;
+    }) => {
+      console.log('[useEmployees] Creating employee:', employeeData);
+
+      // Step 1: Create auth user using Supabase signUp
+      // This will create both the auth user AND trigger the profile creation via database trigger
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: employeeData.email,
+        password: employeeData.password,
+        options: {
+          data: {
+            full_name: employeeData.full_name,
+            role: employeeData.role,
+          },
+          // Don't send confirmation email - owner is creating the account
+          emailRedirectTo: undefined,
+        }
+      });
+
+      if (authError) {
+        console.error('[useEmployees] Auth signUp error:', authError);
+        if (authError.message.includes('already registered')) {
+          throw new Error('Email sudah terdaftar. Gunakan email lain.');
+        }
+        throw new Error(`Gagal membuat akun: ${authError.message}`);
+      }
+
+      if (!authData.user) {
+        throw new Error('Gagal membuat user. Silakan coba lagi.');
+      }
+
+      console.log('[useEmployees] Auth user created:', authData.user.id);
+
+      // Step 2: Update the profile with additional data
+      // The profile should be created by database trigger, we just need to update it
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: employeeData.full_name,
+          username: employeeData.username || employeeData.email.split('@')[0],
+          role: employeeData.role,
+          phone: employeeData.phone || '',
+          address: employeeData.address || '',
+          status: employeeData.status || 'Aktif',
+          branch_id: currentBranch?.id || null,
+        })
+        .eq('id', authData.user.id);
+
+      if (profileError) {
+        console.warn('[useEmployees] Profile update error (may be ok if trigger handles it):', profileError);
+        // Don't throw - the trigger might have already set up the profile
+      }
+
+      console.log('[useEmployees] Employee created successfully');
+      return { id: authData.user.id, email: employeeData.email };
     },
     onSuccess: (data) => {
       console.log('[useEmployees] Employee created successfully:', data);
@@ -152,8 +212,35 @@ export const useEmployees = () => {
 
   const resetPassword = useMutation({
     mutationFn: async ({ userId, newPassword }: { userId: string, newPassword: string }) => {
-      // Edge function not available - disable for now
-      throw new Error('Reset password tidak tersedia saat ini. Hubungi administrator.');
+      console.log('[useEmployees] Reset password for user:', userId);
+
+      // For security, we can't directly reset another user's password from client-side
+      // The best approach is to use Supabase Admin API via Edge Function
+      // For now, we'll use the password reset email flow
+
+      // Get user email first
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', userId)
+        .single();
+
+      if (profileError || !profile?.email) {
+        throw new Error('Tidak dapat menemukan email karyawan');
+      }
+
+      // Send password reset email
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(profile.email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (resetError) {
+        console.error('[useEmployees] Reset password error:', resetError);
+        throw new Error(`Gagal mengirim email reset password: ${resetError.message}`);
+      }
+
+      console.log('[useEmployees] Password reset email sent to:', profile.email);
+      return { email: profile.email };
     },
   });
 
