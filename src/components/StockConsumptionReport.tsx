@@ -8,15 +8,29 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useStockMovements } from '@/hooks/useStockMovements'
-import { useTransactions } from '@/hooks/useTransactions'
-import { useProducts } from '@/hooks/useProducts'
-import { StockConsumptionReport as ReportType } from '@/types/stockMovement'
-import { FileText, Download, Calendar, TrendingDown, TrendingUp, Package, CalendarDays } from 'lucide-react'
-import { format, startOfMonth, endOfMonth } from 'date-fns'
+import { supabase } from '@/integrations/supabase/client'
+import { FileText, Download, Calendar, TrendingDown, TrendingUp, Package, CalendarDays, FileSpreadsheet } from 'lucide-react'
+import { format, startOfMonth, endOfMonth, subDays } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 import jsPDF from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
+import * as XLSX from 'xlsx'
+import { useBranch } from '@/contexts/BranchContext'
+
+interface StockReportItem {
+  productId: string
+  productName: string
+  productType: string
+  unit: string
+  startingStock: number
+  totalIn: number
+  totalOut: number
+  endingStock: number
+  netMovement: number
+  productions: number
+  purchases: number
+  sales: number
+}
 
 export const StockConsumptionReport = () => {
   const [filterType, setFilterType] = useState<'monthly' | 'dateRange'>('monthly')
@@ -24,12 +38,9 @@ export const StockConsumptionReport = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
-  const [reportData, setReportData] = useState<ReportType[]>([])
+  const [reportData, setReportData] = useState<StockReportItem[]>([])
   const [isLoading, setIsLoading] = useState(false)
-  
-  const { getMonthlyConsumptionReport, getMovementsByDateRange } = useStockMovements()
-  const { transactions } = useTransactions()
-  const { products } = useProducts()
+  const { currentBranch } = useBranch()
 
   const months = [
     { value: 1, label: 'Januari' },
@@ -48,212 +59,196 @@ export const StockConsumptionReport = () => {
 
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i)
 
-  const generateReportFromTransactions = (fromDate: Date, toDate: Date): ReportType[] => {
-    if (!transactions || !products) return []
+  const generateReport = async (fromDate: Date, toDate: Date): Promise<StockReportItem[]> => {
+    // Get all products
+    let productsQuery = supabase
+      .from('products')
+      .select('id, name, type, unit, current_stock')
+      .order('name')
 
-    // Filter transactions in date range
-    const filteredTransactions = transactions.filter(transaction => {
-      const transactionDate = new Date(transaction.orderDate)
-      return transactionDate >= fromDate && transactionDate <= toDate
+    if (currentBranch?.id) {
+      productsQuery = productsQuery.eq('branch_id', currentBranch.id)
+    }
+
+    const { data: products, error: productsError } = await productsQuery
+    if (productsError) throw productsError
+
+    // Get production records in date range (MASUK dari produksi)
+    let productionsQuery = supabase
+      .from('production_records')
+      .select('product_id, quantity, created_at')
+      .gte('created_at', fromDate.toISOString())
+      .lte('created_at', toDate.toISOString())
+      .gt('quantity', 0) // Only positive quantities (actual production, not error)
+
+    if (currentBranch?.id) {
+      productionsQuery = productionsQuery.eq('branch_id', currentBranch.id)
+    }
+
+    const { data: productionRecords, error: productionError } = await productionsQuery
+    if (productionError) console.warn('Production query error:', productionError)
+
+    // Get transactions in date range (KELUAR dari penjualan)
+    let transactionsQuery = supabase
+      .from('transactions')
+      .select('id, items, order_date, status')
+      .gte('order_date', fromDate.toISOString())
+      .lte('order_date', toDate.toISOString())
+      .in('status', ['Selesai', 'Diproses', 'Proses Produksi', 'Dikirim'])
+
+    if (currentBranch?.id) {
+      transactionsQuery = transactionsQuery.eq('branch_id', currentBranch.id)
+    }
+
+    const { data: transactions, error: transactionsError } = await transactionsQuery
+    if (transactionsError) console.warn('Transactions query error:', transactionsError)
+
+    // Get production records BEFORE start date to calculate starting stock
+    let priorProductionsQuery = supabase
+      .from('production_records')
+      .select('product_id, quantity')
+      .lt('created_at', fromDate.toISOString())
+      .gt('quantity', 0)
+
+    if (currentBranch?.id) {
+      priorProductionsQuery = priorProductionsQuery.eq('branch_id', currentBranch.id)
+    }
+
+    const { data: priorProductions } = await priorProductionsQuery
+
+    // Get transactions BEFORE start date
+    let priorTransactionsQuery = supabase
+      .from('transactions')
+      .select('id, items')
+      .lt('order_date', fromDate.toISOString())
+      .in('status', ['Selesai', 'Diproses', 'Proses Produksi', 'Dikirim'])
+
+    if (currentBranch?.id) {
+      priorTransactionsQuery = priorTransactionsQuery.eq('branch_id', currentBranch.id)
+    }
+
+    const { data: priorTransactions } = await priorTransactionsQuery
+
+    // Calculate production totals per product (in period)
+    const productionByProduct: Record<string, number> = {}
+    productionRecords?.forEach(record => {
+      if (record.product_id) {
+        productionByProduct[record.product_id] = (productionByProduct[record.product_id] || 0) + Number(record.quantity)
+      }
     })
 
-    // Extract product usage from transactions
-    const productUsage: Record<string, {
-      productId: string
-      productName: string
-      productType: string
-      unit: string
-      totalConsumed: number
-      transactions: any[]
-    }> = {}
+    // Calculate prior production totals
+    const priorProductionByProduct: Record<string, number> = {}
+    priorProductions?.forEach(record => {
+      if (record.product_id) {
+        priorProductionByProduct[record.product_id] = (priorProductionByProduct[record.product_id] || 0) + Number(record.quantity)
+      }
+    })
 
-    filteredTransactions.forEach(transaction => {
-      // Only count transactions that actually consumed products (completed or in production)
-      if (transaction.status === 'Selesai' || transaction.status === 'Proses Produksi') {
-        transaction.items?.forEach((item: any) => {
+    // Calculate sales totals per product (in period)
+    const salesByProduct: Record<string, number> = {}
+    transactions?.forEach(transaction => {
+      const items = typeof transaction.items === 'string'
+        ? JSON.parse(transaction.items)
+        : transaction.items
+
+      if (Array.isArray(items)) {
+        items.forEach((item: any) => {
           const productId = item.product?.id || item.productId
-          const productName = item.product?.name || item.name || 'Unknown Product'
           const quantity = Number(item.quantity || 0)
-
           if (productId && quantity > 0) {
-            if (!productUsage[productId]) {
-              const product = products.find(p => p.id === productId)
-              productUsage[productId] = {
-                productId,
-                productName,
-                productType: product?.type || 'Stock',
-                unit: product?.unit || 'pcs',
-                totalConsumed: 0,
-                transactions: []
-              }
-            }
-
-            productUsage[productId].totalConsumed += quantity
-            productUsage[productId].transactions.push({
-              transactionId: transaction.id,
-              transactionDate: transaction.orderDate,
-              quantity: quantity,
-              customerName: transaction.customerName
-            })
+            salesByProduct[productId] = (salesByProduct[productId] || 0) + quantity
           }
         })
       }
     })
 
-    // Create report for each product
-    const reports: ReportType[] = []
+    // Calculate prior sales totals
+    const priorSalesByProduct: Record<string, number> = {}
+    priorTransactions?.forEach(transaction => {
+      const items = typeof transaction.items === 'string'
+        ? JSON.parse(transaction.items)
+        : transaction.items
 
-    // Include all products, even those without usage
-    const allProducts = products || []
-    
-    allProducts.forEach(product => {
-      const usage = productUsage[product.id] || {
-        productId: product.id,
-        productName: product.name,
-        productType: product.type || 'Stock',  
-        unit: product.unit || 'pcs',
-        totalConsumed: 0,
-        transactions: []
+      if (Array.isArray(items)) {
+        items.forEach((item: any) => {
+          const productId = item.product?.id || item.productId
+          const quantity = Number(item.quantity || 0)
+          if (productId && quantity > 0) {
+            priorSalesByProduct[productId] = (priorSalesByProduct[productId] || 0) + quantity
+          }
+        })
       }
-
-      // For both Stock and Beli type products, consumption/usage is OUT movement
-      // Stock: reduces physical stock, Beli: tracks usage (both are OUT) 
-      let totalIn = 0
-      let totalOut = 0
-
-      if (product.type === 'Stock') {
-        totalOut = usage.totalConsumed // Stock products are consumed (OUT)
-      } else if (product.type === 'Beli') {
-        totalIn = usage.totalConsumed // Beli products are acquired (IN)
-      }
-
-      const netMovement = totalIn - totalOut
-      const endingStock = Number(product.currentStock) || 0
-      const startingStock = endingStock - netMovement
-
-      reports.push({
-        productId: product.id,
-        productName: product.name,
-        productType: product.type || 'Stock',
-        unit: product.unit || 'pcs',
-        totalIn,
-        totalOut,
-        netMovement,
-        startingStock: Math.max(0, startingStock), // Don't show negative starting stock
-        endingStock,
-        movements: usage.transactions.map(t => ({
-          id: `${t.transactionId}-${Date.now()}`,
-          productId: product.id,
-          productName: product.name,
-          type: 'OUT', // Both Stock and Beli products are consumed/used (OUT)
-          reason: 'PRODUCTION',
-          quantity: t.quantity,
-          previousStock: 0,
-          newStock: 0,
-          notes: `Transaction ${t.transactionId} - ${t.customerName}`,
-          referenceId: t.transactionId,
-          referenceType: 'transaction',
-          userId: '',
-          userName: '',
-          createdAt: new Date(t.transactionDate)
-        }))
-      })
     })
 
-    return reports
-      .filter(report => report.movements.length > 0 || report.productType !== 'Jasa') // Show products with movements or non-Jasa products
-      .sort((a, b) => a.productName.localeCompare(b.productName))
-  }
+    // Build report data
+    const reports: StockReportItem[] = []
 
-  const generateReportFromMovements = async (fromDate: Date, toDate: Date): Promise<ReportType[]> => {
-    // Get movements in date range
-    const movements = await getMovementsByDateRange(fromDate, toDate)
-    
-    // Get all products from supabase
-    const { supabase } = await import('@/integrations/supabase/client')
-    const { data: products, error: productsError } = await supabase
-      .from('products')
-      .select('id, name, type, unit, current_stock')
-    
-    if (productsError) throw new Error(productsError.message)
-
-    // Group movements by product
-    const productMovements = movements.reduce((acc, movement) => {
-      if (!acc[movement.productId]) {
-        acc[movement.productId] = []
-      }
-      acc[movement.productId].push(movement)
-      return acc
-    }, {} as Record<string, any[]>)
-
-    // Create report for each product
-    const reports: ReportType[] = []
-    
     for (const product of products || []) {
-      const productMovs = productMovements[product.id] || []
-      
-      // Include all products, even those without movements
-      const totalIn = productMovs
-        .filter(m => m.type === 'IN')
-        .reduce((sum, m) => sum + m.quantity, 0)
-        
-      const totalOut = productMovs
-        .filter(m => m.type === 'OUT')
-        .reduce((sum, m) => sum + m.quantity, 0)
+      // Skip service products
+      if (product.type === 'Jasa') continue
+
+      const currentStock = Number(product.current_stock) || 0
+      const periodProduction = productionByProduct[product.id] || 0
+      const periodSales = salesByProduct[product.id] || 0
+      const priorProduction = priorProductionByProduct[product.id] || 0
+      const priorSales = priorSalesByProduct[product.id] || 0
+
+      // Calculate starting stock
+      // Current stock = Starting + Production - Sales (for the period)
+      // So: Starting = Current - Production + Sales (for remaining period after toDate)
+      // But we need starting at fromDate...
+
+      // Better approach:
+      // Ending stock = Current stock (at report generation time)
+      // Total IN = Production in period
+      // Total OUT = Sales in period
+      // Starting stock = Ending - IN + OUT = Current - periodProduction + periodSales
+
+      const totalIn = periodProduction
+      const totalOut = periodSales
+      const endingStock = currentStock
+      const startingStock = endingStock - totalIn + totalOut
 
       const netMovement = totalIn - totalOut
-      const endingStock = Number(product.current_stock) || 0
-      const startingStock = endingStock - netMovement
 
       reports.push({
         productId: product.id,
         productName: product.name,
         productType: product.type || 'Stock',
         unit: product.unit || 'pcs',
+        startingStock: Math.max(0, startingStock),
         totalIn,
         totalOut,
-        netMovement,
-        startingStock,
         endingStock,
-        movements: productMovs
+        netMovement,
+        productions: periodProduction,
+        purchases: 0, // Can be enhanced to track PO receipts
+        sales: periodSales,
       })
     }
 
-    return reports.sort((a, b) => a.productName.localeCompare(b.productName))
+    return reports
+      .filter(r => r.totalIn > 0 || r.totalOut > 0 || r.endingStock > 0)
+      .sort((a, b) => a.productName.localeCompare(b.productName))
   }
 
   const handleGenerateReport = async () => {
     setIsLoading(true)
     try {
-      let data: ReportType[]
       let fromDate: Date
       let toDate: Date
-      
+
       if (filterType === 'monthly') {
         fromDate = startOfMonth(new Date(selectedYear, selectedMonth - 1))
         toDate = endOfMonth(new Date(selectedYear, selectedMonth - 1))
       } else {
         fromDate = new Date(startDate)
         toDate = new Date(endDate)
-        toDate.setHours(23, 59, 59, 999) // End of day
+        toDate.setHours(23, 59, 59, 999)
       }
-      
-      // Use transaction data as primary source
-      data = generateReportFromTransactions(fromDate, toDate)
-      
-      // If no data from transactions, try stock movements (fallback)
-      if (data.length === 0) {
-        try {
-          if (filterType === 'monthly') {
-            data = await getMonthlyConsumptionReport(selectedYear, selectedMonth)
-          } else {
-            data = await generateReportFromMovements(fromDate, toDate)
-          }
-        } catch (error) {
-          console.warn('Stock movements not available, using transaction data only:', error)
-        }
-      }
-      
+
+      const data = await generateReport(fromDate, toDate)
       setReportData(data)
     } catch (error) {
       console.error('Error generating report:', error)
@@ -265,78 +260,133 @@ export const StockConsumptionReport = () => {
   const getReportTitle = () => {
     if (filterType === 'monthly') {
       const monthName = months.find(m => m.value === selectedMonth)?.label
-      return `Laporan Konsumsi Barang - ${monthName} ${selectedYear}`
+      return `Laporan Stock Produk - ${monthName} ${selectedYear}`
     } else {
-      return `Laporan Konsumsi Barang - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
+      return `Laporan Stock Produk - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
     }
   }
 
-  const handlePrintReport = () => {
-    const doc = new jsPDF()
+  const handlePrintPDF = () => {
+    const doc = new jsPDF('landscape')
     const title = getReportTitle()
-    
+
     // Add title
     doc.setFontSize(16)
     doc.setFont('helvetica', 'bold')
     doc.text(title, 14, 22)
-    
-    // Add generation date and data source
+
+    // Add generation info
     doc.setFontSize(10)
     doc.setFont('helvetica', 'normal')
     doc.text(`Digenerate pada: ${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}`, 14, 30)
-    doc.text(`Sumber Data: Transaksi (Status: Selesai & Proses Produksi)`, 14, 36)
-    
+    doc.text(`Cabang: ${currentBranch?.name || 'Semua Cabang'}`, 14, 36)
+
     // Prepare table data
     const tableData = reportData.map(item => [
       item.productName,
       item.productType,
       item.unit,
       item.startingStock.toString(),
-      item.totalIn.toString(),
-      item.totalOut.toString(),
+      item.totalIn > 0 ? `+${item.totalIn}` : '-',
+      item.totalOut > 0 ? `-${item.totalOut}` : '-',
       item.endingStock.toString(),
       item.netMovement > 0 ? `+${item.netMovement}` : item.netMovement.toString()
     ])
-    
-    // Add table
-    ;(doc as any).autoTable({
-      head: [['Nama Produk', 'Jenis', 'Sat.', 'Awal', 'Masuk', 'Keluar', 'Akhir', 'Net']],
+
+    autoTable(doc, {
+      head: [['Nama Produk', 'Jenis', 'Satuan', 'Stock Awal', 'Masuk', 'Keluar', 'Stock Akhir', 'Net']],
       body: tableData,
       startY: 44,
-      styles: { fontSize: 8 },
+      styles: { fontSize: 9 },
       headStyles: { fillColor: [66, 139, 202] },
       columnStyles: {
-        0: { cellWidth: 60 },
-        1: { cellWidth: 20 },
-        2: { cellWidth: 15 },
-        3: { cellWidth: 15 },
-        4: { cellWidth: 15 },
-        5: { cellWidth: 15 },
-        6: { cellWidth: 15 },
-        7: { cellWidth: 20 }
+        0: { cellWidth: 80 },
+        1: { cellWidth: 25 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 25, halign: 'right' },
+        4: { cellWidth: 25, halign: 'right' },
+        5: { cellWidth: 25, halign: 'right' },
+        6: { cellWidth: 25, halign: 'right' },
+        7: { cellWidth: 25, halign: 'right' }
       }
     })
-    
+
     // Add summary
     const finalY = (doc as any).lastAutoTable.finalY + 10
     doc.setFontSize(10)
     doc.setFont('helvetica', 'bold')
     doc.text('Ringkasan:', 14, finalY)
-    
+
     const totalProducts = reportData.length
-    const totalMovements = reportData.reduce((sum, item) => sum + item.movements.length, 0)
+    const totalStockIn = reportData.reduce((sum, item) => sum + item.totalIn, 0)
+    const totalStockOut = reportData.reduce((sum, item) => sum + item.totalOut, 0)
     const lowStockCount = reportData.filter(item => item.endingStock <= 5).length
-    
+
     doc.setFont('helvetica', 'normal')
-    doc.text(`• Total Produk: ${totalProducts}`, 14, finalY + 8)
-    doc.text(`• Total Pergerakan: ${totalMovements}`, 14, finalY + 16)
-    doc.text(`• Produk Stock Rendah: ${lowStockCount}`, 14, finalY + 24)
-    
-    // Save PDF with dynamic filename
-    const filename = filterType === 'monthly' 
-      ? `Laporan-Konsumsi-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.pdf`
-      : `Laporan-Konsumsi-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.pdf`
+    doc.text(`Total Produk: ${totalProducts}`, 14, finalY + 8)
+    doc.text(`Total Masuk: ${totalStockIn}`, 14, finalY + 16)
+    doc.text(`Total Keluar: ${totalStockOut}`, 14, finalY + 24)
+    doc.text(`Produk Stock Rendah (≤5): ${lowStockCount}`, 14, finalY + 32)
+
+    // Save PDF
+    const filename = filterType === 'monthly'
+      ? `Laporan-Stock-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.pdf`
+      : `Laporan-Stock-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.pdf`
     doc.save(filename)
+  }
+
+  const handleExportExcel = () => {
+    const title = getReportTitle()
+
+    const excelData = reportData.map(item => ({
+      'Nama Produk': item.productName,
+      'Jenis': item.productType,
+      'Satuan': item.unit,
+      'Stock Awal': item.startingStock,
+      'Masuk (Produksi)': item.totalIn,
+      'Keluar (Penjualan)': item.totalOut,
+      'Stock Akhir': item.endingStock,
+      'Net Movement': item.netMovement,
+    }))
+
+    const ws = XLSX.utils.json_to_sheet([])
+    XLSX.utils.sheet_add_aoa(ws, [[title]], { origin: 'A1' })
+    XLSX.utils.sheet_add_aoa(ws, [[`Digenerate pada: ${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}`]], { origin: 'A2' })
+    XLSX.utils.sheet_add_aoa(ws, [[`Cabang: ${currentBranch?.name || 'Semua Cabang'}`]], { origin: 'A3' })
+    XLSX.utils.sheet_add_aoa(ws, [['']], { origin: 'A4' })
+
+    const headers = ['Nama Produk', 'Jenis', 'Satuan', 'Stock Awal', 'Masuk (Produksi)', 'Keluar (Penjualan)', 'Stock Akhir', 'Net Movement']
+    XLSX.utils.sheet_add_aoa(ws, [headers], { origin: 'A5' })
+
+    const dataRows = excelData.map(item => Object.values(item))
+    XLSX.utils.sheet_add_aoa(ws, dataRows, { origin: 'A6' })
+
+    // Add summary
+    const summaryRow = dataRows.length + 7
+    XLSX.utils.sheet_add_aoa(ws, [['Ringkasan:']], { origin: `A${summaryRow}` })
+    XLSX.utils.sheet_add_aoa(ws, [[`Total Produk: ${reportData.length}`]], { origin: `A${summaryRow + 1}` })
+    XLSX.utils.sheet_add_aoa(ws, [[`Total Masuk: ${reportData.reduce((sum, item) => sum + item.totalIn, 0)}`]], { origin: `A${summaryRow + 2}` })
+    XLSX.utils.sheet_add_aoa(ws, [[`Total Keluar: ${reportData.reduce((sum, item) => sum + item.totalOut, 0)}`]], { origin: `A${summaryRow + 3}` })
+
+    ws['!cols'] = [
+      { wch: 40 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 15 },
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Laporan Stock')
+
+    const filename = filterType === 'monthly'
+      ? `Laporan-Stock-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.xlsx`
+      : `Laporan-Stock-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.xlsx`
+
+    XLSX.writeFile(wb, filename)
   }
 
   const getStockStatusColor = (stock: number) => {
@@ -349,7 +399,7 @@ export const StockConsumptionReport = () => {
     switch (type) {
       case 'Stock': return 'bg-purple-100 text-purple-800'
       case 'Beli': return 'bg-orange-100 text-orange-800'
-      default: return 'bg-purple-100 text-purple-800'
+      default: return 'bg-gray-100 text-gray-800'
     }
   }
 
@@ -359,11 +409,12 @@ export const StockConsumptionReport = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            Laporan Konsumsi Barang Bulanan
+            Laporan Stock Produk
           </CardTitle>
           <CardDescription>
-            Laporan konsumsi barang berdasarkan data transaksi dalam periode tertentu. 
-            Menampilkan produk yang digunakan dalam transaksi yang sudah selesai atau dalam proses produksi.
+            Laporan pergerakan stock produk berdasarkan periode waktu.
+            <br />
+            <strong>Stock Awal</strong> = Stock di awal periode | <strong>Masuk</strong> = Dari produksi | <strong>Keluar</strong> = Penjualan | <strong>Stock Akhir</strong> = Stock di akhir periode
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -400,7 +451,7 @@ export const StockConsumptionReport = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Tahun</Label>
                   <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(Number(value))}>
@@ -446,7 +497,7 @@ export const StockConsumptionReport = () => {
                 </div>
               </div>
             )}
-            
+
             {/* Action Buttons */}
             <div className="flex gap-2">
               <Button onClick={handleGenerateReport} disabled={isLoading}>
@@ -454,10 +505,16 @@ export const StockConsumptionReport = () => {
                 {isLoading ? 'Generating...' : 'Generate Laporan'}
               </Button>
               {reportData.length > 0 && (
-                <Button variant="outline" onClick={handlePrintReport}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Cetak PDF
-                </Button>
+                <>
+                  <Button variant="outline" onClick={handlePrintPDF}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Cetak PDF
+                  </Button>
+                  <Button variant="outline" onClick={handleExportExcel}>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />
+                    Export Excel
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -482,18 +539,17 @@ export const StockConsumptionReport = () => {
             <CardTitle className="flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                Hasil Laporan - {filterType === 'monthly' 
+                Hasil Laporan - {filterType === 'monthly'
                   ? `${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`
                   : `${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
                 }
               </span>
               <div className="flex gap-2 text-sm text-muted-foreground items-center">
-                <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                  Data Transaksi
-                </Badge>
                 <span>{reportData.length} Produk</span>
-                <span>•</span>
-                <span>{reportData.reduce((sum, item) => sum + item.movements.length, 0)} Transaksi</span>
+                <span>|</span>
+                <span className="text-green-600">+{reportData.reduce((sum, item) => sum + item.totalIn, 0)} Masuk</span>
+                <span>|</span>
+                <span className="text-red-600">-{reportData.reduce((sum, item) => sum + item.totalOut, 0)} Keluar</span>
               </div>
             </CardTitle>
           </CardHeader>
@@ -504,11 +560,11 @@ export const StockConsumptionReport = () => {
                   <TableRow>
                     <TableHead>Nama Produk</TableHead>
                     <TableHead>Jenis</TableHead>
-                    <TableHead className="text-center">Stock Awal</TableHead>
-                    <TableHead className="text-center">Masuk</TableHead>
-                    <TableHead className="text-center">Keluar</TableHead>
-                    <TableHead className="text-center">Stock Akhir</TableHead>
-                    <TableHead className="text-center">Net Movement</TableHead>
+                    <TableHead className="text-right">Stock Awal</TableHead>
+                    <TableHead className="text-right">Masuk (Produksi)</TableHead>
+                    <TableHead className="text-right">Keluar (Penjualan)</TableHead>
+                    <TableHead className="text-right">Stock Akhir</TableHead>
+                    <TableHead className="text-right">Net Movement</TableHead>
                     <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -526,42 +582,41 @@ export const StockConsumptionReport = () => {
                           {item.productType}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-center font-mono">
+                      <TableCell className="text-right font-mono">
                         {item.startingStock}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-right">
                         {item.totalIn > 0 && (
-                          <div className="flex items-center justify-center gap-1 text-green-600">
+                          <div className="flex items-center justify-end gap-1 text-green-600">
                             <TrendingUp className="h-3 w-3" />
-                            <span className="font-mono">{item.totalIn}</span>
+                            <span className="font-mono">+{item.totalIn}</span>
                           </div>
                         )}
                         {item.totalIn === 0 && <span className="text-muted-foreground">-</span>}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-right">
                         {item.totalOut > 0 && (
-                          <div className="flex items-center justify-center gap-1 text-red-600">
+                          <div className="flex items-center justify-end gap-1 text-red-600">
                             <TrendingDown className="h-3 w-3" />
-                            <span className="font-mono">{item.totalOut}</span>
+                            <span className="font-mono">-{item.totalOut}</span>
                           </div>
                         )}
                         {item.totalOut === 0 && <span className="text-muted-foreground">-</span>}
                       </TableCell>
-                      <TableCell className="text-center font-mono font-medium">
+                      <TableCell className="text-right font-mono font-medium">
                         {item.endingStock}
                       </TableCell>
-                      <TableCell className="text-center">
-                        <span className={`font-mono font-medium ${
-                          item.netMovement > 0 ? 'text-green-600' : 
-                          item.netMovement < 0 ? 'text-red-600' : 'text-muted-foreground'
-                        }`}>
+                      <TableCell className="text-right">
+                        <span className={`font-mono font-medium ${item.netMovement > 0 ? 'text-green-600' :
+                            item.netMovement < 0 ? 'text-red-600' : 'text-muted-foreground'
+                          }`}>
                           {item.netMovement > 0 ? `+${item.netMovement}` : item.netMovement}
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="secondary" className={getStockStatusColor(item.endingStock)}>
                           {item.endingStock <= 5 ? 'Rendah' :
-                           item.endingStock <= 10 ? 'Sedang' : 'Baik'}
+                            item.endingStock <= 10 ? 'Sedang' : 'Baik'}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -577,15 +632,16 @@ export const StockConsumptionReport = () => {
         <Card>
           <CardContent className="text-center py-12">
             <Package className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Belum Ada Data Konsumsi</h3>
+            <h3 className="text-lg font-medium mb-2">Belum Ada Data Stock</h3>
             <p className="text-muted-foreground mb-4">
-              Tidak ada transaksi dengan status "Selesai" atau "Proses Produksi" dalam periode yang dipilih.
+              Klik "Generate Laporan" untuk melihat pergerakan stock produk dalam periode yang dipilih.
             </p>
             <div className="text-sm text-muted-foreground space-y-1">
-              <p>💡 <strong>Tips:</strong></p>
-              <p>• Laporan ini menampilkan produk yang digunakan dalam transaksi</p>
-              <p>• Hanya transaksi dengan status "Selesai" atau "Proses Produksi" yang dihitung</p>
-              <p>• Coba pilih periode yang berbeda atau periksa status transaksi Anda</p>
+              <p><strong>Keterangan:</strong></p>
+              <p>Stock Awal = Stock produk di awal periode filter</p>
+              <p>Masuk = Jumlah produk dari produksi</p>
+              <p>Keluar = Jumlah produk yang terjual</p>
+              <p>Stock Akhir = Stock produk di akhir periode</p>
             </div>
           </CardContent>
         </Card>
