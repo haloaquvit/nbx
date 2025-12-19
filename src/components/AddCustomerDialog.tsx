@@ -17,8 +17,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "./ui/textarea"
 import { useCustomers } from "@/hooks/useCustomers"
 import { useToast } from "./ui/use-toast"
-import { Customer } from "@/types/customer"
-import { MapPin, Upload, ExternalLink } from "lucide-react"
+import { Customer, CustomerClassification } from "@/types/customer"
+import { MapPin, Camera } from "lucide-react"
 import { compressImage, formatFileSize, isImageFile } from "@/utils/imageCompression"
 import { PhotoUploadService } from "@/services/photoUploadService"
 import { useState, useRef } from "react"
@@ -32,6 +32,7 @@ const customerSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   jumlah_galon_titip: z.coerce.number().min(0, { message: "Jumlah galon tidak boleh negatif." }).optional(),
+  classification: z.enum(['Rumahan', 'Kios/Toko']).optional(),
 })
 
 type CustomerFormData = z.infer<typeof customerSchema>
@@ -48,8 +49,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
   const { user } = useAuth()
   const [isUploading, setIsUploading] = useState(false)
   const [storePhoto, setStorePhoto] = useState<File | null>(null)
-  const [storePhotoUrl, setStorePhotoUrl] = useState<string>('')
-  const [storePhotoDriveId, setStorePhotoDriveId] = useState<string>('')
+  const [storePhotoFilename, setStorePhotoFilename] = useState<string>('') // Hanya simpan filename
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Check if user must provide coordinates and photo
@@ -71,6 +71,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
       latitude: undefined,
       longitude: undefined,
       jumlah_galon_titip: 0,
+      classification: undefined,
     },
   })
 
@@ -123,43 +124,39 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
     }
 
     setIsUploading(true)
-    
+
     try {
       // Show original file size
       console.log(`Original file size: ${formatFileSize(file.size)}`)
-      
+
       // Compress image to max 100KB
       const compressedFile = await compressImage(file, 100)
       console.log(`Compressed file size: ${formatFileSize(compressedFile.size)}`)
-      
+
       setStorePhoto(compressedFile)
 
       // Get customer name from form, fallback to timestamp if empty
       const customerName = watch('name')?.trim() || `customer-${Date.now()}`
-      // Clean filename: replace special characters with spaces, then with hyphens
-      const cleanName = customerName.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-').toLowerCase()
-      const fileName = `${cleanName}.jpg`
-      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName)
-      
+
+      // Upload to VPS server
+      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName, 'Customers_Images')
+
       if (!result) {
-        throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.')
+        throw new Error('Gagal mengupload foto ke server.')
       }
-      
-      const driveId = result.id
-      const viewUrl = result.webViewLink
-      
-      setStorePhotoDriveId(driveId)
-      setStorePhotoUrl(viewUrl)
-      
+
+      // Simpan hanya filename ke state (akan disimpan ke database)
+      setStorePhotoFilename(result.filename || result.id)
+
       toast({
         title: "Sukses!",
-        description: `Foto toko berhasil diupload ke Google Drive (${formatFileSize(compressedFile.size)}).`,
+        description: `Foto toko berhasil diupload (${formatFileSize(compressedFile.size)}).`,
       })
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Gagal mengupload foto ke Google Drive.",
+        description: error.message || "Gagal mengupload foto.",
       })
     } finally {
       setIsUploading(false)
@@ -179,9 +176,9 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
         return
       }
       
-      if (!storePhotoUrl) {
+      if (!storePhotoFilename) {
         toast({
-          variant: "destructive", 
+          variant: "destructive",
           title: "Foto Toko Wajib",
           description: "Untuk role Anda, foto toko/kios pelanggan wajib diupload.",
         })
@@ -197,8 +194,8 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
       latitude: data.latitude,
       longitude: data.longitude,
       jumlah_galon_titip: data.jumlah_galon_titip || 0,
-      store_photo_url: storePhotoUrl,
-      store_photo_drive_id: storePhotoDriveId,
+      classification: data.classification,
+      store_photo_url: storePhotoFilename, // Simpan filename saja, URL di-generate saat tampil
     };
     addCustomer.mutate(newCustomerData, {
       onSuccess: (newCustomer) => {
@@ -208,8 +205,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
         })
         reset()
         setStorePhoto(null)
-        setStorePhotoUrl('')
-        setStorePhotoDriveId('')
+        setStorePhotoFilename('')
         onOpenChange(false)
         if (onCustomerAdded) {
           onCustomerAdded(newCustomer)
@@ -268,25 +264,26 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
                 readOnly
                 className="bg-gray-50"
               />
-              {latitude && longitude && watch('full_address') && (
-                <Button
-                  type="button"
-                  variant="link"
-                  className="p-0 h-auto text-blue-600"
-                  onClick={() => window.open(`https://www.google.com/maps/dir//${latitude},${longitude}`, '_blank')}
-                >
-                  <ExternalLink className="w-3 h-3 mr-1" />
-                  Lihat Lokasi di Google Maps
-                </Button>
-              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="classification">Klasifikasi</Label>
+              <select
+                id="classification"
+                {...register("classification")}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="">Pilih Klasifikasi</option>
+                <option value="Rumahan">Rumahan</option>
+                <option value="Kios/Toko">Kios/Toko</option>
+              </select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="jumlah_galon_titip">Galon Titip</Label>
-              <Input 
-                id="jumlah_galon_titip" 
-                type="number" 
+              <Input
+                id="jumlah_galon_titip"
+                type="number"
                 min="0"
-                {...register("jumlah_galon_titip")} 
+                {...register("jumlah_galon_titip")}
                 placeholder="Jumlah galon yang dititip di pelanggan"
               />
               {errors.jumlah_galon_titip && <p className="text-red-500 text-sm">{errors.jumlah_galon_titip.message}</p>}
@@ -307,18 +304,8 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
                   Ambil Lokasi Saat Ini
                 </Button>
                 {latitude && longitude && (
-                  <div className="text-sm text-gray-600 space-y-1">
-                    <p>Lat: {latitude.toFixed(6)}</p>
-                    <p>Long: {longitude.toFixed(6)}</p>
-                    <Button
-                      type="button"
-                      variant="link"
-                      className="p-0 h-auto text-blue-600"
-                      onClick={() => window.open(`https://www.google.com/maps/dir//${latitude},${longitude}`, '_blank')}
-                    >
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      Lihat di Google Maps
-                    </Button>
+                  <div className="text-sm text-green-600">
+                    <p>✓ Lokasi berhasil diambil ({latitude.toFixed(6)}, {longitude.toFixed(6)})</p>
                   </div>
                 )}
               </div>
@@ -337,30 +324,19 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
                   capture="environment"
                   className="hidden"
                 />
-                <Button 
-                  type="button" 
+                <Button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   variant="outline"
                   className="w-full"
                   disabled={isUploading}
                 >
-                  <Upload className="w-4 h-4 mr-2" />
-                  {isUploading ? 'Mengupload...' : 'Upload Foto Toko'}
+                  <Camera className="w-4 h-4 mr-2" />
+                  {isUploading ? 'Mengupload...' : 'Ambil Foto Toko'}
                 </Button>
-                {storePhoto && (
-                  <div className="text-sm text-gray-600">
-                    <p>File: {storePhoto.name}</p>
-                    {storePhotoUrl && (
-                      <Button
-                        type="button"
-                        variant="link"
-                        className="p-0 h-auto text-blue-600"
-                        onClick={() => window.open(storePhotoUrl, '_blank')}
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Lihat Foto di Google Drive
-                      </Button>
-                    )}
+                {storePhotoFilename && (
+                  <div className="text-sm text-green-600">
+                    <p>✓ Foto berhasil diupload</p>
                   </div>
                 )}
               </div>

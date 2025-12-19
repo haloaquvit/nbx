@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Package, Edit } from 'lucide-react'
 import { useProducts } from '@/hooks/useProducts'
 import { ProductPricingManagement } from '@/components/ProductPricingManagement'
+import { CustomerPricingManagement } from '@/components/CustomerPricingManagement'
 import { formatCurrency } from '@/utils/currency'
 
 export default function ProductDetailPage() {
@@ -181,6 +182,13 @@ export default function ProductDetailPage() {
         productName={product.name}
         basePrice={product.basePrice}
         currentStock={product.currentStock}
+      />
+
+      {/* Customer Pricing Management */}
+      <CustomerPricingManagement
+        productId={product.id}
+        productName={product.name}
+        basePrice={product.basePrice}
       />
     </div>
   )

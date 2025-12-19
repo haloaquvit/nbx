@@ -140,7 +140,28 @@ export class StockService {
     // Check which columns exist in the table
     console.log('Checking material_stock_movements table structure...');
     
-    const dbMovements = movements.map(movement => {
+    // First, check which products exist in materials table
+    const productIds = movements.map(m => m.productId);
+    const { data: existingMaterials } = await supabase
+      .from('materials')
+      .select('id')
+      .in('id', productIds);
+
+    const existingMaterialIds = new Set((existingMaterials || []).map(m => m.id));
+
+    // Filter movements to only include products that exist in materials table
+    const validMovements = movements.filter(m => existingMaterialIds.has(m.productId));
+
+    if (validMovements.length === 0) {
+      console.warn('No valid materials found for stock movements, skipping...');
+      return;
+    }
+
+    if (validMovements.length < movements.length) {
+      console.warn(`Skipping ${movements.length - validMovements.length} stock movements for products not in materials table`);
+    }
+
+    const dbMovements = validMovements.map(movement => {
       // Start with minimal required fields
       const dbMovement: any = {
         material_id: movement.productId,
@@ -150,7 +171,7 @@ export class StockService {
         user_name: movement.userName,
         notes: movement.notes || `Stock movement for ${movement.productName}`,
       };
-      
+
       // Add optional fields if available
       if (movement.productName) dbMovement.material_name = movement.productName;
       if (movement.type) dbMovement.type = movement.type;
@@ -158,7 +179,7 @@ export class StockService {
       if (movement.referenceId) dbMovement.reference_id = movement.referenceId;
       if (movement.referenceType) dbMovement.reference_type = movement.referenceType;
       if (movement.userId) dbMovement.user_id = movement.userId;
-      
+
       return dbMovement;
     });
 

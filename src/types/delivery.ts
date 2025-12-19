@@ -18,7 +18,6 @@ export interface Delivery {
   deliveryNumber: number;
   deliveryDate: Date;
   photoUrl?: string;
-  photoDriveId?: string;
   notes?: string;
   driverId?: string;
   driverName?: string;

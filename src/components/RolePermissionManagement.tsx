@@ -149,7 +149,7 @@ const FEATURES = [
     items: [
       { id: 'stock_reports', name: 'Laporan Stock', icon: Eye },
       { id: 'transaction_reports', name: 'Laporan Transaksi', icon: Eye },
-      { id: 'transaction_items_report', name: 'Laporan Item Keluar', icon: Eye },
+      { id: 'transaction_items_report', name: 'Laporan Produk Laku', icon: Eye },
       { id: 'material_movement_report', name: 'Laporan Pergerakan Bahan', icon: Eye },
       { id: 'attendance_reports', name: 'Laporan Absensi', icon: Eye },
     ]

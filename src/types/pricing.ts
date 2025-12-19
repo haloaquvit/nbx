@@ -70,3 +70,42 @@ export interface CreateBonusPricingRequest {
   bonusValue: number;
   description?: string;
 }
+
+// Customer-based pricing types
+export type CustomerPricingType = 'fixed' | 'discount_percentage' | 'discount_amount';
+export type CustomerClassificationType = 'Rumahan' | 'Kios/Toko';
+
+export interface CustomerPricing {
+  id: string;
+  productId: string;
+  customerId?: string; // If targeting specific customer
+  customerName?: string; // For display purposes (joined)
+  customerClassification?: CustomerClassificationType; // If targeting classification
+  priceType: CustomerPricingType;
+  priceValue: number; // Fixed price, percentage (0-100), or discount amount
+  priority: number;
+  description?: string;
+  isActive: boolean;
+  branchId?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateCustomerPricingRequest {
+  productId: string;
+  customerId?: string;
+  customerClassification?: CustomerClassificationType;
+  priceType: CustomerPricingType;
+  priceValue: number;
+  priority?: number;
+  description?: string;
+  branchId?: string;
+}
+
+export interface CustomerPriceCalculationResult {
+  basePrice: number;
+  customerAdjustedPrice: number;
+  appliedRule?: CustomerPricing;
+  discountAmount: number;
+  discountPercentage: number;
+}

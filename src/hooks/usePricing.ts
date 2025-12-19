@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { PricingService } from '@/services/pricingService'
 import {
   ProductPricing,
@@ -6,7 +7,9 @@ import {
   CreateStockPricingRequest,
   CreateBonusPricingRequest,
   StockPricing,
-  BonusPricing
+  BonusPricing,
+  CustomerPricing,
+  CreateCustomerPricingRequest
 } from '@/types/pricing'
 
 export function useProductPricing(productId: string) {
@@ -95,4 +98,64 @@ export function usePricingMutations() {
   }
 }
 
-import { useMemo } from 'react'
+// ============================================
+// Customer Pricing Hooks
+// ============================================
+
+export function useCustomerPricings(productId: string) {
+  return useQuery({
+    queryKey: ['customer-pricings', productId],
+    queryFn: () => PricingService.getCustomerPricings(productId),
+    enabled: !!productId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+}
+
+export function useCustomerPricingMutations() {
+  const queryClient = useQueryClient()
+
+  const createCustomerPricing = useMutation({
+    mutationFn: (request: CreateCustomerPricingRequest) =>
+      PricingService.createCustomerPricing(request),
+    onSuccess: (data, variables) => {
+      if (data) {
+        queryClient.invalidateQueries({
+          queryKey: ['customer-pricings', variables.productId]
+        })
+      }
+    },
+  })
+
+  const updateCustomerPricing = useMutation({
+    mutationFn: ({ id, productId, updates }: {
+      id: string;
+      productId: string;
+      updates: Partial<CreateCustomerPricingRequest>
+    }) => PricingService.updateCustomerPricing(id, updates),
+    onSuccess: (data, variables) => {
+      if (data) {
+        queryClient.invalidateQueries({
+          queryKey: ['customer-pricings', variables.productId]
+        })
+      }
+    },
+  })
+
+  const deleteCustomerPricing = useMutation({
+    mutationFn: ({ id, productId }: { id: string; productId: string }) =>
+      PricingService.deleteCustomerPricing(id),
+    onSuccess: (success, variables) => {
+      if (success) {
+        queryClient.invalidateQueries({
+          queryKey: ['customer-pricings', variables.productId]
+        })
+      }
+    },
+  })
+
+  return {
+    createCustomerPricing,
+    updateCustomerPricing,
+    deleteCustomerPricing,
+  }
+}

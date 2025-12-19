@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode, useRef } from 'react';
 import { Branch, Company } from '@/types/branch';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
@@ -27,8 +27,15 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   const [currentCompany, setCurrentCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if user is head office or can access all branches
-  const isHeadOffice = user?.role === 'super_admin' || user?.role === 'head_office_admin' || user?.role === 'owner';
+  // Use refs to track previous values and prevent unnecessary re-fetches
+  const fetchedUserIdRef = useRef<string | null>(null);
+  const restoredBranchRef = useRef<boolean>(false);
+
+  // Check if user is head office or can access all branches - memoize to prevent recalculation
+  const isHeadOffice = useMemo(() =>
+    user?.role === 'super_admin' || user?.role === 'head_office_admin' || user?.role === 'owner',
+    [user?.role]
+  );
   const canAccessAllBranches = isHeadOffice;
 
   // Fetch user's branch and available branches
@@ -155,20 +162,43 @@ export function BranchProvider({ children }: { children: ReactNode }) {
       // Save to localStorage for persistence
       localStorage.setItem('selectedBranchId', branchId);
 
-      // Invalidate all queries to refetch with new branch filter
-      queryClient.invalidateQueries();
-
-      // Show notification
+      // Show notification first
       toast({
         title: 'Cabang berhasil dipindah',
         description: `Sekarang menampilkan data untuk ${branch.name}`,
       });
+
+      // Clear cache and invalidate queries with staggered timing to prevent freeze
+      // First, clear the cache to free memory
+      queryClient.clear();
+
+      // Then invalidate in batches with small delays to prevent UI freeze
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['customers'] });
+        queryClient.invalidateQueries({ queryKey: ['deliveries'] });
+      }, 100);
+
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      }, 200);
+
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+        queryClient.invalidateQueries({ queryKey: ['stock'] });
+      }, 300);
+
+      setTimeout(() => {
+        // Invalidate remaining queries
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
+        queryClient.invalidateQueries({ queryKey: ['reports'] });
+      }, 400);
     }
   };
 
-  // Restore selected branch from localStorage
+  // Restore selected branch from localStorage - only run once when branches are first loaded
   useEffect(() => {
-    if (canAccessAllBranches && availableBranches.length > 0) {
+    if (canAccessAllBranches && availableBranches.length > 0 && !restoredBranchRef.current) {
       const savedBranchId = localStorage.getItem('selectedBranchId');
       if (savedBranchId) {
         const branch = availableBranches.find((b) => b.id === savedBranchId);
@@ -176,12 +206,21 @@ export function BranchProvider({ children }: { children: ReactNode }) {
           setCurrentBranch(branch);
         }
       }
+      restoredBranchRef.current = true;
     }
-  }, [availableBranches, canAccessAllBranches]);
+  }, [availableBranches.length, canAccessAllBranches]);
 
+  // Fetch branches only when user ID changes (not on every user object change)
   useEffect(() => {
-    fetchBranches();
-  }, [user]);
+    const userId = user?.id;
+    if (userId && fetchedUserIdRef.current !== userId) {
+      fetchedUserIdRef.current = userId;
+      fetchBranches();
+    } else if (!userId) {
+      fetchedUserIdRef.current = null;
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   const value: BranchContextType = {
     currentBranch,

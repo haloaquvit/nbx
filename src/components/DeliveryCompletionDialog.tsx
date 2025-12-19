@@ -16,6 +16,7 @@ import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { Delivery, TransactionDeliveryInfo } from "@/types/delivery"
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
+import { PhotoUploadService } from "@/services/photoUploadService"
 
 interface DeliveryCompletionDialogProps {
   open: boolean
@@ -156,9 +157,9 @@ export function DeliveryCompletionDialog({
             </div>
             
             {delivery.photoUrl && (
-              <Button 
-                variant="outline" 
-                onClick={() => window.open(delivery.photoUrl, '_blank')}
+              <Button
+                variant="outline"
+                onClick={() => window.open(PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries'), '_blank')}
                 className="flex-1 sm:flex-initial"
               >
                 <FileText className="h-4 w-4 mr-2" />

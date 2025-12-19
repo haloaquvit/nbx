@@ -47,6 +47,7 @@ import {
 import { showSuccess, showError } from "@/utils/toast"
 import { EditCustomerDialog } from "@/components/EditCustomerDialog"
 import { isOwner } from '@/utils/roleUtils'
+import { PhotoUploadService } from "@/services/photoUploadService"
 
 export const getColumns = (
   onEditClick: (customer: Customer) => void,
@@ -66,13 +67,32 @@ export const getColumns = (
     header: "Alamat",
     cell: ({ row }) => {
       const address = row.getValue("address") as string;
-      
+
       if (!address) return null;
-      
+
       return (
         <div className="max-w-[200px] truncate" title={address}>
           {address}
         </div>
+      );
+    }
+  },
+  {
+    accessorKey: "classification",
+    header: "Klasifikasi",
+    cell: ({ row }) => {
+      const classification = row.getValue("classification") as string;
+      if (!classification) return <span className="text-muted-foreground text-xs">-</span>;
+
+      const isKios = classification === 'Kios/Toko';
+      return (
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+          isKios
+            ? 'bg-blue-100 text-blue-700'
+            : 'bg-green-100 text-green-700'
+        }`}>
+          {classification}
+        </span>
       );
     }
   },
@@ -142,12 +162,12 @@ export const getColumns = (
       return (
         <div className="flex items-center gap-2">
           <img
-            src={customer.store_photo_url}
+            src={PhotoUploadService.getPhotoUrl(customer.store_photo_url, 'Customers_Images')}
             alt={`Foto toko ${customer.name}`}
             className="w-12 h-12 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
             onClick={(e) => {
               e.stopPropagation();
-              window.open(customer.store_photo_url!, '_blank');
+              window.open(PhotoUploadService.getPhotoUrl(customer.store_photo_url!, 'Customers_Images'), '_blank');
             }}
             onError={(e) => {
               const target = e.target as HTMLImageElement;
@@ -424,12 +444,21 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
                 )}
 
                 <div className="flex flex-wrap gap-3 mb-3">
+                  {customer.classification && (
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      customer.classification === 'Kios/Toko'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}>
+                      {customer.classification}
+                    </span>
+                  )}
                   <div className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md">
                     <span className="text-xs font-medium text-blue-700">Orders:</span>
                     <span className="text-xs font-bold text-blue-800">{customer.orderCount || 0}</span>
                   </div>
-                  
-                  {customer.jumlah_galon_titip > 0 && (
+
+                  {customer.jumlah_galon_titip && customer.jumlah_galon_titip > 0 && (
                     <div className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-md">
                       <span className="text-xs font-medium text-orange-700">Galon Titip:</span>
                       <span className="text-xs font-bold text-orange-800">{customer.jumlah_galon_titip}</span>
@@ -454,12 +483,12 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
                     </div>
                   )}
                   
-                  {customer.photo_url && (
+                  {customer.store_photo_url && (
                     <Button
                       variant="outline"
                       size="sm"
                       className="flex-1 text-xs"
-                      onClick={() => window.open(customer.photo_url!, '_blank')}
+                      onClick={() => window.open(PhotoUploadService.getPhotoUrl(customer.store_photo_url!, 'Customers_Images'), '_blank')}
                     >
                       <Camera className="h-3 w-3 mr-1" />
                       Lihat Foto

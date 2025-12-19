@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Customer } from "@/types/customer";
+import { useBranch } from "@/contexts/BranchContext";
 
 export default function CustomerPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -24,6 +25,7 @@ export default function CustomerPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { currentBranch } = useBranch();
 
   // Check if mobile view
   useEffect(() => {
@@ -43,33 +45,54 @@ export default function CustomerPage() {
   };
 
   const handleExportExcel = () => {
-    if (customers) {
-      // Format data untuk export dengan kolom yang konsisten
-      const exportData = customers.map(customer => {
-        // Gabungkan latitude dan longitude jadi satu kolom koordinat
-        const koordinat = (customer.latitude && customer.longitude)
-          ? `${customer.latitude}, ${customer.longitude}`
-          : '';
+    // Format data untuk export dengan kolom yang konsisten
+    const exportData = (customers || []).map(customer => {
+      // Gabungkan latitude dan longitude jadi satu kolom koordinat
+      const koordinat = (customer.latitude && customer.longitude)
+        ? `${customer.latitude}, ${customer.longitude}`
+        : '';
 
-        return {
-          "Nama": customer.name || '',
-          "Telepon": customer.phone || '',
-          "Alamat": customer.address || '',
-          "Koordinat (Latitude, Longitude)": koordinat,
-          "Jumlah Galon Titip": customer.jumlah_galon_titip || 0
-        };
-      });
-      
-      const worksheet = XLSX.utils.json_to_sheet(exportData);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Pelanggan");
-      XLSX.writeFile(workbook, "template-pelanggan.xlsx");
-      
-      toast({
-        title: "Export Berhasil",
-        description: "Template pelanggan berhasil diunduh. File ini bisa digunakan untuk import."
-      });
-    }
+      return [
+        customer.name || '',
+        customer.phone || '',
+        customer.address || '',
+        customer.classification || '', // Klasifikasi: Rumahan atau Kios/Toko
+        koordinat,
+        customer.jumlah_galon_titip || 0,
+        customer.store_photo_url || '' // Filename foto dari VPS
+      ];
+    });
+
+    // Header row - SELALU ditambahkan di awal
+    const headers = [["Nama", "Telepon", "Alamat", "Klasifikasi", "Koordinat", "Jumlah Galon Titip", "Foto"]];
+
+    // Gabungkan headers dengan data
+    const allData = [...headers, ...exportData];
+
+    // Buat worksheet dari array of arrays
+    const worksheet = XLSX.utils.aoa_to_sheet(allData);
+
+    // Set column widths untuk tampilan lebih baik
+    worksheet['!cols'] = [
+      { wch: 25 }, // Nama
+      { wch: 15 }, // Telepon
+      { wch: 40 }, // Alamat
+      { wch: 12 }, // Klasifikasi
+      { wch: 25 }, // Koordinat
+      { wch: 18 }, // Jumlah Galon Titip
+      { wch: 35 }, // Foto (filename)
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Pelanggan");
+    XLSX.writeFile(workbook, "data-pelanggan.xlsx");
+
+    toast({
+      title: "Export Berhasil",
+      description: exportData.length > 0
+        ? `${exportData.length} data pelanggan berhasil diekspor.`
+        : "Template kosong berhasil diunduh. Format koordinat: -0.871503, 134.045972"
+    });
   };
 
   const handleImportClick = () => {
@@ -95,41 +118,78 @@ export default function CustomerPage() {
           let latitude = null;
           let longitude = null;
 
-          // Coba parse dari kolom "Koordinat" gabungan (format: "lat, lng")
-          const koordinatGabungan = row['Koordinat (Latitude, Longitude)'] || row['Koordinat'] || '';
-          if (koordinatGabungan && typeof koordinatGabungan === 'string') {
-            const parts = koordinatGabungan.split(',').map((s: string) => s.trim());
+          // Parse koordinat dari kolom "Koordinat" (format: "-0.871503, 134.045972")
+          const koordinat = row['Koordinat'] || row['koordinat'] || row['Koordinat (Latitude, Longitude)'] || '';
+          if (koordinat && typeof koordinat === 'string') {
+            const parts = koordinat.split(',').map((s: string) => s.trim());
             if (parts.length === 2) {
-              latitude = parseFloat(parts[0]) || null;
-              longitude = parseFloat(parts[1]) || null;
+              const lat = parseFloat(parts[0]);
+              const lng = parseFloat(parts[1]);
+              if (!isNaN(lat) && !isNaN(lng)) {
+                latitude = lat;
+                longitude = lng;
+              }
             }
           }
 
           // Fallback: coba dari kolom terpisah (backward compatibility)
-          if (!latitude || !longitude) {
-            latitude = parseFloat(row['Latitude'] || row['latitude'] || '0') || null;
-            longitude = parseFloat(row['Longitude'] || row['longitude'] || '0') || null;
+          if (latitude === null || longitude === null) {
+            const lat = parseFloat(row['Latitude'] || row['latitude'] || '');
+            const lng = parseFloat(row['Longitude'] || row['longitude'] || '');
+            if (!isNaN(lat)) latitude = lat;
+            if (!isNaN(lng)) longitude = lng;
+          }
+
+          // Ambil filename foto (jika ada)
+          // Jika berisi URL lengkap, extract hanya filename-nya
+          let fotoFilename = row['Foto'] || row['foto'] || row['store_photo_url'] || '';
+          if (fotoFilename && typeof fotoFilename === 'string') {
+            // Jika berisi URL lengkap (http:// atau https://), extract filename
+            if (fotoFilename.startsWith('http://') || fotoFilename.startsWith('https://')) {
+              // Extract filename dari URL (bagian terakhir setelah /)
+              const urlParts = fotoFilename.split('/');
+              fotoFilename = urlParts[urlParts.length - 1] || '';
+            }
+            // Trim whitespace
+            fotoFilename = fotoFilename.trim();
+          }
+
+          // Ambil klasifikasi (Rumahan atau Kios/Toko)
+          let classification = row['Klasifikasi'] || row['klasifikasi'] || row['classification'] || '';
+          // Validasi klasifikasi hanya Rumahan atau Kios/Toko
+          if (classification && !['Rumahan', 'Kios/Toko'].includes(classification)) {
+            classification = ''; // Reset jika tidak valid
           }
 
           return {
             name: row['Nama'] || row['name'] || '',
-            phone: row['Telepon'] || row['phone'] || '',
+            phone: String(row['Telepon'] || row['phone'] || ''),
             address: row['Alamat'] || row['address'] || '',
+            classification: classification || null,
             latitude,
             longitude,
-            jumlah_galon_titip: parseInt(row['Jumlah Galon Titip'] || row['jumlah_galon_titip'] || '0') || 0
+            jumlah_galon_titip: parseInt(row['Jumlah Galon Titip'] || row['jumlah_galon_titip'] || '0') || 0,
+            store_photo_url: fotoFilename, // Filename foto dari VPS
+            branch_id: currentBranch?.id || null
           };
-        }).filter(customer => customer.name.trim() !== ''); // Filter out empty names
+        }).filter(customer => customer.name && customer.name.trim() !== '' && customer.name !== 'Contoh Nama Pelanggan'); // Filter empty dan contoh
         
         if (transformedData.length === 0) {
           throw new Error('Tidak ada data pelanggan yang valid ditemukan dalam file');
         }
 
-        // Get existing customer names to avoid duplicates
-        const { data: existingCustomers, error: fetchError } = await supabase
+        // Get existing customer names to avoid duplicates (check within same branch)
+        let query = supabase
           .from('customers')
           .select('name')
           .in('name', transformedData.map(c => c.name));
+
+        // Filter by branch if available
+        if (currentBranch?.id) {
+          query = query.eq('branch_id', currentBranch.id);
+        }
+
+        const { data: existingCustomers, error: fetchError } = await query;
 
         if (fetchError) throw fetchError;
 

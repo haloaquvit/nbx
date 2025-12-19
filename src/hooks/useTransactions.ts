@@ -91,6 +91,14 @@ const toDb = (appTransaction: Partial<Omit<Transaction, 'createdAt'>>) => {
     status: appTransaction.status,
   };
 
+  // Add retasi fields for driver POS transactions
+  if (appTransaction.retasiId) {
+    baseObj.retasi_id = appTransaction.retasiId;
+  }
+  if (appTransaction.retasiNumber) {
+    baseObj.retasi_number = appTransaction.retasiNumber;
+  }
+
   // Only add optional fields if they exist (for backward compatibility)
   // Note: These columns might not exist in older database schemas
   // The database insert will ignore unknown columns gracefully

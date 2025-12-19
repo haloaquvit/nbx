@@ -42,7 +42,7 @@ import {
   Building2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
@@ -115,7 +115,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
     items: [
       { href: "/stock-report", label: "Laporan Stock", icon: BarChart3, permission: PERMISSIONS.REPORTS },
       { href: "/material-movements", label: "Pergerakan Penggunaan Bahan", icon: Package2, permission: PERMISSIONS.REPORTS },
-      { href: "/transaction-items-report", label: "Laporan Item Keluar", icon: PackageOpen, permission: PERMISSIONS.REPORTS },
+      { href: "/transaction-items-report", label: "Laporan Produk Laku", icon: PackageOpen, permission: PERMISSIONS.REPORTS },
       { href: "/attendance/report", label: "Laporan Absensi", icon: BookCheck, permission: PERMISSIONS.REPORTS },
       { href: "/commission-report", label: "Laporan Komisi", icon: Calculator, permission: PERMISSIONS.REPORTS },
     ].filter(item => hasPermission(item.permission)),
@@ -156,6 +156,52 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Auto-expand on hover state
+  const [isHoverExpanded, setIsHoverExpanded] = useState(false);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const leaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Handle mouse enter - expand sidebar after small delay
+  const handleMouseEnter = useCallback(() => {
+    if (isCollapsed && !isHoverExpanded) {
+      // Clear any pending leave timeout
+      if (leaveTimeoutRef.current) {
+        clearTimeout(leaveTimeoutRef.current);
+        leaveTimeoutRef.current = null;
+      }
+      // Expand after 150ms delay
+      hoverTimeoutRef.current = setTimeout(() => {
+        setIsHoverExpanded(true);
+      }, 150);
+    }
+  }, [isCollapsed, isHoverExpanded]);
+
+  // Handle mouse leave - collapse sidebar after delay
+  const handleMouseLeave = useCallback(() => {
+    // Clear any pending hover timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    if (isHoverExpanded) {
+      // Collapse after 300ms delay
+      leaveTimeoutRef.current = setTimeout(() => {
+        setIsHoverExpanded(false);
+      }, 300);
+    }
+  }, [isHoverExpanded]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      if (leaveTimeoutRef.current) clearTimeout(leaveTimeoutRef.current);
+    };
+  }, []);
+
+  // Determine if sidebar should show expanded content
+  const showExpanded = !isCollapsed || isHoverExpanded;
+
   // Track expanded/collapsed state for each top‑level menu section. When
   // `true` the section's links are visible, otherwise they are hidden. Use
   // section titles as keys since they are stable.
@@ -193,23 +239,30 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   }, [searchQuery]); // Only depend on searchQuery, not filteredMenuItems
 
   return (
-    <div className="border-r bg-muted/40">
+    <div
+      className={cn(
+        "border-r bg-amber-50/60 backdrop-blur-sm transition-all duration-200 ease-in-out",
+        isHoverExpanded && isCollapsed && "absolute left-0 top-0 z-50 h-full shadow-lg bg-amber-50/90"
+      )}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
       <TooltipProvider delayDuration={0}>
         <div className="flex h-full max-h-screen flex-col">
           <div
             className={cn(
               "flex h-14 items-center border-b lg:h-[60px]",
-              isCollapsed ? "justify-center" : "px-4 lg:px-6"
+              !showExpanded ? "justify-center" : "px-4 lg:px-6"
             )}
           >
             <Link to="/" className="flex items-center gap-2 font-semibold">
               <Package className="h-6 w-6 text-primary" />
-              <span className={cn(isCollapsed && "hidden")}>{settings?.name || 'Aquvit POS'}</span>
+              <span className={cn(!showExpanded && "hidden")}>{settings?.name || 'Aquvit POS'}</span>
             </Link>
           </div>
 
           {/* Search Menu */}
-          {!isCollapsed && (
+          {showExpanded && (
             <div className="px-3 py-2 border-b">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -232,11 +285,14 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
             </div>
           )}
 
-          <nav className="flex-1 space-y-2 overflow-auto py-4 px-2">
+          <nav className={cn(
+            "flex-1 space-y-2 overflow-auto py-4 px-2",
+            showExpanded && "min-w-[220px]"
+          )}>
             {filteredMenuItems.map((section) => (
               <div key={section.title} className="space-y-1">
                 {/* Section header */}
-                {!isCollapsed && (
+                {showExpanded && (
                   <button
                     type="button"
                     className="mb-1 flex w-full items-center justify-between px-2 text-sm font-semibold tracking-tight text-muted-foreground hover:text-primary"
@@ -252,12 +308,12 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
                 )}
                 <div
                   className={cn(
-                    isCollapsed && "flex flex-col items-center",
-                    !openSections[section.title] && !isCollapsed && "hidden"
+                    !showExpanded && "flex flex-col items-center",
+                    !openSections[section.title] && showExpanded && "hidden"
                   )}
                 >
                   {section.items.map((item) =>
-                    isCollapsed ? (
+                    !showExpanded ? (
                       <Tooltip key={item.href}>
                         <TooltipTrigger asChild>
                           <Link
@@ -279,7 +335,7 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
                         key={item.href}
                         to={item.href}
                         className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary",
+                          "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary whitespace-nowrap",
                           location.pathname === item.href &&
                             "bg-primary text-primary-foreground hover:text-primary-foreground"
                         )}
@@ -294,12 +350,15 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
             ))}
           </nav>
           <div className="mt-auto border-t p-2">
-            <div className={cn("flex", isCollapsed && "justify-center")}>
+            <div className={cn("flex", !showExpanded && "justify-center")}>
               <Button
                 size="icon"
                 variant="outline"
                 className="h-8 w-8"
-                onClick={() => setCollapsed(!isCollapsed)}
+                onClick={() => {
+                  setCollapsed(!isCollapsed);
+                  setIsHoverExpanded(false);
+                }}
               >
                 {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
                 <span className="sr-only">Toggle Sidebar</span>

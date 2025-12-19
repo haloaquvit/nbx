@@ -20,6 +20,7 @@ import {
 import { useCustomers } from "@/hooks/useCustomers"
 import { Customer } from "@/types/customer"
 import { cn } from "@/lib/utils"
+import { PhotoUploadService } from "@/services/photoUploadService"
 
 interface MobileCustomerViewProps {
   onEditCustomer: (customer: Customer) => void
@@ -47,7 +48,9 @@ export function MobileCustomerView({ onEditCustomer, onAddCustomer }: MobileCust
   }
 
   const handleViewPhoto = (photoUrl: string) => {
-    window.open(photoUrl, '_blank')
+    // Use PhotoUploadService to get the correct VPS URL
+    const fullUrl = PhotoUploadService.getPhotoUrl(photoUrl, 'Customers_Images')
+    window.open(fullUrl, '_blank')
   }
 
   if (isLoading) {

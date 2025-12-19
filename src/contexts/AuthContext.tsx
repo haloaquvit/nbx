@@ -16,7 +16,6 @@ interface AuthContextType {
   user: Employee | null;
   isLoading: boolean;
   signOut: () => Promise<void>;
-  lastActivity: number;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,11 +24,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  
+
   // Simple cache for user profiles to avoid repeated DB calls
   const profileCacheRef = useRef<Map<string, Employee>>(new Map());
-  const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Simplified and fast user profile creation from auth data
   const createUserFromAuth = (supabaseUser: SupabaseUser): Employee => {
@@ -45,26 +42,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   };
 
-  // Update activity timestamp and reset logout timer
-  const updateActivity = useCallback(() => {
-    const now = Date.now();
-
-    // Only update if significant time has passed to avoid rapid re-renders
-    if (Math.abs(now - lastActivity) < 60000) return; // 1 minute minimum
-
-    setLastActivity(now);
-
-    // Clear existing timer
-    if (logoutTimerRef.current) {
-      clearTimeout(logoutTimerRef.current);
-    }
-
-    // Set new 8-hour logout timer
-    logoutTimerRef.current = setTimeout(() => {
-      signOut();
-    }, 8 * 60 * 60 * 1000); // 8 hours
-  }, [lastActivity]);
-
   // Lightweight profile fetch with fast fallback - simplified for better performance
   const fetchUserProfile = async (supabaseUser: SupabaseUser) => {
     try {
@@ -73,10 +50,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (cachedProfile && Date.now() - (cachedProfile as any)._cacheTime < 15 * 60 * 1000) { // 15 minutes cache
         setUser(cachedProfile);
         setIsLoading(false);
-        updateActivity();
         return;
       }
-      
+
       // Single fast database query with very short timeout
       const { data, error } = await Promise.race([
         supabase
@@ -101,45 +77,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           address: data.address || '',
           status: data.status || 'Aktif',
         };
-        
+
         // Cache the profile
         const profileWithCache = { ...employeeProfile, _cacheTime: Date.now() } as any;
         profileCacheRef.current.set(supabaseUser.id, profileWithCache);
-        
+
         setUser(employeeProfile);
         setIsLoading(false);
-        updateActivity();
         return;
       }
-      
+
       // Fast fallback - don't waste time on additional queries
       throw error || new Error('No database profile found');
-      
+
     } catch (err) {
       // Create profile from auth data immediately - this is the main path now
       const fallbackProfile = createUserFromAuth(supabaseUser);
       setUser(fallbackProfile);
       setIsLoading(false);
-      updateActivity();
     }
   };
 
   // Sign out
   const signOut = useCallback(async () => {
     try {
-      // Clear logout timer
-      if (logoutTimerRef.current) {
-        clearTimeout(logoutTimerRef.current);
-        logoutTimerRef.current = null;
-      }
-
       // Clear cache
       profileCacheRef.current.clear();
 
       await supabase.auth.signOut();
       setSession(null);
       setUser(null);
-      setLastActivity(0);
     } catch (error) {
       // Silent error handling to prevent console spam
     }
@@ -153,12 +120,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const initializeAuth = async () => {
       try {
         setIsLoading(true);
-        
+
         // Simple session check
         const { data, error } = await supabase.auth.getSession();
-        
+
         if (!isMounted) return;
-        
+
         if (error) {
           setSession(null);
           setUser(null);
@@ -175,7 +142,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUser(null);
           setIsLoading(false);
         }
-        
+
       } catch (err) {
         if (isMounted) {
           setSession(null);
@@ -190,7 +157,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!isMounted) return;
-      
+
       setSession(newSession);
 
       if (newSession?.user) {
@@ -200,7 +167,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
       }
     });
-    
+
     authSubscription = subscription;
 
     // Initialize auth
@@ -209,44 +176,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Cleanup function
     return () => {
       isMounted = false;
-      if (logoutTimerRef.current) {
-        clearTimeout(logoutTimerRef.current);
-      }
       if (authSubscription) {
         authSubscription.unsubscribe();
       }
     };
   }, []);
 
-  // Add activity listeners to reset logout timer
-  useEffect(() => {
-    if (!user) return;
-
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-    
-    const resetTimer = () => {
-      updateActivity();
-    };
-
-    // Add event listeners
-    events.forEach(event => {
-      document.addEventListener(event, resetTimer, true);
-    });
-
-    // Initial timer setup
-    updateActivity();
-
-    // Cleanup
-    return () => {
-      events.forEach(event => {
-        document.removeEventListener(event, resetTimer, true);
-      });
-    };
-  }, [user]);
-
   return (
     <AuthContext.Provider
-      value={{ session, user, isLoading, signOut, lastActivity }}
+      value={{ session, user, isLoading, signOut }}
     >
       {children}
     </AuthContext.Provider>

@@ -4,7 +4,8 @@ import { useCustomerById } from "@/hooks/useCustomers" // Perbaikan: Mengimpor h
 import { useTransactionsByCustomer } from "@/hooks/useTransactions"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Mail, Phone, MapPin, ExternalLink, Camera } from "lucide-react"
+import { ArrowLeft, Phone, MapPin, ExternalLink, Camera } from "lucide-react"
+import { PhotoUploadService } from "@/services/photoUploadService"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CustomerTransactionHistoryTable } from "@/components/CustomerTransactionHistoryTable"
 
@@ -90,16 +91,21 @@ export default function CustomerDetailPage() {
             </div>
           )}
           {customer.store_photo_url && (
-            <div className="flex items-center gap-4">
-              <Camera className="h-5 w-5 text-muted-foreground" />
-              <Button
-                variant="link"
-                className="p-0 h-auto text-blue-600"
-                onClick={() => window.open(customer.store_photo_url!, '_blank')}
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Lihat Foto Toko
-              </Button>
+            <div className="md:col-span-2">
+              <div className="flex items-center gap-2 mb-2">
+                <Camera className="h-5 w-5 text-muted-foreground" />
+                <span className="font-medium">Foto Toko</span>
+              </div>
+              <img
+                src={PhotoUploadService.getPhotoUrl(customer.store_photo_url, 'Customers_Images')}
+                alt={`Foto toko ${customer.name}`}
+                className="w-full max-w-[300px] h-auto rounded-lg border shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={() => window.open(PhotoUploadService.getPhotoUrl(customer.store_photo_url!, 'Customers_Images'), '_blank')}
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
             </div>
           )}
         </CardContent>

@@ -81,7 +81,11 @@
       "Bash(start http://localhost:8085)",
       "Bash(powershell.exe -Command \"Add-Content -Path ''src\\pages\\PayrollPage.tsx'' -Value ''''\")",
       "Bash(taskkill:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(nslookup:*)",
+      "Bash(ping:*)",
+      "Bash(scp:*)",
+      "Bash(ren \"d:\\App\\Aquvit Fix - Copy\\scripts\\generate_photo_sql.js\" generate_photo_sql.cjs)"
     ],
     "deny": [],
     "ask": [],

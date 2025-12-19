@@ -87,7 +87,6 @@ export function useTransactionsReadyForDelivery() {
             deliveryNumber: d.delivery_number,
             deliveryDate: new Date(d.delivery_date),
             photoUrl: d.photo_url,
-            photoDriveId: d.photo_drive_id,
             notes: d.notes,
             driverId: d.driver_id,
             driverName: d.driver?.full_name || undefined,
@@ -213,7 +212,6 @@ export function useTransactionDeliveryInfo(transactionId: string) {
         deliveryNumber: d.delivery_number,
         deliveryDate: new Date(d.delivery_date),
         photoUrl: d.photo_url,
-        photoDriveId: d.photo_drive_id,
         notes: d.notes,
         driverId: d.driver_id,
         driverName: d.driver?.full_name || undefined,
@@ -338,23 +336,21 @@ export function useDeliveries() {
 
   const createDelivery = useMutation({
     mutationFn: async (request: CreateDeliveryRequest): Promise<Delivery> => {
-      /* DELIVERY FUNCTIONALITY RESTORED - REMOVE COMMENT WHEN READY */
       let photoUrl: string | undefined
-      let photoDriveId: string | undefined
 
-      // Upload photo via backend API (secure)
+      // Upload photo via VPS server
       if (request.photo) {
         try {
           const uploadResult = await PhotoUploadService.uploadPhoto(
             request.photo,
-            request.transactionId
+            request.transactionId,
+            'deliveries' // category folder
           )
           if (uploadResult) {
             photoUrl = uploadResult.webViewLink
-            photoDriveId = uploadResult.id
           }
         } catch (error) {
-          console.error('Failed to upload photo via backend API:', error)
+          console.error('Failed to upload photo to VPS:', error)
           // Continue without photo rather than failing the entire delivery
         }
       }
@@ -404,7 +400,6 @@ export function useDeliveries() {
           customer_phone: transactionData?.customers?.phone || '',
           delivery_date: new Date().toISOString(), // Always use server time for consistency
           photo_url: photoUrl,
-          photo_drive_id: photoDriveId,
           notes: request.notes,
           driver_id: request.driverId,
           helper_id: request.helperId,
@@ -423,7 +418,6 @@ export function useDeliveries() {
           customer_phone: transactionData?.customers?.phone || '',
           delivery_date: request.deliveryDate.toISOString(),
           photo_url: photoUrl,
-          photo_drive_id: photoDriveId,
           notes: request.notes,
           driver_id: request.driverId,
           helper_id: request.helperId,
@@ -461,7 +455,6 @@ export function useDeliveries() {
               customer_phone: transactionData?.customers?.phone || '',
               delivery_date: new Date().toISOString(),
               photo_url: photoUrl,
-              photo_drive_id: photoDriveId,
               notes: request.notes,
               driver_id: request.driverId,
               helper_id: request.helperId,
@@ -560,7 +553,6 @@ export function useDeliveries() {
           deliveryNumber: deliveryData.delivery_number,
           deliveryDate: new Date(deliveryData.delivery_date),
           photoUrl: deliveryData.photo_url,
-          photoDriveId: deliveryData.photo_drive_id,
           notes: deliveryData.notes,
           driverId: deliveryData.driver_id,
           helperId: deliveryData.helper_id,
@@ -606,79 +598,10 @@ export function useDeliveries() {
         // Continue with delivery creation even if items fail due to schema issues
       }
 
-      // Process stock movements now that items are actually delivered
-      // This is where stock movements should happen according to user request
-      try {
-        const { StockService } = await import('@/services/stockService')
-        const { data: userData } = await supabase.auth.getUser()
-        
-        if (userData?.user) {
-          // Get user profile for stock movement records
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', userData.user.id)
-            .single()
-          
-          // Filter items with delivered quantity > 0 for stock processing
-          const deliveredItems = request.items.filter(item => item.quantityDelivered > 0);
-          
-          if (deliveredItems.length === 0) {
-            console.warn('⚠️ No items with delivered quantity > 0 found for stock processing');
-            return result;
-          }
-
-          // Fetch actual product data for accurate stock processing
-          const productIds = deliveredItems.map(item => item.productId)
-          const { data: productsData } = await supabase
-            .from('products')
-            .select('id, name, type, current_stock')
-            .in('id', productIds)
-
-          // Create transaction items format for stock processing
-          const transactionItems = deliveredItems.map(item => {
-            const productData = productsData?.find(p => p.id === item.productId)
-            return {
-              product: {
-                id: item.productId,
-                name: item.productName,
-                type: productData?.type || 'Stock',
-                currentStock: productData?.current_stock || 0,
-              },
-              quantity: item.quantityDelivered, // Use delivered quantity, not ordered quantity
-              notes: `Delivered via delivery ${deliveryData.delivery_number}`,
-            }
-          })
-
-          console.log('🔄 Processing stock movements for delivery:', {
-            deliveryId: deliveryData.id,
-            deliveryNumber: deliveryData.delivery_number,
-            itemsCount: transactionItems.length,
-            items: transactionItems.map(item => ({
-              productId: item.product.id,
-              productName: item.product.name,
-              type: item.product.type,
-              currentStock: item.product.currentStock,
-              quantityDelivered: item.quantity
-            }))
-          });
-
-          // Process stock movements for the delivered items
-          await StockService.processTransactionStock(
-            deliveryData.id, // Use delivery ID as reference
-            transactionItems,
-            userData.user.id,
-            profileData?.full_name || 'Unknown User',
-            'delivery' // Specify this is a delivery, not a transaction
-          )
-
-          console.log('✅ Stock movements processed successfully for delivery:', deliveryData.id);
-        }
-      } catch (stockError) {
-        console.error('Failed to process stock movements for delivery:', stockError)
-        // Don't fail the delivery creation if stock movements fail
-        // This maintains the delivery functionality while adding stock tracking
-      }
+      // Note: Material stock movements are NOT processed during delivery
+      // Delivery tracks PRODUCT delivery to customers, not material consumption
+      // Material stock movements should happen during production/manufacturing process
+      console.log('📦 Delivery created - product stock will be updated via product_stock table, not material_stock_movements');
 
       // Update transaction status automatically based on delivery completion
       try {
@@ -762,7 +685,6 @@ export function useDeliveries() {
         deliveryNumber: deliveryData.delivery_number,
         deliveryDate: new Date(deliveryData.delivery_date),
         photoUrl: deliveryData.photo_url,
-        photoDriveId: deliveryData.photo_drive_id,
         notes: deliveryData.notes,
         driverId: deliveryData.driver_id,
         helperId: deliveryData.helper_id,
@@ -1127,7 +1049,6 @@ export function useDeliveryHistory() {
         deliveryNumber: d.delivery_number,
         deliveryDate: new Date(d.delivery_date),
         photoUrl: d.photo_url,
-        photoDriveId: d.photo_drive_id,
         notes: d.notes,
         driverId: d.driver_id,
         driverName: d.driver?.full_name || undefined,

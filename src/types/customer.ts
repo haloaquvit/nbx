@@ -1,3 +1,5 @@
+export type CustomerClassification = 'Rumahan' | 'Kios/Toko';
+
 export interface Customer {
   id: string;
   name: string;
@@ -7,8 +9,8 @@ export interface Customer {
   longitude?: number;
   full_address?: string;
   store_photo_url?: string;
-  store_photo_drive_id?: string;
   jumlah_galon_titip?: number; // Jumlah galon yang dititip di pelanggan
+  classification?: CustomerClassification; // Klasifikasi pelanggan: Rumahan atau Kios/Toko
   orderCount: number; // Menambahkan jumlah orderan
   branchId?: string; // Branch ID untuk multi-branch support
   createdAt: Date;

@@ -18,8 +18,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { useCustomers } from "@/hooks/useCustomers"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "@/hooks/useAuth"
-import { Customer } from "@/types/customer"
-import { MapPin, Upload, ExternalLink, Camera } from "lucide-react"
+import { Customer, CustomerClassification } from "@/types/customer"
+import { MapPin, Camera, ExternalLink } from "lucide-react"
 import { compressImage, formatFileSize, isImageFile } from "@/utils/imageCompression"
 import { PhotoUploadService } from "@/services/photoUploadService"
 
@@ -31,6 +31,7 @@ const customerSchema = z.object({
   latitude: z.number().optional(),
   longitude: z.number().optional(),
   jumlah_galon_titip: z.coerce.number().min(0, { message: "Jumlah galon tidak boleh negatif." }).optional(),
+  classification: z.enum(['Rumahan', 'Kios/Toko']).optional(),
 })
 
 type CustomerFormData = z.infer<typeof customerSchema>
@@ -50,7 +51,6 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
   const [isUploading, setIsUploading] = useState(false)
   const [storePhoto, setStorePhoto] = useState<File | null>(null)
   const [storePhotoUrl, setStorePhotoUrl] = useState<string>('')
-  const [storePhotoDriveId, setStorePhotoDriveId] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   
   // Check if user is owner, admin, or cashier
@@ -76,6 +76,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       latitude: undefined,
       longitude: undefined,
       jumlah_galon_titip: 0,
+      classification: undefined,
     },
   })
   
@@ -91,6 +92,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       setValue("latitude", customer.latitude)
       setValue("longitude", customer.longitude)
       setValue("jumlah_galon_titip", customer.jumlah_galon_titip || 0)
+      setValue("classification", customer.classification)
       
       // Auto-fill alamat lengkap dengan koordinat GPS jika ada
       if (customer.latitude && customer.longitude) {
@@ -101,7 +103,6 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       
       // Set photo states
       setStorePhotoUrl(customer.store_photo_url || "")
-      setStorePhotoDriveId(customer.store_photo_drive_id || "")
     }
   }, [customer, open, setValue])
 
@@ -164,30 +165,24 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
 
       // Get customer name from form, fallback to existing customer name or timestamp
       const customerName = watch('name')?.trim() || customer?.name?.trim() || `customer-${Date.now()}`
-      // Clean filename: replace special characters with spaces, then with hyphens
-      const cleanName = customerName.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-').toLowerCase()
-      const fileName = `${cleanName}.jpg`
-      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName)
-      
+      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName, 'Customers_Images')
+
       if (!result) {
-        throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.')
+        throw new Error('Gagal mengupload foto ke server.')
       }
-      
-      const driveId = result.id
-      const viewUrl = result.webViewLink
-      
-      setStorePhotoDriveId(driveId)
-      setStorePhotoUrl(viewUrl)
-      
+
+      // Simpan filename saja, URL di-generate saat tampil
+      setStorePhotoUrl(result.filename || result.id)
+
       toast({
         title: "Sukses!",
-        description: `Foto toko berhasil diupload ke Google Drive (${formatFileSize(compressedFile.size)}).`,
+        description: `Foto toko berhasil diupload (${formatFileSize(compressedFile.size)}).`,
       })
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Gagal mengupload foto ke Google Drive.",
+        description: "Gagal mengupload foto ke server.",
       })
     } finally {
       setIsUploading(false)
@@ -224,6 +219,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       phone: data.phone,
       address: data.address,
       jumlah_galon_titip: data.jumlah_galon_titip || 0,
+      classification: data.classification,
     }
 
     // Include additional fields if user can edit all fields
@@ -232,7 +228,6 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       updateData.latitude = data.latitude
       updateData.longitude = data.longitude
       updateData.store_photo_url = storePhotoUrl
-      updateData.store_photo_drive_id = storePhotoDriveId
     }
 
     updateCustomer.mutate(updateData, {
@@ -244,7 +239,6 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
         reset()
         setStorePhoto(null)
         setStorePhotoUrl('')
-        setStorePhotoDriveId('')
         onOpenChange(false)
       },
       onError: (error: any) => {
@@ -261,7 +255,6 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
     reset()
     setStorePhoto(null)
     setStorePhotoUrl('')
-    setStorePhotoDriveId('')
     onOpenChange(false)
   }
 
@@ -363,29 +356,32 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
                       capture="environment"
                       className="hidden"
                     />
-                    <Button 
-                      type="button" 
+                    <Button
+                      type="button"
                       onClick={() => fileInputRef.current?.click()}
                       variant="outline"
                       className="w-full"
                       disabled={isUploading}
                     >
-                      <Upload className="w-4 h-4 mr-2" />
-                      {isUploading ? 'Mengupload...' : 'Upload Foto Toko'}
+                      <Camera className="w-4 h-4 mr-2" />
+                      {isUploading ? 'Mengupload...' : 'Ambil Foto Toko'}
                     </Button>
                     {(storePhoto || storePhotoUrl) && (
-                      <div className="text-sm text-gray-600">
-                        <p>File: {storePhoto?.name || 'Foto tersedia'}</p>
+                      <div className="space-y-2">
+                        <div className="text-sm text-green-600">
+                          <p>✓ Foto berhasil diupload</p>
+                        </div>
                         {storePhotoUrl && (
-                          <Button
-                            type="button"
-                            variant="link"
-                            className="p-0 h-auto text-blue-600"
-                            onClick={() => window.open(storePhotoUrl, '_blank')}
-                          >
-                            <Camera className="w-3 h-3 mr-1" />
-                            Lihat Foto di Google Drive
-                          </Button>
+                          <img
+                            src={PhotoUploadService.getPhotoUrl(storePhotoUrl, 'Customers_Images')}
+                            alt="Foto Toko"
+                            className="w-full max-w-[200px] h-auto rounded-md border cursor-pointer hover:opacity-80"
+                            onClick={() => window.open(PhotoUploadService.getPhotoUrl(storePhotoUrl, 'Customers_Images'), '_blank')}
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                            }}
+                          />
                         )}
                       </div>
                     )}
@@ -395,12 +391,24 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
             )}
             
             <div className="space-y-2">
+              <Label htmlFor="classification">Klasifikasi</Label>
+              <select
+                id="classification"
+                {...register("classification")}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                <option value="">Pilih Klasifikasi</option>
+                <option value="Rumahan">Rumahan</option>
+                <option value="Kios/Toko">Kios/Toko</option>
+              </select>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="jumlah_galon_titip">Galon Titip</Label>
-              <Input 
-                id="jumlah_galon_titip" 
-                type="number" 
+              <Input
+                id="jumlah_galon_titip"
+                type="number"
                 min="0"
-                {...register("jumlah_galon_titip")} 
+                {...register("jumlah_galon_titip")}
                 placeholder="Jumlah galon yang dititip di pelanggan"
               />
               {errors.jumlah_galon_titip && <p className="text-red-500 text-sm">{errors.jumlah_galon_titip.message}</p>}

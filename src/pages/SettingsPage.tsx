@@ -10,7 +10,7 @@ import { Upload, Image as ImageIcon, MapPin } from 'lucide-react'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
-import { GoogleDriveServiceAccountSettings } from '@/components/GoogleDriveServiceAccountSettingsSecure'
+import { VPSServerSettings } from '@/components/VPSServerSettings'
 import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog'
 import { isOwner } from '@/utils/roleUtils'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -215,7 +215,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-6">
-          <GoogleDriveServiceAccountSettings />
+          <VPSServerSettings />
         </TabsContent>
       </Tabs>
     </div>

@@ -52,9 +52,13 @@ export function CameraUpload({
         description: `Ukuran: ${compressed.size.toFixed(1)}KB`
       });
 
-      // Upload to Google Drive
-      const result = await PhotoUploadService.uploadPhoto(compressed.file, Date.now().toString());
-      
+      // Upload to VPS server
+      const result = await PhotoUploadService.uploadPhoto(compressed.file, Date.now().toString(), 'deliveries');
+
+      if (result) {
+        onPhotoUploaded(result.filename || result.id, `camera-${Date.now()}.jpg`);
+      }
+
     } catch (error) {
       console.error('Camera capture failed:', error);
       toast({
@@ -101,19 +105,19 @@ export function CameraUpload({
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const fileName = `delivery-${timestamp}-${file.name}`;
         
-        // Upload to Google Drive
-        const result = await PhotoUploadService.uploadPhoto(compressed.file, Date.now().toString());
-        
+        // Upload to VPS server
+        const result = await PhotoUploadService.uploadPhoto(compressed.file, Date.now().toString(), 'deliveries');
+
         if (!result) {
-          throw new Error('Gagal mengupload ke Google Drive. Periksa konfigurasi di pengaturan.');
+          throw new Error('Gagal mengupload foto ke server.');
         }
-        
-        // Notify parent component
-        onPhotoUploaded(result.webViewLink, fileName);
-        
+
+        // Notify parent component - use filename for VPS
+        onPhotoUploaded(result.filename || result.id, fileName);
+
         toast({
           title: "Upload berhasil!",
-          description: `Foto tersimpan di Google Drive (${compressed.size.toFixed(1)}KB)`
+          description: `Foto tersimpan di server (${compressed.size.toFixed(1)}KB)`
         });
 
       } catch (error) {

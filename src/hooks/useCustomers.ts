@@ -44,7 +44,6 @@ export const useCustomers = () => {
         longitude: newCustomerData.longitude,
         full_address: newCustomerData.full_address,
         store_photo_url: newCustomerData.store_photo_url,
-        store_photo_drive_id: newCustomerData.store_photo_drive_id,
         jumlah_galon_titip: newCustomerData.jumlah_galon_titip,
         branch_id: currentBranch?.id || null,
       };
@@ -74,7 +73,6 @@ export const useCustomers = () => {
         longitude: updateData.longitude,
         full_address: updateData.full_address,
         store_photo_url: updateData.store_photo_url,
-        store_photo_drive_id: updateData.store_photo_drive_id,
         jumlah_galon_titip: updateData.jumlah_galon_titip,
       };
       

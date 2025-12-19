@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Truck, User, Clock, Package, Camera, MapPin, Phone, ExternalLink } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
+import { PhotoUploadService } from "@/services/photoUploadService"
 
 interface DeliveryDetailModalProps {
   delivery: any
@@ -153,10 +154,10 @@ export function DeliveryDetailModal({ delivery, open, onOpenChange }: DeliveryDe
                 </h3>
                 <div className="space-y-3">
                   <img
-                    src={delivery.photoUrl}
+                    src={PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries')}
                     alt={`Foto pengantaran ${delivery.deliveryNumber || delivery.id.slice(-6)}`}
                     className="w-full max-w-md mx-auto rounded-lg shadow-md cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={() => window.open(delivery.photoUrl, '_blank')}
+                    onClick={() => window.open(PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries'), '_blank')}
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.style.display = 'none';
@@ -178,7 +179,7 @@ export function DeliveryDetailModal({ delivery, open, onOpenChange }: DeliveryDe
                   <Button
                     variant="outline"
                     className="w-full"
-                    onClick={() => window.open(delivery.photoUrl, '_blank')}
+                    onClick={() => window.open(PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries'), '_blank')}
                   >
                     <ExternalLink className="h-4 w-4 mr-2" />
                     Buka di Tab Baru

@@ -23,6 +23,7 @@ import { useDeliveries } from "@/hooks/useDeliveries"
 import { CreateDeliveryRequest } from "@/types/delivery"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
+import { useAuth } from "@/hooks/useAuth"
 
 interface DriverDeliveryDialogProps {
   open: boolean
@@ -38,6 +39,7 @@ export function DriverDeliveryDialog({
   onDeliveryComplete
 }: DriverDeliveryDialogProps) {
   const { toast } = useToast()
+  const { user } = useAuth()
   const { drivers } = useDrivers()
   const { createDelivery } = useDeliveries()
 
@@ -48,6 +50,24 @@ export function DriverDeliveryDialog({
   const [deliveryPhoto, setDeliveryPhoto] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Check if user is admin/owner (can select different driver)
+  const isAdminOwner = user?.role && ['admin', 'owner'].includes(user.role)
+
+  // Auto-fill driver based on logged-in user (supir/helper)
+  useEffect(() => {
+    if (open && user && drivers && drivers.length > 0) {
+      // Find if current user is a driver in the drivers list
+      const currentUserAsDriver = (drivers as Driver[]).find(
+        (d: Driver) => d.id === user.id
+      )
+
+      if (currentUserAsDriver && !isAdminOwner) {
+        // Auto-fill driver ID for supir/helper
+        setDriverId(currentUserAsDriver.id)
+      }
+    }
+  }, [open, user, drivers, isAdminOwner])
 
   // Initialize item quantities
   useEffect(() => {
@@ -262,19 +282,34 @@ export function DriverDeliveryDialog({
               <Label className="flex items-center gap-2">
                 <User className="h-4 w-4" />
                 Supir *
+                {!isAdminOwner && driverId && (
+                  <span className="text-xs text-blue-600 ml-2">(Otomatis terisi)</span>
+                )}
               </Label>
-              <Select value={driverId} onValueChange={setDriverId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih Supir" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(drivers as Driver[])?.map((driver: Driver) => (
-                    <SelectItem key={driver.id} value={driver.id}>
-                      {driver.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* Admin/Owner can select any driver, supir/helper auto-filled and disabled */}
+              {isAdminOwner ? (
+                <Select value={driverId} onValueChange={setDriverId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Supir" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(drivers as Driver[])?.map((driver: Driver) => (
+                      <SelectItem key={driver.id} value={driver.id}>
+                        {driver.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={(drivers as Driver[])?.find(d => d.id === driverId)?.name || user?.name || ''}
+                    disabled
+                    className="bg-gray-100"
+                  />
+                  <span className="text-xs text-muted-foreground">(Anda)</span>
+                </div>
+              )}
             </div>
 
             <div>
@@ -285,11 +320,13 @@ export function DriverDeliveryDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="no-helper">Tidak ada helper</SelectItem>
-                  {(drivers as Driver[])?.map((driver: Driver) => (
-                    <SelectItem key={driver.id} value={driver.id}>
-                      {driver.name}
-                    </SelectItem>
-                  ))}
+                  {(drivers as Driver[])
+                    ?.filter((driver: Driver) => driver.id !== driverId) // Exclude selected driver
+                    ?.map((driver: Driver) => (
+                      <SelectItem key={driver.id} value={driver.id}>
+                        {driver.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
