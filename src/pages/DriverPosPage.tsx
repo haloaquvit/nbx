@@ -31,19 +31,79 @@ export default function DriverPosPage() {
   // Check if driver has active retasi (is_returned = false)
   const { data: activeRetasi, isLoading: isCheckingRetasi } = useActiveRetasi(user?.name)
 
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS (React Rules of Hooks)
+  // Form state - with cart functionality
+  const [selectedCustomer, setSelectedCustomer] = useState("")
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState("")
+  const [quantity, setQuantity] = useState("1")
+  const [items, setItems] = useState<TransactionItem[]>([])
+  const [notes, setNotes] = useState("")
+  const [paymentAccount, setPaymentAccount] = useState("")
+  const [paidAmount, setPaidAmount] = useState(0)
+
+  // Dialog states
+  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false)
+  const [printDialogOpen, setPrintDialogOpen] = useState(false)
+  const [createdTransaction, setCreatedTransaction] = useState<Transaction | null>(null)
+
+  // Loading state
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Memoized values
+  const filteredCustomers = useMemo(() => {
+    if (!customers) return [];
+    return customers.filter(customer =>
+      customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+      customer.phone.includes(customerSearch)
+    ).slice(0, 10);
+  }, [customers, customerSearch]);
+
+  const selectedProductData = products?.find(p => p.id === selectedProduct)
+  const selectedCustomerData = customers?.find(c => c.id === selectedCustomer)
+
+  // Calculate totals from items
+  const quantityNum = parseInt(quantity) || 0
+  const subtotal = items.reduce((sum, item) => sum + (item.product.basePrice * item.quantity), 0)
+  const total = subtotal
+
   // Enhanced role-based access control
   const isAdminOwner = user?.role && ['admin', 'owner'].includes(user.role)
+
+  // Check if user is a driver (supports both 'driver' and 'supir' role names)
+  const isDriver = user?.role === 'driver' || user?.role === 'supir'
+
+  // Check if user is a helper (supports both 'helper' and 'pembantu' role names)
+  const isHelper = user?.role === 'helper' || user?.role === 'pembantu'
 
   // Access logic:
   // - Admin/Owner: always have access (can use POS without retasi)
   // - Helper: always have access (can use POS without retasi)
   // - Driver: only if they have ACTIVE retasi (is_returned = false)
   const hasAccess = isAdminOwner ||
-                   (user?.role === 'helper') ||
-                   (user?.role === 'driver' && activeRetasi !== null)
+                   isHelper ||
+                   (isDriver && activeRetasi !== null)
+
+  // Handler functions
+  const handlePaidAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (value === '') {
+      setPaidAmount(0);
+      setPaymentAccount('');
+    } else {
+      const numValue = parseInt(value) || 0;
+      if (numValue >= 0 && numValue <= total) {
+        setPaidAmount(numValue);
+        if (numValue === 0) {
+          setPaymentAccount('');
+        }
+      }
+    }
+  };
 
   // Show loading state while checking retasi
-  if (isCheckingRetasi && user?.role === 'driver') {
+  if (isCheckingRetasi && isDriver) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-4 flex items-center justify-center">
         <Card className="max-w-md mx-auto">
@@ -60,7 +120,7 @@ export default function DriverPosPage() {
   }
 
   if (!hasAccess) {
-    const isDriverWithoutActiveRetasi = user?.role === 'driver' && !activeRetasi
+    const isDriverWithoutActiveRetasi = isDriver && !activeRetasi
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 p-4 flex items-center justify-center">
@@ -82,6 +142,9 @@ export default function DriverPosPage() {
                 <p className="text-red-100 text-sm mb-2">
                   <span className="font-semibold">Role Anda:</span> {user?.role || 'Unknown'}
                 </p>
+                <p className="text-red-100 text-sm mb-2">
+                  <span className="font-semibold">Nama Login:</span> {user?.name || 'Unknown'}
+                </p>
                 {isDriverWithoutActiveRetasi && (
                   <div className="text-red-100 text-xs space-y-2">
                     <p className="font-semibold">Untuk mengakses POS Supir, Anda harus memiliki retasi yang AKTIF (status: Armada Berangkat).</p>
@@ -91,8 +154,9 @@ export default function DriverPosPage() {
                         <li>Belum ada retasi yang dibuat untuk Anda</li>
                         <li>Retasi terakhir sudah berstatus "Kembali"</li>
                         <li>Retasi sudah ditandai selesai oleh admin</li>
+                        <li>Nama supir di retasi tidak cocok dengan nama login Anda ("{user?.name}")</li>
                       </ul>
-                      <p className="mt-2 font-semibold">Solusi: Hubungi admin untuk membuat retasi baru</p>
+                      <p className="mt-2 font-semibold">Solusi: Hubungi admin untuk membuat retasi baru atau cek nama yang digunakan saat membuat retasi</p>
                     </div>
                   </div>
                 )}
@@ -118,57 +182,6 @@ export default function DriverPosPage() {
       </div>
     )
   }
-
-  // Form state - with cart functionality
-  const [selectedCustomer, setSelectedCustomer] = useState("")
-  const [customerSearch, setCustomerSearch] = useState('')
-  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState("")
-  const [quantity, setQuantity] = useState("1")
-  const [items, setItems] = useState<TransactionItem[]>([])
-  const [notes, setNotes] = useState("")
-
-  const filteredCustomers = useMemo(() => {
-    if (!customers) return [];
-    return customers.filter(customer => 
-      customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
-      customer.phone.includes(customerSearch)
-    ).slice(0, 10); // Limit to 10 results
-  }, [customers, customerSearch]);
-  const [paymentAccount, setPaymentAccount] = useState("")
-  const [paidAmount, setPaidAmount] = useState(0)
-
-  const handlePaidAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    if (value === '') {
-      setPaidAmount(0);
-      setPaymentAccount('');
-    } else {
-      const numValue = parseInt(value) || 0;
-      if (numValue >= 0 && numValue <= total) {
-        setPaidAmount(numValue);
-        if (numValue === 0) {
-          setPaymentAccount('');
-        }
-      }
-    }
-  };
-  
-  // Dialog states
-  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false)
-  const [printDialogOpen, setPrintDialogOpen] = useState(false)
-  const [createdTransaction, setCreatedTransaction] = useState<Transaction | null>(null)
-  
-  // Loading state
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
-  const selectedProductData = products?.find(p => p.id === selectedProduct)
-  const selectedCustomerData = customers?.find(c => c.id === selectedCustomer)
-  
-  // Calculate totals from items
-  const quantityNum = parseInt(quantity) || 0
-  const subtotal = items.reduce((sum, item) => sum + (item.product.basePrice * item.quantity), 0)
-  const total = subtotal
 
   const addItem = () => {
     if (!selectedProductData) {
@@ -378,7 +391,7 @@ export default function DriverPosPage() {
             <CardDescription className="text-blue-100 text-lg mt-2">
               Point of Sale untuk Supir & Helper
             </CardDescription>
-            {activeRetasi && user?.role === 'driver' && (
+            {activeRetasi && isDriver && (
               <div className="mt-4 bg-blue-700/50 p-3 rounded-lg">
                 <div className="flex items-center gap-2 text-sm">
                   <Package className="h-4 w-4" />

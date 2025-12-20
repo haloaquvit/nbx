@@ -40,16 +40,25 @@ export const useMaterials = () => {
   const { data: materials, isLoading } = useQuery<Material[]>({
     queryKey: ['materials', currentBranch?.id],
     queryFn: async () => {
+      console.log('[useMaterials] Fetching materials for branch:', currentBranch?.id, currentBranch?.name);
+
       let query = supabase
         .from('materials')
         .select('*');
 
-      // Apply branch filter (only if not head office viewing all branches)
+      // Apply branch filter - include branch-specific OR shared materials (branch_id is null)
       if (currentBranch?.id) {
-        query = query.eq('branch_id', currentBranch.id);
+        query = query.or(`branch_id.eq.${currentBranch.id},branch_id.is.null`);
       }
 
       const { data, error } = await query;
+
+      console.log('[useMaterials] Query result:', {
+        count: data?.length || 0,
+        error: error?.message,
+        data: data?.slice(0, 3) // Log first 3 items for debugging
+      });
+
       if (error) throw new Error(error.message);
       return data ? data.map(fromDbToApp) : [];
     },

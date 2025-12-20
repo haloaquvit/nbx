@@ -26,7 +26,12 @@ export function getVPSSettings(): VPSSettings {
   try {
     const saved = localStorage.getItem(VPS_SETTINGS_KEY)
     if (saved) {
-      return JSON.parse(saved)
+      const parsed = JSON.parse(saved)
+      // Sanitize port - remove any non-numeric characters (like thousand separators)
+      if (parsed.port) {
+        parsed.port = String(parsed.port).replace(/[^0-9]/g, '')
+      }
+      return parsed
     }
   } catch (error) {
     console.error('Failed to load VPS settings:', error)
@@ -202,8 +207,15 @@ export function VPSServerSettings() {
             <Label htmlFor="port">Port</Label>
             <Input
               id="port"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={settings.port}
-              onChange={(e) => setSettings(prev => ({ ...prev, port: e.target.value }))}
+              onChange={(e) => {
+                // Only allow numeric input, no formatting
+                const value = e.target.value.replace(/[^0-9]/g, '')
+                setSettings(prev => ({ ...prev, port: value }))
+              }}
               placeholder="3001"
             />
             <p className="text-xs text-muted-foreground">

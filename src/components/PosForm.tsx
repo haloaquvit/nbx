@@ -223,14 +223,17 @@ export const PosForm = () => {
     const checkRetasiValidation = async () => {
       if (currentUser?.role?.toLowerCase() === 'supir' && currentUser?.name) {
         try {
-          // Check if driver has active retasi (Armada Berangkat) today
-          const hasActiveRetasi = await checkDriverAvailability(currentUser.name);
-          if (hasActiveRetasi) {
-            // Driver has unreturned retasi, can access POS
+          // checkDriverAvailability returns TRUE if driver is AVAILABLE (no active retasi)
+          // We need to check if driver has active retasi to access POS
+          const isAvailable = await checkDriverAvailability(currentUser.name);
+          console.log('[PosForm] Driver availability check:', currentUser.name, '| isAvailable:', isAvailable);
+
+          if (!isAvailable) {
+            // Driver has unreturned retasi (not available for new retasi), can access POS
             setRetasiBlocked(false);
             setRetasiMessage('');
           } else {
-            // Driver has no active retasi, blocked from POS
+            // Driver has no active retasi (available for new retasi), blocked from POS
             setRetasiBlocked(true);
             setRetasiMessage('Anda tidak dapat mengakses POS. Silakan buat retasi "Armada Berangkat" terlebih dahulu.');
           }
@@ -398,19 +401,20 @@ export const PosForm = () => {
             await updateAccountBalance.mutateAsync({ accountId: paymentAccountId, amount: paidAmount });
           } catch (paymentError) {
             console.error('Error updating account balance:', paymentError);
-            toast({ 
-              variant: "destructive", 
-              title: "Warning", 
-              description: "Transaksi berhasil disimpan tetapi ada masalah dalam update saldo akun." 
+            toast({
+              variant: "destructive",
+              title: "Warning",
+              description: "Transaksi berhasil disimpan tetapi ada masalah dalam update saldo akun."
             });
           }
         }
-        
+
         setSavedTransaction(savedData);
         toast({ title: "Sukses", description: "Transaksi dan pembayaran berhasil disimpan." });
-        
-        // Show print dialog instead of immediately redirecting
+
+        // Show print dialog and redirect to transactions page
         setIsPrintDialogOpen(true);
+        navigate('/transactions');
       },
       onError: (error) => {
         toast({ variant: "destructive", title: "Gagal Menyimpan", description: error.message });

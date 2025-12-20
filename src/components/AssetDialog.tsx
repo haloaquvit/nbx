@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useCreateAsset, useUpdateAsset } from "@/hooks/useAssets"
 import { useAccounts } from "@/hooks/useAccounts"
+import { useBranch } from "@/contexts/BranchContext"
 import { Asset, AssetFormData } from "@/types/assets"
 import { useToast } from "@/components/ui/use-toast"
 
@@ -20,6 +21,7 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
   const createAsset = useCreateAsset()
   const updateAsset = useUpdateAsset()
   const { accounts = [], isLoading } = useAccounts()
+  const { currentBranch } = useBranch()
 
   // Debug: Log accounts data
   useEffect(() => {
@@ -128,6 +130,18 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
       return
     }
 
+    // Validate branch is selected
+    if (!currentBranch?.id) {
+      toast({
+        title: "Error",
+        description: "Cabang belum dipilih. Silakan pilih cabang terlebih dahulu dari header.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log('[AssetDialog] Creating asset for branch:', currentBranch.name, '| ID:', currentBranch.id)
+
     try {
       // Clean up formData - convert empty strings to undefined for optional fields
       const cleanedFormData = {
@@ -186,6 +200,11 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
           <DialogTitle>{asset ? "Edit Aset" : "Tambah Aset Baru"}</DialogTitle>
           <DialogDescription>
             {asset ? "Perbarui informasi aset" : "Tambahkan aset baru ke sistem"}
+            {currentBranch && (
+              <span className="block mt-1 text-blue-600 font-medium">
+                Cabang: {currentBranch.name}
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 

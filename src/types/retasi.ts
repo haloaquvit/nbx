@@ -25,12 +25,24 @@ export interface RetasiItem {
   id: string;
   retasi_id: string;
   delivery_id?: string;
+  product_id: string;
   product_name: string;
   quantity: number;
+  returned_quantity?: number;
+  sold_quantity?: number;
+  error_quantity?: number;
   weight?: number;
   volume?: number;
   notes?: string;
   created_at: Date;
+}
+
+export interface CreateRetasiItemData {
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  weight?: number;
+  notes?: string;
 }
 
 export interface CreateRetasiData {
@@ -42,7 +54,7 @@ export interface CreateRetasiData {
   route?: string;
   total_items?: number;
   notes?: string;
-  items?: Omit<RetasiItem, 'id' | 'retasi_id' | 'created_at'>[];
+  items?: CreateRetasiItemData[];
 }
 
 export interface UpdateRetasiData {

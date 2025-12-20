@@ -84,10 +84,14 @@ export const useEmployeeAdvances = () => {
         remainingAmount: newData.amount,
       };
       const dbData = fromAppToDb(advanceToInsert);
-      
+
       const { data, error } = await supabase
         .from('employee_advances')
-        .insert({ ...dbData, id: `adv-${Date.now()}` })
+        .insert({
+          ...dbData,
+          id: `adv-${Date.now()}`,
+          branch_id: currentBranch?.id || null, // Add branch_id for branch categorization
+        })
         .select()
         .single();
 

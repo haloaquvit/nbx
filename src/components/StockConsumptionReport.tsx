@@ -88,46 +88,41 @@ export const StockConsumptionReport = () => {
     const { data: productionRecords, error: productionError } = await productionsQuery
     if (productionError) console.warn('Production query error:', productionError)
 
-    // Get transactions in date range (KELUAR dari penjualan)
-    let transactionsQuery = supabase
+    // Get DELIVERY items in date range (KELUAR dari pengantaran) - More reliable than parsing transaction items
+    let deliveryItemsQuery = supabase
+      .from('deliveries')
+      .select(`
+        id,
+        delivery_date,
+        delivery_items(
+          product_id,
+          quantity_delivered
+        )
+      `)
+      .gte('delivery_date', fromDate.toISOString())
+      .lte('delivery_date', toDate.toISOString())
+
+    if (currentBranch?.id) {
+      deliveryItemsQuery = deliveryItemsQuery.eq('branch_id', currentBranch.id)
+    }
+
+    const { data: deliveries, error: deliveriesError } = await deliveryItemsQuery
+    if (deliveriesError) console.warn('Deliveries query error:', deliveriesError)
+
+    // Get OFFICE SALE transactions (laku kantor - langsung keluar tanpa pengantaran)
+    let officeSalesQuery = supabase
       .from('transactions')
-      .select('id, items, order_date, status')
+      .select('id, items, order_date')
+      .eq('is_office_sale', true)
       .gte('order_date', fromDate.toISOString())
       .lte('order_date', toDate.toISOString())
-      .in('status', ['Selesai', 'Diproses', 'Proses Produksi', 'Dikirim'])
 
     if (currentBranch?.id) {
-      transactionsQuery = transactionsQuery.eq('branch_id', currentBranch.id)
+      officeSalesQuery = officeSalesQuery.eq('branch_id', currentBranch.id)
     }
 
-    const { data: transactions, error: transactionsError } = await transactionsQuery
-    if (transactionsError) console.warn('Transactions query error:', transactionsError)
-
-    // Get production records BEFORE start date to calculate starting stock
-    let priorProductionsQuery = supabase
-      .from('production_records')
-      .select('product_id, quantity')
-      .lt('created_at', fromDate.toISOString())
-      .gt('quantity', 0)
-
-    if (currentBranch?.id) {
-      priorProductionsQuery = priorProductionsQuery.eq('branch_id', currentBranch.id)
-    }
-
-    const { data: priorProductions } = await priorProductionsQuery
-
-    // Get transactions BEFORE start date
-    let priorTransactionsQuery = supabase
-      .from('transactions')
-      .select('id, items')
-      .lt('order_date', fromDate.toISOString())
-      .in('status', ['Selesai', 'Diproses', 'Proses Produksi', 'Dikirim'])
-
-    if (currentBranch?.id) {
-      priorTransactionsQuery = priorTransactionsQuery.eq('branch_id', currentBranch.id)
-    }
-
-    const { data: priorTransactions } = await priorTransactionsQuery
+    const { data: officeSales, error: officeSalesError } = await officeSalesQuery
+    if (officeSalesError) console.warn('Office sales query error:', officeSalesError)
 
     // Calculate production totals per product (in period)
     const productionByProduct: Record<string, number> = {}
@@ -137,45 +132,40 @@ export const StockConsumptionReport = () => {
       }
     })
 
-    // Calculate prior production totals
-    const priorProductionByProduct: Record<string, number> = {}
-    priorProductions?.forEach(record => {
-      if (record.product_id) {
-        priorProductionByProduct[record.product_id] = (priorProductionByProduct[record.product_id] || 0) + Number(record.quantity)
-      }
+    // Calculate sales totals per product from DELIVERY ITEMS (in period)
+    const salesByProduct: Record<string, number> = {}
+
+    // 1. From deliveries
+    deliveries?.forEach((delivery: any) => {
+      delivery.delivery_items?.forEach((item: any) => {
+        if (item.product_id && item.quantity_delivered > 0) {
+          salesByProduct[item.product_id] = (salesByProduct[item.product_id] || 0) + Number(item.quantity_delivered)
+        }
+      })
     })
 
-    // Calculate sales totals per product (in period)
-    const salesByProduct: Record<string, number> = {}
-    transactions?.forEach(transaction => {
-      const items = typeof transaction.items === 'string'
-        ? JSON.parse(transaction.items)
-        : transaction.items
+    // 2. From office sales (parse transaction items)
+    officeSales?.forEach((transaction: any) => {
+      let items = transaction.items
+
+      // Parse JSON if string
+      if (typeof items === 'string') {
+        try {
+          items = JSON.parse(items)
+        } catch (e) {
+          console.warn('Failed to parse office sale items:', e)
+          return
+        }
+      }
 
       if (Array.isArray(items)) {
         items.forEach((item: any) => {
-          const productId = item.product?.id || item.productId
-          const quantity = Number(item.quantity || 0)
+          // Try multiple ways to get product ID
+          const productId = item.product?.id || item.productId || item.product_id || item.id
+          const quantity = Number(item.quantity || item.qty || 0)
+
           if (productId && quantity > 0) {
             salesByProduct[productId] = (salesByProduct[productId] || 0) + quantity
-          }
-        })
-      }
-    })
-
-    // Calculate prior sales totals
-    const priorSalesByProduct: Record<string, number> = {}
-    priorTransactions?.forEach(transaction => {
-      const items = typeof transaction.items === 'string'
-        ? JSON.parse(transaction.items)
-        : transaction.items
-
-      if (Array.isArray(items)) {
-        items.forEach((item: any) => {
-          const productId = item.product?.id || item.productId
-          const quantity = Number(item.quantity || 0)
-          if (productId && quantity > 0) {
-            priorSalesByProduct[productId] = (priorSalesByProduct[productId] || 0) + quantity
           }
         })
       }
@@ -191,18 +181,11 @@ export const StockConsumptionReport = () => {
       const currentStock = Number(product.current_stock) || 0
       const periodProduction = productionByProduct[product.id] || 0
       const periodSales = salesByProduct[product.id] || 0
-      const priorProduction = priorProductionByProduct[product.id] || 0
-      const priorSales = priorSalesByProduct[product.id] || 0
 
       // Calculate starting stock
-      // Current stock = Starting + Production - Sales (for the period)
-      // So: Starting = Current - Production + Sales (for remaining period after toDate)
-      // But we need starting at fromDate...
-
-      // Better approach:
       // Ending stock = Current stock (at report generation time)
       // Total IN = Production in period
-      // Total OUT = Sales in period
+      // Total OUT = Sales in period (from deliveries + office sales)
       // Starting stock = Ending - IN + OUT = Current - periodProduction + periodSales
 
       const totalIn = periodProduction

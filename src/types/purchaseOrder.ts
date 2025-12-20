@@ -4,8 +4,11 @@ export type PurchaseOrderStatus = 'Pending' | 'Approved' | 'Dikirim' | 'Diterima
 export interface PurchaseOrderItem {
   id?: string;
   purchaseOrderId?: string;
-  materialId: string;
+  materialId?: string;  // For material purchases
+  productId?: string;   // For "Jual Langsung" product purchases
+  itemType?: 'material' | 'product';  // Type of item being purchased
   materialName?: string;
+  productName?: string;
   unit?: string;
   quantity: number;
   unitPrice: number;

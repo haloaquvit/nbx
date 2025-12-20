@@ -44,11 +44,21 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { useMaterials } from "@/hooks/useMaterials"
+import { useProducts } from "@/hooks/useProducts"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { useSuppliers } from "@/hooks/useSuppliers"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
 import { PurchaseOrderItem } from "@/types/purchaseOrder"
+
+// Combined item for dropdown (material or product)
+interface PurchasableItem {
+  id: string;
+  name: string;
+  unit: string;
+  type: 'material' | 'product';
+  costPrice?: number; // For products with cost_price
+}
 
 const formSchema = z.object({
   supplierId: z.string().min(1, "Supplier harus dipilih"),
@@ -74,11 +84,49 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
   // Use external open state if provided, otherwise use internal state
   const open = externalOpen !== undefined ? externalOpen : internalOpen
   const setOpen = externalOnOpenChange || setInternalOpen
-  const { materials } = useMaterials()
+  const { materials, isLoading: isLoadingMaterials } = useMaterials()
+  const { products, isLoading: isLoadingProducts } = useProducts()
   const { createPurchaseOrder } = usePurchaseOrders()
   const { activeSuppliers } = useSuppliers()
   const { user } = useAuth()
   const { toast } = useToast()
+
+  // Combine materials and "Jual Langsung" products into one list
+  const purchasableItems = React.useMemo<PurchasableItem[]>(() => {
+    const items: PurchasableItem[] = [];
+
+    // Add materials
+    materials?.forEach(mat => {
+      items.push({
+        id: `mat-${mat.id}`,
+        name: mat.name,
+        unit: mat.unit,
+        type: 'material'
+      });
+    });
+
+    // Add "Jual Langsung" products
+    products?.filter(p => p.type === 'Jual Langsung').forEach(prod => {
+      items.push({
+        id: `prod-${prod.id}`,
+        name: prod.name,
+        unit: prod.unit,
+        type: 'product',
+        costPrice: prod.costPrice
+      });
+    });
+
+    return items;
+  }, [materials, products]);
+
+  const isLoadingItems = isLoadingMaterials || isLoadingProducts;
+
+  // Debug: log purchasable items
+  React.useEffect(() => {
+    if (open) {
+      console.log('[PO Dialog] Purchasable items:', purchasableItems.length, purchasableItems);
+    }
+  }, [open, purchasableItems]);
 
   // State for PO items
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
@@ -128,30 +176,84 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
   const totalCost = subtotal + ppnAmount
 
   // Add new item
-  const addItem = (preselectedMaterialId?: string) => {
+  const addItem = (preselectedItemId?: string) => {
     const newItem: PurchaseOrderItem = {
       id: `temp-${Date.now()}`,
-      materialId: preselectedMaterialId || "",
+      materialId: undefined,
+      productId: undefined,
+      itemType: undefined,
       quantity: 1,
       unitPrice: 0,
       notes: "",
     }
+
+    // If preselected, parse and set the item
+    if (preselectedItemId) {
+      const purchasableItem = purchasableItems.find(pi => pi.id === preselectedItemId);
+      if (purchasableItem) {
+        if (purchasableItem.type === 'material') {
+          newItem.materialId = purchasableItem.id.replace('mat-', '');
+          newItem.materialName = purchasableItem.name;
+          newItem.itemType = 'material';
+        } else {
+          newItem.productId = purchasableItem.id.replace('prod-', '');
+          newItem.productName = purchasableItem.name;
+          newItem.itemType = 'product';
+          // Auto-fill cost price for products
+          if (purchasableItem.costPrice) {
+            newItem.unitPrice = purchasableItem.costPrice;
+          }
+        }
+        newItem.unit = purchasableItem.unit;
+      }
+    }
+
     setItems([...items, newItem])
   }
 
+  // Get the combined ID for display in dropdown
+  const getItemCombinedId = (item: PurchaseOrderItem): string => {
+    if (item.itemType === 'material' && item.materialId) {
+      return `mat-${item.materialId}`;
+    } else if (item.itemType === 'product' && item.productId) {
+      return `prod-${item.productId}`;
+    }
+    return '';
+  }
+
   // Update item
-  const updateItem = (itemId: string, field: keyof PurchaseOrderItem, value: any) => {
+  const updateItem = (itemId: string, field: keyof PurchaseOrderItem | 'combinedItemId', value: any) => {
     setItems(items.map(item => {
       if (item.id === itemId) {
-        const updatedItem = { ...item, [field]: value }
+        const updatedItem = { ...item }
 
-        // Auto-populate material name and unit when material is selected
-        if (field === 'materialId') {
-          const material = materials?.find(m => m.id === value)
-          if (material) {
-            updatedItem.materialName = material.name
-            updatedItem.unit = material.unit
+        // Handle combined item selection
+        if (field === 'combinedItemId') {
+          const purchasableItem = purchasableItems.find(pi => pi.id === value);
+          if (purchasableItem) {
+            // Reset both IDs first
+            updatedItem.materialId = undefined;
+            updatedItem.productId = undefined;
+            updatedItem.materialName = undefined;
+            updatedItem.productName = undefined;
+
+            if (purchasableItem.type === 'material') {
+              updatedItem.materialId = purchasableItem.id.replace('mat-', '');
+              updatedItem.materialName = purchasableItem.name;
+              updatedItem.itemType = 'material';
+            } else {
+              updatedItem.productId = purchasableItem.id.replace('prod-', '');
+              updatedItem.productName = purchasableItem.name;
+              updatedItem.itemType = 'product';
+              // Auto-fill cost price for products
+              if (purchasableItem.costPrice && updatedItem.unitPrice === 0) {
+                updatedItem.unitPrice = purchasableItem.costPrice;
+              }
+            }
+            updatedItem.unit = purchasableItem.unit;
           }
+        } else {
+          (updatedItem as any)[field] = value;
         }
 
         return updatedItem
@@ -185,13 +287,13 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
       return
     }
 
-    // Validate all items have material selected
-    const invalidItems = items.filter(item => !item.materialId || item.quantity <= 0 || item.unitPrice < 0)
+    // Validate all items have material or product selected
+    const invalidItems = items.filter(item => (!item.materialId && !item.productId) || item.quantity <= 0 || item.unitPrice < 0)
     if (invalidItems.length > 0) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Semua item harus memiliki material, jumlah, dan harga yang valid"
+        description: "Semua item harus memiliki material/produk, jumlah, dan harga yang valid"
       })
       return
     }
@@ -220,7 +322,10 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
       notes: values.notes,
       items: items.map(item => ({
         materialId: item.materialId,
+        productId: item.productId,
+        itemType: item.itemType,
         materialName: item.materialName,
+        productName: item.productName,
         unit: item.unit,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -258,7 +363,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
         <DialogHeader>
           <DialogTitle>Buat Purchase Order Baru</DialogTitle>
           <DialogDescription>
-            Isi form di bawah untuk membuat permintaan pembelian bahan baku.
+            Isi form di bawah untuk membuat permintaan pembelian bahan baku atau produk jual langsung.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -309,7 +414,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[300px]">Material</TableHead>
+                      <TableHead className="w-[300px]">Material / Produk</TableHead>
                       <TableHead className="w-[120px]">Jumlah</TableHead>
                       <TableHead className="w-[150px]">Harga Satuan</TableHead>
                       <TableHead className="w-[150px]">Subtotal</TableHead>
@@ -319,25 +424,55 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
                   </TableHeader>
                   <TableBody>
                     {items.map((item) => {
-                      const material = materials?.find(m => m.id === item.materialId)
                       const itemSubtotal = item.quantity * item.unitPrice
+                      const selectedCombinedId = getItemCombinedId(item)
 
                       return (
                         <TableRow key={item.id}>
                           <TableCell>
                             <Select
-                              value={item.materialId}
-                              onValueChange={(value) => updateItem(item.id!, 'materialId', value)}
+                              value={selectedCombinedId}
+                              onValueChange={(value) => updateItem(item.id!, 'combinedItemId', value)}
+                              disabled={isLoadingItems}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="Pilih material" />
+                                <SelectValue placeholder={isLoadingItems ? "Memuat..." : "Pilih material/produk"} />
                               </SelectTrigger>
                               <SelectContent>
-                                {materials?.map((mat) => (
-                                  <SelectItem key={mat.id} value={mat.id}>
-                                    {mat.name} ({mat.unit})
-                                  </SelectItem>
-                                ))}
+                                {isLoadingItems ? (
+                                  <SelectItem value="loading" disabled>Memuat data...</SelectItem>
+                                ) : purchasableItems.length === 0 ? (
+                                  <SelectItem value="empty" disabled>Tidak ada item tersedia</SelectItem>
+                                ) : (
+                                  <>
+                                    {/* Materials Section */}
+                                    {purchasableItems.filter(pi => pi.type === 'material').length > 0 && (
+                                      <>
+                                        <SelectItem value="header-material" disabled className="font-semibold text-xs text-muted-foreground">
+                                          -- Bahan Baku --
+                                        </SelectItem>
+                                        {purchasableItems.filter(pi => pi.type === 'material').map((pi) => (
+                                          <SelectItem key={pi.id} value={pi.id}>
+                                            {pi.name} ({pi.unit})
+                                          </SelectItem>
+                                        ))}
+                                      </>
+                                    )}
+                                    {/* Products Section */}
+                                    {purchasableItems.filter(pi => pi.type === 'product').length > 0 && (
+                                      <>
+                                        <SelectItem value="header-product" disabled className="font-semibold text-xs text-muted-foreground">
+                                          -- Produk Jual Langsung --
+                                        </SelectItem>
+                                        {purchasableItems.filter(pi => pi.type === 'product').map((pi) => (
+                                          <SelectItem key={pi.id} value={pi.id}>
+                                            {pi.name} ({pi.unit})
+                                          </SelectItem>
+                                        ))}
+                                      </>
+                                    )}
+                                  </>
+                                )}
                               </SelectContent>
                             </Select>
                           </TableCell>
@@ -350,9 +485,9 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
                                 decimalPlaces={2}
                                 className="w-20"
                               />
-                              {material && (
+                              {item.unit && (
                                 <span className="text-xs text-muted-foreground">
-                                  {material.unit}
+                                  {item.unit}
                                 </span>
                               )}
                             </div>

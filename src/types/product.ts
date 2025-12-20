@@ -10,6 +10,7 @@ export interface Product {
   name: string;
   type: ProductType; // Jenis barang (Produksi/Jual Langsung)
   basePrice: number;
+  costPrice?: number; // Harga pokok/modal untuk produk Jual Langsung
   unit: string; // Satuan produk
   currentStock: number; // Stock saat ini
   minStock: number; // Stock minimum

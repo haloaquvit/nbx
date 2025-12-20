@@ -1,7 +1,24 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Retasi, RetasiItem, CreateRetasiData, UpdateRetasiData, ReturnItemsData } from '@/types/retasi';
+import { Retasi, RetasiItem, CreateRetasiData, UpdateRetasiData, ReturnItemsData, CreateRetasiItemData } from '@/types/retasi';
 import { useBranch } from '@/contexts/BranchContext';
+
+// Database to App mapping for RetasiItem
+const fromDbItem = (dbItem: any): RetasiItem => ({
+  id: dbItem.id,
+  retasi_id: dbItem.retasi_id,
+  delivery_id: dbItem.delivery_id,
+  product_id: dbItem.product_id,
+  product_name: dbItem.product_name,
+  quantity: dbItem.quantity || 0,
+  returned_quantity: dbItem.returned_quantity || 0,
+  sold_quantity: dbItem.sold_quantity || 0,
+  error_quantity: dbItem.error_quantity || 0,
+  weight: dbItem.weight,
+  volume: dbItem.volume,
+  notes: dbItem.notes,
+  created_at: new Date(dbItem.created_at),
+});
 
 // Database to App mapping
 const fromDb = (dbRetasi: any): Retasi => ({
@@ -62,20 +79,38 @@ export const useDriverHasRetasi = (driverName?: string) => {
 };
 
 // Hook to get active retasi for a driver (is_returned = false)
+// Uses case-insensitive matching with ILIKE to handle name variations
 export const useActiveRetasi = (driverName?: string) => {
   return useQuery<Retasi | null>({
     queryKey: ['active-retasi', driverName],
     queryFn: async () => {
       if (!driverName) return null;
 
-      console.log('[useActiveRetasi] Checking active retasi for driver:', driverName);
+      const trimmedName = driverName.trim();
+      console.log('[useActiveRetasi] Checking active retasi for driver:', trimmedName);
+      console.log('[useActiveRetasi] Original name:', driverName, '| Trimmed:', trimmedName);
 
-      const { data, error } = await supabase
+      // First try exact match
+      let { data, error } = await supabase
         .from('retasi')
         .select('*')
-        .eq('driver_name', driverName)
+        .eq('driver_name', trimmedName)
         .eq('is_returned', false)
         .maybeSingle();
+
+      // If no exact match, try case-insensitive match
+      if (!data && !error) {
+        console.log('[useActiveRetasi] No exact match, trying case-insensitive...');
+        const { data: ilikData, error: ilikError } = await supabase
+          .from('retasi')
+          .select('*')
+          .ilike('driver_name', trimmedName)
+          .eq('is_returned', false)
+          .maybeSingle();
+
+        data = ilikData;
+        error = ilikError;
+      }
 
       if (error) {
         console.error('[useActiveRetasi] Error fetching active retasi:', error);
@@ -304,11 +339,36 @@ export const useRetasi = (filters?: {
         throw new Error(`Gagal membuat retasi: ${retasiError.message}${retasiError.details ? ` (${retasiError.details})` : ''}${retasiError.hint ? ` - ${retasiError.hint}` : ''}`);
       }
 
+      // Insert retasi items if provided
+      if (items && items.length > 0) {
+        const itemsToInsert = items.map(item => ({
+          retasi_id: retasi.id,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          weight: item.weight || null,
+          notes: item.notes || null,
+        }));
+
+        console.log('[useRetasi] Inserting retasi items:', itemsToInsert);
+
+        const { error: itemsError } = await supabase
+          .from('retasi_items')
+          .insert(itemsToInsert);
+
+        if (itemsError) {
+          console.error('[useRetasi] Error inserting retasi items:', itemsError);
+          // Don't throw - items table might not exist yet
+          console.warn('[useRetasi] Retasi items not saved - table may not exist');
+        }
+      }
+
       return fromDb(retasi);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retasi'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['retasi-items'] });
     }
   });
 
@@ -372,6 +432,22 @@ export const useRetasi = (filters?: {
     }
   });
 
+  // Get retasi items by retasi_id
+  const getRetasiItems = async (retasiId: string): Promise<RetasiItem[]> => {
+    const { data, error } = await supabase
+      .from('retasi_items')
+      .select('*')
+      .eq('retasi_id', retasiId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching retasi items:', error);
+      return [];
+    }
+
+    return data ? data.map(fromDbItem) : [];
+  };
+
   return {
     retasiList,
     stats,
@@ -381,5 +457,30 @@ export const useRetasi = (filters?: {
     markRetasiReturned,
     deleteRetasi,
     checkDriverAvailability,
+    getRetasiItems,
   };
+};
+
+// Hook to get retasi items for a specific retasi
+export const useRetasiItems = (retasiId?: string) => {
+  return useQuery<RetasiItem[]>({
+    queryKey: ['retasi-items', retasiId],
+    queryFn: async () => {
+      if (!retasiId) return [];
+
+      const { data, error } = await supabase
+        .from('retasi_items')
+        .select('*')
+        .eq('retasi_id', retasiId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching retasi items:', error);
+        return [];
+      }
+
+      return data ? data.map(fromDbItem) : [];
+    },
+    enabled: !!retasiId,
+  });
 };

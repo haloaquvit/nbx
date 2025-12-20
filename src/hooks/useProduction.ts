@@ -450,10 +450,10 @@ export const useProduction = () => {
       // If normal production, restore stock
       if (record.quantity > 0 && record.product_id) {
         const bom = await getBOM(record.product_id);
-        
+
         for (const bomItem of bom) {
           const requiredQty = bomItem.quantity * record.quantity;
-          
+
           const { data: material, error: materialError } = await supabase
             .from('materials')
             .select('stock')
@@ -470,23 +470,37 @@ export const useProduction = () => {
               })
               .eq('id', bomItem.materialId);
 
-            await supabase
+            // DELETE the original OUT movement instead of creating IN movement
+            // This ensures HPP is correctly reduced in financial reports
+            const { error: deleteMovementError } = await supabase
               .from('material_stock_movements')
-              .insert({
-                material_id: bomItem.materialId,
-                material_name: bomItem.materialName,
-                type: 'IN',
-                reason: 'ADJUSTMENT', // Use existing reason until migration is applied
-                quantity: requiredQty,
-                previous_stock: material.stock,
-                new_stock: restoredStock,
-                notes: `PRODUCTION_DELETE_RESTORE: Production delete restore: ${record.ref}`,
-                reference_id: record.id,
-                reference_type: 'production',
-                user_id: user?.id,
-                user_name: user?.name || user?.email || 'Unknown User',
-                branch_id: currentBranch?.id || null
-              });
+              .delete()
+              .eq('reference_id', record.id)
+              .eq('reference_type', 'production')
+              .eq('material_id', bomItem.materialId)
+              .eq('type', 'OUT');
+
+            if (deleteMovementError) {
+              console.warn('Could not delete material movement:', deleteMovementError);
+              // Fallback: create IN movement if delete fails
+              await supabase
+                .from('material_stock_movements')
+                .insert({
+                  material_id: bomItem.materialId,
+                  material_name: bomItem.materialName,
+                  type: 'IN',
+                  reason: 'ADJUSTMENT',
+                  quantity: requiredQty,
+                  previous_stock: material.stock,
+                  new_stock: restoredStock,
+                  notes: `PRODUCTION_DELETE_RESTORE: Production delete restore: ${record.ref}`,
+                  reference_id: record.id,
+                  reference_type: 'production',
+                  user_id: user?.id,
+                  user_name: user?.name || user?.email || 'Unknown User',
+                  branch_id: currentBranch?.id || null
+                });
+            }
           }
         }
 
@@ -517,11 +531,11 @@ export const useProduction = () => {
 
       toast({
         title: "Sukses",
-        description: "Data produksi dihapus dan stock dikembalikan"
+        description: "Data produksi dihapus, stock dikembalikan, dan HPP disesuaikan"
       });
 
       fetchProductions();
-      
+
       return true;
     } catch (error: any) {
       console.error('Error deleting production:', error);

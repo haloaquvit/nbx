@@ -3,6 +3,7 @@ import { PurchaseOrder, PurchaseOrderStatus } from '@/types/purchaseOrder'
 import { supabase } from '@/integrations/supabase/client'
 import { useExpenses } from './useExpenses'
 import { useMaterials } from './useMaterials'
+import { useProducts } from './useProducts'
 import { useMaterialMovements } from './useMaterialMovements'
 import { useAccountsPayable } from './useAccountsPayable'
 import { useAuth } from './useAuth'
@@ -72,6 +73,7 @@ export const usePurchaseOrders = () => {
   const queryClient = useQueryClient();
   const { addExpense } = useExpenses();
   const { addStock } = useMaterials();
+  const { updateStock: updateProductStock } = useProducts();
   const { createMaterialMovement } = useMaterialMovements();
   const { createAccountsPayable, payAccountsPayable } = useAccountsPayable();
   const { user } = useAuth();
@@ -143,7 +145,9 @@ export const usePurchaseOrders = () => {
         // Insert PO items
         const poItems = newPoData.items.map((item: any) => ({
           purchase_order_id: poId,
-          material_id: item.materialId,
+          material_id: item.materialId || null,
+          product_id: item.productId || null,
+          item_type: item.itemType || (item.materialId ? 'material' : 'product'),
           quantity: item.quantity,
           unit_price: item.unitPrice,
           notes: item.notes || null,
@@ -355,24 +359,37 @@ export const usePurchaseOrders = () => {
       // Fetch PO items from database
       const { data: poItemsData, error: itemsError } = await supabase
         .from('purchase_order_items')
-        .select('*, materials:material_id(name, type)')
+        .select('*, materials:material_id(name, type), products:product_id(name, current_stock)')
         .eq('purchase_order_id', po.id);
 
       if (itemsError) throw itemsError;
 
-      let itemsToProcess: Array<{ materialId: string, quantity: number, materialName: string, materialType: string }> = [];
+      interface ItemToProcess {
+        itemType: 'material' | 'product';
+        materialId?: string;
+        productId?: string;
+        quantity: number;
+        itemName: string;
+        materialType?: string;
+      }
+
+      let itemsToProcess: ItemToProcess[] = [];
 
       // Check if we have items in database or fall back to legacy
       if (poItemsData && poItemsData.length > 0) {
         // Multi-item PO
         itemsToProcess = poItemsData.map((item: any) => ({
+          itemType: item.item_type || (item.material_id ? 'material' : 'product'),
           materialId: item.material_id,
+          productId: item.product_id,
           quantity: item.quantity,
-          materialName: item.materials?.name || 'Unknown',
+          itemName: item.item_type === 'product'
+            ? (item.products?.name || 'Unknown Product')
+            : (item.materials?.name || 'Unknown Material'),
           materialType: item.materials?.type || 'Stock',
         }));
       } else if (po.materialId) {
-        // Legacy single-item PO
+        // Legacy single-item PO (material only)
         const { data: material } = await supabase
           .from('materials')
           .select('name, type')
@@ -380,9 +397,10 @@ export const usePurchaseOrders = () => {
           .single();
 
         itemsToProcess = [{
+          itemType: 'material',
           materialId: po.materialId,
           quantity: po.quantity || 0,
-          materialName: material?.name || po.materialName || 'Unknown',
+          itemName: material?.name || po.materialName || 'Unknown',
           materialType: material?.type || 'Stock',
         }];
       } else {
@@ -391,56 +409,88 @@ export const usePurchaseOrders = () => {
 
       // Process each item: create movements and update stock
       for (const item of itemsToProcess) {
-        // Get current stock
-        const { data: material } = await supabase
-          .from('materials')
-          .select('stock')
-          .eq('id', item.materialId)
-          .single();
+        if (item.itemType === 'material' && item.materialId) {
+          // Process MATERIAL
+          const { data: material } = await supabase
+            .from('materials')
+            .select('stock')
+            .eq('id', item.materialId)
+            .single();
 
-        const previousStock = Number(material?.stock) || 0;
-        const newStock = previousStock + item.quantity;
+          const previousStock = Number(material?.stock) || 0;
+          const newStock = previousStock + item.quantity;
 
-        // Determine movement type based on material type
-        const movementType = item.materialType === 'Stock' ? 'IN' : 'OUT';
-        const reason = item.materialType === 'Stock' ? 'PURCHASE' : 'PRODUCTION_CONSUMPTION';
-        const notes = item.materialType === 'Stock'
-          ? `Purchase order ${po.id} - Stock received`
-          : `Purchase order ${po.id} - Usage/consumption tracked`;
+          // Determine movement type based on material type
+          const movementType = item.materialType === 'Stock' ? 'IN' : 'OUT';
+          const reason = item.materialType === 'Stock' ? 'PURCHASE' : 'PRODUCTION_CONSUMPTION';
+          const notes = item.materialType === 'Stock'
+            ? `Purchase order ${po.id} - Stock received`
+            : `Purchase order ${po.id} - Usage/consumption tracked`;
 
-        // Create material movement
-        console.log('Creating material movement:', {
-          materialId: item.materialId,
-          materialName: item.materialName,
-          type: movementType,
-          reason: reason,
-          quantity: item.quantity,
-          previousStock,
-          newStock,
-          referenceId: po.id,
-          referenceType: 'purchase_order',
-        });
+          // Create material movement
+          console.log('Creating material movement:', {
+            materialId: item.materialId,
+            materialName: item.itemName,
+            type: movementType,
+            reason: reason,
+            quantity: item.quantity,
+            previousStock,
+            newStock,
+            referenceId: po.id,
+            referenceType: 'purchase_order',
+          });
 
-        const movementResult = await createMaterialMovement.mutateAsync({
-          materialId: item.materialId,
-          materialName: item.materialName,
-          type: movementType,
-          reason: reason,
-          quantity: item.quantity,
-          previousStock,
-          newStock,
-          referenceId: po.id,
-          referenceType: 'purchase_order',
-          notes: notes,
-          userId: currentUser.id,
-          userName: po.requestedBy,
-          branchId: currentBranch?.id || null,
-        });
+          await createMaterialMovement.mutateAsync({
+            materialId: item.materialId,
+            materialName: item.itemName,
+            type: movementType,
+            reason: reason,
+            quantity: item.quantity,
+            previousStock,
+            newStock,
+            referenceId: po.id,
+            referenceType: 'purchase_order',
+            notes: notes,
+            userId: currentUser.id,
+            userName: po.requestedBy,
+            branchId: currentBranch?.id || null,
+          });
 
-        console.log('Material movement created:', movementResult);
+          // Update material stock
+          await addStock.mutateAsync({ materialId: item.materialId, quantity: item.quantity });
 
-        // Update material stock/usage counter
-        await addStock.mutateAsync({ materialId: item.materialId, quantity: item.quantity });
+        } else if (item.itemType === 'product' && item.productId) {
+          // Process PRODUCT (Jual Langsung)
+          const { data: product } = await supabase
+            .from('products')
+            .select('current_stock')
+            .eq('id', item.productId)
+            .single();
+
+          const previousStock = Number(product?.current_stock) || 0;
+          const newStock = previousStock + item.quantity;
+
+          console.log('Updating product stock:', {
+            productId: item.productId,
+            productName: item.itemName,
+            quantity: item.quantity,
+            previousStock,
+            newStock,
+          });
+
+          // Update product stock directly in database
+          const { error: updateError } = await supabase
+            .from('products')
+            .update({ current_stock: newStock })
+            .eq('id', item.productId);
+
+          if (updateError) {
+            console.error('Failed to update product stock:', updateError);
+            throw new Error(`Failed to update stock for product ${item.itemName}`);
+          }
+
+          console.log('Product stock updated successfully');
+        }
       }
 
       // Update PO status to Diterima with received_date
@@ -461,6 +511,7 @@ export const usePurchaseOrders = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
       queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] }); // Also refresh products
       queryClient.invalidateQueries({ queryKey: ['receiveGoods'] });
       queryClient.invalidateQueries({ queryKey: ['materialMovements'] });
     }

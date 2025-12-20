@@ -49,12 +49,9 @@ export const useRoles = () => {
         .order('name', { ascending: true });
       
       if (error) {
-        // If table doesn't exist, return default roles
-        if (error.code === 'PGRST204' || error.code === 'PGRST205') {
-          console.warn('Roles table does not exist, returning default roles');
-          return getDefaultRoles();
-        }
-        throw new Error(error.message);
+        // If table doesn't exist or any other error, return default roles
+        console.warn('Error fetching roles, returning default roles:', error.message);
+        return getDefaultRoles();
       }
       
       const dbRoles = data ? data.map(fromDb) : [];

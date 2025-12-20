@@ -7,9 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
-import { 
-  Truck, 
-  Plus, 
+import {
+  Truck,
+  Plus,
   Calendar,
   Eye,
   Edit,
@@ -21,10 +21,12 @@ import {
   ArrowLeft,
   AlertTriangle,
   Download,
-  FileText
+  FileText,
+  X
 } from "lucide-react";
-import { useRetasi } from "@/hooks/useRetasi";
+import { useRetasi, useRetasiItems } from "@/hooks/useRetasi";
 import { useDrivers } from "@/hooks/useDrivers";
+import { useProducts } from "@/hooks/useProducts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { id } from "date-fns/locale/id";
@@ -32,6 +34,7 @@ import { ReturnRetasiDialog } from "@/components/ReturnRetasiDialog";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
+import { CreateRetasiItemData } from "@/types/retasi";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -340,8 +343,8 @@ export default function RetasiPage() {
                       <TableCell>
                         <div className="flex gap-1">
                           {!retasi.is_returned ? (
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
                               onClick={() => handleReturnRetasi(retasi)}
                               className="text-green-600 hover:text-green-700"
@@ -350,9 +353,7 @@ export default function RetasiPage() {
                               <ArrowLeft className="h-4 w-4" />
                             </Button>
                           ) : null}
-                          <Button variant="outline" size="sm" title="Lihat Detail">
-                            <Eye className="h-4 w-4" />
-                          </Button>
+                          <RetasiDetailDialog retasi={retasi} />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -389,23 +390,36 @@ function AddRetasiDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [driverId, setDriverId] = useState(drivers[0]?.id || "");
-  const [bawa, setBawa] = useState(0);
   const [notes, setNotes] = useState("");
+  const [retasiItems, setRetasiItems] = useState<CreateRetasiItemData[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [itemQuantity, setItemQuantity] = useState(1);
 
   const { createRetasi, checkDriverAvailability } = useRetasi();
+  const { products, isLoading: isLoadingProducts } = useProducts();
   const [nextSeq, setNextSeq] = useState<number>(1);
+
+  // Filter products: semua produk harus punya stock > 0
+  const availableProducts = useMemo(() => {
+    return products?.filter(p => p.currentStock > 0) || [];
+  }, [products]);
   const [blocked, setBlocked] = useState<boolean>(false);
+
+  // Calculate total items from retasi items
+  const totalBawa = useMemo(() => {
+    return retasiItems.reduce((sum, item) => sum + item.quantity, 0);
+  }, [retasiItems]);
 
   const recomputeMeta = async (driverId: string) => {
     if (!driverId) return;
-    
+
     const driver = drivers.find(d => d.id === driverId);
     if (!driver) return;
 
     try {
       const isBlocked = !(await checkDriverAvailability(driver.name));
       setBlocked(isBlocked);
-      
+
       // Get actual next retasi_ke from backend
       const todayDate = new Date().toISOString().slice(0, 10);
       const { data: todayRetasi } = await supabase
@@ -413,10 +427,10 @@ function AddRetasiDialog({
         .select('retasi_ke')
         .eq('driver_name', driver.name)
         .eq('departure_date', todayDate);
-      
+
       const nextRetasiKe = (todayRetasi?.length || 0) + 1;
       setNextSeq(nextRetasiKe);
-      
+
       console.log('[RetasiPage] Today retasi for', driver.name, ':', todayRetasi);
       console.log('[RetasiPage] Next retasi_ke will be:', nextRetasiKe);
     } catch (error) {
@@ -433,12 +447,63 @@ function AddRetasiDialog({
 
   const nowText = new Date().toLocaleString("id-ID");
 
+  const addProductItem = () => {
+    if (!selectedProductId) {
+      toast.error("Pilih produk terlebih dahulu");
+      return;
+    }
+
+    const product = availableProducts.find(p => p.id === selectedProductId);
+    if (!product) {
+      toast.error("Produk tidak ditemukan");
+      return;
+    }
+
+    if (itemQuantity <= 0) {
+      toast.error("Jumlah harus lebih dari 0");
+      return;
+    }
+
+    // Check if product already exists in list
+    const existingIndex = retasiItems.findIndex(item => item.product_id === selectedProductId);
+    if (existingIndex >= 0) {
+      // Update quantity if already exists
+      const updatedItems = [...retasiItems];
+      updatedItems[existingIndex].quantity += itemQuantity;
+      setRetasiItems(updatedItems);
+    } else {
+      // Add new item
+      setRetasiItems([...retasiItems, {
+        product_id: product.id,
+        product_name: product.name,
+        quantity: itemQuantity,
+      }]);
+    }
+
+    // Reset selection
+    setSelectedProductId("");
+    setItemQuantity(1);
+  };
+
+  const removeProductItem = (index: number) => {
+    const updatedItems = [...retasiItems];
+    updatedItems.splice(index, 1);
+    setRetasiItems(updatedItems);
+  };
+
+  const updateItemQuantity = (index: number, newQty: number) => {
+    if (newQty <= 0) return;
+    const updatedItems = [...retasiItems];
+    updatedItems[index].quantity = newQty;
+    setRetasiItems(updatedItems);
+  };
+
   const save = async () => {
     if (blocked) {
       toast.error("Tidak bisa membuat Retasi baru: retasi sebelumnya masih berstatus Armada Berangkat.");
       return;
     }
-    
+
     if (!driverId) {
       toast.error("Pilih supir");
       return;
@@ -450,9 +515,8 @@ function AddRetasiDialog({
       return;
     }
 
-    const safeBawa = Number(bawa) || 0;
-    if (safeBawa <= 0) {
-      toast.error("Jumlah bawa harus lebih dari 0");
+    if (retasiItems.length === 0) {
+      toast.error("Tambahkan minimal 1 produk");
       return;
     }
 
@@ -460,19 +524,33 @@ function AddRetasiDialog({
       await createRetasi.mutateAsync({
         driver_name: driver.name,
         departure_date: new Date(),
-        total_items: safeBawa,
+        total_items: totalBawa,
         notes: notes || undefined,
+        items: retasiItems,
       });
 
       setOpen(false);
-      setBawa(0);
+      setRetasiItems([]);
       setNotes("");
       onSaved();
-      toast.success(`Retasi Berangkat disimpan`);
+      toast.success(`Retasi Berangkat disimpan dengan ${retasiItems.length} jenis produk`);
     } catch (error: any) {
       toast.error(error?.message || "Gagal menyimpan retasi");
     }
   };
+
+  const resetForm = () => {
+    setRetasiItems([]);
+    setNotes("");
+    setSelectedProductId("");
+    setItemQuantity(1);
+  };
+
+  React.useEffect(() => {
+    if (!open) {
+      resetForm();
+    }
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -482,19 +560,25 @@ function AddRetasiDialog({
           Input Retasi (Berangkat)
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Retasi Berangkat</DialogTitle>
           <DialogDescription>
-            Input data retasi armada berangkat dengan perhitungan otomatis counter berdasarkan supir per hari
+            Input data retasi armada berangkat dengan detail produk yang dibawa
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          <div>
-            <Label className="text-xs text-slate-600">Waktu Berangkat</Label>
-            <Input value={nowText} readOnly />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs text-slate-600">Waktu Berangkat</Label>
+              <Input value={nowText} readOnly />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-600">Retasi Hari Ini</Label>
+              <Input value={`Retasi ${nextSeq}`} readOnly />
+            </div>
           </div>
-          
+
           <div>
             <Label className="text-xs text-slate-600">Supir</Label>
             <Select value={driverId} onValueChange={setDriverId}>
@@ -511,27 +595,111 @@ function AddRetasiDialog({
             </Select>
           </div>
 
-          <div>
-            <Label className="text-xs text-slate-600">Retasi Hari Ini (akan menjadi)</Label>
-            <Input value={`Retasi ${nextSeq}`} readOnly />
-          </div>
+          {/* Product Selection */}
+          <div className="border rounded-lg p-4 space-y-3">
+            <Label className="text-sm font-medium">Produk yang Dibawa</Label>
+            <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-6">
+                <Select value={selectedProductId} onValueChange={setSelectedProductId} disabled={isLoadingProducts}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={isLoadingProducts ? "Memuat produk..." : "Pilih Produk"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {isLoadingProducts ? (
+                      <SelectItem value="loading" disabled>Memuat produk...</SelectItem>
+                    ) : availableProducts.length === 0 ? (
+                      <SelectItem value="empty" disabled>Tidak ada produk tersedia</SelectItem>
+                    ) : (
+                      availableProducts.map((product) => (
+                        <SelectItem key={product.id} value={product.id}>
+                          {product.name} (Stok: {product.currentStock}) {product.type === 'Jual Langsung' && '- JL'}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-3">
+                <Input
+                  type="number"
+                  min={1}
+                  value={itemQuantity}
+                  onChange={(e) => setItemQuantity(Number(e.target.value) || 1)}
+                  placeholder="Qty"
+                />
+              </div>
+              <div className="col-span-3">
+                <Button
+                  type="button"
+                  onClick={addProductItem}
+                  className="w-full"
+                  variant="secondary"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Tambah
+                </Button>
+              </div>
+            </div>
 
-          <div>
-            <Label className="text-xs text-slate-600">Bawa</Label>
-            <Input 
-              type="number" 
-              value={bawa || ""} 
-              onChange={(e) => setBawa(Number(e.target.value) || 0)} 
-              placeholder="Jumlah barang yang dibawa"
-            />
+            {/* Product List */}
+            {retasiItems.length > 0 && (
+              <div className="border rounded mt-3">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produk</TableHead>
+                      <TableHead className="w-24 text-center">Qty</TableHead>
+                      <TableHead className="w-16"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {retasiItems.map((item, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{item.product_name}</TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={(e) => updateItemQuantity(index, Number(e.target.value))}
+                            className="w-20 text-center"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeProductItem(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-slate-50">
+                      <TableCell className="font-bold">Total Bawa</TableCell>
+                      <TableCell className="text-center font-bold text-blue-600">{totalBawa}</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {retasiItems.length === 0 && (
+              <div className="text-center py-4 text-slate-500 text-sm">
+                Belum ada produk ditambahkan
+              </div>
+            )}
           </div>
 
           <div>
             <Label className="text-xs text-slate-600">Catatan</Label>
-            <Input 
-              placeholder="Opsional" 
-              value={notes} 
-              onChange={(e) => setNotes(e.target.value)} 
+            <Input
+              placeholder="Opsional"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
             />
           </div>
 
@@ -546,13 +714,155 @@ function AddRetasiDialog({
             <Button variant="outline" onClick={() => setOpen(false)}>
               Batal
             </Button>
-            <Button 
-              onClick={save} 
-              disabled={blocked || createRetasi.isPending}
+            <Button
+              onClick={save}
+              disabled={blocked || createRetasi.isPending || retasiItems.length === 0}
             >
-              {createRetasi.isPending ? "Menyimpan..." : "Simpan"}
+              {createRetasi.isPending ? "Menyimpan..." : `Simpan (${totalBawa} item)`}
             </Button>
           </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Dialog to view retasi details including products
+function RetasiDetailDialog({ retasi }: { retasi: any }) {
+  const [open, setOpen] = useState(false);
+  const { data: items, isLoading } = useRetasiItems(open ? retasi.id : undefined);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" title="Lihat Detail">
+          <Eye className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Detail Retasi</DialogTitle>
+          <DialogDescription>
+            {retasi.retasi_number} - Retasi ke-{retasi.retasi_ke}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Info Retasi */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="text-slate-500">Supir:</span>
+              <p className="font-medium">{retasi.driver_name || '-'}</p>
+            </div>
+            <div>
+              <span className="text-slate-500">Status:</span>
+              <p>
+                {retasi.is_returned ? (
+                  <Badge variant="default" className="bg-emerald-100 text-emerald-700">
+                    Armada Kembali
+                  </Badge>
+                ) : (
+                  <Badge variant="default" className="bg-amber-100 text-amber-700">
+                    Armada Berangkat
+                  </Badge>
+                )}
+              </p>
+            </div>
+            <div>
+              <span className="text-slate-500">Tgl Berangkat:</span>
+              <p className="font-medium">
+                {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
+                {retasi.departure_time && ` ${retasi.departure_time}`}
+              </p>
+            </div>
+            {retasi.is_returned && (
+              <div>
+                <span className="text-slate-500">Tgl Kembali:</span>
+                <p className="font-medium">
+                  {format(retasi.updated_at, 'dd/MM/yyyy HH:mm', { locale: id })}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Summary */}
+          <div className="grid grid-cols-5 gap-2 text-center border rounded-lg p-3 bg-slate-50">
+            <div>
+              <p className="text-xs text-slate-500">Bawa</p>
+              <p className="font-bold text-blue-600">{retasi.total_items || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Kembali</p>
+              <p className="font-bold text-slate-600">{retasi.returned_items_count || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Error</p>
+              <p className="font-bold text-red-600">{retasi.error_items_count || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Laku</p>
+              <p className="font-bold text-green-600">{retasi.barang_laku || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Selisih</p>
+              <p className="font-bold">
+                {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
+              </p>
+            </div>
+          </div>
+
+          {/* Product List */}
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Produk yang Dibawa
+            </h4>
+            {isLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : items && items.length > 0 ? (
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produk</TableHead>
+                      <TableHead className="w-20 text-center">Qty</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium">{item.product_name}</TableCell>
+                        <TableCell className="text-center">{item.quantity}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-slate-50 font-bold">
+                      <TableCell>Total</TableCell>
+                      <TableCell className="text-center text-blue-600">
+                        {items.reduce((sum, item) => sum + item.quantity, 0)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-slate-500 text-sm border rounded-lg">
+                Tidak ada data produk (retasi lama tanpa detail produk)
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
+          {(retasi.notes || retasi.return_notes) && (
+            <div>
+              <h4 className="text-sm font-medium mb-1">Catatan</h4>
+              <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                {retasi.return_notes || retasi.notes}
+              </p>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

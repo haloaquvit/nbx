@@ -39,8 +39,9 @@ interface ProductManagementProps {
 const EMPTY_FORM_DATA: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
   name: '',
   category: 'indoor',
-  type: 'Stock', // Keep for UI, but won't be saved to DB
+  type: 'Produksi', // Produksi = dari BOM, Jual Langsung = beli jadi
   basePrice: 0,
+  costPrice: 0, // Harga pokok untuk produk Jual Langsung
   unit: 'pcs',
   currentStock: 0, // Keep for UI, but won't be saved to DB
   minStock: 1, // Keep for UI, but won't be saved to DB
@@ -86,8 +87,9 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
     setFormData({
       name: product.name,
       category: product.category,
-      type: product.type || 'Stock',
+      type: product.type || 'Produksi',
       basePrice: product.basePrice,
+      costPrice: product.costPrice || 0,
       unit: product.unit || 'pcs',
       currentStock: product.currentStock || 0,
       minStock: product.minStock || 1,
@@ -230,10 +232,22 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
         <form onSubmit={handleSubmit} className="space-y-6 p-6 border rounded-lg">
           <h2 className="text-xl font-bold">{editingProduct ? `Edit Produk: ${editingProduct.name}` : 'Tambah Produk Baru'}</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
             <div className="space-y-2 lg:col-span-2">
               <Label htmlFor="name">Nama Produk</Label>
               <Input id="name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="type">Jenis Produk</Label>
+              <Select value={formData.type} onValueChange={(value) => setFormData({...formData, type: value as 'Produksi' | 'Jual Langsung'})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih jenis..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Produksi">Produksi (BOM)</SelectItem>
+                  <SelectItem value="Jual Langsung">Jual Langsung</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="category">Kategori</Label>
@@ -248,19 +262,32 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="basePrice">Harga Dasar (Rp)</Label>
+              <Label htmlFor="basePrice">Harga Jual (Rp)</Label>
               <NumberInput id="basePrice" value={formData.basePrice} onChange={(value) => setFormData({...formData, basePrice: value || 0})} min={0} decimalPlaces={2} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="unit">Satuan</Label>
               <Input id="unit" value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} placeholder="pcs, lembar, m²" required />
             </div>
-            {/* Stock fields hidden until database migration is complete */}
-            {/* <div className="space-y-2">
-              <Label htmlFor="currentStock">Stock Saat Ini</Label>
-              <Input id="currentStock" type="number" value={formData.currentStock} onChange={(e) => setFormData({...formData, currentStock: Number(e.target.value)})} required />
-            </div> */}
           </div>
+
+          {/* Cost Price untuk Jual Langsung */}
+          {formData.type === 'Jual Langsung' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="space-y-2">
+                <Label htmlFor="costPrice" className="flex items-center gap-2">
+                  Harga Pokok / Modal (Rp)
+                  <span className="text-xs text-amber-600 font-normal">(Untuk HPP)</span>
+                </Label>
+                <NumberInput id="costPrice" value={formData.costPrice || 0} onChange={(value) => setFormData({...formData, costPrice: value || 0})} min={0} decimalPlaces={2} required />
+              </div>
+              <div className="lg:col-span-2 flex items-end">
+                <p className="text-sm text-amber-700">
+                  Harga pokok/modal digunakan untuk menghitung HPP (Harga Pokok Penjualan) produk jual langsung.
+                </p>
+              </div>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* <div className="space-y-2">
@@ -393,45 +420,58 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
               </div>
               
               <Table>
-                <TableHeader><TableRow><TableHead>Nama</TableHead><TableHead>Kategori</TableHead><TableHead>Harga Dasar</TableHead>{/* <TableHead>Stock</TableHead> */}<TableHead>Satuan</TableHead>{canManageProducts && <TableHead>Aksi</TableHead>}</TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Nama Produk</TableHead><TableHead>Jenis</TableHead><TableHead>Satuan</TableHead><TableHead>Harga</TableHead><TableHead>Stok</TableHead><TableHead>BOM</TableHead>{canManageProducts && <TableHead>Edit</TableHead>}{canManageProducts && <TableHead>Aksi</TableHead>}</TableRow></TableHeader>
                 <TableBody>
                   {isLoading ? (
                     Array.from({ length: 3 }).map((_, i) => (
-                      <TableRow key={i}><TableCell colSpan={canManageProducts ? 5 : 4}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
+                      <TableRow key={i}><TableCell colSpan={canManageProducts ? 8 : 6}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
                     ))
                   ) : filteredProducts?.map((product) => (
                     <TableRow key={product.id} onClick={() => handleRowClick(product)} className="cursor-pointer hover:bg-muted">
-                      <TableCell>{product.name}</TableCell>
+                      <TableCell className="font-medium">{product.name}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="bg-blue-100 text-blue-800">
-                          {product.category === 'indoor' ? 'Indoor' : 'Outdoor'}
+                        <Badge variant="outline" className={product.type === 'Jual Langsung' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}>
+                          {product.type || 'Produksi'}
                         </Badge>
                       </TableCell>
-                      <TableCell>Rp{product.basePrice.toLocaleString()}</TableCell>
-                      {/* <TableCell>
-                        <Badge variant={product.currentStock < product.minStock ? "destructive" : "secondary"}>
+                      <TableCell>{product.unit}</TableCell>
+                      <TableCell>Rp {product.basePrice.toLocaleString('id-ID')}</TableCell>
+                      <TableCell>
+                        <Badge variant={product.currentStock <= 0 ? "destructive" : "secondary"}>
                           {product.currentStock}
                         </Badge>
-                      </TableCell> */}
-                      <TableCell>{product.unit}</TableCell>
+                      </TableCell>
+                      <TableCell>
+                        {product.type === 'Produksi' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditClick(product);
+                            }}
+                          >
+                            Manage BOM
+                          </Button>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      {canManageProducts && (
+                        <TableCell>
+                          {canEditAllProducts && (
+                            <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); handleEditClick(product); }}>Edit</Button>
+                          )}
+                        </TableCell>
+                      )}
                       {canManageProducts && (
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => navigate(`/products/${product.id}`)}
-                            >
-                              Detail
-                            </Button>
-                            {canEditAllProducts && (
-                              <Button variant="outline" size="sm" onClick={() => handleEditClick(product)}>Edit</Button>
-                            )}
                             {canDeleteProducts && (
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                  <Button variant="destructive" size="sm">
-                                    <Trash2 className="h-4 w-4" />
+                                  <Button variant="destructive" size="sm" onClick={(e) => e.stopPropagation()}>
+                                    Hapus
                                   </Button>
                                 </AlertDialogTrigger>
                               <AlertDialogContent>

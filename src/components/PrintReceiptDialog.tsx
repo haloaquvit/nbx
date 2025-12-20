@@ -68,12 +68,28 @@ const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transactio
           <span>Total:</span>
           <span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.total)}</span>
         </div>
-        {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
-          <div className="flex justify-between text-xs mt-1 pt-1 border-t border-dashed border-black">
-            <span>Jatuh Tempo:</span>
-            <span>{format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</span>
+        {/* Info metode pembayaran dan jatuh tempo */}
+        <div className="mt-1 pt-1 border-t border-dashed border-black space-y-0.5">
+          <div className="flex justify-between">
+            <span>Metode:</span>
+            <span className="font-semibold">
+              {transaction.paymentStatus === 'Lunas' ? 'Tunai/Lunas' :
+               transaction.paymentStatus === 'Kredit' ? 'Kredit' : 'Belum Lunas'}
+            </span>
           </div>
-        )}
+          {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
+            <div className="flex justify-between">
+              <span>Jatuh Tempo:</span>
+              <span className="font-semibold">{format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</span>
+            </div>
+          )}
+          {transaction.paymentStatus !== 'Lunas' && (
+            <div className="flex justify-between">
+              <span>Sisa Bayar:</span>
+              <span className="font-semibold">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(transaction.total - transaction.paidAmount)}</span>
+            </div>
+          )}
+        </div>
       </div>
       <div className="text-center mt-3 text-xs">
         Terima kasih!
@@ -216,19 +232,30 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
               <p>• Konfirmasi pembayaran ke nomor telepon di atas</p>
             </div>
           </div>
-          <div className="text-right">
-            <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-              <p className="text-sm font-semibold text-blue-800 mb-4">Hormat Kami,</p>
-              <div className="mt-8 pt-4 border-t border-blue-300">
-                <p className="font-bold text-blue-900 text-lg">{transaction.cashierName}</p>
-                <p className="text-xs text-blue-700 mt-1">Sales Representative</p>
-              </div>
+        </div>
+        {/* Kolom Tanda Tangan */}
+        <div className="grid grid-cols-3 gap-8 mt-8 mb-8">
+          <div className="text-center">
+            <p className="text-sm font-semibold text-gray-700 mb-16">Penerima,</p>
+            <div className="border-t border-gray-400 pt-2 mx-4">
+              <p className="text-sm text-gray-600">(.................................)</p>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold text-gray-700 mb-16">Pengirim,</p>
+            <div className="border-t border-gray-400 pt-2 mx-4">
+              <p className="text-sm text-gray-600">(.................................)</p>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold text-gray-700 mb-16">Hormat Kami,</p>
+            <div className="border-t border-gray-400 pt-2 mx-4">
+              <p className="text-sm font-semibold text-gray-800">{transaction.cashierName}</p>
             </div>
           </div>
         </div>
         <div className="text-center py-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg">
           <p className="text-lg font-semibold mb-2">Terima kasih atas kepercayaan Anda!</p>
-          <p className="text-sm opacity-90">Faktur ini dibuat secara otomatis dan sah tanpa tanda tangan</p>
           <p className="text-xs opacity-75 mt-2">
             Dicetak pada: {format(new Date(), "d MMMM yyyy, HH:mm", { locale: id })} WIB
           </p>
@@ -361,27 +388,40 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     }
     
     // Professional footer with signature
-    let footerY = summaryY + 30;
-    
+    let footerY = summaryY + 25;
+
     // Payment notes
     doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100, 100, 100);
     doc.text("Catatan Pembayaran:", margin, footerY);
     doc.text("• Pembayaran dapat dilakukan melalui transfer bank", margin, footerY + 5);
     doc.text("• Harap sertakan nomor faktur penjualan saat melakukan pembayaran", margin, footerY + 10);
     doc.text("• Konfirmasi pembayaran ke nomor telepon di atas", margin, footerY + 15);
-    
-    // Signature section with background
-    const sigX = pageWidth - 80;
-    doc.setFillColor(59, 130, 246, 0.1);
-    doc.roundedRect(sigX - 10, footerY - 5, 70, 30, 3, 3, 'F');
-    
-    doc.setFontSize(11).setFont("helvetica", "normal").setTextColor(59, 130, 246);
-    doc.text("Hormat Kami,", sigX, footerY + 5);
-    doc.setFontSize(12).setFont("helvetica", "bold").setTextColor(0, 0, 0);
-    doc.text((transaction.cashierName || ""), sigX, footerY + 18);
-    doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100, 100, 100);
-    doc.text("Sales Representative", sigX, footerY + 23);
-    
+
+    // Signature section - 3 columns
+    const sigY = footerY + 30;
+    const colWidth = (pageWidth - 2 * margin) / 3;
+
+    // Column 1: Penerima
+    doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0, 0, 0);
+    doc.text("Penerima,", margin + colWidth / 2, sigY, { align: 'center' });
+    doc.line(margin + 10, sigY + 25, margin + colWidth - 10, sigY + 25);
+    doc.setFontSize(9).setTextColor(100, 100, 100);
+    doc.text("(..............................)", margin + colWidth / 2, sigY + 30, { align: 'center' });
+
+    // Column 2: Pengirim
+    doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0, 0, 0);
+    doc.text("Pengirim,", margin + colWidth + colWidth / 2, sigY, { align: 'center' });
+    doc.line(margin + colWidth + 10, sigY + 25, margin + 2 * colWidth - 10, sigY + 25);
+    doc.setFontSize(9).setTextColor(100, 100, 100);
+    doc.text("(..............................)", margin + colWidth + colWidth / 2, sigY + 30, { align: 'center' });
+
+    // Column 3: Hormat Kami
+    doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0, 0, 0);
+    doc.text("Hormat Kami,", margin + 2 * colWidth + colWidth / 2, sigY, { align: 'center' });
+    doc.line(margin + 2 * colWidth + 10, sigY + 25, pageWidth - margin - 10, sigY + 25);
+    doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(0, 0, 0);
+    doc.text((transaction.cashierName || ""), margin + 2 * colWidth + colWidth / 2, sigY + 30, { align: 'center' });
+
     // Thank you footer
     const thankYouY = pageHeight - 30;
     doc.setFillColor(59, 130, 246);

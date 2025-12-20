@@ -539,35 +539,81 @@ export async function generateIncomeStatement(
   }];
 
   // ============================================================================
-  // CALCULATE HPP (COGS) - PERPETUAL INVENTORY SYSTEM
+  // CALCULATE HPP (COGS) - DARI PENJUALAN
   // ============================================================================
-  // HPP dihitung dari semua bahan yang KELUAR dari inventory, termasuk:
-  // 1. PRODUCTION_CONSUMPTION - Bahan yang digunakan dalam produksi
-  // 2. RUSAK/WASTE/DAMAGED - Bahan rusak/terbuang (ini adalah loss, masuk HPP)
+  // HPP dihitung dari produk yang TERJUAL, bukan dari produksi/konsumsi bahan.
   //
-  // BUKAN dari pembelian bahan! Pembelian dicatat di expenses untuk cash flow,
-  // tapi TIDAK langsung masuk HPP. HPP dihitung saat bahan keluar dari inventory.
+  // Ada 2 jenis produk:
+  // 1. Produksi (BOM) - HPP = Total harga bahan baku dari BOM per unit × qty terjual
+  // 2. Jual Langsung - HPP = cost_price (harga pokok/modal) dari produk
+  //
+  // Untuk produk Jual Langsung, jika cost_price belum diisi, akan fallback ke
+  // 70% dari harga jual sebagai estimasi.
   // ============================================================================
 
-  let materialConsumptionQuery = supabase
-    .from('material_stock_movements')
-    .select('quantity, material_id, materials(price_per_unit), branch_id, reason')
-    .gte('created_at', fromDateStr)
-    .lte('created_at', toDateStr + 'T23:59:59')
-    .eq('type', 'OUT')
-    .in('reason', ['PRODUCTION_CONSUMPTION', 'RUSAK', 'WASTE', 'DAMAGED', 'LOSS']);
+  // Get all products with their BOM (materials) and cost_price
+  let productsQuery = supabase
+    .from('products')
+    .select('id, name, type, base_price, cost_price, materials');
 
   if (branchId) {
-    materialConsumptionQuery = materialConsumptionQuery.eq('branch_id', branchId);
+    productsQuery = productsQuery.or(`branch_id.eq.${branchId},is_shared.eq.true`);
   }
 
-  const { data: materialConsumption, error: materialError } = await materialConsumptionQuery;
+  const { data: productsData } = await productsQuery;
 
-  // HPP = Semua bahan yang keluar dari inventory (produksi + rusak/waste)
-  const materialCost = materialConsumption?.reduce((sum, movement) => {
-    const pricePerUnit = movement.materials?.price_per_unit || 0;
-    return sum + (movement.quantity * pricePerUnit);
-  }, 0) || 0;
+  // Get all materials for BOM calculation
+  let materialsQuery = supabase
+    .from('materials')
+    .select('id, name, price_per_unit');
+
+  if (branchId) {
+    materialsQuery = materialsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: materialsData } = await materialsQuery;
+
+  // Create a map of material prices
+  const materialPrices: Record<string, number> = {};
+  materialsData?.forEach(m => {
+    materialPrices[m.id] = m.price_per_unit || 0;
+  });
+
+  // Calculate HPP per product
+  const productHPP: Record<string, number> = {};
+  productsData?.forEach(product => {
+    if (product.type === 'Produksi' && product.materials && Array.isArray(product.materials)) {
+      // Produksi: Calculate HPP from BOM (Bill of Materials)
+      let bomCost = 0;
+      product.materials.forEach((mat: any) => {
+        const materialPrice = materialPrices[mat.materialId] || 0;
+        bomCost += materialPrice * (mat.quantity || 0);
+      });
+      productHPP[product.id] = bomCost;
+    } else {
+      // Jual Langsung: Use cost_price if available, otherwise fallback to 70% of base_price
+      if (product.cost_price && product.cost_price > 0) {
+        productHPP[product.id] = product.cost_price;
+      } else {
+        // Fallback: Use 70% of base_price as estimated cost
+        productHPP[product.id] = (product.base_price || 0) * 0.7;
+      }
+    }
+  });
+
+  // Calculate total HPP from transactions
+  let materialCost = 0;
+  transactions?.forEach(tx => {
+    if (tx.items && Array.isArray(tx.items)) {
+      tx.items.forEach((item: any) => {
+        if (item.product?.id) {
+          const hpp = productHPP[item.product.id] || 0;
+          const qty = item.quantity || 0;
+          materialCost += hpp * qty;
+        }
+      });
+    }
+  });
 
   // Get direct labor cost from payroll (production workers)
   let payrollQuery = supabase
@@ -606,10 +652,10 @@ export async function generateIncomeStatement(
   const totalCOGS = materialCost + laborCost + overheadCost;
 
   const bahanBaku: IncomeStatementItem[] = materialCost > 0 ? [{
-    accountName: 'Bahan Baku Terpakai',
+    accountName: 'HPP Barang Terjual',
     amount: materialCost,
     formattedAmount: formatCurrency(materialCost),
-    source: 'material_consumption'
+    source: 'transactions'
   }] : [];
 
   const tenagaKerja: IncomeStatementItem[] = laborCost > 0 ? [{

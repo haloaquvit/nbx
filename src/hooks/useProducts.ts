@@ -11,6 +11,7 @@ const fromDb = (dbProduct: any): Product => ({
   name: dbProduct.name,
   type: dbProduct.type || 'Produksi', // Use type from database or default
   basePrice: Number(dbProduct.base_price) || 0,
+  costPrice: dbProduct.cost_price ? Number(dbProduct.cost_price) : undefined, // Harga pokok untuk Jual Langsung
   unit: dbProduct.unit || 'pcs',
   currentStock: Number(dbProduct.current_stock || 0),
   minStock: Number(dbProduct.min_stock || 0),
@@ -24,17 +25,18 @@ const fromDb = (dbProduct: any): Product => ({
 
 // App to DB mapping - only include columns that exist in the database
 const toDb = (appProduct: Partial<Product>) => {
-  const { id, createdAt, updatedAt, basePrice, minOrder, currentStock, minStock, ...rest } = appProduct;
+  const { id, createdAt, updatedAt, basePrice, costPrice, minOrder, currentStock, minStock, ...rest } = appProduct;
   const dbData: any = { ...rest };
   if (basePrice !== undefined) dbData.base_price = basePrice;
+  if (costPrice !== undefined) dbData.cost_price = costPrice;
   if (minOrder !== undefined) dbData.min_order = minOrder;
   if (currentStock !== undefined) dbData.current_stock = currentStock;
   if (minStock !== undefined) dbData.min_stock = minStock;
-  
+
   // Don't send category since it's not used in the system
   // Remove category from the data to avoid constraint issues
   delete dbData.category;
-  
+
   return dbData;
 };
 
