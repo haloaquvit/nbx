@@ -258,6 +258,268 @@ export const useTransactions = (filters?: {
         }
       }
 
+      // ============================================================================
+      // BONUS ITEM ACCOUNTING FOR ALL TRANSACTIONS
+      // Bonus is recorded when transaction is created (not during delivery)
+      // Journal: Debit Beban Promosi (6150), Credit Persediaan (1400)
+      // ============================================================================
+      try {
+        // Filter bonus items from transaction
+        const bonusItems = newTransaction.items?.filter((item: any) => item.isBonus === true) || [];
+
+        if (bonusItems.length > 0) {
+          console.log('🎁 Processing bonus items for transaction:', bonusItems.length);
+
+            // Get product cost prices (HPP) for bonus items
+            const bonusProductIds = bonusItems.map((item: any) => item.product?.id).filter(Boolean);
+
+            if (bonusProductIds.length > 0) {
+              const { data: productsWithCost } = await supabase
+                .from('products')
+                .select('id, name, cost_price, base_price')
+                .in('id', bonusProductIds);
+
+              // Calculate total bonus cost
+              let totalBonusCost = 0;
+              const bonusDetails: string[] = [];
+
+              for (const bonusItem of bonusItems) {
+                const productId = bonusItem.product?.id;
+                const product = productsWithCost?.find(p => p.id === productId);
+                // Use cost_price (HPP) if available, otherwise estimate as 70% of base_price
+                const costPrice = product?.cost_price || (product?.base_price ? product.base_price * 0.7 : 0);
+                const itemCost = costPrice * (bonusItem.quantity || 0);
+                totalBonusCost += itemCost;
+                bonusDetails.push(`${bonusItem.product?.name || 'Unknown'} x${bonusItem.quantity}`);
+              }
+
+              if (totalBonusCost > 0) {
+                // Find Beban Promosi account (6150)
+                const { data: bebanPromosiAccount } = await supabase
+                  .from('accounts')
+                  .select('id, name, code, balance')
+                  .eq('code', '6150')
+                  .single();
+
+                // Find Persediaan Barang account (1400 or 1410)
+                const { data: persediaanAccount } = await supabase
+                  .from('accounts')
+                  .select('id, name, code, balance')
+                  .or('code.eq.1400,code.eq.1410')
+                  .limit(1)
+                  .single();
+
+                if (bebanPromosiAccount && persediaanAccount) {
+                  // Update Beban Promosi (Debit - increase expense)
+                  const newBebanBalance = (bebanPromosiAccount.balance || 0) + totalBonusCost;
+                  await supabase
+                    .from('accounts')
+                    .update({ balance: newBebanBalance })
+                    .eq('id', bebanPromosiAccount.id);
+
+                  // Update Persediaan (Credit - decrease asset)
+                  const newPersediaanBalance = (persediaanAccount.balance || 0) - totalBonusCost;
+                  await supabase
+                    .from('accounts')
+                    .update({ balance: newPersediaanBalance })
+                    .eq('id', persediaanAccount.id);
+
+                  // Record in cash_history for audit trail
+                  const bonusDescription = `Bonus promosi: ${bonusDetails.join(', ')} - ${newTransaction.customerName}`;
+
+                  await supabase
+                    .from('cash_history')
+                    .insert({
+                      account_id: bebanPromosiAccount.id,
+                      account_name: bebanPromosiAccount.name,
+                      type: 'pengeluaran',
+                      amount: totalBonusCost,
+                      description: bonusDescription,
+                      reference_id: savedTransaction.id,
+                      reference_name: `Transaksi ${savedTransaction.id}`,
+                      user_id: newTransaction.cashierId || null,
+                      user_name: newTransaction.cashierName || null,
+                      branch_id: currentBranch?.id || null,
+                      expense_account_id: bebanPromosiAccount.id,
+                      expense_account_name: bebanPromosiAccount.name,
+                    });
+
+                  console.log('✅ Bonus accounting entries created:', {
+                    bebanPromosi: { account: bebanPromosiAccount.code, amount: totalBonusCost },
+                    persediaan: { account: persediaanAccount.code, amount: -totalBonusCost },
+                    bonusItems: bonusDetails
+                  });
+                } else {
+                  console.warn('⚠️ Beban Promosi (6150) or Persediaan (1400/1410) account not found in COA');
+                }
+              }
+            }
+          }
+      } catch (bonusAccountingError) {
+        console.error('Error creating bonus accounting entries:', bonusAccountingError);
+        // Don't fail transaction creation if bonus accounting fails
+      }
+
+      // ============================================================================
+      // REVENUE RECOGNITION & HPP PENJUALAN
+      // Journal for sales transaction:
+      // 1. Credit: 4100 Pendapatan Penjualan (increase revenue) = transaction total
+      // 2. Debit: 5100 HPP (increase cost)
+      // 3. Credit: 1320/1400 Persediaan Produk (decrease inventory)
+      // Note: Cash/Receivable is already recorded via cash_history
+      // ============================================================================
+      try {
+        // Calculate HPP for non-bonus items
+        let totalHPP = 0;
+        const soldProducts: string[] = [];
+
+        const regularItems = newTransaction.items?.filter((item: any) => !item.isBonus) || [];
+
+        if (regularItems.length > 0) {
+          const productIds = regularItems.map((item: any) => item.product?.id).filter(Boolean);
+
+          if (productIds.length > 0) {
+            const { data: productsData } = await supabase
+              .from('products')
+              .select('id, name, cost_price, base_price')
+              .in('id', productIds);
+
+            for (const item of regularItems) {
+              const product = productsData?.find(p => p.id === item.product?.id);
+              if (product) {
+                // Calculate HPP (Cost of Goods Sold)
+                const itemHPP = (product.cost_price || product.base_price * 0.7) * (item.quantity || 0);
+                totalHPP += itemHPP;
+                soldProducts.push(`${product.name} x${item.quantity}`);
+              }
+            }
+          }
+        }
+
+        // Find Pendapatan Penjualan account (4100)
+        const { data: pendapatanAccount } = await supabase
+          .from('accounts')
+          .select('id, name, code, balance')
+          .eq('code', '4100')
+          .single();
+
+        // Update Pendapatan (Credit - increase revenue)
+        if (pendapatanAccount && newTransaction.total > 0) {
+          const newPendapatanBalance = (pendapatanAccount.balance || 0) + newTransaction.total;
+          await supabase
+            .from('accounts')
+            .update({ balance: newPendapatanBalance })
+            .eq('id', pendapatanAccount.id);
+
+          console.log('✅ Pendapatan Penjualan recorded:', {
+            account: pendapatanAccount.code,
+            amount: newTransaction.total
+          });
+        }
+
+        // Update HPP & Persediaan for COGS
+        if (totalHPP > 0) {
+          // Find HPP account (5100)
+          const { data: hppAccount } = await supabase
+            .from('accounts')
+            .select('id, name, code, balance')
+            .eq('code', '5100')
+            .single();
+
+          // Find Persediaan Produk Jadi account (1320 or 1400)
+          const { data: persediaanProdukAccount } = await supabase
+            .from('accounts')
+            .select('id, name, code, balance')
+            .or('code.eq.1320,code.eq.1400')
+            .limit(1)
+            .single();
+
+          if (hppAccount && persediaanProdukAccount) {
+            // Update HPP (Debit - increase cost)
+            const newHppBalance = (hppAccount.balance || 0) + totalHPP;
+            await supabase
+              .from('accounts')
+              .update({ balance: newHppBalance })
+              .eq('id', hppAccount.id);
+
+            // Update Persediaan Produk (Credit - decrease inventory)
+            const newPersediaanBalance = (persediaanProdukAccount.balance || 0) - totalHPP;
+            await supabase
+              .from('accounts')
+              .update({ balance: newPersediaanBalance })
+              .eq('id', persediaanProdukAccount.id);
+
+            console.log('✅ HPP Penjualan recorded:', {
+              hpp: { account: hppAccount.code, amount: totalHPP },
+              persediaan: { account: persediaanProdukAccount.code, amount: -totalHPP },
+              products: soldProducts
+            });
+          }
+        }
+      } catch (revenueAccountingError) {
+        console.error('Error creating revenue/HPP accounting:', revenueAccountingError);
+        // Don't fail transaction if accounting fails
+      }
+
+      // ============================================================================
+      // UPDATE PIUTANG USAHA IN COA (for credit/unpaid transactions)
+      // ============================================================================
+      // If transaction is not fully paid, increase Piutang Usaha account
+      const receivableAmount = newTransaction.total - (newTransaction.paidAmount || 0);
+      if (receivableAmount > 0 && (newTransaction.paymentStatus === 'Belum Lunas' || newTransaction.paymentStatus === 'Kredit')) {
+        try {
+          // Find Piutang Usaha account (code 1200 or 1210)
+          const { data: piutangAccount, error: piutangError } = await supabase
+            .from('accounts')
+            .select('id, name, code, balance')
+            .or('code.eq.1200,code.eq.1210')
+            .limit(1)
+            .single();
+
+          if (piutangError) {
+            // Try alternative: find by name
+            const { data: piutangByName } = await supabase
+              .from('accounts')
+              .select('id, name, code, balance')
+              .ilike('name', '%piutang usaha%')
+              .limit(1)
+              .single();
+
+            if (piutangByName) {
+              const newBalance = (piutangByName.balance || 0) + receivableAmount;
+              await supabase
+                .from('accounts')
+                .update({ balance: newBalance })
+                .eq('id', piutangByName.id);
+
+              console.log('✅ Piutang Usaha increased (by name):', {
+                account: piutangByName.name,
+                code: piutangByName.code,
+                amount: receivableAmount,
+                newBalance
+              });
+            } else {
+              console.warn('⚠️ Piutang Usaha account (1200/1210) not found in COA');
+            }
+          } else if (piutangAccount) {
+            const newBalance = (piutangAccount.balance || 0) + receivableAmount;
+            await supabase
+              .from('accounts')
+              .update({ balance: newBalance })
+              .eq('id', piutangAccount.id);
+
+            console.log('✅ Piutang Usaha increased:', {
+              account: piutangAccount.name,
+              code: piutangAccount.code,
+              amount: receivableAmount,
+              newBalance
+            });
+          }
+        } catch (error) {
+          console.error('Error updating Piutang Usaha:', error);
+        }
+      }
+
       return fromDb(savedTransaction);
     },
     onSuccess: () => {
@@ -424,9 +686,161 @@ export const useTransactions = (filters?: {
         }
       }
       
+      // Step 3.5: Rollback bonus accounting for all transactions
+      try {
+        console.log('🎁 Rolling back bonus accounting for transaction:', transactionId);
+
+          // Filter bonus items from transaction
+          const transactionItems = transaction.items || [];
+          const bonusItems = transactionItems.filter((item: any) => item.isBonus === true);
+
+          if (bonusItems.length > 0) {
+            // Get product cost prices (HPP) for bonus items
+            const bonusProductIds = bonusItems.map((item: any) => item.product?.id).filter(Boolean);
+
+            if (bonusProductIds.length > 0) {
+              const { data: productsWithCost } = await supabase
+                .from('products')
+                .select('id, name, cost_price, base_price')
+                .in('id', bonusProductIds);
+
+              // Calculate total bonus cost to reverse
+              let totalBonusCost = 0;
+
+              for (const bonusItem of bonusItems) {
+                const productId = bonusItem.product?.id;
+                const product = productsWithCost?.find(p => p.id === productId);
+                const costPrice = product?.cost_price || (product?.base_price ? product.base_price * 0.7 : 0);
+                const itemCost = costPrice * (bonusItem.quantity || 0);
+                totalBonusCost += itemCost;
+              }
+
+              if (totalBonusCost > 0) {
+                // Find accounts
+                const { data: bebanPromosiAccount } = await supabase
+                  .from('accounts')
+                  .select('id, name, code, balance')
+                  .eq('code', '6150')
+                  .single();
+
+                const { data: persediaanAccount } = await supabase
+                  .from('accounts')
+                  .select('id, name, code, balance')
+                  .or('code.eq.1400,code.eq.1410')
+                  .limit(1)
+                  .single();
+
+                if (bebanPromosiAccount && persediaanAccount) {
+                  // Reverse Beban Promosi (Credit - decrease expense)
+                  const newBebanBalance = (bebanPromosiAccount.balance || 0) - totalBonusCost;
+                  await supabase
+                    .from('accounts')
+                    .update({ balance: newBebanBalance })
+                    .eq('id', bebanPromosiAccount.id);
+
+                  // Reverse Persediaan (Debit - increase asset)
+                  const newPersediaanBalance = (persediaanAccount.balance || 0) + totalBonusCost;
+                  await supabase
+                    .from('accounts')
+                    .update({ balance: newPersediaanBalance })
+                    .eq('id', persediaanAccount.id);
+
+                  console.log('✅ Bonus accounting reversed:', {
+                    bebanPromosi: { account: bebanPromosiAccount.code, amount: -totalBonusCost },
+                    persediaan: { account: persediaanAccount.code, amount: totalBonusCost }
+                  });
+                }
+              }
+            }
+          }
+      } catch (bonusRollbackError) {
+        console.error('Error rolling back bonus accounting:', bonusRollbackError);
+        // Don't fail deletion if bonus rollback fails
+      }
+
+      // Step 3.6: Rollback Revenue & HPP Penjualan accounting
+      try {
+        console.log('💰 Rolling back revenue & HPP accounting for transaction:', transactionId);
+
+        // Rollback Pendapatan (Debit - decrease revenue)
+        if (transaction.total > 0) {
+          const { data: pendapatanAccount } = await supabase
+            .from('accounts')
+            .select('id, balance')
+            .eq('code', '4100')
+            .single();
+
+          if (pendapatanAccount) {
+            await supabase
+              .from('accounts')
+              .update({ balance: (pendapatanAccount.balance || 0) - transaction.total })
+              .eq('id', pendapatanAccount.id);
+
+            console.log('✅ Pendapatan Penjualan reversed:', { amount: -transaction.total });
+          }
+        }
+
+        // Calculate and rollback HPP for non-bonus items
+        const transactionItems = transaction.items || [];
+        const regularItems = transactionItems.filter((item: any) => !item.isBonus);
+
+        if (regularItems.length > 0) {
+          const productIds = regularItems.map((item: any) => item.product?.id).filter(Boolean);
+
+          if (productIds.length > 0) {
+            const { data: productsData } = await supabase
+              .from('products')
+              .select('id, cost_price, base_price')
+              .in('id', productIds);
+
+            let totalHPP = 0;
+            for (const item of regularItems) {
+              const product = productsData?.find(p => p.id === item.product?.id);
+              if (product) {
+                totalHPP += (product.cost_price || product.base_price * 0.7) * (item.quantity || 0);
+              }
+            }
+
+            if (totalHPP > 0) {
+              // Reverse HPP (Credit - decrease cost)
+              const { data: hppAccount } = await supabase
+                .from('accounts')
+                .select('id, balance')
+                .eq('code', '5100')
+                .single();
+
+              // Reverse Persediaan (Debit - increase inventory)
+              const { data: persediaanProdukAccount } = await supabase
+                .from('accounts')
+                .select('id, balance')
+                .or('code.eq.1320,code.eq.1400')
+                .limit(1)
+                .single();
+
+              if (hppAccount && persediaanProdukAccount) {
+                await supabase
+                  .from('accounts')
+                  .update({ balance: (hppAccount.balance || 0) - totalHPP })
+                  .eq('id', hppAccount.id);
+
+                await supabase
+                  .from('accounts')
+                  .update({ balance: (persediaanProdukAccount.balance || 0) + totalHPP })
+                  .eq('id', persediaanProdukAccount.id);
+
+                console.log('✅ HPP Penjualan reversed:', { amount: -totalHPP });
+              }
+            }
+          }
+        }
+      } catch (revenueRollbackError) {
+        console.error('Error rolling back revenue/HPP accounting:', revenueRollbackError);
+        // Don't fail deletion if rollback fails
+      }
+
       // Step 4: Delete stock movements for this transaction
       console.log('Attempting to delete stock movements for transaction:', transactionId);
-      
+
       // Try to delete stock movements (reference_id is TEXT, not UUID)
       const { data: deletedMovements, error: stockMovementError } = await supabase
         .from('material_stock_movements')

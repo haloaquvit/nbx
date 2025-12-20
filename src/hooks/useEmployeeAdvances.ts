@@ -5,6 +5,21 @@ import { useAuth } from './useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useBranch } from '@/contexts/BranchContext';
 
+// Helper to get Piutang Karyawan account (code 1220) from database
+const getPiutangKaryawanAccount = async (): Promise<{ id: string; name: string } | null> => {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('id, name')
+    .eq('code', '1220')
+    .single();
+
+  if (error || !data) {
+    console.warn('Piutang Karyawan account (1220) not found:', error?.message);
+    return null;
+  }
+  return data;
+};
+
 const fromDbToApp = (dbAdvance: any): EmployeeAdvance => ({
   id: dbAdvance.id,
   employeeId: dbAdvance.employee_id,
@@ -96,12 +111,18 @@ export const useEmployeeAdvances = () => {
         .single();
 
       if (error) throw new Error(error.message);
-      
+
       // Decrease payment account (kas/bank)
       updateAccountBalance.mutate({ accountId: newData.accountId, amount: -newData.amount });
 
-      // Increase panjar karyawan account (1220) - this is an asset
-      updateAccountBalance.mutate({ accountId: 'acc-1220', amount: newData.amount });
+      // Increase Piutang Karyawan account (1220) - this is an asset (receivable from employee)
+      const piutangAccount = await getPiutangKaryawanAccount();
+      if (piutangAccount) {
+        updateAccountBalance.mutate({ accountId: piutangAccount.id, amount: newData.amount });
+        console.log(`Increased Piutang Karyawan (${piutangAccount.id}) by ${newData.amount}`);
+      } else {
+        console.warn('Piutang Karyawan account (1220) not found, skipping balance update');
+      }
 
       // Record in cash_history for advance tracking
       if (newData.accountId && user) {
@@ -204,8 +225,12 @@ export const useEmployeeAdvances = () => {
             if (accountId) {
               // Increase payment account (kas/bank)
               updateAccountBalance.mutate({ accountId, amount: repaymentData.amount });
-              // Decrease panjar karyawan account (1220) - reduce asset
-              updateAccountBalance.mutate({ accountId: 'acc-1220', amount: -repaymentData.amount });
+              // Decrease Piutang Karyawan account (1220) - reduce asset (receivable)
+              const piutangAccount = await getPiutangKaryawanAccount();
+              if (piutangAccount) {
+                updateAccountBalance.mutate({ accountId: piutangAccount.id, amount: -repaymentData.amount });
+                console.log(`Decreased Piutang Karyawan (${piutangAccount.id}) by ${repaymentData.amount}`);
+              }
             }
           }
         } catch (error) {
@@ -242,9 +267,13 @@ export const useEmployeeAdvances = () => {
 
       // Reimburse the payment account with the original amount
       updateAccountBalance.mutate({ accountId: advanceToDelete.accountId, amount: advanceToDelete.amount });
-      
-      // Decrease panjar karyawan account (1220) since we're removing the advance
-      updateAccountBalance.mutate({ accountId: 'acc-1220', amount: -advanceToDelete.amount });
+
+      // Decrease Piutang Karyawan account (1220) since we're removing the advance
+      const piutangAccount = await getPiutangKaryawanAccount();
+      if (piutangAccount) {
+        updateAccountBalance.mutate({ accountId: piutangAccount.id, amount: -advanceToDelete.amount });
+        console.log(`Decreased Piutang Karyawan (${piutangAccount.id}) by ${advanceToDelete.amount} (delete)`);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });

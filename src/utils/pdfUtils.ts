@@ -139,12 +139,14 @@ async function compressCanvasResolution(
  * @param filename - PDF filename
  * @param format - PDF format [width, height] in mm
  * @param maxSizeKB - Maximum file size in KB
+ * @param verticalAlign - Vertical alignment: 'top' (default), 'center', or 'bottom'
  */
 export async function createCompressedPDF(
   element: HTMLElement,
   filename: string,
   format: [number, number] = [148, 210], // A5-like format
-  maxSizeKB: number = 100
+  maxSizeKB: number = 100,
+  verticalAlign: 'top' | 'center' | 'bottom' = 'top'
 ): Promise<void> {
   const html2canvas = (await import('html2canvas')).default
   
@@ -215,9 +217,22 @@ export async function createCompressedPDF(
       finalWidth = imgHeight / aspectRatio
     }
     
-    // Center the image on the page
+    // Center horizontally, align vertically based on parameter
     const xOffset = (imgWidth - finalWidth) / 2
-    const yOffset = (imgHeight - finalHeight) / 2
+    let yOffset: number
+
+    switch (verticalAlign) {
+      case 'top':
+        yOffset = 2 // Small top margin (2mm)
+        break
+      case 'bottom':
+        yOffset = imgHeight - finalHeight - 2 // Small bottom margin
+        break
+      case 'center':
+      default:
+        yOffset = (imgHeight - finalHeight) / 2
+        break
+    }
 
     pdf.addImage(compressedImageData, 'JPEG', xOffset, yOffset, finalWidth, finalHeight)
     

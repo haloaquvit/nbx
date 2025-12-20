@@ -2,9 +2,11 @@ import { useCashFlow } from "@/hooks/useCashFlow";
 import { CashFlowTable } from "@/components/CashFlowTable";
 import { AccountBalanceTable } from "@/components/AccountBalanceTable";
 import { DateRangeReportPDF } from "@/components/DateRangeReportPDF";
+import { GeneralLedgerTable } from "@/components/GeneralLedgerTable";
 import { useCashBalance } from "@/hooks/useCashBalance";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, DollarSign } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TrendingUp, TrendingDown, DollarSign, BookOpen, Wallet } from "lucide-react";
 
 export function CashFlowPage() {
   const { cashHistory, isLoading } = useCashFlow();
@@ -14,15 +16,15 @@ export function CashFlowPage() {
     <div className="container mx-auto py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold">Buku Besar</h1>
+          <h1 className="text-3xl font-bold">Buku Besar & Arus Kas</h1>
           <p className="text-muted-foreground">
-            Pantau semua aktivitas kas masuk dan keluar
+            Pantau mutasi akun dan aktivitas kas masuk/keluar
           </p>
         </div>
-        
+
         {/* PDF Export Button with Date Picker */}
         {cashHistory && (
-          <DateRangeReportPDF 
+          <DateRangeReportPDF
             cashHistory={cashHistory}
           />
         )}
@@ -133,13 +135,33 @@ export function CashFlowPage() {
 
       {/* Account Balance Details */}
       <div className="mb-6">
-        <AccountBalanceTable 
-          data={cashBalance?.accountBalances || []} 
-          isLoading={isBalanceLoading} 
+        <AccountBalanceTable
+          data={cashBalance?.accountBalances || []}
+          isLoading={isBalanceLoading}
         />
       </div>
-      
-      <CashFlowTable data={cashHistory || []} isLoading={isLoading} />
+
+      {/* Tabs for Cash Flow and General Ledger */}
+      <Tabs defaultValue="cash-flow" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-2 max-w-md">
+          <TabsTrigger value="cash-flow" className="flex items-center gap-2">
+            <Wallet className="h-4 w-4" />
+            Arus Kas
+          </TabsTrigger>
+          <TabsTrigger value="general-ledger" className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4" />
+            Buku Besar
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="cash-flow">
+          <CashFlowTable data={cashHistory || []} isLoading={isLoading} />
+        </TabsContent>
+
+        <TabsContent value="general-ledger">
+          <GeneralLedgerTable />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

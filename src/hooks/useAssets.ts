@@ -251,7 +251,11 @@ export function useCreateAsset() {
 
       if (error) throw error;
 
-      // Update account balance when asset is added
+      // ============================================================================
+      // ASSET COA INTEGRATION
+      // Update asset account balance (Debit - increase asset value)
+      // Note: This is for initial asset entry, not purchase with cash
+      // ============================================================================
       if (accountId && formData.purchasePrice > 0) {
         const { data: account, error: accountError } = await supabase
           .from('accounts')
@@ -265,6 +269,12 @@ export function useCreateAsset() {
             .from('accounts')
             .update({ balance: newBalance })
             .eq('id', accountId);
+
+          console.log('✅ Asset account balance updated:', {
+            accountId,
+            amount: formData.purchasePrice,
+            newBalance
+          });
         }
       }
 
@@ -359,6 +369,186 @@ export function useCalculateAssetValue() {
       if (updateError) throw updateError;
 
       return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
+    },
+  });
+}
+
+// ============================================================================
+// DEPRECIATION ACCOUNTING
+// Record depreciation expense for an asset:
+// Debit: 6240 Beban Penyusutan (increase expense)
+// Credit: 1420 Akumulasi Penyusutan (increase contra-asset)
+// ============================================================================
+export function useRecordDepreciation() {
+  const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
+
+  return useMutation({
+    mutationFn: async ({ assetId, depreciationAmount, period }: {
+      assetId: string;
+      depreciationAmount: number;
+      period: string; // e.g., "2024-12" for December 2024
+    }) => {
+      if (depreciationAmount <= 0) {
+        throw new Error('Depreciation amount must be greater than 0');
+      }
+
+      // Get asset details
+      const { data: asset, error: assetError } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('id', assetId)
+        .single();
+
+      if (assetError || !asset) {
+        throw new Error('Asset not found');
+      }
+
+      // Find Beban Penyusutan account (6240)
+      const { data: bebanPenyusutanAccount } = await supabase
+        .from('accounts')
+        .select('id, name, code, balance')
+        .eq('code', '6240')
+        .single();
+
+      // Find Akumulasi Penyusutan account (1420 or 1450)
+      const { data: akumulasiAccount } = await supabase
+        .from('accounts')
+        .select('id, name, code, balance')
+        .or('code.eq.1420,code.eq.1450')
+        .limit(1)
+        .single();
+
+      if (!bebanPenyusutanAccount || !akumulasiAccount) {
+        throw new Error('Beban Penyusutan (6240) or Akumulasi Penyusutan (1420/1450) account not found');
+      }
+
+      // Update Beban Penyusutan (Debit - increase expense)
+      const newBebanBalance = (bebanPenyusutanAccount.balance || 0) + depreciationAmount;
+      await supabase
+        .from('accounts')
+        .update({ balance: newBebanBalance })
+        .eq('id', bebanPenyusutanAccount.id);
+
+      // Update Akumulasi Penyusutan (Credit - increase contra-asset)
+      // For contra-asset accounts, credit increases the balance
+      const newAkumulasiBalance = (akumulasiAccount.balance || 0) + depreciationAmount;
+      await supabase
+        .from('accounts')
+        .update({ balance: newAkumulasiBalance })
+        .eq('id', akumulasiAccount.id);
+
+      // Update asset current value
+      const newCurrentValue = Math.max(0, (asset.current_value || asset.purchase_price) - depreciationAmount);
+      await supabase
+        .from('assets')
+        .update({ current_value: newCurrentValue })
+        .eq('id', assetId);
+
+      // Record in cash_history for audit trail
+      await supabase
+        .from('cash_history')
+        .insert({
+          account_id: bebanPenyusutanAccount.id,
+          account_name: bebanPenyusutanAccount.name,
+          type: 'pengeluaran',
+          amount: depreciationAmount,
+          description: `Penyusutan ${asset.asset_name} periode ${period}`,
+          reference_id: assetId,
+          reference_name: `Aset ${asset.asset_code || asset.asset_name}`,
+          branch_id: currentBranch?.id || null,
+          expense_account_id: bebanPenyusutanAccount.id,
+          expense_account_name: bebanPenyusutanAccount.name,
+        });
+
+      console.log('✅ Depreciation accounting created:', {
+        asset: asset.asset_name,
+        bebanPenyusutan: { account: bebanPenyusutanAccount.code, amount: depreciationAmount },
+        akumulasi: { account: akumulasiAccount.code, amount: depreciationAmount },
+        newCurrentValue,
+        period
+      });
+
+      return {
+        assetId,
+        depreciationAmount,
+        newCurrentValue,
+        period
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+  });
+}
+
+// Calculate monthly depreciation for all assets
+export function useCalculateAllDepreciations() {
+  const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
+
+  return useMutation({
+    mutationFn: async (period: string) => {
+      // Get all active assets
+      let query = supabase
+        .from('assets')
+        .select('*')
+        .eq('status', 'active');
+
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data: assets, error } = await query;
+
+      if (error) throw error;
+
+      const results: any[] = [];
+
+      for (const asset of assets || []) {
+        // Calculate monthly depreciation based on method
+        const purchasePrice = asset.purchase_price || 0;
+        const salvageValue = asset.salvage_value || 0;
+        const usefulLifeYears = asset.useful_life_years || 5;
+        const depreciableAmount = purchasePrice - salvageValue;
+
+        let monthlyDepreciation = 0;
+
+        if (asset.depreciation_method === 'straight_line') {
+          // Straight line: (Cost - Salvage) / (Useful Life in months)
+          monthlyDepreciation = depreciableAmount / (usefulLifeYears * 12);
+        } else if (asset.depreciation_method === 'declining_balance') {
+          // Double declining: 2 * (1/Useful Life) * Book Value
+          const currentValue = asset.current_value || purchasePrice;
+          const rate = 2 / usefulLifeYears;
+          monthlyDepreciation = (currentValue * rate) / 12;
+        } else {
+          // Default to straight line
+          monthlyDepreciation = depreciableAmount / (usefulLifeYears * 12);
+        }
+
+        // Don't depreciate below salvage value
+        const currentValue = asset.current_value || purchasePrice;
+        if (currentValue - monthlyDepreciation < salvageValue) {
+          monthlyDepreciation = currentValue - salvageValue;
+        }
+
+        if (monthlyDepreciation > 0) {
+          results.push({
+            assetId: asset.id,
+            assetName: asset.asset_name,
+            depreciationAmount: Math.round(monthlyDepreciation),
+            currentValue: currentValue,
+            newValue: currentValue - Math.round(monthlyDepreciation)
+          });
+        }
+      }
+
+      return results;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });

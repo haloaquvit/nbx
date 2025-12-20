@@ -92,8 +92,33 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         throw new Error(paymentError.message);
       }
 
-      // Update account balance (increase cash)
+      // Update account balance (increase cash - Debit Kas/Bank)
       await updateAccountBalance.mutateAsync({ accountId: data.paymentAccountId, amount: data.amount });
+
+      // ============================================================================
+      // DOUBLE ENTRY: Decrease Piutang Usaha account (Credit Piutang Usaha)
+      // ============================================================================
+      // Find Piutang Usaha account (code 1200 or 1210) and decrease its balance
+      const piutangAccount = accounts?.find(acc =>
+        acc.code === '1200' ||
+        acc.code === '1210' ||
+        acc.name.toLowerCase().includes('piutang usaha')
+      );
+
+      if (piutangAccount) {
+        // Decrease piutang balance (negative amount = credit/decrease asset)
+        await updateAccountBalance.mutateAsync({
+          accountId: piutangAccount.id,
+          amount: -data.amount // Negative to decrease
+        });
+        console.log('✅ Piutang Usaha decreased:', {
+          account: piutangAccount.name,
+          code: piutangAccount.code,
+          amount: -data.amount
+        });
+      } else {
+        console.warn('⚠️ Piutang Usaha account (1200/1210) not found in COA');
+      }
 
       // Record payment in cash_history table for cash flow tracking
       const paymentRecord = {

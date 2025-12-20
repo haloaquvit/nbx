@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,7 +13,7 @@ import { useAccountsPayable } from '@/hooks/useAccountsPayable'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useToast } from '@/components/ui/use-toast'
 import { formatCurrency } from '@/lib/utils'
-import { DollarSign, FileText, Calendar, AlertCircle, Download, Edit, Trash2 } from 'lucide-react'
+import { DollarSign, FileText, Calendar, AlertCircle, Download, Edit, Trash2, Eye, CreditCard, Building2, Banknote, Receipt, Clock, User, FileDown, CheckCircle, AlertTriangle, Clock3 } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { AddDebtDialog } from '@/components/AddDebtDialog'
@@ -21,21 +21,28 @@ import { useBranch } from '@/contexts/BranchContext'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/integrations/supabase/client'
 import { formatNumberWithCommas, parseNumberWithCommas } from '@/utils/formatNumber'
+import { useCompanySettings } from '@/hooks/useCompanySettings'
+import { createCompressedPDF } from '@/utils/pdfUtils'
+import { AccountsPayable } from '@/types/accountsPayable'
 
 export default function AccountsPayablePage() {
   const { currentBranch } = useBranch();
   const [paymentDialog, setPaymentDialog] = useState({ open: false, payable: null as any })
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState('')
+  const [liabilityAccountId, setLiabilityAccountId] = useState('')
   const [paymentNotes, setPaymentNotes] = useState('')
   const [deleteDialog, setDeleteDialog] = useState({ open: false, payable: null as any })
   const [isDeleting, setIsDeleting] = useState(false)
+  const [detailDialog, setDetailDialog] = useState({ open: false, payable: null as AccountsPayable | null })
 
   const { accountsPayable, isLoading, payAccountsPayable } = useAccountsPayable()
   const { accounts } = useAccounts()
   const { toast } = useToast()
+  const { settings } = useCompanySettings()
 
   const paymentAccounts = accounts?.filter(acc => acc.isPaymentAccount) || []
+  const liabilityAccounts = accounts?.filter(acc => acc.type === 'Kewajiban' && !acc.isHeader) || []
 
   // Calculate totals
   const totalOutstanding = accountsPayable?.filter(ap => ap.status === 'Outstanding')
@@ -45,7 +52,7 @@ export default function AccountsPayablePage() {
   const totalUnpaid = totalOutstanding + totalPartial
 
   const handlePayment = async () => {
-    if (!paymentDialog.payable || !paymentAmount || !paymentAccountId) {
+    if (!paymentDialog.payable || !paymentAmount || !paymentAccountId || !liabilityAccountId) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -62,6 +69,7 @@ export default function AccountsPayablePage() {
         payableId: paymentDialog.payable.id,
         amount: parsedAmount,
         paymentAccountId,
+        liabilityAccountId,
         notes: paymentNotes
       })
 
@@ -73,6 +81,7 @@ export default function AccountsPayablePage() {
       setPaymentDialog({ open: false, payable: null })
       setPaymentAmount('')
       setPaymentAccountId('')
+      setLiabilityAccountId('')
       setPaymentNotes('')
     } catch (error: any) {
       toast({
@@ -317,7 +326,11 @@ export default function AccountsPayablePage() {
                   }
 
                   return (
-                    <TableRow key={payable.id}>
+                    <TableRow
+                      key={payable.id}
+                      className="hover:bg-slate-50/80 cursor-pointer"
+                      onClick={() => setDetailDialog({ open: true, payable })}
+                    >
                       <TableCell className="font-mono text-xs">
                         {payable.id.substring(0, 12)}...
                       </TableCell>
@@ -363,8 +376,17 @@ export default function AccountsPayablePage() {
                       <TableCell>
                         {getStatusBadge(payable.status)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDetailDialog({ open: true, payable })}
+                            className="h-7 px-2"
+                            title="Lihat Detail"
+                          >
+                            <Eye className="h-3 w-3" />
+                          </Button>
                           {payable.status !== 'Paid' && (
                             <Button
                               size="sm"
@@ -436,7 +458,7 @@ export default function AccountsPayablePage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="paymentAccount">Akun Pembayaran</Label>
+                <Label htmlFor="paymentAccount">Akun Pembayaran (Kas/Bank)</Label>
                 <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Pilih akun pembayaran" />
@@ -444,7 +466,23 @@ export default function AccountsPayablePage() {
                   <SelectContent>
                     {paymentAccounts.map((account) => (
                       <SelectItem key={account.id} value={account.id}>
-                        {account.name} - {formatCurrency(account.balance || 0)}
+                        {account.code ? `${account.code} - ` : ''}{account.name} - {formatCurrency(account.balance || 0)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="liabilityAccount">Akun Kewajiban (Hutang)</Label>
+                <Select value={liabilityAccountId} onValueChange={setLiabilityAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih akun kewajiban" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {liabilityAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.code ? `${account.code} - ` : ''}{account.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -505,6 +543,402 @@ export default function AccountsPayablePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Detail Dialog */}
+      {detailDialog.payable && (
+        <AccountsPayableDetailDialog
+          payable={detailDialog.payable}
+          open={detailDialog.open}
+          onOpenChange={(open) => {
+            setDetailDialog({ open, payable: open ? detailDialog.payable : null })
+          }}
+          settings={settings}
+          accounts={accounts}
+          getOverdueDays={getOverdueDays}
+        />
+      )}
     </div>
+  )
+}
+
+// Dialog to show accounts payable details with PDF export
+function AccountsPayableDetailDialog({
+  payable,
+  open,
+  onOpenChange,
+  settings,
+  accounts,
+  getOverdueDays,
+}: {
+  payable: AccountsPayable
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  settings: any
+  accounts: any[] | undefined
+  getOverdueDays: (dueDate?: Date) => number | null
+}) {
+  const printRef = useRef<HTMLDivElement>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  const remainingAmount = payable.amount - (payable.paidAmount || 0)
+  const overdueDays = getOverdueDays(payable.dueDate)
+  const paidPercentage = payable.amount > 0 ? ((payable.paidAmount || 0) / payable.amount) * 100 : 0
+
+  const getCreditorTypeInfo = (type?: string) => {
+    switch (type) {
+      case 'bank':
+        return { label: 'Bank', icon: Building2, color: 'bg-blue-100 text-blue-700' }
+      case 'credit_card':
+        return { label: 'Kartu Kredit', icon: CreditCard, color: 'bg-purple-100 text-purple-700' }
+      case 'supplier':
+        return { label: 'Supplier', icon: Receipt, color: 'bg-green-100 text-green-700' }
+      default:
+        return { label: 'Lainnya', icon: Banknote, color: 'bg-gray-100 text-gray-700' }
+    }
+  }
+
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case 'Outstanding':
+        return { label: 'Belum Dibayar', icon: AlertTriangle, color: 'bg-red-100 text-red-700' }
+      case 'Partial':
+        return { label: 'Sebagian Dibayar', icon: Clock3, color: 'bg-yellow-100 text-yellow-700' }
+      case 'Paid':
+        return { label: 'Lunas', icon: CheckCircle, color: 'bg-green-100 text-green-700' }
+      default:
+        return { label: status, icon: AlertCircle, color: 'bg-gray-100 text-gray-700' }
+    }
+  }
+
+  const paymentAccountName = accounts?.find(acc => acc.id === payable.paymentAccountId)?.name
+
+  const handlePrintPDF = async () => {
+    if (!printRef.current || isGenerating) return
+
+    setIsGenerating(true)
+    try {
+      await createCompressedPDF(
+        printRef.current,
+        `Hutang-${payable.id}-${format(payable.createdAt, 'ddMMyyyy')}.pdf`,
+        [148, 210], // Half A4 (A5): 148mm x 210mm
+        100 // Max 100KB
+      )
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+      alert('Gagal membuat PDF: ' + (error as Error).message)
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const creditorInfo = getCreditorTypeInfo(payable.creditorType)
+  const statusInfo = getStatusInfo(payable.status)
+  const CreditorIcon = creditorInfo.icon
+  const StatusIcon = statusInfo.icon
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5 text-blue-600" />
+            Detail Hutang
+          </DialogTitle>
+          <DialogDescription>
+            {payable.id} - {format(payable.createdAt, 'd MMMM yyyy', { locale: id })}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Status Badge */}
+          <div className="flex justify-center gap-2">
+            <Badge variant="outline" className={`${statusInfo.color} text-sm px-4 py-1`}>
+              <StatusIcon className="h-4 w-4 mr-2" />
+              {statusInfo.label}
+            </Badge>
+            {overdueDays !== null && overdueDays > 0 && payable.status !== 'Paid' && (
+              <Badge variant="destructive" className="text-sm px-3 py-1">
+                <AlertCircle className="h-4 w-4 mr-1" />
+                Terlambat {overdueDays} hari
+              </Badge>
+            )}
+          </div>
+
+          {/* Creditor Info Section */}
+          <div className="grid grid-cols-2 gap-3 text-sm bg-slate-50 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <CreditorIcon className="h-4 w-4 text-slate-400 mt-0.5" />
+              <div>
+                <span className="text-slate-500 text-xs">Jenis Kreditor</span>
+                <p className="font-medium">{creditorInfo.label}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <User className="h-4 w-4 text-slate-400 mt-0.5" />
+              <div>
+                <span className="text-slate-500 text-xs">Kreditor</span>
+                <p className="font-medium">{payable.supplierName}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Clock className="h-4 w-4 text-slate-400 mt-0.5" />
+              <div>
+                <span className="text-slate-500 text-xs">Tanggal Dibuat</span>
+                <p className="font-medium">{format(payable.createdAt, 'd MMM yyyy', { locale: id })}</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <Calendar className="h-4 w-4 text-slate-400 mt-0.5" />
+              <div>
+                <span className="text-slate-500 text-xs">Jatuh Tempo</span>
+                <p className={`font-medium ${overdueDays !== null && overdueDays > 0 ? 'text-red-600' : ''}`}>
+                  {payable.dueDate ? format(payable.dueDate, 'd MMM yyyy', { locale: id }) : '-'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Amount Card */}
+          <div className="border rounded-lg p-4">
+            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <DollarSign className="h-4 w-4" />
+              Informasi Pembayaran
+            </h4>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Total Hutang</span>
+                <span className="font-mono font-bold text-lg">{formatCurrency(payable.amount)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Sudah Dibayar</span>
+                <span className="font-mono font-bold text-green-600">{formatCurrency(payable.paidAmount || 0)}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t">
+                <span className="text-slate-700 font-medium">Sisa Hutang</span>
+                <span className="font-mono font-bold text-lg text-red-600">{formatCurrency(remainingAmount)}</span>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="pt-2">
+                <div className="flex justify-between text-xs text-slate-500 mb-1">
+                  <span>Progress Pembayaran</span>
+                  <span>{paidPercentage.toFixed(0)}%</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-2.5">
+                  <div
+                    className={`h-2.5 rounded-full transition-all ${paidPercentage >= 100 ? 'bg-green-500' : paidPercentage > 0 ? 'bg-yellow-500' : 'bg-slate-300'}`}
+                    style={{ width: `${Math.min(paidPercentage, 100)}%` }}
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Interest Info */}
+          {payable.interestRate && payable.interestRate > 0 && (
+            <div className="border rounded-lg p-4">
+              <h4 className="text-sm font-semibold mb-2">Informasi Bunga</h4>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Suku Bunga</span>
+                <span className="font-medium">
+                  {payable.interestRate}%
+                  {payable.interestType === 'per_month' && ' / bulan'}
+                  {payable.interestType === 'per_year' && ' / tahun'}
+                  {payable.interestType === 'flat' && ' (flat)'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Payment Account */}
+          {payable.status === 'Paid' && paymentAccountName && (
+            <div className="border rounded-lg p-4">
+              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                <Banknote className="h-4 w-4" />
+                Akun Pembayaran
+              </h4>
+              <p className="text-sm">{paymentAccountName}</p>
+              {payable.paidAt && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Dilunasi: {format(payable.paidAt, 'd MMM yyyy HH:mm', { locale: id })}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Description */}
+          <div className="border rounded-lg p-4">
+            <h4 className="text-sm font-semibold mb-2">Deskripsi</h4>
+            <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
+              {payable.description || '-'}
+            </p>
+          </div>
+
+          {/* Notes */}
+          {payable.notes && (
+            <div className="border rounded-lg p-4">
+              <h4 className="text-sm font-semibold mb-2">Catatan</h4>
+              <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                {payable.notes}
+              </p>
+            </div>
+          )}
+
+          {/* Print PDF Button */}
+          <div className="pt-4 border-t flex justify-end">
+            <Button
+              onClick={handlePrintPDF}
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={isGenerating}
+            >
+              <FileDown className="h-4 w-4" />
+              {isGenerating ? "Membuat PDF..." : "Cetak PDF"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+
+      {/* Hidden PDF Content */}
+      <div className="fixed -left-[9999px] top-0 z-[-1]">
+        <div
+          ref={printRef}
+          className="bg-white p-4 border"
+          style={{
+            width: '559px',
+            height: 'auto',
+            fontSize: '11px',
+            fontFamily: 'Arial, sans-serif'
+          }}
+        >
+          {/* Header */}
+          <div className="flex justify-between items-start mb-3 pb-2 border-b border-gray-300">
+            <div>
+              {settings?.logo && (
+                <img
+                  src={settings.logo}
+                  alt="Logo"
+                  className="h-8 w-auto mb-1"
+                />
+              )}
+              <h1 className="text-sm font-bold text-gray-900">
+                {settings?.name || 'AQUAVIT'}
+              </h1>
+              <p className="text-xs text-gray-600">{settings?.phone || ''}</p>
+            </div>
+            <div className="text-right">
+              <h2 className="text-base font-bold text-gray-400">DETAIL HUTANG</h2>
+              <p className="text-xs"><strong>ID:</strong> {payable.id}</p>
+            </div>
+          </div>
+
+          {/* Info Section */}
+          <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
+            <div>
+              <p><strong>Kreditor:</strong> {payable.supplierName}</p>
+              <p><strong>Jenis:</strong> {creditorInfo.label}</p>
+              <p><strong>Tanggal:</strong> {format(payable.createdAt, 'd/MM/yyyy', { locale: id })}</p>
+            </div>
+            <div>
+              <p><strong>Status:</strong> {statusInfo.label}</p>
+              <p><strong>Jatuh Tempo:</strong> {payable.dueDate ? format(payable.dueDate, 'd/MM/yyyy', { locale: id }) : '-'}</p>
+              {overdueDays !== null && overdueDays > 0 && payable.status !== 'Paid' && (
+                <p className="text-red-600"><strong>Terlambat:</strong> {overdueDays} hari</p>
+              )}
+            </div>
+          </div>
+
+          {/* Amount Table */}
+          <div className="mb-3">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-300 px-2 py-1 text-left">Keterangan</th>
+                  <th className="border border-gray-300 px-2 py-1 text-right w-32">Jumlah</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="border border-gray-300 px-2 py-1">Total Hutang</td>
+                  <td className="border border-gray-300 px-2 py-1 text-right font-mono">
+                    {formatCurrency(payable.amount)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="border border-gray-300 px-2 py-1">Sudah Dibayar</td>
+                  <td className="border border-gray-300 px-2 py-1 text-right font-mono text-green-600">
+                    {formatCurrency(payable.paidAmount || 0)}
+                  </td>
+                </tr>
+                <tr className="bg-gray-50 font-bold">
+                  <td className="border border-gray-300 px-2 py-1">Sisa Hutang</td>
+                  <td className="border border-gray-300 px-2 py-1 text-right font-mono text-red-600">
+                    {formatCurrency(remainingAmount)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Interest Info */}
+          {payable.interestRate && payable.interestRate > 0 && (
+            <div className="mb-3 text-xs">
+              <p><strong>Bunga:</strong> {payable.interestRate}%
+                {payable.interestType === 'per_month' && ' per bulan'}
+                {payable.interestType === 'per_year' && ' per tahun'}
+                {payable.interestType === 'flat' && ' (flat)'}
+              </p>
+            </div>
+          )}
+
+          {/* Description */}
+          <div className="mb-3">
+            <p className="text-xs"><strong>Deskripsi:</strong></p>
+            <p className="text-xs bg-gray-50 p-2 rounded mt-1">{payable.description || '-'}</p>
+          </div>
+
+          {/* Notes */}
+          {payable.notes && (
+            <div className="mb-3">
+              <p className="text-xs"><strong>Catatan:</strong></p>
+              <p className="text-xs bg-gray-50 p-2 rounded mt-1">{payable.notes}</p>
+            </div>
+          )}
+
+          {/* Payment Info */}
+          {payable.status === 'Paid' && (
+            <div className="mb-3 text-xs bg-green-50 p-2 rounded">
+              <p><strong>Status:</strong> Lunas</p>
+              {paymentAccountName && <p><strong>Akun Pembayaran:</strong> {paymentAccountName}</p>}
+              {payable.paidAt && <p><strong>Tanggal Pelunasan:</strong> {format(payable.paidAt, 'd/MM/yyyy HH:mm', { locale: id })}</p>}
+            </div>
+          )}
+
+          {/* Signatures */}
+          <div className="grid grid-cols-2 gap-4 mt-6">
+            <div className="text-center text-xs">
+              <p className="mb-6">Mengetahui</p>
+              <div className="border-t border-gray-400 pt-1">
+                <p>_______________</p>
+                <p className="text-gray-500">Manager</p>
+              </div>
+            </div>
+            <div className="text-center text-xs">
+              <p className="mb-6">Yang Bertanggung Jawab</p>
+              <div className="border-t border-gray-400 pt-1">
+                <p>_______________</p>
+                <p className="text-gray-500">Admin Keuangan</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="mt-3 pt-1 border-t text-center text-xs text-gray-500">
+            <p>Dicetak: {format(new Date(), "dd/MM/yyyy HH:mm", { locale: id })}</p>
+          </div>
+        </div>
+      </div>
+    </Dialog>
   )
 }

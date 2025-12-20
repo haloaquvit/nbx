@@ -39,6 +39,7 @@ import autoTable from 'jspdf-autotable'
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
 import { Delivery } from "@/types/delivery"
+import { PhotoUploadService } from "@/services/photoUploadService"
 
 export default function DeliveryPage() {
   const { toast } = useToast()
@@ -731,10 +732,10 @@ export default function DeliveryPage() {
                               <TableCell>
                                 {delivery.photoUrl ? (
                                   <img
-                                    src={delivery.photoUrl}
+                                    src={PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries')}
                                     alt={`Foto pengantaran ${delivery.deliveryNumber || delivery.id.slice(-6)}`}
                                     className="w-12 h-12 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={() => window.open(delivery.photoUrl, '_blank')}
+                                    onClick={() => window.open(PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries'), '_blank')}
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
                                       target.style.display = 'none';

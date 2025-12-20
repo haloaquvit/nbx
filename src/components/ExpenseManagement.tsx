@@ -1,5 +1,4 @@
 "use client"
-import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -19,7 +18,6 @@ import { useAuth } from "@/hooks/useAuth"
 import { canManageCash } from '@/utils/roleUtils'
 import { Trash2 } from "lucide-react"
 import { ExpenseReceiptPDF } from "./ExpenseReceiptPDF"
-import { getExpenseCategoryOptions, getAllExpenseCategories, isInventoryPurchaseCategory } from "@/hooks/useExpenseCategories"
 import { Badge } from "./ui/badge"
 import {
   AlertDialog,
@@ -38,7 +36,7 @@ const expenseSchema = z.object({
   amount: z.coerce.number().min(1, "Jumlah harus lebih dari 0."),
   accountId: z.string().min(1, "Pilih akun pembayaran."),
   date: z.date({ required_error: "Tanggal harus diisi." }),
-  category: z.string().min(3, "Kategori minimal 3 karakter."),
+  expenseAccountId: z.string().min(1, "Pilih akun beban."),
 })
 
 type ExpenseFormData = z.infer<typeof expenseSchema>
@@ -55,34 +53,39 @@ export function ExpenseManagement() {
       amount: 0,
       accountId: "",
       date: new Date(),
-      category: "",
+      expenseAccountId: "",
     }
   })
 
   const watchDate = watch("date")
   const canDeleteExpense = canManageCash(user);
-  const expenseCategories = getExpenseCategoryOptions();
+
+  // Filter akun beban (type = 'Beban') yang bukan header
+  const expenseAccounts = accounts?.filter(a => a.type === 'Beban' && !a.isHeader) || [];
 
   const onSubmit = async (data: ExpenseFormData) => {
-    const account = accounts?.find(a => a.id === data.accountId)
-    if (!account) return
+    const paymentAccount = accounts?.find(a => a.id === data.accountId)
+    const expenseAccount = accounts?.find(a => a.id === data.expenseAccountId)
+    if (!paymentAccount || !expenseAccount) return
 
     const newExpenseData = {
       description: data.description,
       amount: data.amount,
-      accountId: data.accountId, // This is the payment account (kas/bank)
+      accountId: data.accountId, // Payment account (kas/bank)
+      accountName: paymentAccount.name, // Payment account name
+      expenseAccountId: data.expenseAccountId, // Expense account from CoA
+      expenseAccountName: expenseAccount.name, // Expense account name
       date: data.date,
-      category: data.category,
-      accountName: account.name, // Payment account name
+      category: expenseAccount.name, // For backward compatibility with reports
     };
 
     addExpense.mutate(newExpenseData, {
       onSuccess: () => {
         toast({
           title: "Sukses",
-          description: `Pengeluaran berhasil dicatat`
+          description: `Pengeluaran berhasil dicatat ke ${expenseAccount.name}`
         })
-        reset({ date: new Date(), description: "", amount: 0, accountId: "", category: "" })
+        reset({ date: new Date(), description: "", amount: 0, accountId: "", expenseAccountId: "" })
       },
       onError: (error) => {
         toast({ variant: "destructive", title: "Gagal", description: error.message })
@@ -122,31 +125,26 @@ export function ExpenseManagement() {
                 {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="category">Kategori</Label>
-                <Select onValueChange={(value) => setValue("category", value)}>
+                <Label htmlFor="expenseAccountId">Akun Beban</Label>
+                <Select onValueChange={(value) => setValue("expenseAccountId", value)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Pilih kategori..." />
+                    <SelectValue placeholder="Pilih akun beban..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground">
-                      Pembelian Persediaan
-                    </div>
-                    {expenseCategories.persediaan.map(category => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                    <div className="px-2 py-1.5 text-sm font-semibold text-muted-foreground mt-2 border-t">
-                      Biaya Operasional
-                    </div>
-                    {expenseCategories.operasional.map(category => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
+                    {isLoadingAccounts ? (
+                      <SelectItem value="loading" disabled>Memuat...</SelectItem>
+                    ) : expenseAccounts.length === 0 ? (
+                      <SelectItem value="empty" disabled>Tidak ada akun beban</SelectItem>
+                    ) : (
+                      expenseAccounts.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.code ? `${acc.code} - ${acc.name}` : acc.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
-                {errors.category && <p className="text-sm text-destructive">{errors.category.message}</p>}
+                {errors.expenseAccountId && <p className="text-sm text-destructive">{errors.expenseAccountId.message}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="date">Tanggal</Label>
@@ -182,59 +180,74 @@ export function ExpenseManagement() {
         </CardHeader>
         <CardContent>
           <Table>
-            <TableHeader><TableRow><TableHead>Tanggal</TableHead><TableHead>Deskripsi</TableHead><TableHead>Kategori</TableHead><TableHead>Sumber Dana</TableHead><TableHead className="text-right">Jumlah</TableHead><TableHead className="text-center">Kwitansi</TableHead>{canDeleteExpense && <TableHead className="text-right">Aksi</TableHead>}</TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tanggal</TableHead>
+                <TableHead>Deskripsi</TableHead>
+                <TableHead>Akun</TableHead>
+                <TableHead>Sumber Dana</TableHead>
+                <TableHead className="text-right">Jumlah</TableHead>
+                <TableHead className="text-center">Kwitansi</TableHead>
+                {canDeleteExpense && <TableHead className="text-right">Aksi</TableHead>}
+              </TableRow>
+            </TableHeader>
             <TableBody>
               {isLoadingExpenses ? <TableRow><TableCell colSpan={canDeleteExpense ? 7 : 6}>Memuat...</TableCell></TableRow> :
-                expenses?.map(exp => (
-                  <TableRow key={exp.id}>
-                    <TableCell>{format(new Date(exp.date), "d MMM yyyy", { locale: id })}</TableCell>
-                    <TableCell className="font-medium">{exp.description}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <span>{exp.category}</span>
+                expenses?.map(exp => {
+                  const isDebtPayment = exp.category === 'Pembayaran Hutang';
+                  return (
+                    <TableRow key={exp.id}>
+                      <TableCell>{format(new Date(exp.date), "d MMM yyyy", { locale: id })}</TableCell>
+                      <TableCell className="font-medium">{exp.description}</TableCell>
+                      <TableCell>
                         <Badge
-                          variant={isInventoryPurchaseCategory(exp.category) ? "default" : "secondary"}
-                          className="w-fit text-xs"
+                          variant={isDebtPayment ? "outline" : "secondary"}
+                          className={`w-fit ${isDebtPayment ? 'bg-blue-50 text-blue-700 border-blue-200' : ''}`}
                         >
-                          {isInventoryPurchaseCategory(exp.category) ? "Persediaan" : "Operasional"}
+                          {exp.expenseAccountName || exp.category}
                         </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell>{exp.accountName}</TableCell>
-                    <TableCell className="text-right">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(exp.amount)}</TableCell>
-                    <TableCell className="text-center">
-                      <ExpenseReceiptPDF expense={exp} />
-                    </TableCell>
-                    {canDeleteExpense && (
-                      <TableCell className="text-right">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Apakah Anda yakin?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Tindakan ini tidak dapat dibatalkan. Ini akan menghapus data pengeluaran dan mengembalikan saldo ke akun terkait.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Batal</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDelete(exp.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Ya, Hapus
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
                       </TableCell>
-                    )}
-                  </TableRow>
-                ))
+                      <TableCell>{exp.accountName || '-'}</TableCell>
+                      <TableCell className="text-right">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(exp.amount)}</TableCell>
+                      <TableCell className="text-center">
+                        {!isDebtPayment && <ExpenseReceiptPDF expense={exp} />}
+                        {isDebtPayment && <span className="text-xs text-muted-foreground">-</span>}
+                      </TableCell>
+                      {canDeleteExpense && (
+                        <TableCell className="text-right">
+                          {!isDebtPayment ? (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Apakah Anda yakin?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Tindakan ini tidak dapat dibatalkan. Ini akan menghapus data pengeluaran dan mengembalikan saldo ke akun terkait.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Batal</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDelete(exp.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    Ya, Hapus
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })
               }
             </TableBody>
           </Table>

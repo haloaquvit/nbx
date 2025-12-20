@@ -717,7 +717,11 @@ export function useDeliveries() {
       } catch (commissionError) {
         // Don't fail delivery creation if commission generation fails
       }
-      
+
+      // Note: Bonus accounting is now handled in useTransactions.ts when transaction is created
+      // Note: Revenue Recognition & HPP Penjualan is also handled in useTransactions.ts
+      // This ensures consistent accounting - all journal entries at transaction level
+
       return result;
     },
     onSuccess: () => {
@@ -878,6 +882,9 @@ export function useDeliveries() {
         console.error('❌ Error deleting delivery commissions:', commissionError)
         // Don't throw - commission deletion is not critical
       }
+
+      // Note: Bonus accounting rollback is now handled in useTransactions.ts when transaction is deleted
+      // This ensures consistent accounting - bonus is recorded at transaction level, not delivery level
 
       // Delete delivery items first
       const { error: itemsError } = await supabase

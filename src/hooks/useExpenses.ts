@@ -21,12 +21,14 @@ const fromDbToApp = (dbExpense: any): Expense => ({
 
 // Helper to map from App (camelCase) to DB (snake_case)
 const fromAppToDb = (appExpense: Partial<Omit<Expense, 'id' | 'createdAt'>>) => {
-  const { accountId, accountName, expenseAccountId, expenseAccountName, ...rest } = appExpense;
+  const { accountId, accountName, expenseAccountId, expenseAccountName, date, ...rest } = appExpense;
   const dbData: any = { ...rest };
   if (accountId !== undefined) dbData.account_id = accountId;
   if (accountName !== undefined) dbData.account_name = accountName;
   if (expenseAccountId !== undefined) dbData.expense_account_id = expenseAccountId;
   if (expenseAccountName !== undefined) dbData.expense_account_name = expenseAccountName;
+  // Convert Date object to ISO string for database
+  if (date !== undefined) dbData.date = date instanceof Date ? date.toISOString() : date;
   return dbData;
 };
 
@@ -65,19 +67,72 @@ export const useExpenses = () => {
     retryDelay: 1000,
   });
 
+  // Query untuk mendapatkan pembayaran hutang dari cash_history
+  const { data: debtPayments, isLoading: isLoadingDebtPayments } = useQuery<Expense[]>({
+    queryKey: ['debtPayments', currentBranch?.id],
+    queryFn: async () => {
+      let query = supabase
+        .from('cash_history')
+        .select('*')
+        .eq('type', 'pembayaran_hutang')
+        .order('created_at', { ascending: false });
+
+      if (currentBranch?.id) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+
+      // Map cash_history ke format Expense untuk tampilan
+      return data ? data.map((ch: any): Expense => ({
+        id: ch.id,
+        description: ch.description || 'Pembayaran Hutang',
+        amount: ch.amount,
+        accountId: ch.account_id,
+        accountName: ch.account_name,
+        expenseAccountId: undefined,
+        expenseAccountName: ch.description?.match(/\(([^)]+)\)/)?.[1] || 'Pembayaran Hutang', // Extract akun kewajiban dari description
+        date: new Date(ch.created_at),
+        category: 'Pembayaran Hutang',
+        createdAt: new Date(ch.created_at),
+      })) : [];
+    },
+    enabled: !!currentBranch,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
+    retryDelay: 1000,
+  });
+
+  // Gabungkan expenses dan debtPayments, lalu sort by date descending
+  const allExpenses = [...(expenses || []), ...(debtPayments || [])].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+
   const addExpense = useMutation({
     mutationFn: async (newExpenseData: Omit<Expense, 'id' | 'createdAt'>): Promise<Expense> => {
       const dbData = fromAppToDb(newExpenseData);
+
+      // Debug log to see what's being sent
+      const insertData = {
+        ...dbData,
+        id: `exp-${Date.now()}`,
+        branch_id: currentBranch?.id || null,
+      };
+      console.log('Inserting expense:', insertData);
+
       const { data, error } = await supabase
         .from('expenses')
-        .insert({
-          ...dbData,
-          id: `exp-${Date.now()}`,
-          branch_id: currentBranch?.id || null,
-        })
+        .insert(insertData)
         .select()
         .single();
-      if (error) throw new Error(error.message);
+      if (error) {
+        console.error('Expense insert error:', error);
+        throw new Error(error.message);
+      }
       
       // Kurangi saldo akun yang digunakan, jika ada
       if (newExpenseData.accountId) {
@@ -187,8 +242,9 @@ export const useExpenses = () => {
   });
 
   return {
-    expenses,
-    isLoading,
+    expenses: allExpenses, // Return gabungan expenses + pembayaran hutang
+    expensesOnly: expenses, // Pure expenses tanpa pembayaran hutang
+    isLoading: isLoading || isLoadingDebtPayments,
     addExpense,
     deleteExpense,
   }

@@ -132,24 +132,22 @@ export class PricingService {
         return null
       }
 
-      // Get stock pricing rules
+      // Get ALL stock pricing rules (including inactive for display)
       const { data: stockPricings, error: stockError } = await supabase
         .from('stock_pricings')
         .select('*')
         .eq('product_id', productId)
-        .eq('is_active', true)
         .order('min_stock', { ascending: true })
 
       if (stockError) {
         console.error('Failed to fetch stock pricings:', stockError)
       }
 
-      // Get bonus pricing rules
+      // Get ALL bonus pricing rules (including inactive for display)
       const { data: bonusPricings, error: bonusError } = await supabase
         .from('bonus_pricings')
         .select('*')
         .eq('product_id', productId)
-        .eq('is_active', true)
         .order('min_quantity', { ascending: true })
 
       if (bonusError) {
@@ -320,6 +318,40 @@ export class PricingService {
       return !error
     } catch (error) {
       console.error('Error deleting bonus pricing:', error)
+      return false
+    }
+  }
+
+  /**
+   * Toggle stock pricing active status
+   */
+  static async toggleStockPricingActive(id: string, isActive: boolean): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('stock_pricings')
+        .update({ is_active: isActive })
+        .eq('id', id)
+
+      return !error
+    } catch (error) {
+      console.error('Error toggling stock pricing active status:', error)
+      return false
+    }
+  }
+
+  /**
+   * Toggle bonus pricing active status
+   */
+  static async toggleBonusPricingActive(id: string, isActive: boolean): Promise<boolean> {
+    try {
+      const { error } = await supabase
+        .from('bonus_pricings')
+        .update({ is_active: isActive })
+        .eq('id', id)
+
+      return !error
+    } catch (error) {
+      console.error('Error toggling bonus pricing active status:', error)
       return false
     }
   }

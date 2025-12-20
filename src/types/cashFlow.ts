@@ -3,7 +3,7 @@ export interface CashHistory {
   account_id: string;
   account_name?: string;
   // Support both old and new formats
-  type?: 'orderan' | 'kas_masuk_manual' | 'kas_keluar_manual' | 'panjar_pengambilan' | 'panjar_pelunasan' | 'pengeluaran' | 'pembayaran_po' | 'pembayaran_piutang' | 'transfer_masuk' | 'transfer_keluar' | 'gaji_karyawan';
+  type?: 'orderan' | 'kas_masuk_manual' | 'kas_keluar_manual' | 'panjar_pengambilan' | 'panjar_pelunasan' | 'pengeluaran' | 'pembayaran_po' | 'pembayaran_piutang' | 'transfer_masuk' | 'transfer_keluar' | 'gaji_karyawan' | 'pembayaran_gaji' | 'pembayaran_hutang';
   transaction_type?: 'income' | 'expense';
   source_type?: string;
   amount: number;
@@ -17,6 +17,9 @@ export interface CashHistory {
   created_by_name?: string;
   created_at: string;
   updated_at?: string;
+  // Added for COA integration
+  expense_account_id?: string;
+  expense_account_name?: string;
 }
 
 export type CashFlowType = 'income' | 'expense';

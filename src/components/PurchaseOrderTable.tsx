@@ -14,7 +14,6 @@ import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { useAuth } from "@/hooks/useAuth"
 import { Skeleton } from "./ui/skeleton"
 import { isAdminOrOwner, isOwner } from '@/utils/roleUtils'
-import { PayPoDialog } from "./PayPoDialog"
 import { PurchaseOrderPDF } from "./PurchaseOrderPDF"
 import { ReceivePODialog } from "./ReceivePODialog"
 import { EditPurchaseOrderDialog } from "./EditPurchaseOrderDialog"
@@ -32,7 +31,8 @@ import {
 } from "@/components/ui/alert-dialog"
 
 // Status yang bisa dipilih manual (tidak termasuk Diterima dan Selesai karena diatur otomatis)
-const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Dikirim', 'Dibayar'];
+// Dibayar dihilangkan karena pembayaran PO dilakukan melalui halaman Hutang
+const statusOptions: PurchaseOrderStatus[] = ['Pending', 'Approved', 'Dikirim'];
 
 const getStatusVariant = (status: PurchaseOrderStatus) => {
   switch (status) {
@@ -49,22 +49,16 @@ const getStatusVariant = (status: PurchaseOrderStatus) => {
 export function PurchaseOrderTable() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { purchaseOrders, isLoading, updatePoStatus, payPurchaseOrder, receivePurchaseOrder, deletePurchaseOrder } = usePurchaseOrders();
-  const [isPayDialogOpen, setIsPayDialogOpen] = React.useState(false);
+  const { purchaseOrders, isLoading, updatePoStatus, receivePurchaseOrder, deletePurchaseOrder } = usePurchaseOrders();
   const [isReceiveDialogOpen, setIsReceiveDialogOpen] = React.useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [selectedPo, setSelectedPo] = React.useState<PurchaseOrder | null>(null);
 
   const handleStatusChange = (po: PurchaseOrder, newStatus: PurchaseOrderStatus) => {
-    if (newStatus === 'Dibayar' && po.status === 'Diterima') {
-      setSelectedPo(po);
-      setIsPayDialogOpen(true);
-    } else {
-      updatePoStatus.mutate({ poId: po.id, status: newStatus }, {
-        onSuccess: () => toast({ title: "Status PO Diperbarui" }),
-        onError: (error) => toast({ variant: "destructive", title: "Gagal", description: error.message }),
-      });
-    }
+    updatePoStatus.mutate({ poId: po.id, status: newStatus }, {
+      onSuccess: () => toast({ title: "Status PO Diperbarui" }),
+      onError: (error) => toast({ variant: "destructive", title: "Gagal", description: error.message }),
+    });
   };
 
   const handleCompletePo = (po: PurchaseOrder) => {
@@ -176,9 +170,6 @@ export function PurchaseOrderTable() {
               <Button size="sm" onClick={() => { setSelectedPo(po); setIsReceiveDialogOpen(true); }}>Terima Barang</Button>
             )}
             {po.status === 'Diterima' && (
-              <Button size="sm" onClick={() => { setSelectedPo(po); setIsPayDialogOpen(true); }}>Tandai Dibayar</Button>
-            )}
-            {po.status === 'Dibayar' && (
               <Button size="sm" onClick={() => handleCompletePo(po)} disabled={updatePoStatus.isPending}>Selesaikan</Button>
             )}
             {isOwnerRole && (
@@ -222,7 +213,6 @@ export function PurchaseOrderTable() {
 
   return (
     <>
-      <PayPoDialog open={isPayDialogOpen} onOpenChange={setIsPayDialogOpen} purchaseOrder={selectedPo} />
       <ReceivePODialog open={isReceiveDialogOpen} onOpenChange={setIsReceiveDialogOpen} purchaseOrder={selectedPo} />
       <EditPurchaseOrderDialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} purchaseOrder={selectedPo} />
       <div className="rounded-md border">

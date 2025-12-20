@@ -484,3 +484,58 @@ export const useRetasiItems = (retasiId?: string) => {
     enabled: !!retasiId,
   });
 };
+
+// Interface for retasi transaction with items
+export interface RetasiTransaction {
+  id: string;
+  transaction_number: string;
+  customer_name: string;
+  customer_phone?: string;
+  total_amount: number;
+  paid_amount: number;
+  created_at: Date;
+  items: {
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    subtotal: number;
+  }[];
+}
+
+// Hook to get transactions (sales) for a specific retasi
+export const useRetasiTransactions = (retasiId?: string) => {
+  return useQuery<RetasiTransaction[]>({
+    queryKey: ['retasi-transactions', retasiId],
+    queryFn: async () => {
+      if (!retasiId) return [];
+
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('id, transaction_number, customer_name, customer_phone, total_amount, paid_amount, items, created_at')
+        .eq('retasi_id', retasiId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching retasi transactions:', error);
+        return [];
+      }
+
+      return data ? data.map(tx => ({
+        id: tx.id,
+        transaction_number: tx.transaction_number,
+        customer_name: tx.customer_name || 'Walk-in Customer',
+        customer_phone: tx.customer_phone,
+        total_amount: tx.total_amount || 0,
+        paid_amount: tx.paid_amount || 0,
+        created_at: new Date(tx.created_at),
+        items: (tx.items || []).map((item: any) => ({
+          product_name: item.productName || item.product_name || 'Unknown',
+          quantity: item.quantity || 0,
+          unit_price: item.unitPrice || item.unit_price || 0,
+          subtotal: (item.quantity || 0) * (item.unitPrice || item.unit_price || 0),
+        })),
+      })) : [];
+    },
+    enabled: !!retasiId,
+  });
+};

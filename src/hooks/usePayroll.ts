@@ -567,6 +567,91 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
         newBalance: newBalance
       });
 
+      // ============================================================================
+      // BEBAN GAJI ACCOUNTING
+      // Journal: Debit 6210 Beban Gaji (increase expense)
+      // Note: Credit to Kas is already handled above (balance update)
+      // ============================================================================
+      try {
+        // Find Beban Gaji account (6210 or 6200)
+        const { data: bebanGajiAccount } = await supabase
+          .from('accounts')
+          .select('id, name, code, balance')
+          .or('code.eq.6210,code.eq.6200')
+          .limit(1)
+          .single();
+
+        if (bebanGajiAccount && payrollRecord.net_salary > 0) {
+          // Update Beban Gaji (Debit - increase expense)
+          const newBebanGajiBalance = (bebanGajiAccount.balance || 0) + payrollRecord.net_salary;
+          await supabase
+            .from('accounts')
+            .update({ balance: newBebanGajiBalance })
+            .eq('id', bebanGajiAccount.id);
+
+          console.log('✅ Beban Gaji accounting created:', {
+            account: bebanGajiAccount.code,
+            amount: payrollRecord.net_salary,
+            employee: payrollRecord.employee_name
+          });
+        } else {
+          console.warn('⚠️ Beban Gaji (6210/6200) account not found in COA');
+        }
+      } catch (bebanGajiError) {
+        console.error('Error creating beban gaji accounting:', bebanGajiError);
+        // Don't fail payment if accounting fails
+      }
+
+      // Log advance deduction info for debugging
+      const deductionAmount = payrollRecord.deduction_amount || 0;
+      if (deductionAmount > 0) {
+        console.log('💰 ADVANCE DEDUCTION INFO:');
+        console.log('  - Payroll ID:', id);
+        console.log('  - Employee:', payrollRecord.employee_name);
+        console.log('  - Deduction Amount:', deductionAmount);
+        console.log('  - Status changed to: paid');
+        console.log('  - Database trigger should now process advance repayment automatically');
+        console.log('  - Check database logs for trigger execution: payroll_advance_repayment_trigger');
+
+        // Verify advance repayment was created (check after short delay for trigger to complete)
+        setTimeout(async () => {
+          try {
+            const { data: recentRepayments, error: repaymentError } = await supabase
+              .from('advance_repayments')
+              .select('*')
+              .eq('recorded_by', payrollRecord.created_by)
+              .order('date', { ascending: false })
+              .limit(5);
+
+            if (repaymentError) {
+              console.warn('⚠️ Could not verify advance repayments:', repaymentError);
+            } else {
+              console.log('📋 Recent advance repayments for verification:', recentRepayments);
+
+              // Check if any repayment was created for this payroll period
+              const payrollMonthStr = `${payrollRecord.period_month}`;
+              const relatedRepayments = recentRepayments?.filter(r =>
+                r.notes?.includes(payrollMonthStr) || r.notes?.includes('gaji')
+              );
+
+              if (relatedRepayments && relatedRepayments.length > 0) {
+                console.log('✅ Advance repayment(s) found for this payroll:', relatedRepayments);
+              } else {
+                console.warn('⚠️ No advance repayment found - trigger may not have executed');
+                console.warn('   Please check:');
+                console.warn('   1. Database trigger payroll_advance_repayment_trigger is enabled');
+                console.warn('   2. Account Piutang Karyawan (code 1220) exists');
+                console.warn('   3. Employee has outstanding advances');
+              }
+            }
+          } catch (verifyError) {
+            console.warn('⚠️ Verification check failed:', verifyError);
+          }
+        }, 1000);
+      } else {
+        console.log('ℹ️ No advance deduction for this payroll (deduction_amount = 0)');
+      }
+
       return { payrollRecord, cashHistoryData };
     },
     onSuccess: async () => {
@@ -577,6 +662,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
         queryClient.invalidateQueries({ queryKey: ['accounts'] }),
         queryClient.invalidateQueries({ queryKey: ['cashFlow'] }),
         queryClient.invalidateQueries({ queryKey: ['cashBalance'] }),
+        queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] }), // For advance deduction updates
       ]);
 
       // Force immediate refetch to update UI without waiting for background refetch
@@ -637,6 +723,23 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
             .from('accounts')
             .update({ balance: restoredBalance })
             .eq('id', payrollRecord.payment_account_id);
+        }
+
+        // Rollback Beban Gaji (Credit - decrease expense)
+        const { data: bebanGajiAccount } = await supabase
+          .from('accounts')
+          .select('id, balance')
+          .or('code.eq.6210,code.eq.6200')
+          .limit(1)
+          .single();
+
+        if (bebanGajiAccount) {
+          await supabase
+            .from('accounts')
+            .update({ balance: (bebanGajiAccount.balance || 0) - payrollRecord.net_salary })
+            .eq('id', bebanGajiAccount.id);
+
+          console.log('✅ Beban Gaji reversed:', { amount: -payrollRecord.net_salary });
         }
       }
 

@@ -83,8 +83,32 @@ export function usePricingMutations() {
       PricingService.deleteBonusPricing(id),
     onSuccess: (success, variables) => {
       if (success) {
-        queryClient.invalidateQueries({ 
-          queryKey: ['product-pricing', variables.productId] 
+        queryClient.invalidateQueries({
+          queryKey: ['product-pricing', variables.productId]
+        })
+      }
+    },
+  })
+
+  const toggleStockPricingActive = useMutation({
+    mutationFn: ({ id, productId, isActive }: { id: string; productId: string; isActive: boolean }) =>
+      PricingService.toggleStockPricingActive(id, isActive),
+    onSuccess: (success, variables) => {
+      if (success) {
+        queryClient.invalidateQueries({
+          queryKey: ['product-pricing', variables.productId]
+        })
+      }
+    },
+  })
+
+  const toggleBonusPricingActive = useMutation({
+    mutationFn: ({ id, productId, isActive }: { id: string; productId: string; isActive: boolean }) =>
+      PricingService.toggleBonusPricingActive(id, isActive),
+    onSuccess: (success, variables) => {
+      if (success) {
+        queryClient.invalidateQueries({
+          queryKey: ['product-pricing', variables.productId]
         })
       }
     },
@@ -95,6 +119,8 @@ export function usePricingMutations() {
     createBonusPricing,
     deleteStockPricing,
     deleteBonusPricing,
+    toggleStockPricingActive,
+    toggleBonusPricingActive,
   }
 }
 

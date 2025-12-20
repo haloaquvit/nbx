@@ -22,15 +22,19 @@ import {
   AlertTriangle,
   Download,
   FileText,
-  X
+  X,
+  ShoppingCart,
+  User,
+  Phone
 } from "lucide-react";
-import { useRetasi, useRetasiItems } from "@/hooks/useRetasi";
+import { useRetasi, useRetasiItems, useRetasiTransactions } from "@/hooks/useRetasi";
 import { useDrivers } from "@/hooks/useDrivers";
 import { useProducts } from "@/hooks/useProducts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { id } from "date-fns/locale/id";
 import { ReturnRetasiDialog } from "@/components/ReturnRetasiDialog";
+import { RetasiDetailPDF } from "@/components/RetasiDetailPDF";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
@@ -47,6 +51,8 @@ export default function RetasiPage() {
   const [driverFilter, setDriverFilter] = useState("all");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedRetasi, setSelectedRetasi] = useState<any>(null);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [detailRetasi, setDetailRetasi] = useState<any>(null);
 
   const filters = {
     is_returned: statusFilter === "active" ? false : statusFilter === "returned" ? true : undefined,
@@ -293,7 +299,14 @@ export default function RetasiPage() {
                   </TableRow>
                 ) : (
                   filteredRetasi.map((retasi) => (
-                    <TableRow key={retasi.id} className="hover:bg-slate-50/80">
+                    <TableRow
+                      key={retasi.id}
+                      className="hover:bg-slate-50/80 cursor-pointer"
+                      onClick={() => {
+                        setDetailRetasi(retasi);
+                        setDetailDialogOpen(true);
+                      }}
+                    >
                       <TableCell>
                         {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
                         {retasi.departure_time && (
@@ -303,8 +316,8 @@ export default function RetasiPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {retasi.is_returned ? 
-                          format(retasi.updated_at, 'dd/MM/yyyy HH:mm', { locale: id }) : 
+                        {retasi.is_returned ?
+                          format(retasi.updated_at, 'dd/MM/yyyy HH:mm', { locale: id }) :
                           '-'
                         }
                       </TableCell>
@@ -333,14 +346,14 @@ export default function RetasiPage() {
                       </TableCell>
                       <TableCell>
                         <span className={`font-medium ${
-                          ((retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)) >= 0 
-                            ? 'text-blue-600' 
+                          ((retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)) >= 0
+                            ? 'text-blue-600'
                             : 'text-red-600'
                         }`}>
                           {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
                         </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
                           {!retasi.is_returned ? (
                             <Button
@@ -353,7 +366,17 @@ export default function RetasiPage() {
                               <ArrowLeft className="h-4 w-4" />
                             </Button>
                           ) : null}
-                          <RetasiDetailDialog retasi={retasi} />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            title="Lihat Detail"
+                            onClick={() => {
+                              setDetailRetasi(retasi);
+                              setDetailDialogOpen(true);
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -377,6 +400,18 @@ export default function RetasiPage() {
         totalItems={selectedRetasi?.total_items || 0}
         isLoading={markRetasiReturned.isPending}
       />
+
+      {/* Detail Retasi Dialog (Controlled) */}
+      {detailRetasi && (
+        <RetasiDetailDialogControlled
+          retasi={detailRetasi}
+          open={detailDialogOpen}
+          onOpenChange={(open) => {
+            setDetailDialogOpen(open);
+            if (!open) setDetailRetasi(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -727,10 +762,30 @@ function AddRetasiDialog({
   );
 }
 
-// Dialog to view retasi details including products
+// Dialog to view retasi details including products and sales
 function RetasiDetailDialog({ retasi }: { retasi: any }) {
   const [open, setOpen] = useState(false);
-  const { data: items, isLoading } = useRetasiItems(open ? retasi.id : undefined);
+  const { data: items, isLoading: isLoadingItems } = useRetasiItems(open ? retasi.id : undefined);
+  const { data: transactions, isLoading: isLoadingTx } = useRetasiTransactions(open ? retasi.id : undefined);
+
+  // Calculate total sold from transactions
+  const totalSoldFromTx = useMemo(() => {
+    if (!transactions) return 0;
+    return transactions.reduce((sum, tx) =>
+      sum + tx.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0
+    );
+  }, [transactions]);
+
+  // Calculate total revenue
+  const totalRevenue = useMemo(() => {
+    if (!transactions) return 0;
+    return transactions.reduce((sum, tx) => sum + tx.total_amount, 0);
+  }, [transactions]);
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -739,7 +794,7 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
           <Eye className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Detail Retasi</DialogTitle>
           <DialogDescription>
@@ -817,7 +872,7 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
               <Package className="h-4 w-4" />
               Produk yang Dibawa
             </h4>
-            {isLoading ? (
+            {isLoadingItems ? (
               <div className="space-y-2">
                 <Skeleton className="h-8 w-full" />
                 <Skeleton className="h-8 w-full" />
@@ -854,6 +909,76 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
             )}
           </div>
 
+          {/* Sales/Transactions List */}
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4" />
+              Penjualan ({transactions?.length || 0} transaksi)
+            </h4>
+            {isLoadingTx ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : transactions && transactions.length > 0 ? (
+              <div className="space-y-3">
+                {transactions.map((tx, idx) => (
+                  <div key={tx.id} className="border rounded-lg p-3 bg-white">
+                    {/* Transaction Header */}
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <User className="h-3 w-3 text-slate-400" />
+                          <span className="font-medium text-sm">{tx.customer_name}</span>
+                        </div>
+                        {tx.customer_phone && (
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <Phone className="h-3 w-3" />
+                            {tx.customer_phone}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500">
+                          {format(tx.created_at, 'HH:mm', { locale: id })}
+                        </p>
+                        <p className="font-bold text-green-600 text-sm">
+                          {formatCurrency(tx.total_amount)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Transaction Items */}
+                    <div className="bg-slate-50 rounded p-2 text-xs">
+                      {tx.items.map((item, itemIdx) => (
+                        <div key={itemIdx} className="flex justify-between py-0.5">
+                          <span>{item.product_name} x{item.quantity}</span>
+                          <span className="text-slate-600">{formatCurrency(item.subtotal)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Total Revenue */}
+                <div className="border-t pt-3 flex justify-between items-center">
+                  <div className="text-sm">
+                    <span className="text-slate-500">Total Terjual: </span>
+                    <span className="font-bold text-green-600">{totalSoldFromTx} item</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-slate-500">Total Pendapatan: </span>
+                    <span className="font-bold text-green-600">{formatCurrency(totalRevenue)}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-slate-500 text-sm border rounded-lg">
+                Belum ada penjualan untuk retasi ini
+              </div>
+            )}
+          </div>
+
           {/* Notes */}
           {(retasi.notes || retasi.return_notes) && (
             <div>
@@ -863,6 +988,254 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
               </p>
             </div>
           )}
+
+          {/* Print PDF Button */}
+          <div className="pt-4 border-t flex justify-end">
+            <RetasiDetailPDF
+              retasi={retasi}
+              items={items || []}
+              transactions={transactions || []}
+            />
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Controlled version of RetasiDetailDialog (for external state management)
+function RetasiDetailDialogControlled({ retasi, open, onOpenChange }: {
+  retasi: any;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { data: items, isLoading: isLoadingItems } = useRetasiItems(open ? retasi.id : undefined);
+  const { data: transactions, isLoading: isLoadingTx } = useRetasiTransactions(open ? retasi.id : undefined);
+
+  // Calculate total sold from transactions
+  const totalSoldFromTx = useMemo(() => {
+    if (!transactions) return 0;
+    return transactions.reduce((sum, tx) =>
+      sum + tx.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0
+    );
+  }, [transactions]);
+
+  // Calculate total revenue
+  const totalRevenue = useMemo(() => {
+    if (!transactions) return 0;
+    return transactions.reduce((sum, tx) => sum + tx.total_amount, 0);
+  }, [transactions]);
+
+  // Format currency
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Detail Retasi</DialogTitle>
+          <DialogDescription>
+            {retasi.retasi_number} - Retasi ke-{retasi.retasi_ke}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Info Retasi */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="text-slate-500">Supir:</span>
+              <p className="font-medium">{retasi.driver_name || '-'}</p>
+            </div>
+            <div>
+              <span className="text-slate-500">Status:</span>
+              <p>
+                {retasi.is_returned ? (
+                  <Badge variant="default" className="bg-emerald-100 text-emerald-700">
+                    Armada Kembali
+                  </Badge>
+                ) : (
+                  <Badge variant="default" className="bg-amber-100 text-amber-700">
+                    Armada Berangkat
+                  </Badge>
+                )}
+              </p>
+            </div>
+            <div>
+              <span className="text-slate-500">Tgl Berangkat:</span>
+              <p className="font-medium">
+                {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
+                {retasi.departure_time && ` ${retasi.departure_time}`}
+              </p>
+            </div>
+            {retasi.is_returned && (
+              <div>
+                <span className="text-slate-500">Tgl Kembali:</span>
+                <p className="font-medium">
+                  {format(retasi.updated_at, 'dd/MM/yyyy HH:mm', { locale: id })}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Summary */}
+          <div className="grid grid-cols-5 gap-2 text-center border rounded-lg p-3 bg-slate-50">
+            <div>
+              <p className="text-xs text-slate-500">Bawa</p>
+              <p className="font-bold text-blue-600">{retasi.total_items || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Kembali</p>
+              <p className="font-bold text-slate-600">{retasi.returned_items_count || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Error</p>
+              <p className="font-bold text-red-600">{retasi.error_items_count || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Laku</p>
+              <p className="font-bold text-green-600">{retasi.barang_laku || 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Selisih</p>
+              <p className="font-bold">
+                {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
+              </p>
+            </div>
+          </div>
+
+          {/* Product List */}
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Produk yang Dibawa
+            </h4>
+            {isLoadingItems ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : items && items.length > 0 ? (
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produk</TableHead>
+                      <TableHead className="w-20 text-center">Qty</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium">{item.product_name}</TableCell>
+                        <TableCell className="text-center">{item.quantity}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-slate-50 font-bold">
+                      <TableCell>Total</TableCell>
+                      <TableCell className="text-center text-blue-600">
+                        {items.reduce((sum, item) => sum + item.quantity, 0)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-slate-500 text-sm border rounded-lg">
+                Tidak ada data produk (retasi lama tanpa detail produk)
+              </div>
+            )}
+          </div>
+
+          {/* Sales/Transactions List */}
+          <div>
+            <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4" />
+              Penjualan ({transactions?.length || 0} transaksi)
+            </h4>
+            {isLoadingTx ? (
+              <div className="space-y-2">
+                <Skeleton className="h-8 w-full" />
+                <Skeleton className="h-8 w-full" />
+              </div>
+            ) : transactions && transactions.length > 0 ? (
+              <div className="space-y-3">
+                {transactions.map((tx) => (
+                  <div key={tx.id} className="border rounded-lg p-3 bg-white">
+                    {/* Transaction Header */}
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <User className="h-3 w-3 text-slate-400" />
+                          <span className="font-medium text-sm">{tx.customer_name}</span>
+                        </div>
+                        {tx.customer_phone && (
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            <Phone className="h-3 w-3" />
+                            {tx.customer_phone}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-500">
+                          {format(tx.created_at, 'HH:mm', { locale: id })}
+                        </p>
+                        <p className="font-bold text-green-600 text-sm">
+                          {formatCurrency(tx.total_amount)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Transaction Items */}
+                    <div className="bg-slate-50 rounded p-2 text-xs">
+                      {tx.items.map((item, itemIdx) => (
+                        <div key={itemIdx} className="flex justify-between py-0.5">
+                          <span>{item.product_name} x{item.quantity}</span>
+                          <span className="text-slate-600">{formatCurrency(item.subtotal)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Total Revenue */}
+                <div className="border-t pt-3 flex justify-between items-center">
+                  <div className="text-sm">
+                    <span className="text-slate-500">Total Terjual: </span>
+                    <span className="font-bold text-green-600">{totalSoldFromTx} item</span>
+                  </div>
+                  <div className="text-sm">
+                    <span className="text-slate-500">Total Pendapatan: </span>
+                    <span className="font-bold text-green-600">{formatCurrency(totalRevenue)}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4 text-slate-500 text-sm border rounded-lg">
+                Belum ada penjualan untuk retasi ini
+              </div>
+            )}
+          </div>
+
+          {/* Notes */}
+          {(retasi.notes || retasi.return_notes) && (
+            <div>
+              <h4 className="text-sm font-medium mb-1">Catatan</h4>
+              <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                {retasi.return_notes || retasi.notes}
+              </p>
+            </div>
+          )}
+
+          {/* Print PDF Button */}
+          <div className="pt-4 border-t flex justify-end">
+            <RetasiDetailPDF
+              retasi={retasi}
+              items={items || []}
+              transactions={transactions || []}
+            />
+          </div>
         </div>
       </DialogContent>
     </Dialog>
