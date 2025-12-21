@@ -134,9 +134,26 @@ export const useExpenses = () => {
         throw new Error(error.message);
       }
       
-      // Kurangi saldo akun yang digunakan, jika ada
+      // ============================================================================
+      // DOUBLE-ENTRY ACCOUNTING FOR EXPENSES
+      // ============================================================================
+      // 1. Credit Kas/Bank (decrease asset) - mengurangi saldo kas
+      // 2. Debit Beban (increase expense) - menambah saldo akun beban
+      // ============================================================================
+
+      // 1. Kurangi saldo akun pembayaran (Kas/Bank)
       if (newExpenseData.accountId) {
         updateAccountBalance.mutate({ accountId: newExpenseData.accountId, amount: -newExpenseData.amount });
+      }
+
+      // 2. Tambah saldo akun beban (expense account)
+      if (newExpenseData.expenseAccountId) {
+        updateAccountBalance.mutate({ accountId: newExpenseData.expenseAccountId, amount: newExpenseData.amount });
+        console.log('✅ Expense account balance updated (Debit):', {
+          expenseAccountId: newExpenseData.expenseAccountId,
+          expenseAccountName: newExpenseData.expenseAccountName,
+          amount: newExpenseData.amount
+        });
       }
 
       // Record in cash_history for expense tracking
@@ -160,7 +177,7 @@ export const useExpenses = () => {
             expenseType = 'pembayaran_po';
           }
 
-          const cashFlowRecord = {
+          const cashFlowRecord: any = {
             account_id: newExpenseData.accountId,
             account_name: newExpenseData.accountName || 'Unknown Account',
             type: expenseType,
@@ -171,6 +188,9 @@ export const useExpenses = () => {
             user_id: user.id,
             user_name: user.name || user.email || 'Unknown User',
             branch_id: currentBranch?.id || null,
+            // Add expense account info for COA integration
+            expense_account_id: newExpenseData.expenseAccountId || null,
+            expense_account_name: newExpenseData.expenseAccountName || null,
           };
 
           console.log('Recording expense in cash history:', cashFlowRecord);
@@ -227,11 +247,29 @@ export const useExpenses = () => {
       if (!deletedExpense) throw new Error("Pengeluaran tidak ditemukan");
       
       const appExpense = fromDbToApp(deletedExpense);
-      // Kembalikan saldo ke akun yang digunakan, jika ada
+
+      // ============================================================================
+      // ROLLBACK DOUBLE-ENTRY ACCOUNTING
+      // ============================================================================
+      // 1. Credit Kas/Bank (increase asset) - kembalikan saldo kas
+      // 2. Debit Beban (decrease expense) - kurangi saldo akun beban
+      // ============================================================================
+
+      // 1. Kembalikan saldo ke akun pembayaran (Kas/Bank)
       if (appExpense.accountId) {
         updateAccountBalance.mutate({ accountId: appExpense.accountId, amount: appExpense.amount });
       }
-      
+
+      // 2. Kurangi saldo akun beban (rollback expense)
+      if (appExpense.expenseAccountId) {
+        updateAccountBalance.mutate({ accountId: appExpense.expenseAccountId, amount: -appExpense.amount });
+        console.log('✅ Expense account balance rolled back (Credit):', {
+          expenseAccountId: appExpense.expenseAccountId,
+          expenseAccountName: appExpense.expenseAccountName,
+          amount: -appExpense.amount
+        });
+      }
+
       return appExpense;
     },
     onSuccess: () => {
