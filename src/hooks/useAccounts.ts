@@ -125,10 +125,10 @@ export const useAccounts = () => {
       // Calculate balance per account from cash_history
       const accountBalanceMap = new Map<string, number>();
 
-      // Initialize with initial_balance for each account (saldo awal per branch = 0)
-      // Saldo awal global tetap di initial_balance, tapi untuk per-branch mulai dari 0
+      // Initialize with initial_balance for each account
+      // Saldo akhir = initial_balance + perubahan dari cash_history
       baseAccounts.forEach(acc => {
-        accountBalanceMap.set(acc.id, 0); // Start from 0 for branch-specific balance
+        accountBalanceMap.set(acc.id, acc.initialBalance || 0); // Start from initial_balance
       });
 
       // Income types: add to balance (Kas masuk)

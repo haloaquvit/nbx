@@ -123,26 +123,27 @@ export function EnhancedAccountManagement() {
   }, [watchedParentId, accounts, setValue])
 
   const onSubmit = (data: AccountFormData) => {
-    const accountData = {
-      name: data.name,
-      type: data.type,
-      balance: data.balance,
-      initialBalance: data.balance,
-      isPaymentAccount: data.isPaymentAccount,
-      code: data.code || undefined,
-      parentId: data.parentId || undefined,
-      normalBalance: data.normalBalance,
-      isHeader: data.isHeader,
-      isActive: data.isActive,
-      level: data.level,
-      sortOrder: data.sortOrder,
-    };
-
     if (isEditDialogOpen && selectedAccount) {
+      // For edit: update initialBalance (saldo awal) which affects calculated balance
+      // The balance field in form is treated as the desired initial balance
+      const editAccountData = {
+        name: data.name,
+        type: data.type,
+        initialBalance: data.initialBalance, // Use initialBalance field for saldo awal
+        isPaymentAccount: data.isPaymentAccount,
+        code: data.code || undefined,
+        parentId: data.parentId || undefined,
+        normalBalance: data.normalBalance,
+        isHeader: data.isHeader,
+        isActive: data.isActive,
+        level: data.level,
+        sortOrder: data.sortOrder,
+      };
+
       // Update existing account
-      updateAccount.mutate({ 
-        accountId: selectedAccount.id, 
-        newData: accountData 
+      updateAccount.mutate({
+        accountId: selectedAccount.id,
+        newData: editAccountData
       }, {
         onSuccess: () => {
           toast({ title: "Sukses", description: "Akun berhasil diupdate." })
@@ -155,8 +156,23 @@ export function EnhancedAccountManagement() {
         }
       })
     } else {
-      // Create new account
-      addAccount.mutate(accountData, {
+      // Create new account - for new accounts, balance = initialBalance
+      const newAccountData = {
+        name: data.name,
+        type: data.type,
+        balance: data.balance,
+        initialBalance: data.balance, // For new accounts, initial = balance
+        isPaymentAccount: data.isPaymentAccount,
+        code: data.code || undefined,
+        parentId: data.parentId || undefined,
+        normalBalance: data.normalBalance,
+        isHeader: data.isHeader,
+        isActive: data.isActive,
+        level: data.level,
+        sortOrder: data.sortOrder,
+      };
+
+      addAccount.mutate(newAccountData, {
         onSuccess: () => {
           toast({ title: "Sukses", description: "Akun berhasil ditambahkan." })
           reset()
