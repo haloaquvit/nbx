@@ -85,7 +85,14 @@
       "Bash(nslookup:*)",
       "Bash(ping:*)",
       "Bash(scp:*)",
-      "Bash(ren \"d:\\App\\Aquvit Fix - Copy\\scripts\\generate_photo_sql.js\" generate_photo_sql.cjs)"
+      "Bash(ren \"d:\\App\\Aquvit Fix - Copy\\scripts\\generate_photo_sql.js\" generate_photo_sql.cjs)",
+      "Bash(powershell -Command \"echo ''y'' | plink -ssh deployer@153.92.223.77 -pw Sukses098 ''cd /var/www/aquvit && git log -1 --oneline''\")",
+      "Bash(powershell:*)",
+      "Bash(powershell.exe -Command \"Test-NetConnection 153.92.223.77 -Port 22\")",
+      "Bash(plink -ssh:*)",
+      "Bash(\"C:\\Program Files\\PuTTY\\puttygen.exe\" \"d:\\App\\Aquvit Fix - Copy\\Aquvit.pem\" -o \"d:\\App\\Aquvit Fix - Copy\\Aquvit.ppk\")",
+      "Bash(ssh-keyscan:*)",
+      "Bash(sshpass -p \"Sukses098\" ssh -o StrictHostKeyChecking=no deployer@153.92.223.77 \"cd /var/www/aquvit && git log -1 --oneline\")"
     ],
     "deny": [],
     "ask": [],

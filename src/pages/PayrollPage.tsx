@@ -272,7 +272,7 @@ export default function PayrollPage() {
 
   if (!userCanManagePayroll) {
     return (
-      <div className="container mx-auto py-6">
+      <div className="w-full max-w-none p-4 lg:p-6">
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <AlertTriangle className="h-16 w-16 text-muted-foreground mb-4" />
@@ -287,7 +287,7 @@ export default function PayrollPage() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <div className="w-full max-w-none p-4 lg:p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">

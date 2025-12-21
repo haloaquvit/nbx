@@ -275,7 +275,7 @@ export function EnhancedAccountManagement() {
   const parentAccountOptions = accounts?.filter(acc => acc.isHeader) || []
 
   return (
-    <div className="space-y-6">
+    <div className="w-full max-w-none p-4 lg:p-6 space-y-6">
       {/* Header Actions */}
       <div className="flex items-center justify-between">
         <div>

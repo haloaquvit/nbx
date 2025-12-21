@@ -138,7 +138,7 @@ export default function CommissionManagePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 lg:p-8">
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="w-full max-w-none space-y-6">
         
         {/* Header */}
         <Card className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">

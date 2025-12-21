@@ -210,7 +210,7 @@ export default function AccountsPayablePage() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <div className="w-full max-w-none p-4 lg:p-6 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>

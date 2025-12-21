@@ -7,7 +7,7 @@ import { CreditCard, History } from "lucide-react";
 
 export default function ReceivablesPage() {
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="w-full max-w-none p-4 lg:p-6">
       <div className="text-lg md:text-xl font-semibold mb-2">Manajemen Piutang</div>
       <div className="text-sm text-slate-600 mb-6">
         Kelola piutang pelanggan dan lihat history pembayaran

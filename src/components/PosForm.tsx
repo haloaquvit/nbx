@@ -1,5 +1,5 @@
 "use client"
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -96,6 +96,7 @@ export const PosForm = () => {
   const [isOfficeSale, setIsOfficeSale] = useState(false);
   const [transactionNotes, setTransactionNotes] = useState('');
   const [loadingPrices, setLoadingPrices] = useState<{[key: number]: boolean}>({});
+  const productSearchInputRef = useRef<HTMLInputElement>(null);
 
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
@@ -217,6 +218,15 @@ export const PosForm = () => {
   useEffect(() => {
     setPaidAmount(totalTagihan);
   }, [totalTagihan]);
+
+  // Auto-focus product search input when dropdown opens
+  useEffect(() => {
+    if (showProductDropdown && productSearchInputRef.current) {
+      setTimeout(() => {
+        productSearchInputRef.current?.focus();
+      }, 100);
+    }
+  }, [showProductDropdown]);
 
   // Check retasi validation for drivers
   useEffect(() => {
@@ -559,7 +569,10 @@ export const PosForm = () => {
           <p className="text-xs md:text-sm text-gray-600">Isi detail pesanan pelanggan pada form di bawah ini.</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-3 md:p-6 space-y-4 md:space-y-6">
+        <form onSubmit={handleSubmit} className="p-3 md:p-6">
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Left Panel - Main Form Content (Scrollable) */}
+            <div className="flex-1 space-y-4 md:space-y-6 lg:overflow-auto">
         {retasiBlocked && (
           <div className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 border border-red-200" role="alert">
             <div className="flex items-center">
@@ -753,9 +766,9 @@ export const PosForm = () => {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
               <h3 className="text-base md:text-lg font-medium text-gray-900">Daftar Item</h3>
-              <div className="relative flex-1 max-w-md ml-4">
+              <div className="relative flex-1">
                 <Button
                   type="button"
                   size="lg"
@@ -768,13 +781,15 @@ export const PosForm = () => {
                 </Button>
 
                 {showProductDropdown && (
-                  <div className="absolute right-0 top-full mt-2 w-full min-w-[400px] md:min-w-[500px] bg-white border rounded-lg shadow-xl z-50 max-h-96 md:max-h-[500px] overflow-y-auto">
-                    <div className="p-4 border-b bg-gray-50">
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-white border rounded-lg shadow-xl z-50 max-h-96 md:max-h-[500px] overflow-y-auto">
+                    <div className="p-4 border-b bg-gray-50 sticky top-0">
                       <Input
+                        ref={productSearchInputRef}
                         placeholder="Cari produk..."
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
                         className="w-full text-base"
+                        autoFocus
                       />
                     </div>
                     <div className="max-h-80 md:max-h-96 overflow-y-auto">
@@ -987,264 +1002,274 @@ export const PosForm = () => {
               onChange={(e) => setTransactionNotes(e.target.value)}
             />
           </div>
+            </div>
 
-          <div className="space-y-4">
-            {/* Payment Method */}
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Metode Pembayaran</h3>
-              <Select value={paymentAccountId} onValueChange={setPaymentAccountId} disabled={retasiBlocked}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Pilih Pembayaran..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts?.filter(a => a.isPaymentAccount).map(acc => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      <Wallet className="inline-block mr-2 h-4 w-4" />
-                      {acc.name}
-                    </SelectItem>
-                  ))}
-                  {(!accounts || accounts.filter(a => a.isPaymentAccount).length === 0) && (
-                    <SelectItem value="no-accounts" disabled>
-                      Tidak ada akun pembayaran tersedia
-                    </SelectItem>
+            {/* Right Panel - Payment & Submit (Sticky on Desktop) */}
+            <div className="lg:w-1/3 lg:min-w-[320px] lg:max-w-[400px] lg:sticky lg:top-4 lg:self-start space-y-4 bg-gray-50 lg:bg-white lg:border lg:rounded-lg lg:p-4 lg:shadow-sm">
+              {/* Payment Summary Header */}
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-3 rounded-lg -m-4 mb-2 lg:m-0 lg:mb-2 lg:-mt-4 lg:-mx-4 lg:rounded-t-lg lg:rounded-b-none">
+                <h3 className="font-semibold text-center">Ringkasan Pembayaran</h3>
+              </div>
+
+              <div className="space-y-4">
+                {/* Payment Method */}
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Metode Pembayaran</h3>
+                  <Select value={paymentAccountId} onValueChange={setPaymentAccountId} disabled={retasiBlocked}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Pilih Pembayaran..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts?.filter(a => a.isPaymentAccount).map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          <Wallet className="inline-block mr-2 h-4 w-4" />
+                          {acc.name}
+                        </SelectItem>
+                      ))}
+                      {(!accounts || accounts.filter(a => a.isPaymentAccount).length === 0) && (
+                        <SelectItem value="no-accounts" disabled>
+                          Tidak ada akun pembayaran tersedia
+                        </SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {accounts && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Total akun: {accounts.length}, Akun pembayaran: {accounts.filter(a => a.isPaymentAccount).length}
+                    </p>
                   )}
-                </SelectContent>
-              </Select>
-              {accounts && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Total akun: {accounts.length}, Akun pembayaran: {accounts.filter(a => a.isPaymentAccount).length}
-                </p>
-              )}
-            </div>
+                </div>
 
-            {/* Tax Settings - Always Visible */}
-            <div className="border border-blue-200 bg-blue-50 p-4 rounded-lg">
-              <h3 className="text-sm font-medium text-gray-900 mb-3">Pengaturan Pajak</h3>
-              <div className="space-y-3">
-                <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
-                  <input
-                    type="radio"
-                    name="taxMode"
-                    value="include"
-                    checked={ppnEnabled && ppnMode === 'include'}
-                    onChange={(e) => {
-                      setPpnEnabled(true);
-                      setPpnMode('include');
-                    }}
-                    className="mr-3 w-4 h-4 text-blue-600"
-                    disabled={retasiBlocked}
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900">PPN Include</div>
-                    <div className="text-xs text-gray-600">Harga sudah termasuk pajak {ppnPercentage}%</div>
+                {/* Tax Settings - Always Visible */}
+                <div className="border border-blue-200 bg-blue-50 p-4 rounded-lg">
+                  <h3 className="text-sm font-medium text-gray-900 mb-3">Pengaturan Pajak</h3>
+                  <div className="space-y-3">
+                    <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
+                      <input
+                        type="radio"
+                        name="taxMode"
+                        value="include"
+                        checked={ppnEnabled && ppnMode === 'include'}
+                        onChange={(e) => {
+                          setPpnEnabled(true);
+                          setPpnMode('include');
+                        }}
+                        className="mr-3 w-4 h-4 text-blue-600"
+                        disabled={retasiBlocked}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">PPN Include</div>
+                        <div className="text-xs text-gray-600">Harga sudah termasuk pajak {ppnPercentage}%</div>
+                      </div>
+                    </label>
+                    <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
+                      <input
+                        type="radio"
+                        name="taxMode"
+                        value="exclude"
+                        checked={ppnEnabled && ppnMode === 'exclude'}
+                        onChange={(e) => {
+                          setPpnEnabled(true);
+                          setPpnMode('exclude');
+                        }}
+                        className="mr-3 w-4 h-4 text-blue-600"
+                        disabled={retasiBlocked}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">PPN Exclude</div>
+                        <div className="text-xs text-gray-600">Pajak {ppnPercentage}% ditambahkan ke total</div>
+                      </div>
+                    </label>
+                    <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
+                      <input
+                        type="radio"
+                        name="taxMode"
+                        value="none"
+                        checked={!ppnEnabled}
+                        onChange={(e) => setPpnEnabled(false)}
+                        className="mr-3 w-4 h-4 text-blue-600"
+                        disabled={retasiBlocked}
+                      />
+                      <div>
+                        <div className="font-medium text-gray-900">Non Pajak</div>
+                        <div className="text-xs text-gray-600">Tidak menggunakan pajak</div>
+                      </div>
+                    </label>
+                    {ppnEnabled && (
+                      <div className="mt-3 pt-3 border-t border-blue-200">
+                        <div className="text-xs text-blue-700">
+                          <strong>Mode Aktif:</strong> {ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude'} ({ppnPercentage}%)
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </label>
-                <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
-                  <input
-                    type="radio"
-                    name="taxMode"
-                    value="exclude"
-                    checked={ppnEnabled && ppnMode === 'exclude'}
-                    onChange={(e) => {
-                      setPpnEnabled(true);
-                      setPpnMode('exclude');
-                    }}
-                    className="mr-3 w-4 h-4 text-blue-600"
-                    disabled={retasiBlocked}
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900">PPN Exclude</div>
-                    <div className="text-xs text-gray-600">Pajak {ppnPercentage}% ditambahkan ke total</div>
+                </div>
+
+                {/* Payment Details - Collapsible */}
+                <div>
+                  <button
+                    type="button"
+                    className="flex items-center justify-between w-full text-sm font-medium text-gray-700 mb-2 md:mb-3"
+                    onClick={() => setShowPaymentDetails(!showPaymentDetails)}
+                  >
+                    <span>Detail Pembayaran</span>
+                    <ChevronDown
+                      className={`w-4 h-4 transition-transform md:hidden ${showPaymentDetails ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                  <div className={`space-y-3 md:space-y-4 ${showPaymentDetails ? "block" : "hidden md:block"}`}>
+
+                    <div className="grid grid-cols-2 gap-2 md:gap-4">
+                      <div>
+                        <label className="text-xs md:text-sm text-gray-600">Sub Total</label>
+                        <div className="text-sm md:text-lg font-medium">
+                          {new Intl.NumberFormat("id-ID").format(subTotal)}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs md:text-sm text-gray-600">Diskon</label>
+                        <NumberInput
+                          value={diskon}
+                          onChange={(value) => setDiskon(value || 0)}
+                          min={0}
+                          decimalPlaces={2}
+                          className="text-right text-sm"
+                          disabled={retasiBlocked}
+                        />
+                      </div>
+                    </div>
+
+                    {ppnEnabled && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
+                        <div>
+                          <label className="text-xs md:text-sm text-gray-600">
+                            PPN {ppnPercentage}%
+                          </label>
+                          <div className="text-sm md:text-lg font-medium text-blue-600">
+                            {new Intl.NumberFormat("id-ID").format(ppnCalculation.ppnAmount)}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs md:text-sm text-gray-600">
+                            Subtotal Setelah Diskon
+                          </label>
+                          <div className="text-sm md:text-lg font-medium">
+                            {new Intl.NumberFormat("id-ID").format(subtotalAfterDiskon)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 md:gap-4">
+                      <div>
+                        <label className="text-xs md:text-sm text-gray-600">Total Tagihan</label>
+                        <div className="text-sm md:text-lg font-bold">{new Intl.NumberFormat("id-ID").format(totalTagihan)}</div>
+                      </div>
+                      <div>
+                        <label className="text-xs md:text-sm text-gray-600">Jumlah Bayar</label>
+                        <NumberInput
+                          value={paidAmount}
+                          onChange={(value) => setPaidAmount(value || 0)}
+                          min={0}
+                          decimalPlaces={2}
+                          className="text-right font-medium text-sm w-full"
+                          disabled={retasiBlocked}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 md:gap-4 text-xs md:text-sm">
+                      <div>
+                        <label className="text-gray-600">Sisa</label>
+                        <div className="font-medium text-red-600">{new Intl.NumberFormat("id-ID").format(sisaTagihan)}</div>
+                      </div>
+                      <div>
+                        <label className="text-gray-600">Kembali</label>
+                        <div className="font-medium text-green-600">{new Intl.NumberFormat("id-ID").format(Math.max(0, paidAmount - totalTagihan))}</div>
+                      </div>
+                    </div>
                   </div>
-                </label>
-                <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
-                  <input
-                    type="radio"
-                    name="taxMode"
-                    value="none"
-                    checked={!ppnEnabled}
-                    onChange={(e) => setPpnEnabled(false)}
-                    className="mr-3 w-4 h-4 text-blue-600"
-                    disabled={retasiBlocked}
-                  />
-                  <div>
-                    <div className="font-medium text-gray-900">Non Pajak</div>
-                    <div className="text-xs text-gray-600">Tidak menggunakan pajak</div>
-                  </div>
-                </label>
-                {ppnEnabled && (
-                  <div className="mt-3 pt-3 border-t border-blue-200">
-                    <div className="text-xs text-blue-700">
-                      <strong>Mode Aktif:</strong> {ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude'} ({ppnPercentage}%)
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={items.length === 0 || addTransaction.isPending || retasiBlocked}
+                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold py-3 md:py-4 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm md:text-base"
+                >
+                  {addTransaction.isPending ? "Menyimpan..." : "Simpan Transaksi"}
+                </Button>
+
+                {/* Due Date Section - Only show if payment is not full */}
+                {sisaTagihan > 0 && (
+                  <div className="pt-3 md:pt-4 border-t border-gray-200">
+                    <label className="text-sm font-medium text-gray-700">Tanggal Jatuh Tempo</label>
+                    <Input
+                      type="date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                      className="mt-1 text-sm"
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Tenggat waktu pembayaran kredit</p>
+
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                        onClick={() => {
+                          const date = new Date();
+                          date.setDate(date.getDate() + 3);
+                          setDueDate(date.toISOString().split('T')[0]);
+                        }}
+                      >
+                        3 Hari
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                        onClick={() => {
+                          const date = new Date();
+                          date.setDate(date.getDate() + 7);
+                          setDueDate(date.toISOString().split('T')[0]);
+                        }}
+                      >
+                        7 Hari
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
+                        onClick={() => {
+                          const date = new Date();
+                          date.setDate(date.getDate() + 14);
+                          setDueDate(date.toISOString().split('T')[0]);
+                        }}
+                      >
+                        14 Hari
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+                        onClick={() => {
+                          const date = new Date();
+                          date.setDate(date.getDate() + 21);
+                          setDueDate(date.toISOString().split('T')[0]);
+                        }}
+                      >
+                        21 Hari
+                      </Button>
                     </div>
                   </div>
                 )}
               </div>
             </div>
-
-            {/* Payment Details - Collapsible */}
-            <div>
-              <button
-                type="button"
-                className="flex items-center justify-between w-full text-sm font-medium text-gray-700 mb-2 md:mb-3"
-                onClick={() => setShowPaymentDetails(!showPaymentDetails)}
-              >
-                <span>Detail Pembayaran</span>
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform md:hidden ${showPaymentDetails ? "rotate-180" : ""}`}
-                />
-              </button>
-              <div className={`space-y-3 md:space-y-4 ${showPaymentDetails ? "block" : "hidden md:block"}`}>
-
-                <div className="grid grid-cols-2 gap-2 md:gap-4">
-                  <div>
-                    <label className="text-xs md:text-sm text-gray-600">Sub Total</label>
-                    <div className="text-sm md:text-lg font-medium">
-                      {new Intl.NumberFormat("id-ID").format(subTotal)}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs md:text-sm text-gray-600">Diskon</label>
-                    <NumberInput
-                      value={diskon}
-                      onChange={(value) => setDiskon(value || 0)}
-                      min={0}
-                      decimalPlaces={2}
-                      className="text-right text-sm"
-                      disabled={retasiBlocked}
-                    />
-                  </div>
-                </div>
-
-                {ppnEnabled && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
-                    <div>
-                      <label className="text-xs md:text-sm text-gray-600">
-                        PPN {ppnPercentage}%
-                      </label>
-                      <div className="text-sm md:text-lg font-medium text-blue-600">
-                        {new Intl.NumberFormat("id-ID").format(ppnCalculation.ppnAmount)}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs md:text-sm text-gray-600">
-                        Subtotal Setelah Diskon
-                      </label>
-                      <div className="text-sm md:text-lg font-medium">
-                        {new Intl.NumberFormat("id-ID").format(subtotalAfterDiskon)}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-2 md:gap-4">
-                  <div>
-                    <label className="text-xs md:text-sm text-gray-600">Total Tagihan</label>
-                    <div className="text-sm md:text-lg font-bold">{new Intl.NumberFormat("id-ID").format(totalTagihan)}</div>
-                  </div>
-                  <div>
-                    <label className="text-xs md:text-sm text-gray-600">Jumlah Bayar</label>
-                    <NumberInput
-                      value={paidAmount}
-                      onChange={(value) => setPaidAmount(value || 0)}
-                      min={0}
-                      decimalPlaces={2}
-                      className="text-right font-medium text-sm w-full"
-                      disabled={retasiBlocked}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 md:gap-4 text-xs md:text-sm">
-                  <div>
-                    <label className="text-gray-600">Sisa</label>
-                    <div className="font-medium text-red-600">{new Intl.NumberFormat("id-ID").format(sisaTagihan)}</div>
-                  </div>
-                  <div>
-                    <label className="text-gray-600">Kembali</label>
-                    <div className="font-medium text-green-600">{new Intl.NumberFormat("id-ID").format(Math.max(0, paidAmount - totalTagihan))}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={items.length === 0 || addTransaction.isPending || retasiBlocked}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold py-3 md:py-4 shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none text-sm md:text-base"
-            >
-              {addTransaction.isPending ? "Menyimpan..." : "Simpan Transaksi"}
-            </Button>
-
-            {/* Due Date Section - Only show if payment is not full */}
-            {sisaTagihan > 0 && (
-              <div className="pt-3 md:pt-4 border-t border-gray-200">
-                <label className="text-sm font-medium text-gray-700">Tanggal Jatuh Tempo</label>
-                <Input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="mt-1 text-sm"
-                  min={new Date().toISOString().split('T')[0]}
-                />
-                <p className="text-xs text-gray-500 mt-1">Tenggat waktu pembayaran kredit</p>
-                
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                    onClick={() => {
-                      const date = new Date();
-                      date.setDate(date.getDate() + 3);
-                      setDueDate(date.toISOString().split('T')[0]);
-                    }}
-                  >
-                    3 Hari
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                    onClick={() => {
-                      const date = new Date();
-                      date.setDate(date.getDate() + 7);
-                      setDueDate(date.toISOString().split('T')[0]);
-                    }}
-                  >
-                    7 Hari
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
-                    onClick={() => {
-                      const date = new Date();
-                      date.setDate(date.getDate() + 14);
-                      setDueDate(date.toISOString().split('T')[0]);
-                    }}
-                  >
-                    14 Hari
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
-                    onClick={() => {
-                      const date = new Date();
-                      date.setDate(date.getDate() + 21);
-                      setDueDate(date.toISOString().split('T')[0]);
-                    }}
-                  >
-                    21 Hari
-                  </Button>
-                </div>
-              </div>
-            )}
           </div>
         </form>
       </div>
