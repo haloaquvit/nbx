@@ -366,11 +366,54 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     persediaan.reduce((sum, item) => sum + item.balance, 0) +
     panjarKaryawan.reduce((sum, item) => sum + item.balance, 0);
 
-  // Build fixed assets - include all accounts with code 1400-1499 (Aset Tetap)
+  // ============================================================================
+  // ASET TETAP - FROM COA + ASSETS TABLE
+  // ============================================================================
+  // Aset tetap diambil dari:
+  // 1. Akun COA dengan kode 14xx, 15xx, 16xx (Aset Tetap)
+  // 2. Tabel assets (jika saldo akun belum ter-update)
+  // ============================================================================
+
+  // Get assets from assets table for additional data (filtered by branch)
+  let assetsQuery = supabase
+    .from('assets')
+    .select('id, asset_name, asset_code, category, purchase_price, current_value, account_id, status')
+    .eq('status', 'active');
+
+  if (branchId) {
+    assetsQuery = assetsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: assetsData } = await assetsQuery;
+
+  // Calculate total assets value from assets table
+  const assetsByAccountId: Record<string, { name: string; totalValue: number; category: string }> = {};
+  assetsData?.forEach(asset => {
+    const accountId = asset.account_id || 'unlinked';
+    const value = asset.current_value || asset.purchase_price || 0;
+
+    if (!assetsByAccountId[accountId]) {
+      assetsByAccountId[accountId] = {
+        name: asset.category === 'building' ? 'Bangunan' :
+              asset.category === 'vehicle' ? 'Kendaraan' :
+              asset.category === 'equipment' ? 'Peralatan' :
+              asset.category === 'computer' ? 'Komputer' :
+              asset.category === 'furniture' ? 'Furniture' : 'Aset Lainnya',
+        totalValue: 0,
+        category: asset.category || 'other'
+      };
+    }
+    assetsByAccountId[accountId].totalValue += value;
+  });
+
+  // Build fixed assets - include all accounts with code 14xx, 15xx, 16xx (Aset Tetap)
   const peralatan = assetAccounts
     .filter(acc => {
-      // Include accounts with code starting with 14 (1400-1499 range for fixed assets)
-      if (acc.code && acc.code.startsWith('14')) return true;
+      // Include accounts with code starting with 14, 15, 16 (fixed assets range)
+      if (acc.code) {
+        const codePrefix = acc.code.substring(0, 2);
+        if (['14', '15', '16'].includes(codePrefix)) return true;
+      }
 
       // Fallback: also include by name for accounts without codes
       return acc.name.toLowerCase().includes('peralatan') ||
@@ -380,16 +423,60 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
              acc.name.toLowerCase().includes('tanah') ||
              acc.name.toLowerCase().includes('komputer') ||
              acc.name.toLowerCase().includes('furniture') ||
-             acc.name.toLowerCase().includes('aset tetap');
+             acc.name.toLowerCase().includes('aset tetap') ||
+             acc.name.toLowerCase().includes('gedung');
     })
-    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
-    .map(acc => ({
-      accountId: acc.id,
-      accountCode: acc.code,
-      accountName: acc.name,
-      balance: acc.balance || 0,
-      formattedBalance: formatCurrency(acc.balance || 0)
-    }));
+    .filter(acc => {
+      // Check if account has balance OR has linked assets
+      const hasBalance = (acc.balance || 0) !== 0;
+      const hasLinkedAssets = assetsByAccountId[acc.id]?.totalValue > 0;
+      return hasBalance || hasLinkedAssets;
+    })
+    .map(acc => {
+      // Use account balance if available, otherwise use linked assets total
+      const accountBalance = acc.balance || 0;
+      const linkedAssetsValue = assetsByAccountId[acc.id]?.totalValue || 0;
+      // Use the larger value (account balance should include assets, but if not, use assets value)
+      const balance = Math.max(accountBalance, linkedAssetsValue);
+
+      return {
+        accountId: acc.id,
+        accountCode: acc.code,
+        accountName: acc.name,
+        balance: balance,
+        formattedBalance: formatCurrency(balance)
+      };
+    });
+
+  // Add unlinked assets (assets without account_id in COA)
+  const unlinkedAssetsValue = assetsByAccountId['unlinked']?.totalValue || 0;
+  if (unlinkedAssetsValue > 0) {
+    peralatan.push({
+      accountId: 'unlinked-assets',
+      accountCode: '1499',
+      accountName: 'Aset Tetap Lainnya',
+      balance: unlinkedAssetsValue,
+      formattedBalance: formatCurrency(unlinkedAssetsValue)
+    });
+  }
+
+  // Check for assets linked to accounts not in the filter (edge case)
+  Object.entries(assetsByAccountId).forEach(([accountId, data]) => {
+    if (accountId === 'unlinked') return;
+
+    // Check if this account is already included
+    const alreadyIncluded = peralatan.some(p => p.accountId === accountId);
+    if (!alreadyIncluded && data.totalValue > 0) {
+      // Add this as a separate entry
+      peralatan.push({
+        accountId: accountId,
+        accountCode: '',
+        accountName: data.name,
+        balance: data.totalValue,
+        formattedBalance: formatCurrency(data.totalValue)
+      });
+    }
+  });
 
   const akumulasiPenyusutan = assetAccounts
     .filter(acc => acc.name.toLowerCase().includes('akumulasi'))
@@ -764,18 +851,17 @@ export async function generateIncomeStatement(
   const grossProfitMargin = calculatePercentage(grossProfit, totalRevenue);
 
   // ============================================================================
-  // CALCULATE OPERATING EXPENSES - FROM COA (Chart of Accounts)
+  // CALCULATE OPERATING EXPENSES - FROM COA ACCOUNT BALANCES
   // ============================================================================
-  // Beban operasional diambil dari:
-  // 1. Tabel expenses dengan expense_account_id yang link ke akun Beban di COA
-  // 2. Cash history untuk gaji dan pembayaran lainnya
-  // 3. Grouped by expense account untuk detail per akun beban
+  // Beban operasional diambil LANGSUNG dari saldo akun COA dengan type = 'Beban'
+  // Karena setiap transaksi pengeluaran sudah mengupdate saldo akun beban
+  // Ini memastikan konsistensi dengan double-entry accounting
   // ============================================================================
 
-  // Get all expense accounts from COA (type = 'Beban')
+  // Get all expense accounts from COA with their current balances (type = 'Beban')
   let expenseAccountsQuery = supabase
     .from('accounts')
-    .select('id, code, name, type')
+    .select('id, code, name, type, balance, is_header')
     .eq('type', 'Beban')
     .order('code');
 
@@ -785,7 +871,27 @@ export async function generateIncomeStatement(
 
   const { data: expenseAccounts } = await expenseAccountsQuery;
 
-  // Get expenses with their expense_account_id
+  // Build bebanOperasional directly from COA account balances
+  // Only include non-header accounts with positive balances
+  const bebanOperasional: IncomeStatementItem[] = (expenseAccounts || [])
+    .filter(acc => {
+      // Exclude header accounts (is_header = true or code ends with '00')
+      if (acc.is_header) return false;
+      if (acc.code && acc.code.endsWith('00')) return false;
+      // Only include accounts with positive balance
+      return (acc.balance || 0) > 0;
+    })
+    .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code || '',
+      accountName: acc.name,
+      amount: acc.balance || 0,
+      formattedAmount: formatCurrency(acc.balance || 0),
+      source: 'manual_journal' as const
+    }));
+
+  // Also get expenses from expenses table for the period (as fallback/comparison)
   let operatingExpensesQuery = supabase
     .from('expenses')
     .select('amount, expense_account_id, expense_account_name, category, branch_id')
@@ -798,75 +904,54 @@ export async function generateIncomeStatement(
 
   const { data: operatingExpensesData } = await operatingExpensesQuery;
 
-  // Get payroll expenses from cash_history
-  let payrollExpenseQuery = supabase
-    .from('cash_history')
-    .select('amount, description, branch_id')
-    .gte('created_at', fromDateStr)
-    .lte('created_at', toDateStr + 'T23:59:59')
-    .in('type', ['gaji_karyawan', 'pembayaran_gaji']);
+  // Calculate total from expenses table for comparison
+  const expensesTableTotal = operatingExpensesData?.reduce((sum, exp) => sum + (exp.amount || 0), 0) || 0;
 
-  if (branchId) {
-    payrollExpenseQuery = payrollExpenseQuery.eq('branch_id', branchId);
-  }
-
-  const { data: payrollExpenseData } = await payrollExpenseQuery;
-  const totalPayrollExpense = payrollExpenseData?.reduce((sum, record) => sum + (record.amount || 0), 0) || 0;
-
-  // Group expenses by account
-  const expensesByAccount: Record<string, { accountId: string; accountCode: string; accountName: string; amount: number }> = {};
-
-  // Process expenses with expense_account_id
-  operatingExpensesData?.forEach(expense => {
-    const accountId = expense.expense_account_id || 'other';
-    const accountName = expense.expense_account_name || expense.category || 'Beban Lain-lain';
-
-    if (!expensesByAccount[accountId]) {
-      // Find account code from COA
-      const account = expenseAccounts?.find(a => a.id === accountId);
-      expensesByAccount[accountId] = {
-        accountId,
-        accountCode: account?.code || '',
-        accountName: account?.name || accountName,
-        amount: 0
-      };
-    }
-    expensesByAccount[accountId].amount += expense.amount || 0;
+  // Log for debugging
+  console.log('📊 Operating Expenses Debug:', {
+    fromCOA: bebanOperasional.reduce((sum, exp) => sum + exp.amount, 0),
+    fromExpensesTable: expensesTableTotal,
+    coaAccounts: bebanOperasional.map(e => ({ code: e.accountCode, name: e.accountName, amount: e.amount }))
   });
 
-  // Add payroll as separate expense category (Beban Gaji Karyawan - 6210)
-  if (totalPayrollExpense > 0) {
-    // First try to find specific account 6210 (Beban Gaji Karyawan)
-    // Then fallback to any account with 'gaji' in name or starts with '62'
-    const payrollAccount = expenseAccounts?.find(a => a.code === '6210') ||
-      expenseAccounts?.find(a => a.name.toLowerCase().includes('gaji karyawan')) ||
-      expenseAccounts?.find(a => a.name.toLowerCase().includes('gaji') || a.code?.startsWith('62'));
+  // If COA has no balances but expenses table has data, use expenses table as fallback
+  if (bebanOperasional.length === 0 && operatingExpensesData && operatingExpensesData.length > 0) {
+    // Group expenses by account
+    const expensesByAccount: Record<string, { accountId: string; accountCode: string; accountName: string; amount: number }> = {};
 
-    const payrollAccountId = payrollAccount?.id || 'payroll-6210';
+    operatingExpensesData.forEach(expense => {
+      const accountId = expense.expense_account_id || 'other';
+      const accountName = expense.expense_account_name || expense.category || 'Beban Lain-lain';
 
-    if (!expensesByAccount[payrollAccountId]) {
-      expensesByAccount[payrollAccountId] = {
-        accountId: payrollAccountId,
-        accountCode: payrollAccount?.code || '6210',
-        accountName: payrollAccount?.name || 'Beban Gaji Karyawan',
-        amount: 0
-      };
-    }
-    expensesByAccount[payrollAccountId].amount += totalPayrollExpense;
+      if (!expensesByAccount[accountId]) {
+        const account = expenseAccounts?.find(a => a.id === accountId);
+        expensesByAccount[accountId] = {
+          accountId,
+          accountCode: account?.code || '',
+          accountName: account?.name || accountName,
+          amount: 0
+        };
+      }
+      expensesByAccount[accountId].amount += expense.amount || 0;
+    });
+
+    // Add to bebanOperasional
+    Object.values(expensesByAccount)
+      .filter(exp => exp.amount > 0)
+      .forEach(exp => {
+        bebanOperasional.push({
+          accountId: exp.accountId,
+          accountCode: exp.accountCode,
+          accountName: exp.accountName,
+          amount: exp.amount,
+          formattedAmount: formatCurrency(exp.amount),
+          source: 'expenses' as const
+        });
+      });
+
+    // Sort again after adding
+    bebanOperasional.sort((a, b) => (a.accountCode || '').localeCompare(b.accountCode || ''));
   }
-
-  // Convert to IncomeStatementItem array, sorted by account code
-  const bebanOperasional: IncomeStatementItem[] = Object.values(expensesByAccount)
-    .filter(exp => exp.amount > 0)
-    .sort((a, b) => (a.accountCode || '').localeCompare(b.accountCode || ''))
-    .map(exp => ({
-      accountId: exp.accountId,
-      accountCode: exp.accountCode,
-      accountName: exp.accountName,
-      amount: exp.amount,
-      formattedAmount: formatCurrency(exp.amount),
-      source: 'expenses' as const
-    }));
 
   const totalCommissions = commissionData.reduce((sum, comm) => sum + (comm.amount || 0), 0);
 
