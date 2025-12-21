@@ -12,7 +12,7 @@ const fromDbToApp = (dbAccount: any): Account => ({
   initialBalance: Number(dbAccount.initial_balance) || 0, // Ensure initialBalance is a number
   isPaymentAccount: dbAccount.is_payment_account,
   createdAt: new Date(dbAccount.created_at),
-  
+
   // Enhanced Chart of Accounts fields
   code: dbAccount.code || undefined,
   parentId: dbAccount.parent_id || undefined,
@@ -21,23 +21,25 @@ const fromDbToApp = (dbAccount: any): Account => ({
   isHeader: dbAccount.is_header || false,
   isActive: dbAccount.is_active !== false, // Default to true if not specified
   sortOrder: dbAccount.sort_order || 0,
+  branchId: dbAccount.branch_id || undefined, // Branch ID for multi-branch COA
 });
 
 // Helper to map from App (camelCase) to DB (snake_case)
 const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => {
-  const { 
-    isPaymentAccount, 
-    initialBalance, 
-    parentId, 
-    normalBalance, 
-    isHeader, 
-    isActive, 
+  const {
+    isPaymentAccount,
+    initialBalance,
+    parentId,
+    normalBalance,
+    isHeader,
+    isActive,
     sortOrder,
-    ...rest 
+    branchId,
+    ...rest
   } = appAccount as any;
-  
+
   const dbData: any = { ...rest };
-  
+
   // Legacy fields
   if (isPaymentAccount !== undefined) {
     dbData.is_payment_account = isPaymentAccount;
@@ -45,7 +47,7 @@ const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => 
   if (initialBalance !== undefined) {
     dbData.initial_balance = initialBalance;
   }
-  
+
   // Enhanced CoA fields
   if (parentId !== undefined) {
     dbData.parent_id = parentId || null;
@@ -62,7 +64,10 @@ const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => 
   if (sortOrder !== undefined) {
     dbData.sort_order = sortOrder;
   }
-  
+  if (branchId !== undefined) {
+    dbData.branch_id = branchId || null;
+  }
+
   return dbData;
 };
 
@@ -73,15 +78,87 @@ export const useAccounts = () => {
   const { data: accounts, isLoading } = useQuery<Account[]>({
     queryKey: ['accounts', currentBranch?.id], // Include branch to recalculate balances
     queryFn: async () => {
-      // Get all accounts structure (same for all branches)
-      const { data: accountsData, error } = await supabase.from('accounts').select('*');
+      // ============================================================================
+      // COA STRUCTURE IS GLOBAL, BALANCE IS PER BRANCH
+      // ============================================================================
+      // - Struktur COA (kode, nama, tipe) sama untuk semua branch
+      // - Saldo dihitung dari cash_history per branch
+      // - Ini memastikan konsistensi struktur tapi saldo terpisah
+      // ============================================================================
+
+      // Get ALL accounts (struktur COA global)
+      const { data: accountsData, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .order('code');
+
       if (error) throw new Error(error.message);
 
       const baseAccounts = accountsData ? accountsData.map(fromDbToApp) : [];
 
-      // Simply return accounts with their balance from database
-      // Balance is already maintained by the system through transactions
-      return baseAccounts;
+      // ============================================================================
+      // CALCULATE BALANCE PER BRANCH FROM CASH_HISTORY
+      // ============================================================================
+      if (!currentBranch?.id) {
+        console.log('📊 No branch selected, returning accounts with initial balance only');
+        // Return accounts with initial_balance as balance (no transactions)
+        return baseAccounts.map(acc => ({
+          ...acc,
+          balance: acc.initialBalance || 0
+        }));
+      }
+
+      // Get all cash_history for current branch to calculate per-branch balance
+      const { data: cashHistory, error: cashError } = await supabase
+        .from('cash_history')
+        .select('account_id, amount, type')
+        .eq('branch_id', currentBranch.id);
+
+      if (cashError) {
+        console.warn('Error fetching cash_history for balance calculation:', cashError.message);
+        return baseAccounts.map(acc => ({
+          ...acc,
+          balance: acc.initialBalance || 0
+        }));
+      }
+
+      // Calculate balance per account from cash_history
+      const accountBalanceMap = new Map<string, number>();
+
+      // Initialize with initial_balance for each account (saldo awal per branch = 0)
+      // Saldo awal global tetap di initial_balance, tapi untuk per-branch mulai dari 0
+      baseAccounts.forEach(acc => {
+        accountBalanceMap.set(acc.id, 0); // Start from 0 for branch-specific balance
+      });
+
+      // Income types: add to balance (Kas masuk)
+      const incomeTypes = ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang', 'transfer_masuk'];
+      // Expense types: subtract from balance (Kas keluar)
+      const expenseTypes = ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji', 'transfer_keluar', 'pembayaran_hutang'];
+
+      // Calculate balance changes from cash_history for this branch
+      (cashHistory || []).forEach(record => {
+        if (!record.account_id) return;
+
+        const currentBalance = accountBalanceMap.get(record.account_id) || 0;
+        const amount = Number(record.amount) || 0;
+
+        if (incomeTypes.includes(record.type)) {
+          accountBalanceMap.set(record.account_id, currentBalance + amount);
+        } else if (expenseTypes.includes(record.type)) {
+          accountBalanceMap.set(record.account_id, currentBalance - amount);
+        }
+      });
+
+      // Apply calculated balances to accounts
+      const accountsWithBranchBalance = baseAccounts.map(acc => ({
+        ...acc,
+        balance: accountBalanceMap.get(acc.id) ?? 0
+      }));
+
+      console.log('📊 Accounts loaded for branch:', currentBranch?.name, 'Count:', accountsWithBranchBalance.length);
+
+      return accountsWithBranchBalance;
     },
     // Enable when branch is selected
     enabled: !!currentBranch,
@@ -101,6 +178,10 @@ export const useAccounts = () => {
       // Set initial_balance equal to balance when creating new account
       if (!dbData.initial_balance && dbData.balance) {
         dbData.initial_balance = dbData.balance;
+      }
+      // Set branch_id if not provided and currentBranch is available
+      if (!dbData.branch_id && currentBranch?.id) {
+        dbData.branch_id = currentBranch.id;
       }
       const { data, error } = await supabase
         .from('accounts')

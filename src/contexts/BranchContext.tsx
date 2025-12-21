@@ -85,14 +85,15 @@ export function BranchProvider({ children }: { children: ReactNode }) {
           updatedAt: new Date(branch.updated_at),
         });
 
-        // Get company details
-        const { data: company } = await supabase
-          .from('companies')
-          .select('*')
-          .eq('id', branch.company_id)
-          .single();
+        // Get company details (only if company_id exists)
+        if (branch.company_id) {
+          const { data: company } = await supabase
+            .from('companies')
+            .select('*')
+            .eq('id', branch.company_id)
+            .single();
 
-        if (company) {
+          if (company) {
           setCurrentCompany({
             id: company.id,
             name: company.name,
@@ -107,6 +108,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
             createdAt: new Date(company.created_at),
             updatedAt: new Date(company.updated_at),
           });
+          }
         }
       }
 

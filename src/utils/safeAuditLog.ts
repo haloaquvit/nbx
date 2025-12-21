@@ -46,7 +46,7 @@ export async function safeAuditLog(data: AuditLogData): Promise<void> {
       auditLogs.push({
         ...data,
         timestamp: new Date().toISOString(),
-        user_id: (await supabase.auth.getUser()).data.user?.id || 'unknown'
+        user_id: 'unknown' // User ID handled by context elsewhere
       });
       
       // Keep only last 50 logs in localStorage

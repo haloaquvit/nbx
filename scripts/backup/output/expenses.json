@@ -1,0 +1,54 @@
+[
+  {
+    "id": "exp-1766237127927",
+    "description": "Pembayaran utang supplier - Purchase Order PO-1766236857918 - null",
+    "amount": 2187500,
+    "account_id": "acc-1755355596383",
+    "account_name": "",
+    "date": "2025-12-20T13:25:27.322+00:00",
+    "category": "Pembayaran Utang",
+    "created_at": "2025-12-20T13:25:30.00475+00:00",
+    "branch_id": "d7c230d4-4435-4ee2-95b8-6207a6be0fe2",
+    "expense_account_id": null,
+    "expense_account_name": null
+  },
+  {
+    "id": "exp-1766245569728",
+    "description": "Pembayaran utang supplier - Purchase Order PO-1766245515492 - null",
+    "amount": 500000,
+    "account_id": "acc-1755355596383",
+    "account_name": "",
+    "date": "2025-12-20T15:46:07.911+00:00",
+    "category": "Pembayaran Utang",
+    "created_at": "2025-12-20T15:46:12.236013+00:00",
+    "branch_id": "00000000-0000-0000-0000-000000000001",
+    "expense_account_id": null,
+    "expense_account_name": null
+  },
+  {
+    "id": "exp-1766246505239",
+    "description": "tes",
+    "amount": 10000,
+    "account_id": "acc-1755355596383",
+    "account_name": "BCA Kasmawati",
+    "date": "2025-12-20T16:00:59.274+00:00",
+    "category": "Operasional",
+    "created_at": "2025-12-20T16:01:47.658128+00:00",
+    "branch_id": "00000000-0000-0000-0000-000000000001",
+    "expense_account_id": null,
+    "expense_account_name": null
+  },
+  {
+    "id": "exp-1766316354785",
+    "description": "Beli Basoka",
+    "amount": 10000000,
+    "account_id": "acc-1755355596383",
+    "account_name": "BCA Kasmawati",
+    "date": "2025-12-21T11:21:11.415+00:00",
+    "category": "Beli Material Water Treatment",
+    "created_at": "2025-12-21T11:25:29.497492+00:00",
+    "branch_id": "d7c230d4-4435-4ee2-95b8-6207a6be0fe2",
+    "expense_account_id": "acc-1766238350849",
+    "expense_account_name": "Beli Material Water Treatment"
+  }
+]

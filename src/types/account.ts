@@ -17,7 +17,7 @@ export interface Account {
   initialBalance: number; // Saldo awal yang diinput owner
   isPaymentAccount: boolean; // Menandai akun yang bisa menerima pembayaran
   createdAt: Date;
-  
+
   // Enhanced Chart of Accounts fields
   code?: string; // Kode akun standar (1000, 1100, 1110, dst)
   parentId?: string; // ID parent account untuk hierarki
@@ -26,6 +26,7 @@ export interface Account {
   isHeader?: boolean; // Apakah ini header account (tidak bisa digunakan untuk transaksi)
   isActive?: boolean; // Status aktif account
   sortOrder?: number; // Urutan tampilan dalam laporan
+  branchId?: string; // Branch ID untuk multi-branch COA
 }
 
 // Enhanced Account interface untuk CoA (future use)

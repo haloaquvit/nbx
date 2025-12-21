@@ -1,0 +1,101 @@
+[
+  {
+    "id": "7f2052be-813a-4d44-bdfa-233b9063a744",
+    "product_id": "d1aead0b-0f76-4d16-81da-1bc1a9570751",
+    "min_stock": 0,
+    "max_stock": 50,
+    "price": 24000,
+    "is_active": true,
+    "created_at": "2025-12-20T11:45:03.297165+00:00",
+    "updated_at": "2025-12-20T11:45:03.297165+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "f963f31e-f38a-47fb-b89d-4b64b73fb4d1",
+    "product_id": "8d688468-7b65-4068-8bfc-c655fe424698",
+    "min_stock": 2000,
+    "max_stock": null,
+    "price": 22000,
+    "is_active": true,
+    "created_at": "2025-12-20T18:11:29.814325+00:00",
+    "updated_at": "2025-12-20T18:11:29.814325+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "83e5b529-9d98-4bf3-909c-a4756c47ee75",
+    "product_id": "d1aead0b-0f76-4d16-81da-1bc1a9570751",
+    "min_stock": 2000,
+    "max_stock": null,
+    "price": 22000,
+    "is_active": false,
+    "created_at": "2025-12-20T18:03:00.016764+00:00",
+    "updated_at": "2025-12-20T18:13:38.826995+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "2a0da5e4-4ebf-4bca-9dee-f42a07138148",
+    "product_id": "875579aa-9e68-4b73-b2aa-23b508860705",
+    "min_stock": 0,
+    "max_stock": 50,
+    "price": 60000,
+    "is_active": true,
+    "created_at": "2025-12-21T10:47:04.972914+00:00",
+    "updated_at": "2025-12-21T10:47:04.972914+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "3ec878f2-0a87-446e-b6dd-6fecebd10e59",
+    "product_id": "875579aa-9e68-4b73-b2aa-23b508860705",
+    "min_stock": 51,
+    "max_stock": 200,
+    "price": 50000,
+    "is_active": true,
+    "created_at": "2025-12-21T10:47:05.077721+00:00",
+    "updated_at": "2025-12-21T10:47:05.077721+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "c8784ef7-fa2e-46c1-98e7-0e69dd5f9ed2",
+    "product_id": "875579aa-9e68-4b73-b2aa-23b508860705",
+    "min_stock": 201,
+    "max_stock": null,
+    "price": 45000,
+    "is_active": true,
+    "created_at": "2025-12-21T10:47:05.211487+00:00",
+    "updated_at": "2025-12-21T10:47:05.211487+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "df809a9a-6735-428d-bf01-eca7034b13f6",
+    "product_id": "f00cf202-cde8-4f8e-b8cc-dd444dac163b",
+    "min_stock": 0,
+    "max_stock": 50,
+    "price": 9600,
+    "is_active": true,
+    "created_at": "2025-12-21T11:15:34.207513+00:00",
+    "updated_at": "2025-12-21T11:15:34.207513+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "62d9723f-22f3-425e-b04c-0c77ea3af1e6",
+    "product_id": "f00cf202-cde8-4f8e-b8cc-dd444dac163b",
+    "min_stock": 51,
+    "max_stock": 200,
+    "price": 8000,
+    "is_active": true,
+    "created_at": "2025-12-21T11:15:34.308986+00:00",
+    "updated_at": "2025-12-21T11:15:34.308986+00:00",
+    "branch_id": null
+  },
+  {
+    "id": "a1c44eec-1625-4815-863c-eba755c061c7",
+    "product_id": "f00cf202-cde8-4f8e-b8cc-dd444dac163b",
+    "min_stock": 201,
+    "max_stock": null,
+    "price": 7200,
+    "is_active": true,
+    "created_at": "2025-12-21T11:15:34.410245+00:00",
+    "updated_at": "2025-12-21T11:15:34.410245+00:00",
+    "branch_id": null
+  }
+]

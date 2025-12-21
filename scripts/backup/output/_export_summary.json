@@ -1,0 +1,247 @@
+{
+  "exportedAt": "2025-12-21T15:54:05.635Z",
+  "supabaseUrl": "https://emfvoassfrsokqwspuml.supabase.co",
+  "elapsedSeconds": 5.57,
+  "results": [
+    {
+      "table": "accounts",
+      "count": 50,
+      "error": null
+    },
+    {
+      "table": "accounts_payable",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "assets",
+      "count": 1,
+      "error": null
+    },
+    {
+      "table": "asset_maintenance",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "attendance",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "branches",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "companies",
+      "count": 1,
+      "error": null
+    },
+    {
+      "table": "company_settings",
+      "count": 7,
+      "error": null
+    },
+    {
+      "table": "customers",
+      "count": 368,
+      "error": null
+    },
+    {
+      "table": "customer_pricings",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "cash_history",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "transactions",
+      "count": 9,
+      "error": null
+    },
+    {
+      "table": "deliveries",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "delivery_items",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "quotations",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "payment_history",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "products",
+      "count": 5,
+      "error": null
+    },
+    {
+      "table": "product_materials",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "materials",
+      "count": 7,
+      "error": null
+    },
+    {
+      "table": "material_stock_movements",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "stock_pricings",
+      "count": 9,
+      "error": null
+    },
+    {
+      "table": "bonus_pricings",
+      "count": 10,
+      "error": null
+    },
+    {
+      "table": "purchase_orders",
+      "count": 5,
+      "error": null
+    },
+    {
+      "table": "purchase_order_items",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "suppliers",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "supplier_materials",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "profiles",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "employee_advances",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "advance_repayments",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "employee_salaries",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "employee_salary_summary",
+      "count": 1,
+      "error": null
+    },
+    {
+      "table": "payroll_records",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "payroll_summary",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "commission_rules",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "commission_entries",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "sales_commission_settings",
+      "count": 0,
+      "error": "Table not found"
+    },
+    {
+      "table": "production_records",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "expenses",
+      "count": 4,
+      "error": null
+    },
+    {
+      "table": "expense_category_mapping",
+      "count": 0,
+      "error": "Table not found"
+    },
+    {
+      "table": "retasi",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "retasi_items",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "roles",
+      "count": 8,
+      "error": null
+    },
+    {
+      "table": "user_roles",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "role_permissions",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "notifications",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "zakat_records",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "nishab_reference",
+      "count": 0,
+      "error": null
+    },
+    {
+      "table": "dashboard_summary",
+      "count": 0,
+      "error": "Table not found"
+    }
+  ]
+}

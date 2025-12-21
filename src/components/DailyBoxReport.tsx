@@ -158,9 +158,9 @@ export function DailyBoxReport() {
                     ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(trans.remaining)}
                   </td>
                   <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">
-                    <span style="padding: 2px 6px; border-radius: 4px; font-size: 10px; 
+                    <span style="padding: 2px 6px; border-radius: 4px; font-size: 10px;
                                  background: ${trans.paymentStatus === 'Lunas' ? '#dcfce7; color: #166534' : '#fef3c7; color: #92400e'};">
-                      ${trans.paymentStatus}
+                      ${trans.paymentStatus === 'Lunas' ? 'Tunai' : 'Kredit'}
                     </span>
                   </td>
                   <td style="padding: 6px; border: 1px solid #ddd;">${trans.cashierName}</td>
@@ -533,7 +533,7 @@ export function DailyBoxReport() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={transaction.paymentStatus === 'Lunas' ? 'default' : 'secondary'}>
-                              {transaction.paymentStatus}
+                              {transaction.paymentStatus === 'Lunas' ? 'Tunai' : 'Kredit'}
                             </Badge>
                           </TableCell>
                           <TableCell>{transaction.cashierName}</TableCell>

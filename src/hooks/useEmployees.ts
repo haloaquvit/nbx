@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Employee } from '@/types/employee'
-import { supabase } from '@/integrations/supabase/client'
+import { supabase, isPostgRESTMode } from '@/integrations/supabase/client'
+import { postgrestAuth } from '@/integrations/supabase/postgrestAuth'
 import { useBranch } from '@/contexts/BranchContext'
 
 export const useEmployees = () => {
@@ -14,8 +15,7 @@ export const useEmployees = () => {
         // Simple approach - just get profiles data, don't crash on error
         let query = supabase
           .from('profiles')
-          .select('id, email, full_name, username, role, phone, address, status, branch_id')
-          .neq('status', 'Nonaktif');
+          .select('id, email, full_name, username, role, phone, address, status, branch_id');
 
         // Apply branch filter - ALWAYS filter by selected branch
         if (currentBranch?.id) {
@@ -48,12 +48,10 @@ export const useEmployees = () => {
       }
     },
     enabled: !!currentBranch, // Only run when branch is loaded
-    // Optimized for employee management pages
-    staleTime: 10 * 60 * 1000, // 10 minutes - employees don't change frequently
-    gcTime: 15 * 60 * 1000, // 15 minutes cache
-    refetchOnWindowFocus: false, // Don't refetch on window focus
-    refetchOnReconnect: false, // Don't refetch on reconnect
-    retry: 1, // Only retry once
+    staleTime: 0, // Always refetch to get latest data
+    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    refetchOnWindowFocus: true,
+    retry: 1,
     retryDelay: 1000,
   });
 
@@ -70,57 +68,98 @@ export const useEmployees = () => {
     }) => {
       console.log('[useEmployees] Creating employee:', employeeData);
 
-      // Step 1: Create auth user using Supabase signUp
-      // This will create both the auth user AND trigger the profile creation via database trigger
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: employeeData.email,
-        password: employeeData.password,
-        options: {
-          data: {
-            full_name: employeeData.full_name,
-            role: employeeData.role,
-          },
-          // Don't send confirmation email - owner is creating the account
-          emailRedirectTo: undefined,
-        }
-      });
+      let userId: string;
 
-      if (authError) {
-        console.error('[useEmployees] Auth signUp error:', authError);
-        if (authError.message.includes('already registered')) {
-          throw new Error('Email sudah terdaftar. Gunakan email lain.');
-        }
-        throw new Error(`Gagal membuat akun: ${authError.message}`);
-      }
-
-      if (!authData.user) {
-        throw new Error('Gagal membuat user. Silakan coba lagi.');
-      }
-
-      console.log('[useEmployees] Auth user created:', authData.user.id);
-
-      // Step 2: Update the profile with additional data
-      // The profile should be created by database trigger, we just need to update it
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
+      if (isPostgRESTMode) {
+        // PostgREST mode - use custom auth API
+        const { data, error: authError } = await postgrestAuth.createUser({
+          email: employeeData.email,
+          password: employeeData.password,
           full_name: employeeData.full_name,
-          username: employeeData.username || employeeData.email.split('@')[0],
           role: employeeData.role,
-          phone: employeeData.phone || '',
-          address: employeeData.address || '',
-          status: employeeData.status || 'Aktif',
-          branch_id: currentBranch?.id || null,
-        })
-        .eq('id', authData.user.id);
+        });
 
-      if (profileError) {
-        console.warn('[useEmployees] Profile update error (may be ok if trigger handles it):', profileError);
-        // Don't throw - the trigger might have already set up the profile
+        if (authError) {
+          console.error('[useEmployees] PostgREST createUser error:', authError);
+          if (authError.message.includes('already exists')) {
+            throw new Error('Email sudah terdaftar. Gunakan email lain.');
+          }
+          throw new Error(`Gagal membuat akun: ${authError.message}`);
+        }
+
+        if (!data?.user) {
+          throw new Error('Gagal membuat user. Silakan coba lagi.');
+        }
+
+        userId = data.user.id;
+        console.log('[useEmployees] PostgREST user created:', userId);
+
+        // Update profile with additional data
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            username: employeeData.username || employeeData.email.split('@')[0],
+            phone: employeeData.phone || '',
+            address: employeeData.address || '',
+            status: employeeData.status || 'Aktif',
+            branch_id: currentBranch?.id || null,
+          })
+          .eq('id', userId);
+
+        if (profileError) {
+          console.warn('[useEmployees] Profile update error:', profileError);
+        }
+
+      } else {
+        // Supabase mode - use Supabase signUp
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: employeeData.email,
+          password: employeeData.password,
+          options: {
+            data: {
+              full_name: employeeData.full_name,
+              role: employeeData.role,
+            },
+            emailRedirectTo: undefined,
+          }
+        });
+
+        if (authError) {
+          console.error('[useEmployees] Auth signUp error:', authError);
+          if (authError.message.includes('already registered')) {
+            throw new Error('Email sudah terdaftar. Gunakan email lain.');
+          }
+          throw new Error(`Gagal membuat akun: ${authError.message}`);
+        }
+
+        if (!authData.user) {
+          throw new Error('Gagal membuat user. Silakan coba lagi.');
+        }
+
+        userId = authData.user.id;
+        console.log('[useEmployees] Auth user created:', userId);
+
+        // Update the profile with additional data
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({
+            full_name: employeeData.full_name,
+            username: employeeData.username || employeeData.email.split('@')[0],
+            role: employeeData.role,
+            phone: employeeData.phone || '',
+            address: employeeData.address || '',
+            status: employeeData.status || 'Aktif',
+            branch_id: currentBranch?.id || null,
+          })
+          .eq('id', userId);
+
+        if (profileError) {
+          console.warn('[useEmployees] Profile update error (may be ok if trigger handles it):', profileError);
+        }
       }
 
       console.log('[useEmployees] Employee created successfully');
-      return { id: authData.user.id, email: employeeData.email };
+      return { id: userId, email: employeeData.email };
     },
     onSuccess: (data) => {
       console.log('[useEmployees] Employee created successfully:', data);
@@ -214,64 +253,63 @@ export const useEmployees = () => {
     mutationFn: async ({ userId, newPassword }: { userId: string, newPassword: string }) => {
       console.log('[useEmployees] Reset password for user:', userId);
 
-      // For security, we can't directly reset another user's password from client-side
-      // The best approach is to use Supabase Admin API via Edge Function
-      // For now, we'll use the password reset email flow
+      if (isPostgRESTMode) {
+        // PostgREST mode - use direct admin password reset
+        const { data, error } = await postgrestAuth.adminResetPassword(userId, newPassword);
 
-      // Get user email first
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('email')
-        .eq('id', userId)
-        .single();
+        if (error) {
+          console.error('[useEmployees] Admin reset password error:', error);
+          throw new Error(`Gagal reset password: ${error.message}`);
+        }
 
-      if (profileError || !profile?.email) {
-        throw new Error('Tidak dapat menemukan email karyawan');
+        console.log('[useEmployees] Password reset successful for user:', userId);
+        return { success: true, message: 'Password berhasil direset' };
+      } else {
+        // Supabase mode - use email reset flow
+        // Get user email first
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('id', userId)
+          .single();
+
+        if (profileError || !profile?.email) {
+          throw new Error('Tidak dapat menemukan email karyawan');
+        }
+
+        // Send password reset email
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(profile.email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+
+        if (resetError) {
+          console.error('[useEmployees] Reset password error:', resetError);
+          throw new Error(`Gagal mengirim email reset password: ${resetError.message}`);
+        }
+
+        console.log('[useEmployees] Password reset email sent to:', profile.email);
+        return { email: profile.email };
       }
-
-      // Send password reset email
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(profile.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-
-      if (resetError) {
-        console.error('[useEmployees] Reset password error:', resetError);
-        throw new Error(`Gagal mengirim email reset password: ${resetError.message}`);
-      }
-
-      console.log('[useEmployees] Password reset email sent to:', profile.email);
-      return { email: profile.email };
     },
   });
 
   const deleteEmployee = useMutation({
     mutationFn: async (userId: string) => {
-      console.log('[useEmployees] Deleting/deactivating employee:', userId);
-      
+      console.log('[useEmployees] Deleting employee:', userId);
+
       try {
-        // Try using the safe deactivation function first
-        const { data, error } = await supabase.rpc('deactivate_employee', {
-          employee_id: userId
-        });
-        
-        if (error) {
-          console.warn('[useEmployees] deactivate_employee function failed, falling back to direct update:', error);
-          
-          // Fallback to direct update
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ 
-              status: 'Tidak Aktif',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', userId);
-          
-          if (updateError) {
-            throw new Error(`Gagal menonaktifkan karyawan: ${updateError.message}`);
-          }
+        // Delete employee from profiles table
+        const { error: deleteError } = await supabase
+          .from('profiles')
+          .delete()
+          .eq('id', userId);
+
+        if (deleteError) {
+          console.error('[useEmployees] Delete failed:', deleteError);
+          throw new Error(`Gagal menghapus karyawan: ${deleteError.message}`);
         }
-        
-        console.log('[useEmployees] Employee deactivated successfully');
+
+        console.log('[useEmployees] Employee deleted successfully');
       } catch (err) {
         console.error('[useEmployees] Delete employee error:', err);
         throw err;

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Retasi, RetasiItem, CreateRetasiData, UpdateRetasiData, ReturnItemsData, CreateRetasiItemData } from '@/types/retasi';
 import { useBranch } from '@/contexts/BranchContext';
+import { useAuth } from './useAuth';
 
 // Database to App mapping for RetasiItem
 const fromDbItem = (dbItem: any): RetasiItem => ({
@@ -133,6 +134,7 @@ export const useRetasi = (filters?: {
 }) => {
   const queryClient = useQueryClient();
   const { currentBranch } = useBranch();
+  const { user } = useAuth();
 
   // Get all retasi
   const { data: retasiList, isLoading } = useQuery<Retasi[]>({
@@ -308,12 +310,12 @@ export const useRetasi = (filters?: {
       console.log('[useRetasi] Current count for today:', todayRetasi?.length || 0);
       console.log('[useRetasi] Next retasi_ke will be:', nextRetasiKe);
       
-      // Prepare insert data
+      // Prepare insert data (use user from context, works with both Supabase and PostgREST)
       const insertData = {
         ...toDb(mainData),
         retasi_number: retasiNumber,
         retasi_ke: nextRetasiKe,
-        created_by: (await supabase.auth.getUser()).data.user?.id,
+        created_by: user?.id || null,
         branch_id: currentBranch?.id || null
       };
       

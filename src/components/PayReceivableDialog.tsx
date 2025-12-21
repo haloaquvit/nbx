@@ -224,7 +224,7 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
                   }}
                   className="text-xs h-6 px-2"
                 >
-                  Lunas
+                  Bayar Penuh
                 </Button>
               </div>
               <Input 

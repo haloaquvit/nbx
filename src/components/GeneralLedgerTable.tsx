@@ -167,6 +167,7 @@ export function GeneralLedgerTable() {
       // Find default accounts for double-entry
       const pendapatanAccount = findAccountByType('Pendapatan', '4');
       const bebanAccount = findAccountByType('Beban', '6');
+      const hutangAccount = findAccountByType('Kewajiban', '2'); // Hutang Usaha
 
       // Process cash history entries with double-entry accounting
       cashHistory?.forEach(entry => {
@@ -225,9 +226,32 @@ export function GeneralLedgerTable() {
           accountLedgers[pendapatanAccount.id].totalCredit += amount;
         }
 
-        // Untuk pengeluaran: Debit Beban, Kredit Kas
+        // Untuk pembayaran hutang: Debit Kewajiban (mengurangi hutang), Kredit Kas
+        // Pembayaran hutang BUKAN beban, melainkan mengurangi kewajiban
+        if (entry.type === 'pembayaran_hutang' || entry.type === 'pembayaran_po') {
+          // Get liability account from entry or use default
+          const liabilityAccountId = (entry as any).liability_account_id;
+          const targetLiabilityAccount = liabilityAccountId && accountLedgers[liabilityAccountId]
+            ? accountLedgers[liabilityAccountId]
+            : (hutangAccount && accountLedgers[hutangAccount.id] ? accountLedgers[hutangAccount.id] : null);
+
+          if (targetLiabilityAccount) {
+            targetLiabilityAccount.entries.push({
+              id: `${entry.id}-kewajiban`,
+              date: entryDate,
+              description: `Pembayaran Hutang: ${description}`,
+              debit: amount, // Debit Kewajiban = mengurangi hutang
+              credit: 0,
+              balance: 0,
+              reference,
+              source: entry.type || 'pembayaran_hutang'
+            });
+            targetLiabilityAccount.totalDebit += amount;
+          }
+        }
+        // Untuk pengeluaran lainnya: Debit Beban, Kredit Kas
         // Use expense_account_id from entry if available, otherwise use default
-        if (isExpense && entry.type !== 'transfer_keluar') {
+        else if (isExpense && entry.type !== 'transfer_keluar' && entry.type !== 'pembayaran_hutang' && entry.type !== 'pembayaran_po') {
           const expenseAccountId = (entry as any).expense_account_id;
           const targetAccount = expenseAccountId && accountLedgers[expenseAccountId]
             ? accountLedgers[expenseAccountId]

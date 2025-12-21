@@ -181,12 +181,12 @@ export function ReceivablesTable() {
           statusIcon = <AlertTriangle className="h-3 w-3" />
         } else if (paid >= total) {
           status = 'paid'
-          statusLabel = 'Lunas'
+          statusLabel = 'Tunai'
           statusColor = 'bg-green-100 text-green-800'
           statusIcon = <CheckCircle className="h-3 w-3" />
         } else {
           status = 'partial'
-          statusLabel = 'Bayar Partial'
+          statusLabel = 'Kredit'
           statusColor = 'bg-yellow-100 text-yellow-800'
           statusIcon = <Clock className="h-3 w-3" />
         }

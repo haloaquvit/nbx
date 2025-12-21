@@ -92,7 +92,15 @@
       "Bash(plink -ssh:*)",
       "Bash(\"C:\\Program Files\\PuTTY\\puttygen.exe\" \"d:\\App\\Aquvit Fix - Copy\\Aquvit.pem\" -o \"d:\\App\\Aquvit Fix - Copy\\Aquvit.ppk\")",
       "Bash(ssh-keyscan:*)",
-      "Bash(sshpass -p \"Sukses098\" ssh -o StrictHostKeyChecking=no deployer@153.92.223.77 \"cd /var/www/aquvit && git log -1 --oneline\")"
+      "Bash(sshpass -p \"Sukses098\" ssh -o StrictHostKeyChecking=no deployer@153.92.223.77 \"cd /var/www/aquvit && git log -1 --oneline\")",
+      "Bash(ren \"d:\\App\\Aquvit Fix - Copy\\scripts\\backup\\export-supabase.js\" export-supabase.cjs)",
+      "Bash(sshpass -p \"Sukses098\" scp -o StrictHostKeyChecking=no \"d:\\App\\Aquvit Fix - Copy\\scripts\\auth-server\\server.js\" deployer@153.92.223.77:/var/www/aquvit/auth-server/)",
+      "Bash(jq:*)",
+      "Bash(sshpass:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MzlhZjMyYy00Mzg4LTRkNjItOTk5Ny04MmQwMTZlYjZlNTIiLCJ1c2VyX2lkIjoiNTM5YWYzMmMtNDM4OC00ZDYyLTk5OTctODJkMDE2ZWI2ZTUyIiwiZW1haWwiOiJpbnB1dHBpcEBnbWFpbC5jb20iLCJyb2xlIjoib3duZXIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiaWF0IjoxNzY2MzM5ODkwLCJleHAiOjE3NjYzNDM0OTB9.9lgYub3eY0UQ-K926s_eIKRvvbnMihrzhflkK9oyZwA\")",
+      "Bash(__NEW_LINE__ curl -s -X POST \"https://app.aquvit.id/rest/v1/accounts?select=*\" )",
+      "Bash(__NEW_LINE__ curl -s -X POST \"https://app.aquvit.id/rest/v1/attendance?select=*\" )",
+      "Bash(PGPASSWORD=\"Aquvit2024!\" psql:*)"
     ],
     "deny": [],
     "ask": [],

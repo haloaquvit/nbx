@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, Package } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isPostgRESTMode } from '@/integrations/supabase/client';
+import { postgrestAuth } from '@/integrations/supabase/postgrestAuth';
 import { useCompanySettings } from '@/hooks/useCompanySettings';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/useAuth';
@@ -43,7 +44,7 @@ export default function LoginPage() {
   const onSubmit = async (formData: LoginFormValues) => {
     setLoginError(null);
     setIsLoading(true);
-    
+
     try {
       let email = formData.identifier;
 
@@ -65,10 +66,22 @@ export default function LoginPage() {
         email = profile.email!;
       }
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: formData.password,
-      });
+      // Use appropriate auth method based on mode
+      let error: Error | null = null;
+
+      if (isPostgRESTMode) {
+        const result = await postgrestAuth.signInWithPassword({
+          email: email,
+          password: formData.password,
+        });
+        error = result.error;
+      } else {
+        const result = await supabase.auth.signInWithPassword({
+          email: email,
+          password: formData.password,
+        });
+        error = result.error;
+      }
 
       if (error) {
         if (error.message === 'Invalid login credentials') {

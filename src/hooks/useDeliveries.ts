@@ -10,6 +10,7 @@ import {
 } from '@/types/delivery'
 import { PhotoUploadService } from '@/services/photoUploadService'
 import { useBranch } from '@/contexts/BranchContext'
+import { useAuth } from './useAuth'
 
 // Fetch employees with driver and helper roles from profiles table
 export function useDeliveryEmployees() {
@@ -333,6 +334,7 @@ export function useTransactionDeliveryInfo(transactionId: string) {
 export function useDeliveries() {
   const queryClient = useQueryClient();
   const { currentBranch } = useBranch();
+  const { user } = useAuth();
 
   const createDelivery = useMutation({
     mutationFn: async (request: CreateDeliveryRequest): Promise<Delivery> => {
@@ -734,22 +736,13 @@ export function useDeliveries() {
   // Delete delivery and restore stock
   const deleteDelivery = useMutation({
     mutationFn: async (deliveryId: string): Promise<void> => {
-      // Check user permission
-      const { data: userData } = await supabase.auth.getUser()
-      
-      if (!userData?.user) {
+      // Check user permission using context user (works with both Supabase and PostgREST)
+      if (!user) {
         throw new Error('User tidak terautentikasi')
       }
 
-      // Get user profile to check role
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('role, full_name')
-        .eq('id', userData.user.id)
-        .single()
+      const userRole = user.role || 'user'
 
-      const userRole = profileData?.role || 'user'
-      
       if (userRole !== 'admin' && userRole !== 'owner') {
         throw new Error('Hanya admin dan owner yang dapat menghapus pengantaran')
       }
@@ -774,15 +767,8 @@ export function useDeliveries() {
 
       // Restore stock for each delivered item - IMPROVED VERSION
       try {
-        const { data: userData } = await supabase.auth.getUser()
-        
-        if (userData?.user && deliveryData.items?.length > 0) {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', userData.user.id)
-            .single()
-
+        // Use context user (already validated above)
+        if (user && deliveryData.items?.length > 0) {
           console.log('🔄 Starting stock restoration for deleted delivery:', {
             deliveryId,
             deliveryNumber: deliveryData.delivery_number,

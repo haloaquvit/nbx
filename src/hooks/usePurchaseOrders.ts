@@ -274,11 +274,21 @@ export const usePurchaseOrders = () => {
       }
 
       if (payableData) {
-        // Pay the accounts payable (this will create the expense record)
+        // Get liability account (Hutang Usaha - code 2100 or 2110)
+        const { data: liabilityAccount } = await supabase
+          .from('accounts')
+          .select('id')
+          .eq('type', 'Kewajiban')
+          .or('code.eq.2100,code.eq.2110,name.ilike.%hutang usaha%')
+          .limit(1)
+          .single();
+
+        // Pay the accounts payable (this will update liability account)
         await payAccountsPayable.mutateAsync({
           payableId: payableData.id,
           amount: totalCost,
           paymentAccountId,
+          liabilityAccountId: liabilityAccount?.id || '',
           notes: `Payment for PO #${poId}`,
         });
       } else {
@@ -352,9 +362,9 @@ export const usePurchaseOrders = () => {
 
   const receivePurchaseOrder = useMutation({
     mutationFn: async (po: PurchaseOrder) => {
-      // Get current user ID
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!currentUser) throw new Error('User not authenticated');
+      // Get current user from context (works with both Supabase and PostgREST auth)
+      if (!user) throw new Error('User not authenticated');
+      const currentUser = { id: user.id };
 
       // Fetch PO items from database
       const { data: poItemsData, error: itemsError } = await supabase

@@ -7,7 +7,8 @@ import {
   useCallback,
   ReactNode,
 } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isPostgRESTMode } from '@/integrations/supabase/client';
+import { postgrestAuth } from '@/integrations/supabase/postgrestAuth';
 import { Employee } from '@/types/employee';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
@@ -29,13 +30,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const profileCacheRef = useRef<Map<string, Employee>>(new Map());
 
   // Simplified and fast user profile creation from auth data
-  const createUserFromAuth = (supabaseUser: SupabaseUser): Employee => {
+  const createUserFromAuth = (authUser: any): Employee => {
     return {
-      id: supabaseUser.id,
-      name: supabaseUser.user_metadata?.full_name || supabaseUser.email?.split('@')[0] || 'Unknown User',
-      username: supabaseUser.email?.split('@')[0] || 'unknown',
-      email: supabaseUser.email || '',
-      role: 'owner', // Default to owner for full access to avoid permission issues
+      id: authUser.id,
+      name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'Unknown User',
+      username: authUser.email?.split('@')[0] || 'unknown',
+      email: authUser.email || '',
+      role: authUser.role || authUser.app_metadata?.role || 'owner',
       phone: '',
       address: '',
       status: 'Aktif',
@@ -104,7 +105,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Clear cache
       profileCacheRef.current.clear();
 
-      await supabase.auth.signOut();
+      if (isPostgRESTMode) {
+        await postgrestAuth.signOut();
+      } else {
+        await supabase.auth.signOut();
+      }
       setSession(null);
       setUser(null);
     } catch (error) {
@@ -121,26 +126,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       try {
         setIsLoading(true);
 
-        // Simple session check
-        const { data, error } = await supabase.auth.getSession();
+        if (isPostgRESTMode) {
+          // PostgREST mode - use custom auth
+          const { data } = await postgrestAuth.getSession();
 
-        if (!isMounted) return;
+          if (!isMounted) return;
 
-        if (error) {
-          setSession(null);
-          setUser(null);
+          const currentSession = data?.session ?? null;
+          setSession(currentSession as any);
+
+          if (currentSession?.user) {
+            const userProfile = createUserFromAuth(currentSession.user);
+            setUser(userProfile);
+          } else {
+            setUser(null);
+          }
           setIsLoading(false);
-          return;
-        }
-
-        const currentSession = data?.session ?? null;
-        setSession(currentSession);
-
-        if (currentSession?.user) {
-          await fetchUserProfile(currentSession.user);
         } else {
-          setUser(null);
-          setIsLoading(false);
+          // Supabase mode - use Supabase auth
+          const { data, error } = await supabase.auth.getSession();
+
+          if (!isMounted) return;
+
+          if (error) {
+            setSession(null);
+            setUser(null);
+            setIsLoading(false);
+            return;
+          }
+
+          const currentSession = data?.session ?? null;
+          setSession(currentSession);
+
+          if (currentSession?.user) {
+            await fetchUserProfile(currentSession.user);
+          } else {
+            setUser(null);
+            setIsLoading(false);
+          }
         }
 
       } catch (err) {
@@ -153,22 +176,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     // Setup auth state change listener
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!isMounted) return;
+    if (isPostgRESTMode) {
+      // PostgREST mode
+      const { data: { subscription } } = postgrestAuth.onAuthStateChange(async (event, newSession) => {
+        if (!isMounted) return;
 
-      setSession(newSession);
+        setSession(newSession as any);
 
-      if (newSession?.user) {
-        await fetchUserProfile(newSession.user);
-      } else {
-        setUser(null);
+        if (newSession?.user) {
+          const userProfile = createUserFromAuth(newSession.user);
+          setUser(userProfile);
+        } else {
+          setUser(null);
+        }
         setIsLoading(false);
-      }
-    });
+      });
+      authSubscription = subscription;
+    } else {
+      // Supabase mode
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+        if (!isMounted) return;
 
-    authSubscription = subscription;
+        setSession(newSession);
+
+        if (newSession?.user) {
+          await fetchUserProfile(newSession.user);
+        } else {
+          setUser(null);
+          setIsLoading(false);
+        }
+      });
+      authSubscription = subscription;
+    }
 
     // Initialize auth
     initializeAuth();

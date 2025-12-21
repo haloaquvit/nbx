@@ -24,7 +24,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Trash2, AlertTriangle, Database, ShoppingCart, Package, DollarSign, Users, Truck, Settings, Building2, HandCoins, Heart } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase, isPostgRESTMode } from '@/integrations/supabase/client';
+import { postgrestAuth } from '@/integrations/supabase/postgrestAuth';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -319,10 +320,23 @@ export const ResetDatabaseDialog = () => {
     try {
       // Verify password by attempting to sign in
       console.log('Verifying password for:', user?.email);
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: user?.email || '',
-        password: password
-      });
+
+      let authError: Error | null = null;
+      if (isPostgRESTMode) {
+        // PostgREST mode - use custom auth API
+        const result = await postgrestAuth.signInWithPassword({
+          email: user?.email || '',
+          password: password
+        });
+        authError = result.error;
+      } else {
+        // Supabase mode
+        const result = await supabase.auth.signInWithPassword({
+          email: user?.email || '',
+          password: password
+        });
+        authError = result.error;
+      }
 
       if (authError) {
         console.error('Auth error:', authError);

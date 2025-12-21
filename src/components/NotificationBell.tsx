@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,18 +14,12 @@ import { useNotifications, useUnreadNotificationsCount, useMarkNotificationAsRea
 import { formatDistanceToNow } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 
 export function NotificationBell() {
   const navigate = useNavigate();
-  const [userId, setUserId] = useState<string>();
-
-  useEffect(() => {
-    // Get current user
-    supabase.auth.getUser().then(({ data }) => {
-      setUserId(data?.user?.id);
-    });
-  }, []);
+  const { user } = useAuth();
+  const userId = user?.id;
 
   const { data: notifications = [], refetch } = useNotifications(userId);
   const { data: unreadCount = 0 } = useUnreadNotificationsCount(userId);

@@ -73,8 +73,8 @@ const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transactio
           <div className="flex justify-between">
             <span>Metode:</span>
             <span className="font-semibold">
-              {transaction.paymentStatus === 'Lunas' ? 'Tunai/Lunas' :
-               transaction.paymentStatus === 'Kredit' ? 'Kredit' : 'Belum Lunas'}
+              {transaction.paymentStatus === 'Lunas' ? 'Tunai' :
+               transaction.paymentStatus === 'Kredit' ? 'Kredit' : 'Kredit'}
             </span>
           </div>
           {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
@@ -599,7 +599,8 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
               <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR PENJUALAN</div>
               <div style="font-size: 10.5pt; margin-top: 2mm; line-height: 1.5;">
                 <strong>No:</strong> ${transaction.id}<br/>
-                <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}
+                <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}<br/>
+                <strong>Status:</strong> ${transaction.paymentStatus === 'Lunas' ? 'Tunai' : 'Kredit'}
               </div>
             </td>
           </tr>
@@ -668,6 +669,14 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
                 <tr style="border-top: 0.5px solid #000; border-bottom: 0.5px solid #000;">
                   <td style="padding: 2mm; text-align: left; font-size: 12.5pt; font-weight: bold;">TOTAL:</td>
                   <td style="padding: 2mm; text-align: right; font-size: 12.5pt; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">Dibayar:</td>
+                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left; font-weight: bold;">Sisa:</td>
+                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</td>
                 </tr>
               </table>
             </td>

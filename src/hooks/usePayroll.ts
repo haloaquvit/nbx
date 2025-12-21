@@ -12,6 +12,7 @@ import {
 } from '@/types/payroll'
 import { useToast } from '@/hooks/use-toast'
 import { useBranch } from '@/contexts/BranchContext'
+import { useAuth } from './useAuth'
 
 // Helper functions for data transformation
 const fromDbToEmployeeSalary = (dbData: any): EmployeeSalary => ({
@@ -194,6 +195,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { currentBranch } = useBranch();
+  const { user: authUser } = useAuth();
 
   const { data: payrollRecords, isLoading, error } = useQuery<PayrollRecord[]>({
     queryKey: ['payrollRecords', filters, currentBranch?.id],
@@ -414,9 +416,8 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
       if (fetchError) throw fetchError;
 
-      // Get current user info
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error('User not authenticated');
+      // Get current user from context (works with both Supabase and PostgREST)
+      if (!authUser) throw new Error('User not authenticated');
 
       // Get account name
       const { data: accountData } = await supabase
@@ -434,8 +435,8 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
         description: `Pembayaran gaji ${payrollRecord.employee_name} - ${payrollRecord.period_display}`,
         reference_id: id,
         reference_name: `Payroll ${payrollRecord.employee_name}`,
-        user_id: user.id,
-        user_name: user.user_metadata?.full_name || user.email || 'Admin',
+        user_id: authUser.id,
+        user_name: authUser.name || authUser.email || 'Admin',
         branch_id: currentBranch?.id || null,
       };
 

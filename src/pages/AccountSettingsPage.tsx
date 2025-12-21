@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuthContext } from "@/contexts/AuthContext"
-import { supabase } from "@/integrations/supabase/client"
+import { supabase, isPostgRESTMode, tenantConfig } from "@/integrations/supabase/client"
+import { postgrestAuth } from "@/integrations/supabase/postgrestAuth"
 import { useEffect, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { PasswordInput } from "@/components/PasswordInput"
@@ -81,11 +82,17 @@ export default function AccountSettingsPage() {
 
     // Update auth user (email) if it has changed
     if (data.email !== user.email) {
-      const { error: authError } = await supabase.auth.updateUser({ email: data.email })
-      if (authError) {
-        toast({ variant: "destructive", title: "Gagal Update Email", description: authError.message })
+      if (isPostgRESTMode) {
+        // PostgREST mode - email change requires profile update only (done above)
+        // Email is already updated in profiles table
+        toast({ title: "Email Diperbarui", description: "Email berhasil diperbarui di profil." })
       } else {
-        toast({ title: "Konfirmasi Email", description: "Link konfirmasi telah dikirim ke email baru Anda." })
+        const { error: authError } = await supabase.auth.updateUser({ email: data.email })
+        if (authError) {
+          toast({ variant: "destructive", title: "Gagal Update Email", description: authError.message })
+        } else {
+          toast({ title: "Konfirmasi Email", description: "Link konfirmasi telah dikirim ke email baru Anda." })
+        }
       }
     }
     
@@ -96,7 +103,39 @@ export default function AccountSettingsPage() {
 
   const onPasswordSubmit = async (data: PasswordFormData) => {
     setIsPasswordUpdating(true)
-    const { error } = await supabase.auth.updateUser({ password: data.newPassword })
+
+    let error: Error | null = null;
+
+    if (isPostgRESTMode) {
+      // PostgREST mode - use custom auth API PUT /auth/v1/user
+      try {
+        const token = postgrestAuth.getAccessToken();
+        if (!token) {
+          error = new Error('Tidak ada sesi aktif. Silakan login kembali.');
+        } else {
+          const response = await fetch(`${tenantConfig.authUrl}/v1/user`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ password: data.newPassword }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            error = new Error(errorData.error_description || 'Gagal memperbarui password');
+          }
+        }
+      } catch (e) {
+        error = e as Error;
+      }
+    } else {
+      // Supabase mode
+      const result = await supabase.auth.updateUser({ password: data.newPassword });
+      error = result.error;
+    }
+
     if (error) {
       toast({ variant: "destructive", title: "Gagal", description: `Gagal memperbarui password: ${error.message}` })
     } else {

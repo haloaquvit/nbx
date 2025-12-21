@@ -311,15 +311,15 @@ export function TransactionTable() {
         
         switch (category) {
           case 'lunas':
-            statusText = "Lunas";
+            statusText = "Tunai";
             variant = "success";
             break;
           case 'belum-lunas':
-            statusText = "Belum Lunas";
+            statusText = "Kredit";
             variant = "destructive";
             break;
           case 'piutang':
-            statusText = "Piutang";
+            statusText = "Kredit";
             variant = "secondary";
             break;
           case 'jatuh-tempo':
@@ -440,8 +440,8 @@ export function TransactionTable() {
       'Total': t.total,
       'Dibayar': t.paidAmount || 0,
       'Sisa': t.total - (t.paidAmount || 0),
-      'Status Pembayaran': (t.paidAmount || 0) === 0 ? 'Belum Lunas' : 
-                          (t.paidAmount || 0) >= t.total ? 'Lunas' : 'Sebagian',
+      'Status Pembayaran': (t.paidAmount || 0) === 0 ? 'Kredit' :
+                          (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
       'Status PPN': t.ppnEnabled ? (t.ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude') : 'Non PPN'
     }));
     
@@ -509,8 +509,8 @@ export function TransactionTable() {
           new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(t.total),
           new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(t.paidAmount || 0),
           new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(t.total - (t.paidAmount || 0)),
-          (t.paidAmount || 0) === 0 ? 'Belum Lunas' : 
-          (t.paidAmount || 0) >= t.total ? 'Lunas' : 'Sebagian',
+          (t.paidAmount || 0) === 0 ? 'Kredit' :
+          (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
           t.ppnEnabled ? (t.ppnMode === 'include' ? 'PPN Inc' : 'PPN Exc') : 'Non PPN'
         ]),
         // Summary row
@@ -663,9 +663,9 @@ export function TransactionTable() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="lunas">Lunas</SelectItem>
-                <SelectItem value="belum-lunas">Belum Lunas</SelectItem>
-                <SelectItem value="piutang">Piutang (Dibayar Sebagian)</SelectItem>
+                <SelectItem value="lunas">Tunai</SelectItem>
+                <SelectItem value="belum-lunas">Kredit</SelectItem>
+                <SelectItem value="piutang">Kredit (Dibayar Sebagian)</SelectItem>
                 <SelectItem value="jatuh-tempo">Jatuh Tempo</SelectItem>
               </SelectContent>
             </Select>

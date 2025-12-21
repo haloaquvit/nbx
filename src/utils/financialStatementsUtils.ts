@@ -645,12 +645,14 @@ export async function generateIncomeStatement(
   if (transactionsError) throw new Error(`Failed to fetch transactions: ${transactionsError.message}`);
 
   // Get expenses from cash_history (filtered by branch)
+  // NOTE: pembayaran_po dan pembayaran_hutang TIDAK termasuk karena itu bukan beban,
+  // melainkan pembayaran kewajiban (mengurangi hutang di Neraca, bukan menambah beban di Laba Rugi)
   let cashHistoryQuery = supabase
     .from('cash_history')
     .select('*')
     .gte('created_at', fromDateStr)
     .lte('created_at', toDateStr + 'T23:59:59')
-    .in('type', ['pengeluaran', 'kas_keluar_manual', 'pembayaran_po']);
+    .in('type', ['pengeluaran', 'kas_keluar_manual']);
 
   if (branchId) {
     cashHistoryQuery = cashHistoryQuery.eq('branch_id', branchId);

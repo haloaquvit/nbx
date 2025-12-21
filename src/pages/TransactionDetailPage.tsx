@@ -115,9 +115,9 @@ export default function TransactionDetailPage() {
   }
 
   const getPaymentStatusText = (paidAmount: number, total: number) => {
-    if (paidAmount === 0) return 'Belum Lunas';
-    if (paidAmount >= total) return 'Lunas';
-    return 'Sebagian';
+    if (paidAmount === 0) return 'Kredit';
+    if (paidAmount >= total) return 'Tunai';
+    return 'Kredit';
   }
 
   // Generate PDF Invoice - langsung tanpa dialog
