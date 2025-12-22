@@ -1,6 +1,7 @@
 // PostgREST client - Full SQL mode (no Supabase)
 // Menggunakan PostgreSQL VPS dengan PostgREST + Custom Auth
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Capacitor } from '@capacitor/core';
 
 // Tenant configuration
 interface TenantConfig {
@@ -11,6 +12,13 @@ interface TenantConfig {
 }
 
 const STORAGE_KEY = 'postgrest_auth_session';
+const SERVER_STORAGE_KEY = 'aquvit_selected_server';
+
+// Server configurations
+const SERVERS: Record<string, string> = {
+  'nabire': 'https://app.aquvit.id',
+  'manokwari': 'https://erp.aquvit.id',
+};
 
 // Helper to get JWT token from localStorage
 function getPostgRESTToken(): string | null {
@@ -36,9 +44,87 @@ function getPostgRESTToken(): string | null {
 // Valid anon JWT for PostgREST (expires in 100 years)
 const ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3NjYzMzM3MjgsImV4cCI6NDkyMjA5MzcyOH0.3N0XiX6YWpWpli3TuKsVx1eV0IoqXsb9_z8CER_1bR8';
 
+// Check if running in Capacitor/mobile app
+function isCapacitorApp(): boolean {
+  // Multiple detection methods for reliability
+  try {
+    // Method 1: Capacitor native detection
+    if (Capacitor.isNativePlatform()) {
+      return true;
+    }
+    // Method 2: Check platform
+    const platform = Capacitor.getPlatform();
+    if (platform === 'android' || platform === 'ios') {
+      return true;
+    }
+  } catch (e) {
+    // Capacitor not available
+  }
+
+  // Method 3: Check URL scheme (capacitor:// or file://)
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    if (protocol === 'capacitor:' || protocol === 'file:') {
+      return true;
+    }
+    // Method 4: Check if running from localhost with capacitor user agent
+    if (window.location.hostname === 'localhost' &&
+        navigator.userAgent.toLowerCase().includes('android')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Get selected server from localStorage (for Capacitor app)
+function getSelectedServerUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  const serverId = localStorage.getItem(SERVER_STORAGE_KEY);
+  if (serverId && SERVERS[serverId]) {
+    return SERVERS[serverId];
+  }
+  return null;
+}
+
+// Check if server is selected (for Capacitor app)
+// IMPORTANT: Returns false if in Capacitor and no server selected yet
+export function isServerSelected(): boolean {
+  if (!isCapacitorApp()) return true; // Web always has server from origin
+  return getSelectedServerUrl() !== null;
+}
+
+// Get current server URL - returns null if in Capacitor and no server selected
+export function getCurrentServerUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  if (isCapacitorApp()) {
+    // In Capacitor app, return null if no server selected (to show selector)
+    return getSelectedServerUrl(); // Can be null!
+  } else {
+    // In web browser, use current origin
+    return window.location.origin;
+  }
+}
+
 function getTenantConfig(): TenantConfig {
-  // Always use PostgREST mode - pointing to VPS
-  const baseUrl = 'https://app.aquvit.id';
+  // Auto-detect base URL from current domain or selected server
+  let baseUrl: string;
+
+  if (typeof window !== 'undefined') {
+    if (isCapacitorApp()) {
+      // Capacitor/mobile app - use selected server
+      // If no server selected, use a placeholder (App.tsx will show selector first)
+      const selectedUrl = getSelectedServerUrl();
+      baseUrl = selectedUrl || 'https://app.aquvit.id'; // Placeholder, won't be used if selector shown
+    } else {
+      // Web browser - use current origin (app.aquvit.id or erp.aquvit.id)
+      baseUrl = window.location.origin;
+    }
+  } else {
+    // SSR fallback
+    baseUrl = 'https://app.aquvit.id';
+  }
 
   return {
     supabaseUrl: baseUrl,

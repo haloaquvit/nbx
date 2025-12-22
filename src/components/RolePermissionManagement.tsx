@@ -2,16 +2,16 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Shield, Save, RotateCcw, Users, Settings, Eye, Plus, Edit, Trash2, Building2 } from 'lucide-react'
+import { Shield, Save, RotateCcw, Settings, Eye, Plus, Edit, Trash2, Building2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useRoles } from '@/hooks/useRoles'
 import { useBranches } from '@/hooks/useBranches'
 import { isOwner } from '@/utils/roleUtils'
+import { getRolePermissions, updateRolePermissions } from '@/services/rolePermissionService'
 
 // Define default color for roles
 const ROLE_COLORS: Record<string, string> = {
@@ -21,6 +21,7 @@ const ROLE_COLORS: Record<string, string> = {
   cashier: 'bg-orange-100 text-orange-800',
   designer: 'bg-pink-100 text-pink-800',
   operator: 'bg-gray-100 text-gray-800',
+  supir: 'bg-yellow-100 text-yellow-800',
 }
 
 // Define all features and their permissions
@@ -42,13 +43,29 @@ const FEATURES = [
     category: 'Transaksi & POS',
     items: [
       { id: 'pos_access', name: 'Akses POS', icon: Eye },
+      { id: 'pos_driver_access', name: 'Akses POS Supir', icon: Eye },
       { id: 'transactions_view', name: 'Lihat Transaksi', icon: Eye },
       { id: 'transactions_create', name: 'Buat Transaksi', icon: Plus },
       { id: 'transactions_edit', name: 'Edit Transaksi', icon: Edit },
       { id: 'transactions_delete', name: 'Hapus Transaksi', icon: Trash2 },
+    ]
+  },
+  {
+    category: 'Produksi',
+    items: [
       { id: 'production_view', name: 'Lihat Produksi', icon: Eye },
       { id: 'production_create', name: 'Proses Produksi', icon: Plus },
+      { id: 'production_edit', name: 'Edit Produksi', icon: Edit },
       { id: 'production_delete', name: 'Hapus Produksi', icon: Trash2 },
+    ]
+  },
+  {
+    category: 'Quotation',
+    items: [
+      { id: 'quotations_view', name: 'Lihat Quotation', icon: Eye },
+      { id: 'quotations_create', name: 'Buat Quotation', icon: Plus },
+      { id: 'quotations_edit', name: 'Edit Quotation', icon: Edit },
+      { id: 'quotations_delete', name: 'Hapus Quotation', icon: Trash2 },
     ]
   },
   {
@@ -145,6 +162,15 @@ const FEATURES = [
     ]
   },
   {
+    category: 'Absensi',
+    items: [
+      { id: 'attendance_view', name: 'Lihat Absensi', icon: Eye },
+      { id: 'attendance_create', name: 'Buat Absensi', icon: Plus },
+      { id: 'attendance_edit', name: 'Edit Absensi', icon: Edit },
+      { id: 'attendance_delete', name: 'Hapus Absensi', icon: Trash2 },
+    ]
+  },
+  {
     category: 'Laporan',
     items: [
       { id: 'stock_reports', name: 'Laporan Stock', icon: Eye },
@@ -152,195 +178,39 @@ const FEATURES = [
       { id: 'transaction_items_report', name: 'Laporan Produk Laku', icon: Eye },
       { id: 'material_movement_report', name: 'Laporan Pergerakan Bahan', icon: Eye },
       { id: 'attendance_reports', name: 'Laporan Absensi', icon: Eye },
+      { id: 'production_reports', name: 'Laporan Produksi', icon: Eye },
     ]
   },
   {
     category: 'Sistem',
     items: [
       { id: 'settings_access', name: 'Akses Pengaturan', icon: Settings },
-      { id: 'role_management', name: 'Kelola Role', icon: Users },
+      { id: 'role_management', name: 'Kelola Role', icon: Eye },
       { id: 'branches_view', name: 'Lihat Cabang', icon: Eye },
       { id: 'branches_create', name: 'Tambah Cabang', icon: Plus },
       { id: 'branches_edit', name: 'Edit Cabang', icon: Edit },
       { id: 'branches_delete', name: 'Hapus Cabang', icon: Trash2 },
       { id: 'attendance_access', name: 'Akses Absensi', icon: Eye },
+      { id: 'notifications_view', name: 'Lihat Notifikasi', icon: Eye },
+      { id: 'profiles_view', name: 'Lihat Profil', icon: Eye },
+      { id: 'profiles_edit', name: 'Edit Profil', icon: Edit },
     ]
   }
 ]
 
-// Default permissions for each role
-const DEFAULT_PERMISSIONS = {
-  owner: {
-    // Owner has all permissions
-    ...Object.fromEntries(
-      FEATURES.flatMap(category => category.items.map(item => [item.id, true]))
-    )
-  },
-  admin: {
-    // Admin has most permissions except some sensitive ones
-    ...Object.fromEntries(
-      FEATURES.flatMap(category => category.items.map(item => [item.id, true]))
-    ),
-    role_management: false, // Only owner can manage roles
-  },
-  supervisor: {
-    // Supervisor can view and manage most things but not delete critical data
-    products_view: true, products_create: true, products_edit: true, products_delete: false,
-    materials_view: true, materials_create: true, materials_edit: true, materials_delete: false,
-    pos_access: true,
-    transactions_view: true, transactions_create: true, transactions_edit: true, transactions_delete: false,
-    production_view: true, production_create: true, production_delete: false,
-    customers_view: true, customers_create: true, customers_edit: true, customers_delete: false,
-    employees_view: true, employees_create: false, employees_edit: false, employees_delete: false,
+// Helper function to get all permission IDs
+const getAllPermissionIds = (): string[] => {
+  return FEATURES.flatMap(category => category.items.map(item => item.id))
+}
 
-    // Supplier & Purchase
-    suppliers_view: true, suppliers_create: true, suppliers_edit: true, suppliers_delete: false,
-    purchase_orders_view: true, purchase_orders_create: true, purchase_orders_edit: true, purchase_orders_delete: false,
+// Helper function to create all permissions set to true (for owner)
+const createAllTruePermissions = (): Record<string, boolean> => {
+  return Object.fromEntries(getAllPermissionIds().map(id => [id, true]))
+}
 
-    // Delivery & Retasi
-    delivery_view: true, delivery_create: true, delivery_edit: true, delivery_delete: false,
-    retasi_view: true, retasi_create: true, retasi_edit: true, retasi_delete: false,
-
-    // Finance
-    accounts_view: true, accounts_create: false, accounts_edit: false, accounts_delete: false,
-    receivables_view: true, receivables_edit: true,
-    payables_view: true, payables_create: true, payables_edit: true, payables_delete: false,
-    expenses_view: true, expenses_create: true, expenses_edit: true, expenses_delete: false,
-    advances_view: true, advances_create: true, advances_edit: true,
-    cash_flow_view: true,
-    financial_reports: true,
-
-    // Payroll & Commission
-    payroll_view: true, payroll_process: false,
-    commission_view: true, commission_manage: false, commission_report: true,
-
-    // Assets & Maintenance
-    assets_view: true, assets_create: true, assets_edit: true, assets_delete: false,
-    maintenance_view: true, maintenance_create: true, maintenance_edit: true,
-
-    // Zakat
-    zakat_view: true, zakat_create: true, zakat_edit: true,
-
-    // Reports
-    stock_reports: true, transaction_reports: true, transaction_items_report: true,
-    material_movement_report: true, attendance_reports: true,
-
-    // System
-    settings_access: false, role_management: false,
-    branches_view: true, branches_create: false, branches_edit: false, branches_delete: false,
-    attendance_access: true,
-  },
-  cashier: {
-    // Cashier focused on POS and transactions
-    products_view: true, products_create: true, products_edit: true, products_delete: false,
-    materials_view: true, materials_create: false, materials_edit: false, materials_delete: false,
-    pos_access: true,
-    transactions_view: true, transactions_create: true, transactions_edit: true, transactions_delete: false,
-    production_view: false, production_create: false, production_delete: false,
-    customers_view: true, customers_create: true, customers_edit: true, customers_delete: false,
-    employees_view: false, employees_create: false, employees_edit: false, employees_delete: false,
-
-    // Supplier & Purchase - limited
-    suppliers_view: true, suppliers_create: false, suppliers_edit: false, suppliers_delete: false,
-    purchase_orders_view: false, purchase_orders_create: false, purchase_orders_edit: false, purchase_orders_delete: false,
-
-    // Delivery & Retasi - view only
-    delivery_view: true, delivery_create: false, delivery_edit: false, delivery_delete: false,
-    retasi_view: true, retasi_create: false, retasi_edit: false, retasi_delete: false,
-
-    // Finance - limited
-    accounts_view: false, accounts_create: false, accounts_edit: false, accounts_delete: false,
-    receivables_view: true, receivables_edit: false,
-    payables_view: false, payables_create: false, payables_edit: false, payables_delete: false,
-    expenses_view: false, expenses_create: false, expenses_edit: false, expenses_delete: false,
-    advances_view: false, advances_create: false, advances_edit: false,
-    cash_flow_view: false,
-    financial_reports: false,
-
-    // Payroll & Commission - no access
-    payroll_view: false, payroll_process: false,
-    commission_view: false, commission_manage: false, commission_report: false,
-
-    // Assets & Maintenance - no access
-    assets_view: false, assets_create: false, assets_edit: false, assets_delete: false,
-    maintenance_view: false, maintenance_create: false, maintenance_edit: false,
-
-    // Zakat - no access
-    zakat_view: false, zakat_create: false, zakat_edit: false,
-
-    // Reports - limited
-    stock_reports: false, transaction_reports: false, transaction_items_report: false,
-    material_movement_report: false, attendance_reports: false,
-
-    // System
-    settings_access: false, role_management: false,
-    branches_view: false, branches_create: false, branches_edit: false, branches_delete: false,
-    attendance_access: true,
-  },
-  designer: {
-    // Designer focused on products and design-related tasks
-    products_view: true, products_create: true, products_edit: true, products_delete: false,
-    materials_view: true, materials_create: false, materials_edit: false, materials_delete: false,
-    pos_access: false,
-    transactions_view: true, transactions_create: false, transactions_edit: false, transactions_delete: false,
-    production_view: true, production_create: false, production_delete: false,
-    customers_view: true, customers_create: false, customers_edit: false, customers_delete: false,
-    employees_view: false, employees_create: false, employees_edit: false, employees_delete: false,
-
-    // All new permissions - no access for designer
-    suppliers_view: false, suppliers_create: false, suppliers_edit: false, suppliers_delete: false,
-    purchase_orders_view: false, purchase_orders_create: false, purchase_orders_edit: false, purchase_orders_delete: false,
-    delivery_view: false, delivery_create: false, delivery_edit: false, delivery_delete: false,
-    retasi_view: false, retasi_create: false, retasi_edit: false, retasi_delete: false,
-    accounts_view: false, accounts_create: false, accounts_edit: false, accounts_delete: false,
-    receivables_view: false, receivables_edit: false,
-    payables_view: false, payables_create: false, payables_edit: false, payables_delete: false,
-    expenses_view: false, expenses_create: false, expenses_edit: false, expenses_delete: false,
-    advances_view: false, advances_create: false, advances_edit: false,
-    cash_flow_view: false, financial_reports: false,
-    payroll_view: false, payroll_process: false,
-    commission_view: false, commission_manage: false, commission_report: false,
-    assets_view: false, assets_create: false, assets_edit: false, assets_delete: false,
-    maintenance_view: false, maintenance_create: false, maintenance_edit: false,
-    zakat_view: false, zakat_create: false, zakat_edit: false,
-    stock_reports: true, transaction_reports: false, transaction_items_report: false,
-    material_movement_report: false, attendance_reports: false,
-    settings_access: false, role_management: false,
-    branches_view: false, branches_create: false, branches_edit: false, branches_delete: false,
-    attendance_access: true,
-  },
-  operator: {
-    // Operator has minimal permissions - only attendance
-    products_view: false, products_create: false, products_edit: false, products_delete: false,
-    materials_view: false, materials_create: false, materials_edit: false, materials_delete: false,
-    pos_access: false,
-    transactions_view: false, transactions_create: false, transactions_edit: false, transactions_delete: false,
-    production_view: false, production_create: false, production_delete: false,
-    customers_view: false, customers_create: false, customers_edit: false, customers_delete: false,
-    employees_view: false, employees_create: false, employees_edit: false, employees_delete: false,
-
-    // All other permissions - no access for operator
-    suppliers_view: false, suppliers_create: false, suppliers_edit: false, suppliers_delete: false,
-    purchase_orders_view: false, purchase_orders_create: false, purchase_orders_edit: false, purchase_orders_delete: false,
-    delivery_view: false, delivery_create: false, delivery_edit: false, delivery_delete: false,
-    retasi_view: false, retasi_create: false, retasi_edit: false, retasi_delete: false,
-    accounts_view: false, accounts_create: false, accounts_edit: false, accounts_delete: false,
-    receivables_view: false, receivables_edit: false,
-    payables_view: false, payables_create: false, payables_edit: false, payables_delete: false,
-    expenses_view: false, expenses_create: false, expenses_edit: false, expenses_delete: false,
-    advances_view: false, advances_create: false, advances_edit: false,
-    cash_flow_view: false, financial_reports: false,
-    payroll_view: false, payroll_process: false,
-    commission_view: false, commission_manage: false, commission_report: false,
-    assets_view: false, assets_create: false, assets_edit: false, assets_delete: false,
-    maintenance_view: false, maintenance_create: false, maintenance_edit: false,
-    zakat_view: false, zakat_create: false, zakat_edit: false,
-    stock_reports: false, transaction_reports: false, transaction_items_report: false,
-    material_movement_report: false, attendance_reports: false,
-    settings_access: false, role_management: false,
-    branches_view: false, branches_create: false, branches_edit: false, branches_delete: false,
-    attendance_access: true,
-  }
+// Helper function to create all permissions set to false (for new roles)
+const createAllFalsePermissions = (): Record<string, boolean> => {
+  return Object.fromEntries(getAllPermissionIds().map(id => [id, false]))
 }
 
 export const RolePermissionManagement = () => {
@@ -348,10 +218,11 @@ export const RolePermissionManagement = () => {
   const { toast } = useToast()
   const { roles: dbRoles, isLoading: rolesLoading } = useRoles()
   const { branches, isLoading: branchesLoading } = useBranches()
-  const [permissions, setPermissions] = useState(DEFAULT_PERMISSIONS)
+  const [permissions, setPermissions] = useState<Record<string, Record<string, boolean>>>({})
   const [hasChanges, setHasChanges] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [selectedRole, setSelectedRole] = useState<string>('')
+  const [isLoading, setIsLoading] = useState(true)
 
   // Only owner can access this component
   const canManageRoles = isOwner(user)
@@ -395,61 +266,87 @@ export const RolePermissionManagement = () => {
     }
   }, [ROLES, selectedRole])
 
+  // Load permissions from database
   useEffect(() => {
-    // Load permissions from localStorage or API
-    const savedPermissions = localStorage.getItem('rolePermissions')
-    if (savedPermissions) {
+    const loadPermissions = async () => {
+      if (ROLES.length === 0) return
+
+      setIsLoading(true)
       try {
-        const loadedPerms = JSON.parse(savedPermissions)
+        const dbPermissions = await getRolePermissions()
+        const loadedPerms: Record<string, Record<string, boolean>> = {}
 
-        // Auto-add branch access permissions for new branches
-        if (branches && branches.length > 0) {
-          const updatedPerms = { ...loadedPerms }
+        // Initialize all roles with base permissions
+        ROLES.forEach(role => {
+          if (role.id === 'owner') {
+            // Owner ALWAYS gets all permissions = true
+            loadedPerms[role.id] = createAllTruePermissions()
+          } else {
+            // Other roles start with all false
+            loadedPerms[role.id] = createAllFalsePermissions()
+          }
+        })
 
-          ROLES.forEach(role => {
-            if (!updatedPerms[role.id]) {
-              updatedPerms[role.id] = {}
+        // Override with database values (except owner which is always all true)
+        if (dbPermissions && dbPermissions.length > 0) {
+          dbPermissions.forEach((rp: { role_id: string; permissions: Record<string, boolean> }) => {
+            if (rp.role_id !== 'owner' && loadedPerms[rp.role_id]) {
+              // Merge database permissions with base false permissions
+              loadedPerms[rp.role_id] = {
+                ...loadedPerms[rp.role_id],
+                ...rp.permissions
+              }
             }
+          })
+        }
 
-            // Add branch access permissions if not exists
+        // Add branch access permissions
+        if (branches && branches.length > 0) {
+          ROLES.forEach(role => {
             branches.forEach(branch => {
               const branchPermKey = `branch_access_${branch.id}`
-              if (!(branchPermKey in updatedPerms[role.id])) {
-                // Owner and admin get all branch access by default
-                updatedPerms[role.id][branchPermKey] = ['owner', 'admin'].includes(role.id)
+              if (role.id === 'owner') {
+                // Owner gets all branch access
+                loadedPerms[role.id][branchPermKey] = true
+              } else if (!(branchPermKey in loadedPerms[role.id])) {
+                // Other roles: check if admin, otherwise false
+                loadedPerms[role.id][branchPermKey] = role.id === 'admin'
               }
             })
           })
-
-          setPermissions(updatedPerms)
-        } else {
-          setPermissions(loadedPerms)
         }
+
+        setPermissions(loadedPerms)
       } catch (error) {
-        console.error('Error loading permissions:', error)
-      }
-    } else if (branches && branches.length > 0) {
-      // If no saved permissions, create default with branch access
-      const defaultPermsWithBranches = { ...DEFAULT_PERMISSIONS }
-
-      ROLES.forEach(role => {
-        if (!defaultPermsWithBranches[role.id]) {
-          defaultPermsWithBranches[role.id] = {}
-        }
-
-        branches.forEach(branch => {
-          const branchPermKey = `branch_access_${branch.id}`
-          // Owner and admin get all branch access by default
-          defaultPermsWithBranches[role.id][branchPermKey] = ['owner', 'admin'].includes(role.id)
+        console.error('Error loading permissions from database:', error)
+        // Fallback: create default permissions
+        const fallbackPerms: Record<string, Record<string, boolean>> = {}
+        ROLES.forEach(role => {
+          fallbackPerms[role.id] = role.id === 'owner'
+            ? createAllTruePermissions()
+            : createAllFalsePermissions()
         })
-      })
-
-      setPermissions(defaultPermsWithBranches)
+        setPermissions(fallbackPerms)
+      } finally {
+        setIsLoading(false)
+      }
     }
+
+    loadPermissions()
   }, [branches, ROLES])
 
   const togglePermission = (roleId: string, permissionId: string) => {
     if (!canManageRoles) return
+
+    // Owner permissions cannot be changed - always all true
+    if (roleId === 'owner') {
+      toast({
+        variant: "destructive",
+        title: "Tidak Diizinkan",
+        description: "Permission Owner tidak dapat diubah. Owner selalu memiliki semua akses.",
+      })
+      return
+    }
 
     setPermissions(prev => ({
       ...prev,
@@ -462,11 +359,29 @@ export const RolePermissionManagement = () => {
   }
 
   const resetToDefaults = () => {
-    setPermissions(DEFAULT_PERMISSIONS)
+    // Reset: Owner = all true, others = all false
+    const resetPerms: Record<string, Record<string, boolean>> = {}
+    ROLES.forEach(role => {
+      if (role.id === 'owner') {
+        resetPerms[role.id] = createAllTruePermissions()
+      } else {
+        resetPerms[role.id] = createAllFalsePermissions()
+      }
+
+      // Add branch permissions
+      if (branches && branches.length > 0) {
+        branches.forEach(branch => {
+          const branchPermKey = `branch_access_${branch.id}`
+          resetPerms[role.id][branchPermKey] = role.id === 'owner' || role.id === 'admin'
+        })
+      }
+    })
+
+    setPermissions(resetPerms)
     setHasChanges(true)
     toast({
       title: "Reset ke Default",
-      description: "Semua permission telah di-reset ke pengaturan default.",
+      description: "Owner = semua aktif, role lain = semua nonaktif.",
     })
   }
 
@@ -475,25 +390,32 @@ export const RolePermissionManagement = () => {
 
     setIsSaving(true)
     try {
-      // Save to localStorage
+      // Save all role permissions to VPS database (except owner - no need to save)
+      const savePromises = Object.entries(permissions)
+        .filter(([roleId]) => roleId !== 'owner') // Don't save owner - always all true
+        .map(([roleId, rolePerms]) =>
+          updateRolePermissions(roleId, rolePerms as Record<string, boolean>)
+        )
+
+      await Promise.all(savePromises)
+
+      // Also save to localStorage as cache for faster load
       localStorage.setItem('rolePermissions', JSON.stringify(permissions))
 
       // Trigger storage event manually for same window
       window.dispatchEvent(new Event('storage'))
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
       setHasChanges(false)
       toast({
         title: "Sukses!",
-        description: "Permission berhasil disimpan. Refresh halaman untuk melihat perubahan menu.",
+        description: "Permission berhasil disimpan ke database. Refresh halaman untuk melihat perubahan menu.",
       })
     } catch (error) {
+      console.error('Error saving permissions:', error)
       toast({
         variant: "destructive",
         title: "Gagal!",
-        description: "Terjadi kesalahan saat menyimpan permission.",
+        description: "Terjadi kesalahan saat menyimpan permission ke database.",
       })
     } finally {
       setIsSaving(false)
@@ -514,6 +436,17 @@ export const RolePermissionManagement = () => {
     )
   }
 
+  if (isLoading || rolesLoading) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+          <p className="text-muted-foreground">Memuat permission dari database...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Info Card */}
@@ -526,11 +459,10 @@ export const RolePermissionManagement = () => {
                 Cara Kerja Permission System:
               </p>
               <ul className="list-disc list-inside space-y-1 text-blue-800">
+                <li><strong>Owner</strong> selalu punya akses penuh ke semua menu (tidak bisa diubah)</li>
                 <li>Permission yang dicentang akan menentukan <strong>menu yang tampil di sidebar</strong></li>
                 <li>Jika permission dimatikan (tidak dicentang), menu terkait akan <strong>hilang dari sidebar</strong></li>
                 <li>Perubahan akan berlaku setelah <strong>klik "Simpan Perubahan"</strong> dan <strong>refresh halaman</strong></li>
-                <li><strong>Owner</strong> selalu punya akses penuh ke semua menu</li>
-                <li><strong>Admin</strong> punya akses hampir semua kecuali Management Roles</li>
               </ul>
             </div>
           </div>
@@ -562,7 +494,10 @@ export const RolePermissionManagement = () => {
                       <Badge variant="secondary" className={role.color}>
                         {role.name}
                       </Badge>
-                      {role.isSystem && (
+                      {role.id === 'owner' && (
+                        <span className="text-xs text-green-600 font-medium">(Semua Aktif)</span>
+                      )}
+                      {role.isSystem && role.id !== 'owner' && (
                         <span className="text-xs text-muted-foreground">(System Role)</span>
                       )}
                     </div>
@@ -595,10 +530,18 @@ export const RolePermissionManagement = () => {
           {hasChanges && (
             <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-sm text-yellow-800 font-semibold">
-                ⚠️ Ada perubahan yang belum disimpan. Klik "Simpan Perubahan" untuk menerapkan.
+                Ada perubahan yang belum disimpan. Klik "Simpan Perubahan" untuk menerapkan.
               </p>
               <p className="text-xs text-yellow-700 mt-1">
                 Setelah simpan, refresh halaman (F5) untuk melihat perubahan menu di sidebar.
+              </p>
+            </div>
+          )}
+
+          {selectedRole === 'owner' && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-800 font-semibold">
+                Owner memiliki SEMUA permission secara otomatis dan tidak dapat diubah.
               </p>
             </div>
           )}
@@ -620,7 +563,9 @@ export const RolePermissionManagement = () => {
               {category.items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
+                  className={`flex items-center justify-between p-3 border rounded-lg ${
+                    selectedRole === 'owner' ? 'bg-green-50 border-green-200' : 'hover:bg-gray-50'
+                  }`}
                 >
                   <div className="flex items-center gap-2 flex-1">
                     <item.icon className="h-4 w-4 text-muted-foreground" />
@@ -629,7 +574,7 @@ export const RolePermissionManagement = () => {
                   <Switch
                     checked={permissions[selectedRole]?.[item.id] || false}
                     onCheckedChange={() => togglePermission(selectedRole, item.id)}
-                    disabled={!canManageRoles}
+                    disabled={!canManageRoles || selectedRole === 'owner'}
                   />
                 </div>
               ))}
@@ -639,7 +584,7 @@ export const RolePermissionManagement = () => {
       ))}
 
       {/* Permission Summary for Selected Role */}
-      {selectedRole && (
+      {selectedRole && permissions[selectedRole] && (
         <Card>
           <CardHeader>
             <CardTitle>Ringkasan Permission - {ROLES.find(r => r.id === selectedRole)?.name}</CardTitle>

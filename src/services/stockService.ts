@@ -83,8 +83,14 @@ export class StockService {
 
       movements.push(movement);
 
-      // Update product stock only during delivery, not during transaction creation
-      if (referenceType === 'delivery') {
+      // Update product stock based on product type and reference type:
+      // 1. During delivery: update stock for all products (production items delivered)
+      // 2. During transaction: only update stock for "Jual Langsung" products (immediate sale)
+      const isJualLangsung = product.type === 'Jual Langsung' || product.type === 'Beli';
+      const shouldUpdateStock = referenceType === 'delivery' || (referenceType === 'transaction' && isJualLangsung);
+
+      if (shouldUpdateStock) {
+        console.log(`📦 Updating stock for ${product.name} (${product.type}): ${currentStock} → ${newStock}`);
         await StockService.updateProductStock(product.id, newStock);
       }
     }
@@ -114,12 +120,12 @@ export class StockService {
    */
   static async createStockMovements(movements: CreateStockMovementData[], referenceType: string = 'transaction'): Promise<void> {
     console.log('Creating stock movements:', movements);
-    
-    // Only disable stock movements for transaction creation per user request
-    // Stock movements should execute during delivery, not during transaction creation
-    const DISABLE_FOR_TRANSACTIONS = referenceType === 'transaction';
-    if (DISABLE_FOR_TRANSACTIONS) {
-      console.warn('Stock movements disabled for transaction creation - will execute during delivery instead');
+
+    // For transaction creation, we still skip recording movements to material_stock_movements table
+    // But for 'Jual Langsung' products, actual stock is deducted in processTransactionStock
+    // Stock movements table logging is skipped for transactions but actual stock is updated
+    if (referenceType === 'transaction') {
+      console.log('Stock movement logging skipped for transaction creation - actual stock updates happen separately');
       return;
     }
     

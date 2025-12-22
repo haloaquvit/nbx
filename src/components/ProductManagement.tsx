@@ -271,9 +271,9 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
             </div>
           </div>
 
-          {/* Cost Price untuk Jual Langsung */}
+          {/* Cost Price dan Stok untuk Jual Langsung */}
           {formData.type === 'Jual Langsung' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
               <div className="space-y-2">
                 <Label htmlFor="costPrice" className="flex items-center gap-2">
                   Harga Pokok / Modal (Rp)
@@ -281,9 +281,16 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                 </Label>
                 <NumberInput id="costPrice" value={formData.costPrice || 0} onChange={(value) => setFormData({...formData, costPrice: value || 0})} min={0} decimalPlaces={2} required />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="currentStock" className="flex items-center gap-2">
+                  {editingProduct ? 'Stok Saat Ini' : 'Stok Awal'}
+                  <span className="text-xs text-amber-600 font-normal">(Unit)</span>
+                </Label>
+                <NumberInput id="currentStock" value={formData.currentStock || 0} onChange={(value) => setFormData({...formData, currentStock: value || 0})} min={0} decimalPlaces={0} />
+              </div>
               <div className="lg:col-span-2 flex items-end">
                 <p className="text-sm text-amber-700">
-                  Harga pokok/modal digunakan untuk menghitung HPP (Harga Pokok Penjualan) produk jual langsung.
+                  Harga pokok untuk HPP. Stok akan berkurang saat penjualan dan bertambah saat PO diterima.
                 </p>
               </div>
             </div>

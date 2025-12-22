@@ -261,6 +261,19 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   // Ignore error if table doesn't exist
   const payrollData = payrollError ? [] : (payrollRecords || []);
 
+  // Get products (Jual Langsung) for inventory calculation
+  let productsQuery = supabase
+    .from('products')
+    .select('id, name, type, current_stock, cost_price, branch_id')
+    .eq('type', 'Jual Langsung');
+
+  if (branchId) {
+    productsQuery = productsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: products, error: productsError } = await productsQuery;
+  const productsData = productsError ? [] : (products || []);
+
   // ============================================================================
   // PIUTANG USAHA - FROM COA (Account 1200/1210)
   // ============================================================================
@@ -292,9 +305,17 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   );
   const totalInventoryFromCOA = persediaanAccount?.balance || 0;
 
-  // Fallback: Calculate from materials if COA account not found or zero
-  const calculatedInventory = materials?.reduce((sum, material) =>
+  // Calculate inventory from materials (raw materials)
+  const materialsInventory = materials?.reduce((sum, material) =>
     sum + ((material.stock || 0) * (material.price_per_unit || 0)), 0) || 0;
+
+  // Calculate inventory from products (Jual Langsung products)
+  // Value = current_stock × cost_price
+  const productsInventory = productsData?.reduce((sum, product) =>
+    sum + ((product.current_stock || 0) * (product.cost_price || 0)), 0) || 0;
+
+  // Total calculated inventory = materials + products (Jual Langsung)
+  const calculatedInventory = materialsInventory + productsInventory;
 
   // Use COA value if available and non-zero, otherwise use calculated
   const totalInventory = totalInventoryFromCOA > 0 ? totalInventoryFromCOA : calculatedInventory;
@@ -573,7 +594,95 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       formattedBalance: formatCurrency(acc.balance || 0)
     }));
 
-  // Calculate retained earnings (would need period income statement)
+  // ============================================================================
+  // MODAL ASET AWAL (Initial Asset Contributions as Capital)
+  // ============================================================================
+  // Saldo awal (initial_balance) dari semua akun Aset harus dicatat sebagai
+  // Modal, bukan sebagai Laba Rugi Ditahan. Ini karena:
+  // - Persediaan awal adalah kontribusi modal pemilik saat memulai usaha
+  // - Kas awal adalah setoran modal awal
+  // - Aset tetap awal adalah kontribusi modal dalam bentuk barang
+  //
+  // CATATAN: Jika persediaan dihitung dari tabel materials (fallback),
+  // nilai tersebut juga dianggap sebagai modal awal karena merupakan
+  // kontribusi awal pemilik dalam bentuk barang/bahan.
+  // ============================================================================
+
+  // Get initial_balance from all asset accounts (grouped by category)
+  const assetInitialBalances = {
+    persediaan: 0,
+    kasBank: 0,
+    asetTetap: 0,
+    lainnya: 0
+  };
+
+  accounts?.filter(acc => acc.type === 'Aset').forEach(acc => {
+    const initialBal = acc.initial_balance || 0;
+    if (initialBal <= 0) return;
+
+    // Categorize by account code or name
+    if (acc.code?.startsWith('13') || acc.name.toLowerCase().includes('persediaan')) {
+      assetInitialBalances.persediaan += initialBal;
+    } else if (acc.code?.startsWith('11') || acc.name.toLowerCase().includes('kas') || acc.name.toLowerCase().includes('bank')) {
+      assetInitialBalances.kasBank += initialBal;
+    } else if (acc.code?.startsWith('14') || acc.code?.startsWith('15') || acc.code?.startsWith('16') ||
+               acc.name.toLowerCase().includes('peralatan') || acc.name.toLowerCase().includes('kendaraan') ||
+               acc.name.toLowerCase().includes('aset tetap')) {
+      assetInitialBalances.asetTetap += initialBal;
+    } else {
+      assetInitialBalances.lainnya += initialBal;
+    }
+  });
+
+  // PENTING: Jika persediaan dari COA = 0 tapi calculatedInventory > 0,
+  // artinya persediaan dihitung dari materials table (fallback).
+  // Nilai ini adalah persediaan awal yang merupakan kontribusi modal pemilik.
+  if (totalInventoryFromCOA === 0 && calculatedInventory > 0) {
+    assetInitialBalances.persediaan += calculatedInventory;
+  }
+
+  // Add Modal entries for each category with initial balance
+  if (assetInitialBalances.persediaan > 0) {
+    modalPemilik.push({
+      accountId: 'modal-persediaan-awal',
+      accountCode: '3210',
+      accountName: 'Modal Persediaan Awal',
+      balance: assetInitialBalances.persediaan,
+      formattedBalance: formatCurrency(assetInitialBalances.persediaan)
+    });
+  }
+
+  if (assetInitialBalances.kasBank > 0) {
+    modalPemilik.push({
+      accountId: 'modal-kas-awal',
+      accountCode: '3100',
+      accountName: 'Modal Disetor (Kas)',
+      balance: assetInitialBalances.kasBank,
+      formattedBalance: formatCurrency(assetInitialBalances.kasBank)
+    });
+  }
+
+  if (assetInitialBalances.asetTetap > 0) {
+    modalPemilik.push({
+      accountId: 'modal-aset-tetap-awal',
+      accountCode: '3220',
+      accountName: 'Modal Aset Tetap Awal',
+      balance: assetInitialBalances.asetTetap,
+      formattedBalance: formatCurrency(assetInitialBalances.asetTetap)
+    });
+  }
+
+  if (assetInitialBalances.lainnya > 0) {
+    modalPemilik.push({
+      accountId: 'modal-aset-lainnya',
+      accountCode: '3290',
+      accountName: 'Modal Aset Lainnya',
+      balance: assetInitialBalances.lainnya,
+      formattedBalance: formatCurrency(assetInitialBalances.lainnya)
+    });
+  }
+
+  // Calculate retained earnings (excludes modal persediaan awal because it's now explicit)
   const labaRugiDitahan = totalAssets - totalLiabilities - modalPemilik.reduce((sum, item) => sum + item.balance, 0);
 
   const totalEquity = 

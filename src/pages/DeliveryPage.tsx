@@ -34,6 +34,7 @@ import { TransactionDeliveryInfo } from "@/types/delivery"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/hooks/useAuth"
+import { useGranularPermission } from "@/hooks/useGranularPermission"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
@@ -44,6 +45,7 @@ import { PhotoUploadService } from "@/services/photoUploadService"
 export default function DeliveryPage() {
   const { toast } = useToast()
   const { user } = useAuth()
+  const { canCreateDelivery } = useGranularPermission()
   const { data: transactions, isLoading, refetch } = useTransactionsReadyForDelivery()
   const { data: deliveryHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useDeliveryHistory()
   const [searchQuery, setSearchQuery] = useState("")
@@ -310,24 +312,26 @@ export default function DeliveryPage() {
             <RefreshCw className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
-          <Button 
-            onClick={() => {
-              // Navigate to first available transaction for delivery
-              if (filteredTransactions.length > 0) {
-                setSelectedTransaction(filteredTransactions[0])
-              } else {
-                toast({
-                  variant: "destructive",
-                  title: "Tidak Ada Transaksi",
-                  description: "Tidak ada transaksi yang siap untuk diantar."
-                })
-              }
-            }}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            <Truck className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Buat Pengantaran</span>
-          </Button>
+          {canCreateDelivery() && (
+            <Button
+              onClick={() => {
+                // Navigate to first available transaction for delivery
+                if (filteredTransactions.length > 0) {
+                  setSelectedTransaction(filteredTransactions[0])
+                } else {
+                  toast({
+                    variant: "destructive",
+                    title: "Tidak Ada Transaksi",
+                    description: "Tidak ada transaksi yang siap untuk diantar."
+                  })
+                }
+              }}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              <Truck className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Buat Pengantaran</span>
+            </Button>
+          )}
         </div>
       </div>
 

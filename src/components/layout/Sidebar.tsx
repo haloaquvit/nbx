@@ -68,7 +68,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/transactions", label: "Data Transaksi", icon: List, permission: PERMISSIONS.TRANSACTIONS },
       { href: "/delivery", label: "Pengantaran", icon: Truck, permission: PERMISSIONS.DELIVERIES },
       { href: "/retasi", label: "Retasi", icon: Package, permission: PERMISSIONS.DELIVERIES },
-      { href: "/attendance", label: "Absensi", icon: Fingerprint, permission: PERMISSIONS.EMPLOYEES },
+      { href: "/attendance", label: "Absensi", icon: Fingerprint, permission: PERMISSIONS.ATTENDANCE },
     ].filter(item => {
       // Check permission first
       if (item.permission && !hasPermission(item.permission)) return false;

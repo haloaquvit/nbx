@@ -182,7 +182,8 @@ export function useCreateAsset() {
 
   return useMutation({
     mutationFn: async (formData: AssetFormData) => {
-      const id = `ASSET-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Generate proper UUID for the asset ID
+      const id = crypto.randomUUID();
 
       // Auto-assign account based on category if not provided
       let accountId = formData.accountId;
@@ -213,16 +214,19 @@ export function useCreateAsset() {
         }
       }
 
+      // Note: asset_name is a GENERATED column from 'name'
+      // We must set 'name' (the source column) which is NOT NULL
       const insertData: any = {
         id,
-        asset_name: formData.assetName,
+        name: formData.assetName, // Required - source for generated asset_name column
+        code: formData.assetCode, // Map to 'code' column
         asset_code: formData.assetCode,
         category: formData.category,
         description: formData.description,
         purchase_date: formData.purchaseDate.toISOString().split('T')[0],
         purchase_price: formData.purchasePrice,
         supplier_name: formData.supplierName,
-        brand: formData.brand,
+        brand: formData.brand || formData.assetName,
         model: formData.model,
         serial_number: formData.serialNumber,
         location: formData.location,
@@ -295,8 +299,13 @@ export function useUpdateAsset() {
     mutationFn: async ({ id, formData }: { id: string; formData: Partial<AssetFormData> }) => {
       const updateData: any = {};
 
-      if (formData.assetName) updateData.asset_name = formData.assetName;
-      if (formData.assetCode) updateData.asset_code = formData.assetCode;
+      // Note: asset_name is a GENERATED column from 'name'
+      // Update 'name' (the source column) instead of asset_name
+      if (formData.assetName) updateData.name = formData.assetName;
+      if (formData.assetCode) {
+        updateData.code = formData.assetCode;
+        updateData.asset_code = formData.assetCode;
+      }
       if (formData.category) updateData.category = formData.category;
       if (formData.description !== undefined) updateData.description = formData.description;
       if (formData.purchaseDate) updateData.purchase_date = formData.purchaseDate.toISOString().split('T')[0];

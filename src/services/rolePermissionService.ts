@@ -16,9 +16,32 @@ export async function getRolePermissions() {
 }
 
 export async function updateRolePermissions(roleId: string, permissions: Record<string, boolean>) {
-  // Upsert permissions for a role
-  const { error } = await supabase.from('role_permissions').upsert({ role_id: roleId, permissions });
-  if (error) throw error;
+  // First try to check if record exists (without .single() to avoid 406 error)
+  const { data: existingRecords, error: selectError } = await supabase
+    .from('role_permissions')
+    .select('id')
+    .eq('role_id', roleId);
+
+  if (selectError) {
+    console.warn('Error checking existing record:', selectError);
+  }
+
+  const existing = existingRecords && existingRecords.length > 0;
+
+  if (existing) {
+    // Update existing record
+    const { error } = await supabase
+      .from('role_permissions')
+      .update({ permissions, updated_at: new Date().toISOString() })
+      .eq('role_id', roleId);
+    if (error) throw error;
+  } else {
+    // Insert new record
+    const { error } = await supabase
+      .from('role_permissions')
+      .insert({ role_id: roleId, permissions });
+    if (error) throw error;
+  }
   return true;
 }
 

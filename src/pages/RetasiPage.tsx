@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { CreateRetasiItemData } from "@/types/retasi";
+import { useGranularPermission } from "@/hooks/useGranularPermission";
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -53,6 +54,9 @@ export default function RetasiPage() {
   const [selectedRetasi, setSelectedRetasi] = useState<any>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailRetasi, setDetailRetasi] = useState<any>(null);
+
+  // Get granular permissions for retasi create
+  const { canCreateRetasi } = useGranularPermission();
 
   const filters = {
     is_returned: statusFilter === "active" ? false : statusFilter === "returned" ? true : undefined,
@@ -152,10 +156,12 @@ export default function RetasiPage() {
             <Download className="h-4 w-4 mr-2" />
             Export Excel
           </Button>
-          <AddRetasiDialog 
-            drivers={drivers} 
-            onSaved={() => window.location.reload()}
-          />
+          {canCreateRetasi() && (
+            <AddRetasiDialog
+              drivers={drivers}
+              onSaved={() => window.location.reload()}
+            />
+          )}
         </div>
       </div>
 

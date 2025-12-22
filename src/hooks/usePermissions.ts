@@ -1,5 +1,6 @@
 import { useMemo, useEffect, useState } from 'react';
 import { useAuth } from './useAuth';
+import { getRolePermissions } from '@/services/rolePermissionService';
 
 // Simplified permission keys - hanya yang benar-benar dibutuhkan
 export const PERMISSIONS = {
@@ -10,6 +11,7 @@ export const PERMISSIONS = {
   CUSTOMERS: 'customers',
   EMPLOYEES: 'employees',
   DELIVERIES: 'deliveries',
+  ATTENDANCE: 'attendance',
 
   // Financial
   FINANCIAL: 'financial',
@@ -23,17 +25,6 @@ export const PERMISSIONS = {
 } as const;
 
 export type Permission = typeof PERMISSIONS[keyof typeof PERMISSIONS];
-
-// Load granular permissions from localStorage
-const loadRolePermissions = () => {
-  try {
-    const saved = localStorage.getItem('rolePermissions');
-    return saved ? JSON.parse(saved) : {};
-  } catch (error) {
-    console.error('Error loading role permissions:', error);
-    return {};
-  }
-};
 
 // Map granular permissions to simplified permissions
 const mapGranularToSimplified = (granularPerms: Record<string, boolean>): Record<string, boolean> => {
@@ -53,20 +44,31 @@ const mapGranularToSimplified = (granularPerms: Record<string, boolean>): Record
     // Employees - need at least view access
     employees: granularPerms.employees_view === true,
 
-    // Deliveries - assume all roles can access deliveries for now
-    deliveries: true,
+    // Deliveries - need POS driver access OR delivery view
+    deliveries: granularPerms.pos_driver_access === true ||
+                granularPerms.delivery_view === true ||
+                granularPerms.retasi_view === true,
+
+    // Attendance - need attendance access or view
+    attendance: granularPerms.attendance_access === true ||
+                granularPerms.attendance_view === true,
 
     // Financial - need at least one financial permission
     financial: granularPerms.accounts_view === true ||
                granularPerms.receivables_view === true ||
                granularPerms.expenses_view === true ||
                granularPerms.advances_view === true ||
-               granularPerms.financial_reports === true,
+               granularPerms.financial_reports === true ||
+               granularPerms.payables_view === true ||
+               granularPerms.cash_flow_view === true,
 
     // Reports - need at least one report permission
     reports: granularPerms.stock_reports === true ||
              granularPerms.transaction_reports === true ||
-             granularPerms.attendance_reports === true,
+             granularPerms.attendance_reports === true ||
+             granularPerms.production_reports === true ||
+             granularPerms.material_movement_report === true ||
+             granularPerms.transaction_items_report === true,
 
     // Settings - need settings access
     settings: granularPerms.settings_access === true,
@@ -78,23 +80,78 @@ const mapGranularToSimplified = (granularPerms: Record<string, boolean>): Record
 
 export const usePermissions = () => {
   const { user } = useAuth();
-  const [rolePermissions, setRolePermissions] = useState<any>({});
+  const [rolePermissions, setRolePermissions] = useState<Record<string, Record<string, boolean>>>({});
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Load role permissions from localStorage
+  // Load role permissions from database
   useEffect(() => {
-    const perms = loadRolePermissions();
-    setRolePermissions(perms);
+    const loadPermissions = async () => {
+      try {
+        // First try localStorage for faster initial load
+        const cachedPerms = localStorage.getItem('rolePermissions');
+        if (cachedPerms) {
+          setRolePermissions(JSON.parse(cachedPerms));
+        }
 
-    // Listen for changes to rolePermissions in localStorage
+        // Then fetch from database
+        const dbPerms = await getRolePermissions();
+        if (dbPerms && dbPerms.length > 0) {
+          const permsByRole: Record<string, Record<string, boolean>> = {};
+          dbPerms.forEach((rp: { role_id: string; permissions: Record<string, boolean> }) => {
+            permsByRole[rp.role_id] = rp.permissions;
+          });
+          setRolePermissions(permsByRole);
+          // Update localStorage cache
+          localStorage.setItem('rolePermissions', JSON.stringify(permsByRole));
+        }
+      } catch (error) {
+        console.warn('Error loading permissions from database:', error);
+        // Fallback to localStorage
+        try {
+          const saved = localStorage.getItem('rolePermissions');
+          if (saved) {
+            setRolePermissions(JSON.parse(saved));
+          }
+        } catch (e) {
+          console.error('Error loading from localStorage:', e);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadPermissions();
+
+    // Listen for changes to rolePermissions in localStorage (from other tabs or after save)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'rolePermissions') {
-        const perms = loadRolePermissions();
-        setRolePermissions(perms);
+        try {
+          const perms = e.newValue ? JSON.parse(e.newValue) : {};
+          setRolePermissions(perms);
+        } catch (error) {
+          console.error('Error parsing storage change:', error);
+        }
+      }
+    };
+
+    // Also listen for custom storage event (same window)
+    const handleCustomStorage = () => {
+      try {
+        const saved = localStorage.getItem('rolePermissions');
+        if (saved) {
+          setRolePermissions(JSON.parse(saved));
+        }
+      } catch (error) {
+        console.error('Error handling custom storage:', error);
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    window.addEventListener('storage', handleCustomStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('storage', handleCustomStorage);
+    };
   }, []);
 
   const userPermissions = useMemo(() => {
@@ -153,6 +210,7 @@ export const usePermissions = () => {
     hasAnyPermission,
     hasAllPermissions,
     userPermissions,
+    isLoading,
     isOwner: user?.role === 'owner',
     isAdmin: user?.role === 'admin',
     userRole: user?.role,

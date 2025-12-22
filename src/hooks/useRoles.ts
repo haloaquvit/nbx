@@ -250,9 +250,26 @@ function getDefaultRoles(): Role[] {
       name: 'operator',
       displayName: 'Operator',
       description: 'Operator produksi',
-      permissions: { 
+      permissions: {
         view_users: true, view_products: true, view_customers: true, view_materials: true,
         view_quotations: true, update_production: true, view_production: true
+      },
+      isSystemRole: true,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'supir-default',
+      name: 'supir',
+      displayName: 'Supir',
+      description: 'Supir pengantaran',
+      permissions: {
+        pos_driver_access: true,
+        delivery_view: true, delivery_create: true, delivery_edit: true,
+        retasi_view: true, retasi_create: true,
+        attendance_access: true, attendance_view: true, attendance_create: true,
+        notifications_view: true, profiles_view: true, profiles_edit: true
       },
       isSystemRole: true,
       isActive: true,
