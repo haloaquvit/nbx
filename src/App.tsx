@@ -16,7 +16,6 @@ import { updateFavicon } from "@/utils/faviconUtils";
 import { useCacheManager, useBackgroundRefresh } from "@/hooks/useCacheManager";
 import { Card, CardContent } from "@/components/ui/card";
 import { Building2, MapPin, Check } from "lucide-react";
-import { isServerSelected } from "@/integrations/supabase/client";
 
 // Lazy load all pages
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
@@ -32,7 +31,7 @@ const CustomerPage = lazy(() => import("@/pages/CustomerPage"));
 const CustomerDetailPage = lazy(() => import("@/pages/CustomerDetailPage"));
 const EmployeePage = lazy(() => import("@/pages/EmployeePage"));
 const PurchaseOrderPage = lazy(() => import("@/pages/PurchaseOrderPage"));
-const AccountingPage = lazy(() => import("@/pages/AccountingPage"));
+const ChartOfAccountsPage = lazy(() => import("@/pages/ChartOfAccountsPage"));
 const AccountDetailPage = lazy(() => import("@/pages/AccountDetailPage"));
 const ReceivablesPage = lazy(() => import("@/pages/ReceivablesPage"));
 const ExpensePage = lazy(() => import("@/pages/ExpensePage"));
@@ -63,6 +62,7 @@ const AssetsPage = lazy(() => import("@/pages/AssetsPage"));
 const MaintenancePage = lazy(() => import("@/pages/MaintenancePage"));
 const ZakatPage = lazy(() => import("@/pages/ZakatPage"));
 const BranchManagementPage = lazy(() => import("@/pages/BranchManagementPage"));
+const JournalPage = lazy(() => import("@/pages/JournalPage"));
 
 const SERVERS = [
   {
@@ -150,23 +150,42 @@ function ServerSelector({ onSelect }: { onSelect: (url: string) => void }) {
   );
 }
 
+// Check if running in Capacitor/APK
+function isCapacitorApp(): boolean {
+  try {
+    const { Capacitor } = require('@capacitor/core');
+    if (Capacitor.isNativePlatform()) return true;
+    const platform = Capacitor.getPlatform();
+    if (platform === 'android' || platform === 'ios') return true;
+  } catch (e) {}
+
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    if (protocol === 'capacitor:' || protocol === 'file:') return true;
+  }
+  return false;
+}
+
 // Main App - Shows server selector first (for Capacitor), then loads web app
 function App() {
   const [showSelector, setShowSelector] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Check if server is selected using the exported function from client.ts
-    // This returns false if in Capacitor and no server selected yet
-    if (!isServerSelected()) {
+    // For APK: ALWAYS show server selector on app start (no memory)
+    // For Web: skip selector, use current domain
+    if (isCapacitorApp()) {
+      // Clear previous selection so user always picks
+      localStorage.removeItem('aquvit_selected_server');
       setShowSelector(true);
     }
     setIsReady(true);
   }, []);
 
   const handleServerSelect = (url: string) => {
-    // Redirect to selected server URL - WebView will load this URL
-    window.location.href = url;
+    // For APK: reload the app to reinitialize with new server config
+    // The client.ts will now use the selected server from localStorage
+    window.location.reload();
   };
 
   if (!isReady) {
@@ -258,7 +277,7 @@ function WebApp() {
                   <Route path="/payroll" element={<PayrollPage />} />
                   <Route path="/suppliers" element={<SupplierPage />} />
                   <Route path="/purchase-orders" element={<PurchaseOrderPage />} />
-                  <Route path="/accounts" element={<AccountingPage />} />
+                  <Route path="/accounts" element={<ChartOfAccountsPage />} />
                   <Route path="/accounts/:id" element={<AccountDetailPage />} />
                   <Route path="/receivables" element={<ReceivablesPage />} />
                   <Route path="/accounts-payable" element={<AccountsPayablePage />} />
@@ -285,6 +304,7 @@ function WebApp() {
                   <Route path="/maintenance" element={<MaintenancePage />} />
                   <Route path="/zakat" element={<ZakatPage />} />
                   <Route path="/branches" element={<BranchManagementPage />} />
+                  <Route path="/journal" element={<JournalPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

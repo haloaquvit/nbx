@@ -7,6 +7,14 @@ import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { useBranch } from '@/contexts/BranchContext';
 import { format } from 'date-fns';
+import { createProductionHPPJournal, voidJournalEntry } from '@/services/journalService';
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
+// HPP Produksi menggunakan createProductionHPPJournal dari journalService
+// ============================================================================
 
 export const useProduction = () => {
   const [productions, setProductions] = useState<ProductionRecord[]>([]);
@@ -240,10 +248,8 @@ export const useProduction = () => {
         }
 
         // ============================================================================
-        // HPP ACCOUNTING FOR PRODUCTION
-        // When materials are consumed for production, record journal entry:
-        // Debit: 5100 HPP Bahan Baku (increase cost)
-        // Credit: 1310 Persediaan Bahan Baku (decrease inventory)
+        // HPP ACCOUNTING FOR PRODUCTION VIA JOURNAL
+        // Auto-generate journal: Dr. HPP Bahan Baku, Cr. Persediaan Bahan Baku
         // ============================================================================
         try {
           // Calculate total material cost consumed
@@ -265,62 +271,39 @@ export const useProduction = () => {
             materialDetails.push(`${bomItem.materialName} x${requiredQty}`);
           }
 
-          if (totalMaterialCost > 0) {
-            // Find HPP Bahan Baku account (5100)
-            const { data: hppAccount } = await supabase
-              .from('accounts')
-              .select('id, name, code, balance')
-              .eq('code', '5100')
-              .single();
+          if (totalMaterialCost > 0 && currentBranch?.id) {
+            const journalResult = await createProductionHPPJournal({
+              productionId: productionRecord.id,
+              productionRef: ref,
+              productionDate: new Date(),
+              amount: totalMaterialCost,
+              productName: `${product.name} x${input.quantity}`,
+              materialDetails: materialDetails.join(', '),
+              branchId: currentBranch.id,
+            });
 
-            // Find Persediaan Bahan Baku account (1310 or 1300)
-            const { data: persediaanBahanAccount } = await supabase
-              .from('accounts')
-              .select('id, name, code, balance')
-              .or('code.eq.1310,code.eq.1300')
-              .limit(1)
-              .single();
+            if (journalResult.success) {
+              console.log('✅ HPP Production journal auto-generated:', journalResult.journalId);
+            } else {
+              console.warn('⚠️ Failed to create HPP production journal:', journalResult.error);
+            }
 
-            if (hppAccount && persediaanBahanAccount) {
-              // Update HPP (Debit - increase cost)
-              const newHppBalance = (hppAccount.balance || 0) + totalMaterialCost;
-              await supabase
-                .from('accounts')
-                .update({ balance: newHppBalance })
-                .eq('id', hppAccount.id);
-
-              // Update Persediaan Bahan (Credit - decrease asset)
-              const newPersediaanBalance = (persediaanBahanAccount.balance || 0) - totalMaterialCost;
-              await supabase
-                .from('accounts')
-                .update({ balance: newPersediaanBalance })
-                .eq('id', persediaanBahanAccount.id);
-
-              // Record in cash_history for audit trail (non-cash transaction)
+            // Record in cash_history for audit trail (MONITORING ONLY)
+            try {
               await supabase
                 .from('cash_history')
                 .insert({
-                  account_id: hppAccount.id,
-                  account_name: hppAccount.name,
-                  type: 'pengeluaran',
+                  account_id: null,
+                  type: 'hpp_produksi',
                   amount: totalMaterialCost,
                   description: `HPP Produksi ${ref}: ${materialDetails.join(', ')} -> ${product.name} x${input.quantity}`,
                   reference_id: productionRecord.id,
                   reference_name: `Produksi ${ref}`,
-                  user_id: input.createdBy,
-                  user_name: user?.name || user?.email || 'Unknown User',
-                  branch_id: currentBranch?.id || null,
-                  expense_account_id: hppAccount.id,
-                  expense_account_name: hppAccount.name,
+                  branch_id: currentBranch.id,
+                  source_type: 'production',
                 });
-
-              console.log('✅ HPP Production accounting created:', {
-                hpp: { account: hppAccount.code, amount: totalMaterialCost },
-                persediaan: { account: persediaanBahanAccount.code, amount: -totalMaterialCost },
-                materials: materialDetails
-              });
-            } else {
-              console.warn('⚠️ HPP (5100) or Persediaan Bahan (1310/1300) account not found in COA');
+            } catch (historyError) {
+              console.warn('cash_history recording failed (non-critical):', historyError);
             }
           }
         } catch (hppAccountingError) {
@@ -612,67 +595,36 @@ export const useProduction = () => {
       }
 
       // ============================================================================
-      // ROLLBACK HPP ACCOUNTING FOR PRODUCTION
-      // Reverse the journal entry:
-      // Credit: 5100 HPP Bahan Baku (decrease cost)
-      // Debit: 1310 Persediaan Bahan Baku (increase inventory)
+      // ROLLBACK HPP ACCOUNTING VIA VOID JOURNAL
+      // Find and void the journal entry created for this production
       // ============================================================================
       if (record.consume_bom && record.quantity > 0 && record.product_id) {
         try {
-          const bom = await getBOM(record.product_id);
-          let totalMaterialCost = 0;
+          // Find journal entry for this production
+          const { data: journalEntry } = await supabase
+            .from('journal_entries')
+            .select('id')
+            .eq('reference_id', record.id)
+            .eq('reference_type', 'adjustment')
+            .eq('is_voided', false)
+            .single();
 
-          for (const bomItem of bom) {
-            const requiredQty = bomItem.quantity * record.quantity;
-
-            // Get material cost price
-            const { data: materialData } = await supabase
-              .from('materials')
-              .select('cost_price')
-              .eq('id', bomItem.materialId)
-              .single();
-
-            totalMaterialCost += (materialData?.cost_price || 0) * requiredQty;
-          }
-
-          if (totalMaterialCost > 0) {
-            // Find HPP account
-            const { data: hppAccount } = await supabase
-              .from('accounts')
-              .select('id, balance')
-              .eq('code', '5100')
-              .single();
-
-            // Find Persediaan Bahan account
-            const { data: persediaanBahanAccount } = await supabase
-              .from('accounts')
-              .select('id, balance')
-              .or('code.eq.1310,code.eq.1300')
-              .limit(1)
-              .single();
-
-            if (hppAccount && persediaanBahanAccount) {
-              // Reverse HPP (Credit - decrease cost)
-              await supabase
-                .from('accounts')
-                .update({ balance: (hppAccount.balance || 0) - totalMaterialCost })
-                .eq('id', hppAccount.id);
-
-              // Reverse Persediaan (Debit - increase asset)
-              await supabase
-                .from('accounts')
-                .update({ balance: (persediaanBahanAccount.balance || 0) + totalMaterialCost })
-                .eq('id', persediaanBahanAccount.id);
-
-              // Delete cash_history record for this production
-              await supabase
-                .from('cash_history')
-                .delete()
-                .eq('reference_id', record.id);
-
-              console.log('✅ HPP Production accounting reversed');
+          if (journalEntry) {
+            const voidResult = await voidJournalEntry(journalEntry.id, 'Production record deleted');
+            if (voidResult.success) {
+              console.log('✅ HPP Production journal voided:', journalEntry.id);
+            } else {
+              console.warn('⚠️ Failed to void HPP production journal:', voidResult.error);
             }
           }
+
+          // Delete cash_history record for this production
+          await supabase
+            .from('cash_history')
+            .delete()
+            .eq('reference_id', record.id);
+
+          console.log('✅ HPP Production accounting reversed');
         } catch (hppRollbackError) {
           console.error('Error reversing HPP production accounting:', hppRollbackError);
         }

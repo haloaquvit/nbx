@@ -69,21 +69,71 @@ export function BranchProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (branch) {
-        setCurrentBranch({
-          id: branch.id,
-          companyId: branch.company_id,
-          name: branch.name,
-          code: branch.code,
-          address: branch.address,
-          phone: branch.phone,
-          email: branch.email,
-          managerId: branch.manager_id,
-          managerName: branch.manager_name,
-          isActive: branch.is_active,
-          settings: branch.settings,
-          createdAt: new Date(branch.created_at),
-          updatedAt: new Date(branch.updated_at),
-        });
+        // For users who can access all branches, check localStorage first
+        // This ensures branch selection persists across page refreshes
+        const savedBranchId = localStorage.getItem('selectedBranchId');
+
+        if (canAccessAllBranches && savedBranchId && savedBranchId !== branch.id) {
+          // User previously selected a different branch, load that one instead
+          const { data: savedBranch } = await supabase
+            .from('branches')
+            .select('*')
+            .eq('id', savedBranchId)
+            .single();
+
+          if (savedBranch) {
+            console.log('[BranchContext] Restoring saved branch:', savedBranch.name);
+            setCurrentBranch({
+              id: savedBranch.id,
+              companyId: savedBranch.company_id,
+              name: savedBranch.name,
+              code: savedBranch.code,
+              address: savedBranch.address,
+              phone: savedBranch.phone,
+              email: savedBranch.email,
+              managerId: savedBranch.manager_id,
+              managerName: savedBranch.manager_name,
+              isActive: savedBranch.is_active,
+              settings: savedBranch.settings,
+              createdAt: new Date(savedBranch.created_at),
+              updatedAt: new Date(savedBranch.updated_at),
+            });
+            restoredBranchRef.current = true;
+          } else {
+            // Saved branch not found, fallback to user's branch
+            setCurrentBranch({
+              id: branch.id,
+              companyId: branch.company_id,
+              name: branch.name,
+              code: branch.code,
+              address: branch.address,
+              phone: branch.phone,
+              email: branch.email,
+              managerId: branch.manager_id,
+              managerName: branch.manager_name,
+              isActive: branch.is_active,
+              settings: branch.settings,
+              createdAt: new Date(branch.created_at),
+              updatedAt: new Date(branch.updated_at),
+            });
+          }
+        } else {
+          setCurrentBranch({
+            id: branch.id,
+            companyId: branch.company_id,
+            name: branch.name,
+            code: branch.code,
+            address: branch.address,
+            phone: branch.phone,
+            email: branch.email,
+            managerId: branch.manager_id,
+            managerName: branch.manager_name,
+            isActive: branch.is_active,
+            settings: branch.settings,
+            createdAt: new Date(branch.created_at),
+            updatedAt: new Date(branch.updated_at),
+          });
+        }
 
         // Get company details (only if company_id exists)
         if (branch.company_id) {
@@ -152,6 +202,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   };
 
   // Switch to different branch (only for head office users)
+  // PENTING: Refresh halaman setelah switch branch untuk memastikan semua data fresh
   const switchBranch = (branchId: string) => {
     if (!canAccessAllBranches) {
       console.warn('User cannot switch branches');
@@ -160,41 +211,13 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
     const branch = availableBranches.find((b) => b.id === branchId);
     if (branch) {
-      setCurrentBranch(branch);
-      // Save to localStorage for persistence
+      // Save to localStorage FIRST - this will be restored after refresh
       localStorage.setItem('selectedBranchId', branchId);
+      console.log('[BranchContext] Switching to branch:', branch.name, '- Refreshing page...');
 
-      // Show notification first
-      toast({
-        title: 'Cabang berhasil dipindah',
-        description: `Sekarang menampilkan data untuk ${branch.name}`,
-      });
-
-      // Clear cache and invalidate queries with staggered timing to prevent freeze
-      // First, clear the cache to free memory
-      queryClient.clear();
-
-      // Then invalidate in batches with small delays to prevent UI freeze
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['customers'] });
-        queryClient.invalidateQueries({ queryKey: ['deliveries'] });
-      }, 100);
-
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['invoices'] });
-        queryClient.invalidateQueries({ queryKey: ['inventory'] });
-      }, 200);
-
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
-        queryClient.invalidateQueries({ queryKey: ['stock'] });
-      }, 300);
-
-      setTimeout(() => {
-        // Invalidate remaining queries
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-        queryClient.invalidateQueries({ queryKey: ['reports'] });
-      }, 400);
+      // Refresh halaman untuk memastikan semua komponen mendapatkan data branch yang benar
+      // Ini mencegah masalah state lama yang menyebabkan data masuk ke branch yang salah
+      window.location.reload();
     }
   };
 

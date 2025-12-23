@@ -41,6 +41,15 @@ import { Skeleton } from "./ui/skeleton"
 import { supabase } from "@/integrations/supabase/client"
 import { useBranch } from "@/contexts/BranchContext"
 
+// ============================================================================
+// CATATAN PENTING: BUKU BESAR DARI JOURNAL_ENTRIES
+// ============================================================================
+// Buku Besar sekarang membaca langsung dari journal_entries dan journal_entry_lines
+// - Sumber kebenaran: journal_entries dengan status='posted' dan is_voided=false
+// - Setiap jurnal memiliki lines dengan debit/credit per akun
+// - Running balance dihitung berdasarkan tipe akun (debit/credit normal)
+// ============================================================================
+
 interface Account {
   id: string;
   code: string;
@@ -58,7 +67,8 @@ interface LedgerEntry {
   credit: number;
   balance: number;
   reference: string;
-  source: string;
+  referenceType: string;
+  journalNumber: string;
 }
 
 interface AccountLedger {
@@ -82,19 +92,14 @@ export function GeneralLedgerTable() {
     to: new Date()
   });
 
-  // Fetch accounts
+  // Fetch accounts (global COA structure)
   React.useEffect(() => {
     const fetchAccounts = async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from('accounts')
         .select('id, code, name, type, balance, initial_balance')
+        .eq('is_active', true)
         .order('code');
-
-      if (currentBranch?.id) {
-        query = query.eq('branch_id', currentBranch.id);
-      }
-
-      const { data, error } = await query;
 
       if (error) {
         console.error('Error fetching accounts:', error);
@@ -105,46 +110,70 @@ export function GeneralLedgerTable() {
     };
 
     fetchAccounts();
-  }, [currentBranch?.id]);
+  }, []);
 
-  // Fetch ledger entries
+  // Fetch ledger entries from journal_entries and journal_entry_lines
   React.useEffect(() => {
     const fetchLedgerEntries = async () => {
-      if (accounts.length === 0) return;
+      if (accounts.length === 0 || !currentBranch?.id) return;
 
       setIsLoading(true);
 
       const fromDateStr = dateRange.from?.toISOString().split('T')[0] || '';
       const toDateStr = dateRange.to?.toISOString().split('T')[0] || '';
 
-      // Get cash history for the period
-      let cashHistoryQuery = supabase
-        .from('cash_history')
-        .select('*')
-        .order('created_at', { ascending: true });
+      // ============================================================================
+      // QUERY JOURNAL_ENTRY_LINES WITH JOURNAL INFO
+      // Only fetch posted, non-voided journals for the current branch
+      // ============================================================================
+      let query = supabase
+        .from('journal_entry_lines')
+        .select(`
+          id,
+          account_id,
+          account_code,
+          account_name,
+          debit_amount,
+          credit_amount,
+          description,
+          journal_entries!inner (
+            id,
+            entry_number,
+            entry_date,
+            description,
+            reference_type,
+            reference_id,
+            status,
+            is_voided,
+            branch_id
+          )
+        `)
+        .eq('journal_entries.branch_id', currentBranch.id)
+        .eq('journal_entries.status', 'posted')
+        .eq('journal_entries.is_voided', false)
+        .order('journal_entries(entry_date)', { ascending: true });
 
       if (fromDateStr) {
-        cashHistoryQuery = cashHistoryQuery.gte('created_at', fromDateStr);
+        query = query.gte('journal_entries.entry_date', fromDateStr);
       }
       if (toDateStr) {
-        cashHistoryQuery = cashHistoryQuery.lte('created_at', toDateStr + 'T23:59:59');
-      }
-      if (currentBranch?.id) {
-        cashHistoryQuery = cashHistoryQuery.eq('branch_id', currentBranch.id);
+        query = query.lte('journal_entries.entry_date', toDateStr);
       }
 
-      const { data: cashHistory, error: cashError } = await cashHistoryQuery;
+      const { data: journalLines, error: journalError } = await query;
 
-      if (cashError) {
-        console.error('Error fetching cash history:', cashError);
+      if (journalError) {
+        console.error('Error fetching journal lines:', journalError);
         setIsLoading(false);
         return;
       }
 
-      // Group entries by account
+      // ============================================================================
+      // GROUP ENTRIES BY ACCOUNT
+      // ============================================================================
       const accountLedgers: Record<string, AccountLedger> = {};
 
-      // Initialize ledgers for all accounts
+      // Initialize ledgers for all accounts with initial_balance
       accounts.forEach(account => {
         accountLedgers[account.id] = {
           account,
@@ -152,138 +181,50 @@ export function GeneralLedgerTable() {
           openingBalance: account.initial_balance || 0,
           totalDebit: 0,
           totalCredit: 0,
-          closingBalance: account.balance || 0
+          closingBalance: 0
         };
       });
 
-      // Helper function to find account by type/code pattern
-      const findAccountByType = (type: string, codePrefix?: string): Account | undefined => {
-        return accounts.find(a => {
-          if (codePrefix && a.code?.startsWith(codePrefix)) return true;
-          return a.type === type && !a.code?.endsWith('00'); // Exclude header accounts
-        });
-      };
-
-      // Find default accounts for double-entry
-      const pendapatanAccount = findAccountByType('Pendapatan', '4');
-      const bebanAccount = findAccountByType('Beban', '6');
-      const hutangAccount = findAccountByType('Kewajiban', '2'); // Hutang Usaha
-
-      // Process cash history entries with double-entry accounting
-      cashHistory?.forEach(entry => {
-        const accountId = entry.account_id;
+      // Process journal lines
+      (journalLines || []).forEach((line: any) => {
+        const accountId = line.account_id;
         if (!accountId || !accountLedgers[accountId]) return;
 
-        const cashAccount = accountLedgers[accountId];
-        const isIncome = ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(entry.type || '');
-        const isExpense = ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji', 'pembayaran_hutang'].includes(entry.type || '');
-        const isTransferIn = entry.source_type === 'transfer_masuk';
-        const isTransferOut = entry.source_type === 'transfer_keluar';
+        const journal = line.journal_entries;
+        const debit = Number(line.debit_amount) || 0;
+        const credit = Number(line.credit_amount) || 0;
 
-        const amount = entry.amount || 0;
-        const entryDate = entry.created_at;
-        const description = entry.description || '';
-        const reference = entry.reference_name || entry.reference_id || '';
-        const source = entry.type || entry.source_type || '';
-
-        // 1. Entry for Cash/Bank Account (Aset)
-        let cashDebit = 0;
-        let cashCredit = 0;
-
-        if (isIncome || isTransferIn) {
-          cashDebit = amount; // Kas masuk = Debit
-        } else if (isExpense || isTransferOut) {
-          cashCredit = amount; // Kas keluar = Kredit
-        }
-
-        cashAccount.entries.push({
-          id: entry.id,
-          date: entryDate,
-          description,
-          debit: cashDebit,
-          credit: cashCredit,
-          balance: 0,
-          reference,
-          source
+        accountLedgers[accountId].entries.push({
+          id: line.id,
+          date: journal.entry_date,
+          description: line.description || journal.description,
+          debit,
+          credit,
+          balance: 0, // Will be calculated below
+          reference: journal.reference_id || '',
+          referenceType: journal.reference_type || '',
+          journalNumber: journal.entry_number || ''
         });
 
-        cashAccount.totalDebit += cashDebit;
-        cashAccount.totalCredit += cashCredit;
-
-        // 2. Double-entry: Entry for contra account (Pendapatan atau Beban)
-        // Untuk penjualan: Debit Kas, Kredit Pendapatan
-        if (entry.type === 'orderan' && pendapatanAccount && accountLedgers[pendapatanAccount.id]) {
-          accountLedgers[pendapatanAccount.id].entries.push({
-            id: `${entry.id}-pendapatan`,
-            date: entryDate,
-            description: `Penjualan: ${description}`,
-            debit: 0,
-            credit: amount, // Kredit Pendapatan
-            balance: 0,
-            reference,
-            source: 'penjualan'
-          });
-          accountLedgers[pendapatanAccount.id].totalCredit += amount;
-        }
-
-        // Untuk pembayaran hutang: Debit Kewajiban (mengurangi hutang), Kredit Kas
-        // Pembayaran hutang BUKAN beban, melainkan mengurangi kewajiban
-        if (entry.type === 'pembayaran_hutang' || entry.type === 'pembayaran_po') {
-          // Get liability account from entry or use default
-          const liabilityAccountId = (entry as any).liability_account_id;
-          const targetLiabilityAccount = liabilityAccountId && accountLedgers[liabilityAccountId]
-            ? accountLedgers[liabilityAccountId]
-            : (hutangAccount && accountLedgers[hutangAccount.id] ? accountLedgers[hutangAccount.id] : null);
-
-          if (targetLiabilityAccount) {
-            targetLiabilityAccount.entries.push({
-              id: `${entry.id}-kewajiban`,
-              date: entryDate,
-              description: `Pembayaran Hutang: ${description}`,
-              debit: amount, // Debit Kewajiban = mengurangi hutang
-              credit: 0,
-              balance: 0,
-              reference,
-              source: entry.type || 'pembayaran_hutang'
-            });
-            targetLiabilityAccount.totalDebit += amount;
-          }
-        }
-        // Untuk pengeluaran lainnya: Debit Beban, Kredit Kas
-        // Use expense_account_id from entry if available, otherwise use default
-        else if (isExpense && entry.type !== 'transfer_keluar' && entry.type !== 'pembayaran_hutang' && entry.type !== 'pembayaran_po') {
-          const expenseAccountId = (entry as any).expense_account_id;
-          const targetAccount = expenseAccountId && accountLedgers[expenseAccountId]
-            ? accountLedgers[expenseAccountId]
-            : (bebanAccount && accountLedgers[bebanAccount.id] ? accountLedgers[bebanAccount.id] : null);
-
-          if (targetAccount) {
-            targetAccount.entries.push({
-              id: `${entry.id}-beban`,
-              date: entryDate,
-              description: `Beban: ${description}`,
-              debit: amount, // Debit Beban
-              credit: 0,
-              balance: 0,
-              reference,
-              source: 'beban'
-            });
-            targetAccount.totalDebit += amount;
-          }
-        }
+        accountLedgers[accountId].totalDebit += debit;
+        accountLedgers[accountId].totalCredit += credit;
       });
 
-      // Calculate running balances for each account
-      // Different account types have different balance calculations:
-      // - Aset/Beban: Debit increases balance, Credit decreases
-      // - Kewajiban/Modal/Pendapatan: Credit increases balance, Debit decreases
+      // ============================================================================
+      // CALCULATE RUNNING BALANCES
+      // Based on account type (Aset/Beban = debit normal, Kewajiban/Modal/Pendapatan = credit normal)
+      // ============================================================================
       Object.values(accountLedgers).forEach(ledger => {
         let runningBalance = ledger.openingBalance;
         const accountType = ledger.account.type;
         const isDebitNormal = ['Aset', 'Beban'].includes(accountType);
 
-        // Sort entries by date
-        ledger.entries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        // Sort entries by date, then by journal number for same-date entries
+        ledger.entries.sort((a, b) => {
+          const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+          if (dateCompare !== 0) return dateCompare;
+          return (a.journalNumber || '').localeCompare(b.journalNumber || '');
+        });
 
         ledger.entries.forEach(entry => {
           if (isDebitNormal) {
@@ -296,18 +237,16 @@ export function GeneralLedgerTable() {
           entry.balance = runningBalance;
         });
 
-        // Update closing balance based on entries
-        if (ledger.entries.length > 0) {
-          ledger.closingBalance = ledger.entries[ledger.entries.length - 1].balance;
-        }
+        // Set closing balance
+        ledger.closingBalance = runningBalance;
       });
 
       // Filter to only accounts with entries or non-zero balance
       const filteredLedgers = Object.values(accountLedgers)
         .filter(ledger =>
           ledger.entries.length > 0 ||
-          ledger.account.balance !== 0 ||
-          ledger.openingBalance !== 0
+          ledger.openingBalance !== 0 ||
+          ledger.closingBalance !== 0
         )
         .sort((a, b) => (a.account.code || '').localeCompare(b.account.code || ''));
 
@@ -352,25 +291,21 @@ export function GeneralLedgerTable() {
     }).format(amount);
   };
 
-  const getTypeLabel = (source: string) => {
+  const getReferenceTypeLabel = (refType: string) => {
     const labels: Record<string, string> = {
-      'orderan': 'Penjualan',
-      'kas_masuk_manual': 'Kas Masuk',
-      'kas_keluar_manual': 'Kas Keluar',
-      'panjar_pengambilan': 'Panjar',
-      'panjar_pelunasan': 'Pelunasan Panjar',
-      'pengeluaran': 'Pengeluaran',
-      'pembayaran_po': 'Bayar PO',
-      'pembayaran_piutang': 'Bayar Piutang',
-      'pembayaran_hutang': 'Bayar Hutang',
-      'transfer_masuk': 'Transfer Masuk',
-      'transfer_keluar': 'Transfer Keluar',
-      'gaji_karyawan': 'Gaji',
-      'pembayaran_gaji': 'Gaji',
-      'penjualan': 'Pendapatan',
-      'beban': 'Beban'
+      'transaction': 'Penjualan',
+      'expense': 'Pengeluaran',
+      'payroll': 'Gaji',
+      'advance': 'Panjar',
+      'transfer': 'Transfer',
+      'receivable': 'Piutang',
+      'payable': 'Hutang',
+      'manual': 'Manual',
+      'adjustment': 'Penyesuaian',
+      'closing': 'Penutup',
+      'opening': 'Pembukaan'
     };
-    return labels[source] || source;
+    return labels[refType] || refType;
   };
 
   const handleExportExcel = () => {
@@ -381,8 +316,10 @@ export function GeneralLedgerTable() {
       exportData.push({
         'Kode Akun': ledger.account.code,
         'Nama Akun': ledger.account.name,
+        'No. Jurnal': '',
         'Tanggal': '',
         'Deskripsi': 'SALDO AWAL',
+        'Jenis': '',
         'Debit': '',
         'Kredit': '',
         'Saldo': ledger.openingBalance
@@ -393,8 +330,10 @@ export function GeneralLedgerTable() {
         exportData.push({
           'Kode Akun': '',
           'Nama Akun': '',
+          'No. Jurnal': entry.journalNumber,
           'Tanggal': entry.date ? format(new Date(entry.date), "d MMM yyyy", { locale: id }) : '',
           'Deskripsi': entry.description,
+          'Jenis': getReferenceTypeLabel(entry.referenceType),
           'Debit': entry.debit || '',
           'Kredit': entry.credit || '',
           'Saldo': entry.balance
@@ -405,8 +344,10 @@ export function GeneralLedgerTable() {
       exportData.push({
         'Kode Akun': '',
         'Nama Akun': '',
+        'No. Jurnal': '',
         'Tanggal': '',
         'Deskripsi': 'TOTAL',
+        'Jenis': '',
         'Debit': ledger.totalDebit,
         'Kredit': ledger.totalCredit,
         'Saldo': ledger.closingBalance
@@ -434,16 +375,19 @@ export function GeneralLedgerTable() {
     doc.setFont('helvetica', 'bold');
     doc.text('BUKU BESAR (GENERAL LEDGER)', 148.5, 15, { align: 'center' });
 
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Sumber: Journal Entries (Double-Entry Accounting)', 148.5, 21, { align: 'center' });
+
     if (dateRange.from && dateRange.to) {
       doc.setFontSize(11);
-      doc.setFont('helvetica', 'normal');
       doc.text(
         `Periode: ${format(dateRange.from, 'd MMM yyyy', { locale: id })} - ${format(dateRange.to, 'd MMM yyyy', { locale: id })}`,
-        148.5, 22, { align: 'center' }
+        148.5, 27, { align: 'center' }
       );
     }
 
-    let currentY = 30;
+    let currentY = 35;
 
     displayData.forEach((ledger, index) => {
       if (currentY > 180) {
@@ -454,33 +398,35 @@ export function GeneralLedgerTable() {
       // Account header
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
-      doc.text(`${ledger.account.code} - ${ledger.account.name}`, 14, currentY);
+      doc.text(`${ledger.account.code} - ${ledger.account.name} (${ledger.account.type})`, 14, currentY);
       currentY += 5;
 
       const tableData = [
-        ['', 'Saldo Awal', '', '', formatCurrency(ledger.openingBalance)],
+        ['', '', 'Saldo Awal', '', '', formatCurrency(ledger.openingBalance)],
         ...ledger.entries.map(entry => [
+          entry.journalNumber || '-',
           entry.date ? format(new Date(entry.date), "d MMM yy", { locale: id }) : '',
-          entry.description.substring(0, 40),
+          entry.description.substring(0, 35),
           entry.debit ? formatCurrency(entry.debit) : '-',
           entry.credit ? formatCurrency(entry.credit) : '-',
           formatCurrency(entry.balance)
         ]),
-        ['', 'TOTAL', formatCurrency(ledger.totalDebit), formatCurrency(ledger.totalCredit), formatCurrency(ledger.closingBalance)]
+        ['', '', 'TOTAL', formatCurrency(ledger.totalDebit), formatCurrency(ledger.totalCredit), formatCurrency(ledger.closingBalance)]
       ];
 
       autoTable(doc, {
         startY: currentY,
-        head: [['Tanggal', 'Deskripsi', 'Debit', 'Kredit', 'Saldo']],
+        head: [['No. Jurnal', 'Tanggal', 'Deskripsi', 'Debit', 'Kredit', 'Saldo']],
         body: tableData,
         styles: { fontSize: 8 },
         headStyles: { fillColor: [71, 85, 105] },
         columnStyles: {
-          0: { cellWidth: 25 },
-          1: { cellWidth: 80 },
-          2: { cellWidth: 35, halign: 'right' },
-          3: { cellWidth: 35, halign: 'right' },
-          4: { cellWidth: 35, halign: 'right' }
+          0: { cellWidth: 30 },
+          1: { cellWidth: 22 },
+          2: { cellWidth: 70 },
+          3: { cellWidth: 30, halign: 'right' },
+          4: { cellWidth: 30, halign: 'right' },
+          5: { cellWidth: 30, halign: 'right' }
         }
       });
 
@@ -496,6 +442,15 @@ export function GeneralLedgerTable() {
 
   return (
     <div className="space-y-4">
+      {/* Header with info */}
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+        <p className="text-sm text-blue-700 dark:text-blue-300">
+          <BookOpen className="inline-block h-4 w-4 mr-1" />
+          Buku Besar ini diambil langsung dari <strong>Journal Entries</strong> (jurnal yang sudah di-posting).
+          Semua mutasi akun tercatat secara double-entry.
+        </p>
+      </div>
+
       {/* Filters */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex gap-4 items-center flex-wrap">
@@ -572,7 +527,7 @@ export function GeneralLedgerTable() {
 
       {/* Summary */}
       <div className="text-sm text-muted-foreground">
-        Menampilkan {displayData.length} akun dengan mutasi
+        Menampilkan {displayData.length} akun dengan mutasi | Branch: {currentBranch?.name || 'Tidak dipilih'}
       </div>
 
       {/* Ledger Cards */}
@@ -582,10 +537,16 @@ export function GeneralLedgerTable() {
             <Skeleton key={i} className="h-32 w-full" />
           ))}
         </div>
+      ) : !currentBranch?.id ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            Pilih cabang terlebih dahulu untuk melihat Buku Besar
+          </CardContent>
+        </Card>
       ) : displayData.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
-            Tidak ada data mutasi untuk periode ini
+            Tidak ada jurnal yang di-posting untuk periode ini
           </CardContent>
         </Card>
       ) : (
@@ -609,7 +570,7 @@ export function GeneralLedgerTable() {
                         {ledger.account.code} - {ledger.account.name}
                       </CardTitle>
                       <CardDescription>
-                        {ledger.account.type} | {ledger.entries.length} transaksi
+                        {ledger.account.type} | {ledger.entries.length} jurnal entries
                       </CardDescription>
                     </div>
                   </div>
@@ -642,10 +603,10 @@ export function GeneralLedgerTable() {
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="w-[120px]">No. Jurnal</TableHead>
                           <TableHead className="w-[100px]">Tanggal</TableHead>
                           <TableHead>Deskripsi</TableHead>
                           <TableHead className="w-[100px]">Jenis</TableHead>
-                          <TableHead className="w-[120px]">Referensi</TableHead>
                           <TableHead className="text-right w-[120px]">Debit</TableHead>
                           <TableHead className="text-right w-[120px]">Kredit</TableHead>
                           <TableHead className="text-right w-[140px]">Saldo</TableHead>
@@ -665,6 +626,9 @@ export function GeneralLedgerTable() {
                         {/* Transaction Rows */}
                         {ledger.entries.map(entry => (
                           <TableRow key={entry.id}>
+                            <TableCell className="font-mono text-xs">
+                              {entry.journalNumber || '-'}
+                            </TableCell>
                             <TableCell>
                               {entry.date ? format(new Date(entry.date), "d MMM yyyy", { locale: id }) : '-'}
                             </TableCell>
@@ -673,11 +637,8 @@ export function GeneralLedgerTable() {
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-xs">
-                                {getTypeLabel(entry.source)}
+                                {getReferenceTypeLabel(entry.referenceType)}
                               </Badge>
-                            </TableCell>
-                            <TableCell className="text-sm text-muted-foreground truncate max-w-[120px]">
-                              {entry.reference || '-'}
                             </TableCell>
                             <TableCell className="text-right">
                               {entry.debit > 0 ? (

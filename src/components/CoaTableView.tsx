@@ -123,7 +123,8 @@ export function CoaTableView({ accounts, onAccountUpdate, onAccountDelete, canEd
                 <TableHead className="w-[100px]">Kode</TableHead>
                 <TableHead>Nama Akun</TableHead>
                 <TableHead>Tipe</TableHead>
-                <TableHead className="text-right">Saldo (Per Cabang)</TableHead>
+                <TableHead className="text-right">Saldo Awal</TableHead>
+                <TableHead className="text-right">Saldo Saat Ini</TableHead>
                 <TableHead>Normal Balance</TableHead>
                 <TableHead>Status</TableHead>
                 {canEdit && <TableHead className="w-[120px]">Aksi</TableHead>}
@@ -132,7 +133,7 @@ export function CoaTableView({ accounts, onAccountUpdate, onAccountDelete, canEd
             <TableBody>
               {sortedAccounts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={canEdit ? 7 : 6} className="h-24 text-center">
+                  <TableCell colSpan={canEdit ? 8 : 7} className="h-24 text-center">
                     Belum ada akun keuangan.
                   </TableCell>
                 </TableRow>
@@ -163,9 +164,16 @@ export function CoaTableView({ accounts, onAccountUpdate, onAccountDelete, canEd
                       </Badge>
                     </TableCell>
 
-                    {/* Saldo (calculated per branch from cash_history) */}
+                    {/* Saldo Awal */}
                     <TableCell className="text-right">
-                      <span className={account.balance > 0 ? "font-medium" : "text-muted-foreground"}>
+                      <span className={(account.initialBalance || 0) !== 0 ? "font-medium" : "text-muted-foreground"}>
+                        {formatCurrency(account.initialBalance || 0)}
+                      </span>
+                    </TableCell>
+
+                    {/* Saldo Saat Ini */}
+                    <TableCell className="text-right">
+                      <span className={account.balance !== 0 ? "font-medium" : "text-muted-foreground"}>
                         {formatCurrency(account.balance)}
                       </span>
                     </TableCell>

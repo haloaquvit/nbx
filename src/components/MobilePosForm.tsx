@@ -46,7 +46,7 @@ export const MobilePosForm = () => {
   const { user: currentUser } = useAuth()
   const { products, isLoading: isLoadingProducts } = useProducts()
   const { users } = useUsers();
-  const { accounts, updateAccountBalance } = useAccounts();
+  const { accounts } = useAccounts();
   const { addTransaction } = useTransactions();
   const { customers } = useCustomers();
   
@@ -186,16 +186,17 @@ export const MobilePosForm = () => {
 
     addTransaction.mutate({ newTransaction }, {
       onSuccess: (savedData) => {
-        if (paidAmount > 0 && paymentAccountId) {
-          updateAccountBalance.mutate({ accountId: paymentAccountId, amount: paidAmount });
-        }
-        
+        // ============================================================================
+        // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
+        // addTransaction sudah memanggil createSalesJournal yang akan auto-post jurnal
+        // ============================================================================
+
         setSavedTransaction(savedData);
         toast({ title: "Sukses", description: "Transaksi berhasil disimpan." });
-        
+
         // Redirect to transaction list page after successful save
         navigate('/transactions');
-        
+
         // Reset form
         setSelectedCustomer(null);
         setItems([]);

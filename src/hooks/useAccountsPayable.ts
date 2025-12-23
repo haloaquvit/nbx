@@ -4,6 +4,15 @@ import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
 import { generateSequentialId } from '@/utils/idGenerator'
+import { createPayablePaymentJournal } from '@/services/journalService'
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
+// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// Jurnal otomatis dibuat melalui journalService untuk setiap pembayaran hutang
+// ============================================================================
 
 const fromDb = (dbPayable: any): AccountsPayable => ({
   id: dbPayable.id,
@@ -164,57 +173,41 @@ export const useAccountsPayable = () => {
       console.log('Payment account:', paymentAccount)
       console.log('Liability account:', liabilityAccount)
 
-      // Update payment account balance (decrease cash/bank)
-      if (paymentAccountId) {
-        const { data: paymentAccData, error: fetchPaymentErr } = await supabase
-          .from('accounts')
-          .select('balance')
-          .eq('id', paymentAccountId)
-          .single()
+      // ============================================================================
+      // BALANCE UPDATE LANGSUNG DIHAPUS
+      // Semua saldo sekarang dihitung dari journal_entries
+      // Pembayaran hutang di-jurnal via createPayablePaymentJournal
+      // ============================================================================
 
-        if (!fetchPaymentErr && paymentAccData) {
-          const currentBalance = Number(paymentAccData.balance) || 0
-          const newBalance = currentBalance - amount // Decrease cash/bank
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR PEMBAYARAN HUTANG
+      // ============================================================================
+      // Jurnal otomatis untuk pembayaran hutang:
+      // Dr. Hutang Usaha        xxx
+      //   Cr. Kas/Bank               xxx
+      // ============================================================================
+      if (currentBranch?.id) {
+        try {
+          const journalResult = await createPayablePaymentJournal({
+            payableId: payableId,
+            paymentDate: paymentDate,
+            amount: amount,
+            supplierName: currentPayable.supplier_name || 'Supplier',
+            invoiceNumber: currentPayable.purchase_order_id || undefined,
+            branchId: currentBranch.id,
+          });
 
-          const { error: updatePaymentError } = await supabase
-            .from('accounts')
-            .update({ balance: newBalance })
-            .eq('id', paymentAccountId)
-
-          if (updatePaymentError) {
-            console.error('Error updating payment account balance:', updatePaymentError)
+          if (journalResult.success) {
+            console.log('✅ Jurnal pembayaran hutang auto-generated:', journalResult.journalId);
           } else {
-            console.log(`Payment account ${paymentAccountId} balance updated: ${currentBalance} -> ${newBalance}`)
+            console.warn('⚠️ Gagal membuat jurnal pembayaran hutang otomatis:', journalResult.error);
           }
+        } catch (journalError) {
+          console.error('Error creating payable payment journal:', journalError);
         }
       }
 
-      // Update liability account balance (decrease liability/hutang)
-      if (liabilityAccountId) {
-        const { data: liabilityAccData, error: fetchLiabilityErr } = await supabase
-          .from('accounts')
-          .select('balance')
-          .eq('id', liabilityAccountId)
-          .single()
-
-        if (!fetchLiabilityErr && liabilityAccData) {
-          const currentBalance = Number(liabilityAccData.balance) || 0
-          const newBalance = currentBalance - amount // Decrease liability
-
-          const { error: updateLiabilityError } = await supabase
-            .from('accounts')
-            .update({ balance: newBalance })
-            .eq('id', liabilityAccountId)
-
-          if (updateLiabilityError) {
-            console.error('Error updating liability account balance:', updateLiabilityError)
-          } else {
-            console.log(`Liability account ${liabilityAccountId} balance updated: ${currentBalance} -> ${newBalance}`)
-          }
-        }
-      }
-
-      // Record in cash_history for tracking
+      // Record in cash_history for tracking (MONITORING ONLY - tidak update balance)
       if (user) {
         const liabilityInfo = liabilityAccount ? `(${liabilityAccount.code || ''} ${liabilityAccount.name})` : ''
         const cashFlowRecord = {
@@ -259,6 +252,7 @@ export const useAccountsPayable = () => {
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] })
       queryClient.invalidateQueries({ queryKey: ['cashBalance'] })
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] }) // Refresh PO status after payment
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
     }
   })
 

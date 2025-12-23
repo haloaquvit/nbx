@@ -3,7 +3,7 @@
  * Provides Supabase-like auth interface for PostgREST mode
  */
 
-import { tenantConfig, isPostgRESTMode } from './client';
+import { getTenantConfigDynamic, isPostgRESTMode } from './client';
 
 interface AuthUser {
   id: string;
@@ -80,6 +80,7 @@ export const postgrestAuth = {
    * Sign in with email and password
    */
   async signInWithPassword({ email, password }: { email: string; password: string }): Promise<AuthResponse> {
+    const tenantConfig = getTenantConfigDynamic();
     if (!isPostgRESTMode || !tenantConfig.authUrl) {
       return { data: null, error: new Error('PostgREST mode not enabled') };
     }
@@ -170,6 +171,7 @@ export const postgrestAuth = {
    */
   async refreshSession(): Promise<AuthResponse> {
     const session = getStoredSession();
+    const tenantConfig = getTenantConfigDynamic();
     if (!session || !tenantConfig.authUrl) {
       return { data: null, error: new Error('No session to refresh') };
     }
@@ -219,6 +221,7 @@ export const postgrestAuth = {
     full_name: string;
     role?: string;
   }): Promise<{ data: { user: AuthUser | null }; error: Error | null }> {
+    const tenantConfig = getTenantConfigDynamic();
     if (!isPostgRESTMode || !tenantConfig.authUrl) {
       return { data: { user: null }, error: new Error('PostgREST mode not enabled') };
     }
@@ -264,6 +267,7 @@ export const postgrestAuth = {
    * In PostgREST mode, this returns a message that admin should reset directly
    */
   async resetPasswordForEmail(email: string): Promise<{ error: Error | null }> {
+    const tenantConfig = getTenantConfigDynamic();
     if (!isPostgRESTMode || !tenantConfig.authUrl) {
       return { error: new Error('PostgREST mode not enabled') };
     }
@@ -295,6 +299,7 @@ export const postgrestAuth = {
    * Directly sets new password without email verification
    */
   async adminResetPassword(userId: string, newPassword: string): Promise<{ data: any; error: Error | null }> {
+    const tenantConfig = getTenantConfigDynamic();
     if (!isPostgRESTMode || !tenantConfig.authUrl) {
       return { data: null, error: new Error('PostgREST mode not enabled') };
     }

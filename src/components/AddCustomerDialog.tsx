@@ -50,6 +50,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
   const [isUploading, setIsUploading] = useState(false)
   const [storePhoto, setStorePhoto] = useState<File | null>(null)
   const [storePhotoFilename, setStorePhotoFilename] = useState<string>('') // Hanya simpan filename
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null) // Preview foto
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Check if user must provide coordinates and photo
@@ -135,11 +136,18 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
 
       setStorePhoto(compressedFile)
 
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setPhotoPreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(compressedFile)
+
       // Get customer name from form, fallback to timestamp if empty
       const customerName = watch('name')?.trim() || `customer-${Date.now()}`
 
       // Upload to VPS server
-      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName, 'Customers_Images')
+      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName, 'customers')
 
       if (!result) {
         throw new Error('Gagal mengupload foto ke server.')
@@ -206,6 +214,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
         reset()
         setStorePhoto(null)
         setStorePhotoFilename('')
+        setPhotoPreview(null)
         onOpenChange(false)
         if (onCustomerAdded) {
           onCustomerAdded(newCustomer)
@@ -324,19 +333,49 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
                   capture="environment"
                   className="hidden"
                 />
-                <Button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  variant="outline"
-                  className="w-full"
-                  disabled={isUploading}
-                >
-                  <Camera className="w-4 h-4 mr-2" />
-                  {isUploading ? 'Mengupload...' : 'Ambil Foto Toko'}
-                </Button>
-                {storePhotoFilename && (
-                  <div className="text-sm text-green-600">
-                    <p>✓ Foto berhasil diupload</p>
+                {!photoPreview ? (
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Camera className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+                    <p className="text-sm text-gray-600">
+                      {isUploading ? 'Mengupload...' : 'Klik untuk ambil foto toko'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <img
+                        src={photoPreview}
+                        alt="Preview foto toko"
+                        className="w-full max-h-48 object-contain rounded-lg border"
+                      />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          setStorePhoto(null)
+                          setStorePhotoFilename('')
+                          setPhotoPreview(null)
+                        }}
+                        className="absolute top-2 right-2"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                    <p className="text-sm text-green-600">✓ Foto berhasil diupload</p>
+                    <Button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled={isUploading}
+                    >
+                      {isUploading ? 'Mengupload...' : 'Ganti Foto'}
+                    </Button>
                   </div>
                 )}
               </div>

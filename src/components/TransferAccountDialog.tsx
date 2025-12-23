@@ -13,7 +13,18 @@ import { useToast } from "./ui/use-toast"
 import { useAuth } from "@/hooks/useAuth"
 import { supabase } from "@/integrations/supabase/client"
 import { useQueryClient } from "@tanstack/react-query"
+import { useBranch } from "@/contexts/BranchContext"
 import { ArrowRightLeft } from "lucide-react"
+import { createTransferJournal } from "@/services/journalService"
+import { useState } from "react"
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
+// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// Transfer antar akun menggunakan createTransferJournal dari journalService
+// ============================================================================
 
 const transferSchema = z.object({
   fromAccountId: z.string().min(1, "Pilih akun asal"),
@@ -33,10 +44,12 @@ interface TransferAccountDialogProps {
 }
 
 export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDialogProps) {
-  const { accounts, updateAccountBalance } = useAccounts()
+  const { accounts } = useAccounts()
   const { toast } = useToast()
   const { user } = useAuth()
+  const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
+  const [isSubmitting, setIsSubmitting] = useState(false)
   
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<TransferFormData>({
     resolver: zodResolver(transferSchema),
@@ -66,99 +79,108 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
       return
     }
 
+    if (!currentBranch?.id) {
+      toast({ variant: "destructive", title: "Error", description: "Branch tidak ditemukan" })
+      return
+    }
+
     // Check if sufficient balance
     if (fromAccount.balance < data.amount) {
-      toast({ 
-        variant: "destructive", 
-        title: "Saldo Tidak Cukup", 
+      toast({
+        variant: "destructive",
+        title: "Saldo Tidak Cukup",
         description: `Saldo akun ${fromAccount.name} tidak mencukupi. Saldo saat ini: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(fromAccount.balance)}`
       })
       return
     }
-    
+
+    setIsSubmitting(true)
+
     try {
-      // Deduct from source account
-      await updateAccountBalance.mutateAsync({
-        accountId: data.fromAccountId,
-        amount: -data.amount
-      })
-
-      // Add to destination account  
-      await updateAccountBalance.mutateAsync({
-        accountId: data.toAccountId,
-        amount: data.amount
-      })
-
       // Generate unique reference for this transfer
       const transferRef = `TRANSFER-${Date.now()}`;
 
-      // Try to record cash history if table exists
-      try {
-        // Record outbound cash history for source account (expense for this account)
-        const { error: outboundError } = await supabase
-          .from('cash_history')
-          .insert({
-            account_id: data.fromAccountId,
-            account_name: fromAccount.name,
-            type: 'transfer_keluar',
-            amount: data.amount,
-            description: `Transfer ke ${toAccount.name}: ${data.description}`,
-            reference_id: transferRef,
-            reference_name: `Transfer ${transferRef}`,
-            user_id: user.id,
-            user_name: user.name || user.email || "Unknown User"
-          })
+      // ============================================================================
+      // BALANCE UPDATE VIA JURNAL - TIDAK LAGI updateAccountBalance
+      // ============================================================================
+      // Jurnal otomatis untuk transfer antar akun:
+      // Dr. Akun Tujuan     xxx
+      //   Cr. Akun Asal          xxx
+      // ============================================================================
+      const journalResult = await createTransferJournal({
+        transferId: transferRef,
+        transferDate: new Date(),
+        amount: data.amount,
+        fromAccountId: fromAccount.id,
+        fromAccountCode: fromAccount.code || '',
+        fromAccountName: fromAccount.name,
+        toAccountId: toAccount.id,
+        toAccountCode: toAccount.code || '',
+        toAccountName: toAccount.name,
+        description: data.description,
+        branchId: currentBranch.id,
+      });
 
-        if (outboundError && !outboundError.message.includes('does not exist') && outboundError.code !== 'PGRST116') {
-          throw new Error(`Failed to record outbound transfer: ${outboundError.message}`)
-        }
-
-        // Record inbound cash history for destination account (income for this account)
-        const { error: inboundError } = await supabase
-          .from('cash_history')
-          .insert({
-            account_id: data.toAccountId,
-            account_name: toAccount.name,
-            type: 'transfer_masuk',
-            amount: data.amount,
-            description: `Transfer dari ${fromAccount.name}: ${data.description}`,
-            reference_id: transferRef,
-            reference_name: `Transfer ${transferRef}`,
-            user_id: user.id,
-            user_name: user.name || user.email || "Unknown User"
-          })
-
-        if (inboundError && !inboundError.message.includes('does not exist') && inboundError.code !== 'PGRST116') {
-          throw new Error(`Failed to record inbound transfer: ${inboundError.message}`)
-        }
-      } catch (historyError: any) {
-        // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
-        if (historyError.code === 'PGRST116' || historyError.code === '42P01' || historyError.code === 'PGRST205' || 
-            historyError.code === '23502' || historyError.message.includes('does not exist') || 
-            historyError.message.includes('violates check constraint') || historyError.message.includes('violates not-null constraint')) {
-          console.warn('cash_history table issue, transfer completed without history tracking:', historyError.message);
-        } else {
-          throw historyError;
-        }
+      if (!journalResult.success) {
+        throw new Error(journalResult.error || 'Gagal membuat jurnal transfer');
       }
-      
-      // Invalidate cash flow queries
+
+      console.log('✅ Jurnal transfer auto-generated:', journalResult.journalId);
+
+      // Record in cash_history for monitoring (TIDAK update balance)
+      try {
+        // Record outbound cash history for source account
+        await supabase.from('cash_history').insert({
+          account_id: data.fromAccountId,
+          transaction_type: 'expense',
+          type: 'transfer_keluar',
+          amount: data.amount,
+          description: `Transfer ke ${toAccount.name}: ${data.description}`,
+          reference_number: transferRef,
+          created_by: user.id,
+          created_by_name: user.name || user.email || "Unknown User",
+          source_type: 'transfer',
+          branch_id: currentBranch.id,
+        });
+
+        // Record inbound cash history for destination account
+        await supabase.from('cash_history').insert({
+          account_id: data.toAccountId,
+          transaction_type: 'income',
+          type: 'transfer_masuk',
+          amount: data.amount,
+          description: `Transfer dari ${fromAccount.name}: ${data.description}`,
+          reference_number: transferRef,
+          created_by: user.id,
+          created_by_name: user.name || user.email || "Unknown User",
+          source_type: 'transfer',
+          branch_id: currentBranch.id,
+        });
+      } catch (historyError) {
+        console.warn('cash_history recording failed (non-critical):', historyError);
+      }
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] })
       queryClient.invalidateQueries({ queryKey: ['cashBalance'] })
-      
-      toast({ 
-        title: "Transfer Berhasil", 
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
+
+      toast({
+        title: "Transfer Berhasil",
         description: `Transfer ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(data.amount)} dari ${fromAccount.name} ke ${toAccount.name} berhasil.`
       })
-      
+
       reset()
       onOpenChange(false)
     } catch (error) {
-      toast({ 
-        variant: "destructive", 
-        title: "Transfer Gagal", 
+      toast({
+        variant: "destructive",
+        title: "Transfer Gagal",
         description: error instanceof Error ? error.message : "Terjadi kesalahan saat transfer"
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -273,12 +295,12 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Batal
             </Button>
-            <Button 
-              type="submit" 
-              disabled={updateAccountBalance.isPending || (fromAccount && amount > fromAccount.balance)}
+            <Button
+              type="submit"
+              disabled={isSubmitting || (fromAccount && amount > fromAccount.balance)}
               className="bg-blue-600 hover:bg-blue-700"
             >
-              {updateAccountBalance.isPending ? "Memproses..." : "Transfer"}
+              {isSubmitting ? "Memproses..." : "Transfer"}
             </Button>
           </div>
         </form>

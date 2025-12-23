@@ -1,9 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Expense } from '@/types/expense'
 import { supabase } from '@/integrations/supabase/client'
-import { useAccounts } from './useAccounts'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
+import { createExpenseJournal } from '@/services/journalService'
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
+// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// Jurnal otomatis dibuat melalui journalService untuk setiap transaksi
+// ============================================================================
 
 // Helper to map from DB (snake_case) to App (camelCase)
 const fromDbToApp = (dbExpense: any): Expense => ({
@@ -34,7 +42,6 @@ const fromAppToDb = (appExpense: Partial<Omit<Expense, 'id' | 'createdAt'>>) => 
 
 export const useExpenses = () => {
   const queryClient = useQueryClient();
-  const { updateAccountBalance } = useAccounts();
   const { user } = useAuth();
   const { currentBranch } = useBranch();
 
@@ -135,28 +142,11 @@ export const useExpenses = () => {
       }
       
       // ============================================================================
-      // DOUBLE-ENTRY ACCOUNTING FOR EXPENSES
-      // ============================================================================
-      // 1. Credit Kas/Bank (decrease asset) - mengurangi saldo kas
-      // 2. Debit Beban (increase expense) - menambah saldo akun beban
+      // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
+      // Double-entry accounting dilakukan melalui createExpenseJournal di bawah
       // ============================================================================
 
-      // 1. Kurangi saldo akun pembayaran (Kas/Bank)
-      if (newExpenseData.accountId) {
-        updateAccountBalance.mutate({ accountId: newExpenseData.accountId, amount: -newExpenseData.amount });
-      }
-
-      // 2. Tambah saldo akun beban (expense account)
-      if (newExpenseData.expenseAccountId) {
-        updateAccountBalance.mutate({ accountId: newExpenseData.expenseAccountId, amount: newExpenseData.amount });
-        console.log('✅ Expense account balance updated (Debit):', {
-          expenseAccountId: newExpenseData.expenseAccountId,
-          expenseAccountName: newExpenseData.expenseAccountName,
-          amount: newExpenseData.amount
-        });
-      }
-
-      // Record in cash_history for expense tracking
+      // Record in cash_history for expense tracking (MONITORING ONLY - tidak update balance)
       if (newExpenseData.accountId && user) {
         try {
           // Determine expense type based on category
@@ -177,20 +167,20 @@ export const useExpenses = () => {
             expenseType = 'pembayaran_po';
           }
 
+          // cash_history table columns: id, account_id, transaction_type, amount, description,
+          // reference_number, created_by, created_by_name, source_type, created_at, branch_id, type
+          // IMPORTANT: transaction_type must be 'income' or 'expense' (database constraint)
           const cashFlowRecord: any = {
             account_id: newExpenseData.accountId,
-            account_name: newExpenseData.accountName || 'Unknown Account',
+            transaction_type: 'expense',
             type: expenseType,
             amount: newExpenseData.amount,
             description: newExpenseData.description,
-            reference_id: data.id,
-            reference_name: `Pengeluaran ${data.id}`,
-            user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User',
+            reference_number: data.id,
+            created_by: user.id,
+            created_by_name: user.name || user.email || 'Unknown User',
+            source_type: 'expense',
             branch_id: currentBranch?.id || null,
-            // Add expense account info for COA integration
-            expense_account_id: newExpenseData.expenseAccountId || null,
-            expense_account_name: newExpenseData.expenseAccountName || null,
           };
 
           console.log('Recording expense in cash history:', cashFlowRecord);
@@ -208,10 +198,39 @@ export const useExpenses = () => {
           console.error('Error recording expense cash flow:', error);
         }
       } else {
-        console.log('Skipping cash flow record - missing accountId or user:', { 
-          accountId: newExpenseData.accountId, 
-          user: user ? 'exists' : 'missing' 
+        console.log('Skipping cash flow record - missing accountId or user:', {
+          accountId: newExpenseData.accountId,
+          user: user ? 'exists' : 'missing'
         });
+      }
+
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY
+      // ============================================================================
+      // Buat jurnal otomatis untuk pengeluaran ini
+      // Dr. Beban (expense account)   xxx
+      //   Cr. Kas/Bank                     xxx
+      // ============================================================================
+      if (currentBranch?.id) {
+        try {
+          const journalResult = await createExpenseJournal({
+            expenseId: data.id,
+            expenseDate: newExpenseData.date,
+            amount: newExpenseData.amount,
+            categoryName: newExpenseData.category || 'Beban Umum',
+            description: newExpenseData.description,
+            branchId: currentBranch.id,
+            accountId: newExpenseData.expenseAccountId, // Akun beban spesifik
+          });
+
+          if (journalResult.success) {
+            console.log('✅ Jurnal pengeluaran auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Gagal membuat jurnal otomatis:', journalResult.error);
+          }
+        } catch (journalError) {
+          console.error('Error creating expense journal:', journalError);
+        }
       }
 
       return fromDbToApp(data);
@@ -220,6 +239,7 @@ export const useExpenses = () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     },
   });
 
@@ -249,25 +269,23 @@ export const useExpenses = () => {
       const appExpense = fromDbToApp(deletedExpense);
 
       // ============================================================================
-      // ROLLBACK DOUBLE-ENTRY ACCOUNTING
+      // ROLLBACK: Void jurnal terkait expense ini
+      // Balance akan otomatis ter-rollback karena dihitung dari journal_entries
       // ============================================================================
-      // 1. Credit Kas/Bank (increase asset) - kembalikan saldo kas
-      // 2. Debit Beban (decrease expense) - kurangi saldo akun beban
-      // ============================================================================
+      try {
+        const { error: voidError } = await supabase
+          .from('journal_entries')
+          .update({ status: 'voided' })
+          .eq('reference_id', expenseId)
+          .eq('reference_type', 'expense');
 
-      // 1. Kembalikan saldo ke akun pembayaran (Kas/Bank)
-      if (appExpense.accountId) {
-        updateAccountBalance.mutate({ accountId: appExpense.accountId, amount: appExpense.amount });
-      }
-
-      // 2. Kurangi saldo akun beban (rollback expense)
-      if (appExpense.expenseAccountId) {
-        updateAccountBalance.mutate({ accountId: appExpense.expenseAccountId, amount: -appExpense.amount });
-        console.log('✅ Expense account balance rolled back (Credit):', {
-          expenseAccountId: appExpense.expenseAccountId,
-          expenseAccountName: appExpense.expenseAccountName,
-          amount: -appExpense.amount
-        });
+        if (voidError) {
+          console.error('Failed to void expense journal:', voidError.message);
+        } else {
+          console.log('✅ Expense journal voided:', expenseId);
+        }
+      } catch (err) {
+        console.error('Error voiding expense journal:', err);
       }
 
       return appExpense;

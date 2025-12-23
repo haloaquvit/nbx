@@ -40,10 +40,11 @@ export function useBranches() {
     },
   });
 
-  // Create branch
+  // Create branch and copy COA from headquarters
   const createBranch = useMutation({
     mutationFn: async (branch: Omit<Branch, 'id' | 'createdAt' | 'updatedAt'>) => {
-      const { data, error } = await supabase
+      // 1. Create the branch
+      const { data: newBranch, error: branchError } = await supabase
         .from('branches')
         .insert({
           company_id: branch.companyId,
@@ -60,14 +61,64 @@ export function useBranches() {
         .select()
         .single();
 
-      if (error) throw error;
-      return data;
+      if (branchError) throw branchError;
+
+      // 2. Get the headquarters branch (first branch or one named "Pusat"/"Manokwari")
+      const { data: allBranches } = await supabase
+        .from('branches')
+        .select('id, name')
+        .order('created_at', { ascending: true });
+
+      const headquartersBranch = allBranches?.find(b =>
+        b.name.toLowerCase().includes('pusat') ||
+        b.name.toLowerCase().includes('manokwari')
+      ) || allBranches?.[0];
+
+      if (headquartersBranch && headquartersBranch.id !== newBranch.id) {
+        // 3. Get all accounts from headquarters
+        const { data: hqAccounts, error: accError } = await supabase
+          .from('accounts')
+          .select('code, name, type, parent_id, is_header, level, normal_balance, is_active, sort_order, category')
+          .eq('branch_id', headquartersBranch.id)
+          .order('code');
+
+        if (!accError && hqAccounts && hqAccounts.length > 0) {
+          // 4. Create the same accounts for the new branch
+          const newAccounts = hqAccounts.map(acc => ({
+            branch_id: newBranch.id,
+            code: acc.code,
+            name: acc.name,
+            type: acc.type,
+            parent_id: null, // Reset parent since IDs will be different
+            is_header: acc.is_header,
+            initial_balance: 0, // Start with zero balance for new branch
+            balance: 0,
+            level: acc.level,
+            normal_balance: acc.normal_balance,
+            is_active: acc.is_active,
+            sort_order: acc.sort_order,
+            category: acc.category,
+          }));
+
+          const { error: insertError } = await supabase
+            .from('accounts')
+            .insert(newAccounts);
+
+          if (insertError) {
+            console.error('Failed to copy COA to new branch:', insertError);
+            // Don't throw - branch was created successfully, just COA copy failed
+          }
+        }
+      }
+
+      return newBranch;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['branches'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
       toast({
         title: 'Berhasil',
-        description: 'Cabang berhasil ditambahkan',
+        description: 'Cabang berhasil ditambahkan dengan struktur akun dari kantor pusat',
       });
     },
     onError: (error) => {
@@ -147,6 +198,88 @@ export function useBranches() {
     },
   });
 
+  // Copy COA from headquarters to a branch that doesn't have accounts
+  const copyCoaToBranch = useMutation({
+    mutationFn: async (targetBranchId: string) => {
+      // 1. Check if target branch already has accounts
+      const { data: existingAccounts } = await supabase
+        .from('accounts')
+        .select('id')
+        .eq('branch_id', targetBranchId)
+        .limit(1);
+
+      if (existingAccounts && existingAccounts.length > 0) {
+        throw new Error('Branch sudah memiliki akun COA');
+      }
+
+      // 2. Get the headquarters branch
+      const { data: allBranches } = await supabase
+        .from('branches')
+        .select('id, name')
+        .order('created_at', { ascending: true });
+
+      const headquartersBranch = allBranches?.find(b =>
+        b.name.toLowerCase().includes('pusat') ||
+        b.name.toLowerCase().includes('manokwari')
+      ) || allBranches?.[0];
+
+      if (!headquartersBranch || headquartersBranch.id === targetBranchId) {
+        throw new Error('Tidak dapat menemukan kantor pusat untuk menyalin COA');
+      }
+
+      // 3. Get all accounts from headquarters
+      const { data: hqAccounts, error: accError } = await supabase
+        .from('accounts')
+        .select('code, name, type, parent_id, is_header, level, normal_balance, is_active, sort_order, category')
+        .eq('branch_id', headquartersBranch.id)
+        .order('code');
+
+      if (accError) throw accError;
+      if (!hqAccounts || hqAccounts.length === 0) {
+        throw new Error('Kantor pusat tidak memiliki akun COA');
+      }
+
+      // 4. Create the same accounts for the target branch
+      const newAccounts = hqAccounts.map(acc => ({
+        branch_id: targetBranchId,
+        code: acc.code,
+        name: acc.name,
+        type: acc.type,
+        parent_id: null,
+        is_header: acc.is_header,
+        initial_balance: 0,
+        balance: 0,
+        level: acc.level,
+        normal_balance: acc.normal_balance,
+        is_active: acc.is_active,
+        sort_order: acc.sort_order,
+        category: acc.category,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('accounts')
+        .insert(newAccounts);
+
+      if (insertError) throw insertError;
+
+      return { copiedCount: newAccounts.length };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast({
+        title: 'Berhasil',
+        description: `${data.copiedCount} akun COA berhasil disalin dari kantor pusat`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Error',
+        description: `Gagal menyalin COA: ${error.message}`,
+        variant: 'destructive',
+      });
+    },
+  });
+
   return {
     branches,
     isLoading,
@@ -154,5 +287,6 @@ export function useBranches() {
     createBranch,
     updateBranch,
     deleteBranch,
+    copyCoaToBranch,
   };
 }

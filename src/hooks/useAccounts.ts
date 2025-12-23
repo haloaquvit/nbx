@@ -17,7 +17,6 @@ const fromDbToApp = (dbAccount: any): Account => ({
   code: dbAccount.code || undefined,
   parentId: dbAccount.parent_id || undefined,
   level: dbAccount.level || 1,
-  normalBalance: dbAccount.normal_balance || 'DEBIT',
   isHeader: dbAccount.is_header || false,
   isActive: dbAccount.is_active !== false, // Default to true if not specified
   sortOrder: dbAccount.sort_order || 0,
@@ -30,7 +29,6 @@ const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => 
     isPaymentAccount,
     initialBalance,
     parentId,
-    normalBalance,
     isHeader,
     isActive,
     sortOrder,
@@ -51,9 +49,6 @@ const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => 
   // Enhanced CoA fields
   if (parentId !== undefined) {
     dbData.parent_id = parentId || null;
-  }
-  if (normalBalance !== undefined) {
-    dbData.normal_balance = normalBalance;
   }
   if (isHeader !== undefined) {
     dbData.is_header = isHeader;
@@ -82,8 +77,9 @@ export const useAccounts = () => {
       // COA STRUCTURE IS GLOBAL, BALANCE IS PER BRANCH
       // ============================================================================
       // - Struktur COA (kode, nama, tipe) sama untuk semua branch
-      // - Saldo dihitung dari cash_history per branch
-      // - Ini memastikan konsistensi struktur tapi saldo terpisah
+      // - Saldo dihitung dari journal_entry_lines per branch (BUKAN cash_history)
+      // - journal_entries adalah sumber kebenaran untuk akuntansi
+      // - cash_history hanya untuk monitoring Buku Kas Harian
       // ============================================================================
 
       // Get ALL accounts (struktur COA global)
@@ -97,7 +93,7 @@ export const useAccounts = () => {
       const baseAccounts = accountsData ? accountsData.map(fromDbToApp) : [];
 
       // ============================================================================
-      // CALCULATE BALANCE PER BRANCH FROM CASH_HISTORY
+      // CALCULATE BALANCE PER BRANCH FROM JOURNAL_ENTRY_LINES
       // ============================================================================
       if (!currentBranch?.id) {
         console.log('📊 No branch selected, returning accounts with initial balance only');
@@ -108,46 +104,74 @@ export const useAccounts = () => {
         }));
       }
 
-      // Get all cash_history for current branch to calculate per-branch balance
-      const { data: cashHistory, error: cashError } = await supabase
-        .from('cash_history')
-        .select('account_id, amount, type')
-        .eq('branch_id', currentBranch.id);
+      // Get all journal_entry_lines for current branch to calculate per-branch balance
+      // Only include POSTED journals that are NOT voided
+      const { data: journalLines, error: journalError } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          account_id,
+          debit_amount,
+          credit_amount,
+          journal_entries!inner (
+            branch_id,
+            status,
+            is_voided
+          )
+        `)
+        .eq('journal_entries.branch_id', currentBranch.id)
+        .eq('journal_entries.status', 'posted')
+        .eq('journal_entries.is_voided', false);
 
-      if (cashError) {
-        console.warn('Error fetching cash_history for balance calculation:', cashError.message);
+      if (journalError) {
+        console.warn('Error fetching journal_entry_lines for balance calculation:', journalError.message);
+        // Fallback to initial_balance only
         return baseAccounts.map(acc => ({
           ...acc,
           balance: acc.initialBalance || 0
         }));
       }
 
-      // Calculate balance per account from cash_history
+      // Calculate balance per account from journal_entry_lines
       const accountBalanceMap = new Map<string, number>();
 
       // Initialize with initial_balance for each account
-      // Saldo akhir = initial_balance + perubahan dari cash_history
       baseAccounts.forEach(acc => {
-        accountBalanceMap.set(acc.id, acc.initialBalance || 0); // Start from initial_balance
+        accountBalanceMap.set(acc.id, acc.initialBalance || 0);
       });
 
-      // Income types: add to balance (Kas masuk)
-      const incomeTypes = ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang', 'transfer_masuk'];
-      // Expense types: subtract from balance (Kas keluar)
-      const expenseTypes = ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji', 'transfer_keluar', 'pembayaran_hutang'];
+      // ============================================================================
+      // PERHITUNGAN SALDO DARI JOURNAL_ENTRY_LINES
+      // ============================================================================
+      // Berdasarkan prinsip akuntansi double-entry:
+      // - Aset & Beban: Debit (+), Credit (-)
+      // - Kewajiban, Modal, Pendapatan: Debit (-), Credit (+)
+      // ============================================================================
+      const accountTypes = new Map<string, string>();
+      baseAccounts.forEach(acc => {
+        accountTypes.set(acc.id, acc.type);
+      });
 
-      // Calculate balance changes from cash_history for this branch
-      (cashHistory || []).forEach(record => {
-        if (!record.account_id) return;
+      (journalLines || []).forEach((line: any) => {
+        if (!line.account_id) return;
 
-        const currentBalance = accountBalanceMap.get(record.account_id) || 0;
-        const amount = Number(record.amount) || 0;
+        const currentBalance = accountBalanceMap.get(line.account_id) || 0;
+        const debitAmount = Number(line.debit_amount) || 0;
+        const creditAmount = Number(line.credit_amount) || 0;
+        const accountType = accountTypes.get(line.account_id) || 'Aset';
 
-        if (incomeTypes.includes(record.type)) {
-          accountBalanceMap.set(record.account_id, currentBalance + amount);
-        } else if (expenseTypes.includes(record.type)) {
-          accountBalanceMap.set(record.account_id, currentBalance - amount);
+        // Determine balance change based on account type
+        const isDebitNormal = ['Aset', 'Beban'].includes(accountType);
+
+        let balanceChange = 0;
+        if (isDebitNormal) {
+          // Aset & Beban: Debit increases, Credit decreases
+          balanceChange = debitAmount - creditAmount;
+        } else {
+          // Kewajiban, Modal, Pendapatan: Credit increases, Debit decreases
+          balanceChange = creditAmount - debitAmount;
         }
+
+        accountBalanceMap.set(line.account_id, currentBalance + balanceChange);
       });
 
       // Apply calculated balances to accounts
@@ -156,7 +180,7 @@ export const useAccounts = () => {
         balance: accountBalanceMap.get(acc.id) ?? 0
       }));
 
-      console.log('📊 Accounts loaded for branch:', currentBranch?.name, 'Count:', accountsWithBranchBalance.length);
+      console.log('📊 Accounts loaded from journal_entries for branch:', currentBranch?.name, 'Count:', accountsWithBranchBalance.length);
 
       return accountsWithBranchBalance;
     },
@@ -362,11 +386,11 @@ export const useAccounts = () => {
       type: string,
       parentCode?: string,
       level: number,
-      normalBalance: string,
       isHeader: boolean,
       sortOrder: number
     }>) => {
       // First pass: Create accounts without parent relationships
+      // Include branch_id from current active branch
       const accountsToCreate = coaTemplate.map(template => ({
         id: `acc-${template.code}`,
         code: template.code,
@@ -375,11 +399,11 @@ export const useAccounts = () => {
         balance: 0,
         initial_balance: 0,
         level: template.level,
-        normal_balance: template.normalBalance,
         is_header: template.isHeader,
         is_active: true,
         is_payment_account: false,
         sort_order: template.sortOrder,
+        branch_id: currentBranch?.id || null,
         created_at: new Date().toISOString()
       }));
 

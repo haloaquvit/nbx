@@ -8,6 +8,50 @@ import { useMaterialMovements } from './useMaterialMovements'
 import { useAccountsPayable } from './useAccountsPayable'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
+import { findAccountByLookup, AccountLookupType } from '@/services/accountLookupService'
+import { Account } from '@/types/account'
+
+// Helper to map DB account to App account format
+const fromDbToAppAccount = (dbAccount: any): Account => ({
+  id: dbAccount.id,
+  name: dbAccount.name,
+  type: dbAccount.type,
+  balance: Number(dbAccount.balance) || 0,
+  initialBalance: Number(dbAccount.initial_balance) || 0,
+  isPaymentAccount: dbAccount.is_payment_account,
+  createdAt: new Date(dbAccount.created_at),
+  code: dbAccount.code || undefined,
+  parentId: dbAccount.parent_id || undefined,
+  level: dbAccount.level || 1,
+  normalBalance: dbAccount.normal_balance || 'DEBIT',
+  isHeader: dbAccount.is_header || false,
+  isActive: dbAccount.is_active !== false,
+  sortOrder: dbAccount.sort_order || 0,
+  branchId: dbAccount.branch_id || undefined,
+});
+
+// Helper to get account by lookup type (using name/type based matching)
+const getAccountByLookup = async (lookupType: AccountLookupType): Promise<{ id: string; name: string; code?: string; balance: number } | null> => {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .order('code');
+
+  if (error || !data) {
+    console.warn(`Failed to fetch accounts for ${lookupType} lookup:`, error?.message);
+    return null;
+  }
+
+  const accounts = data.map(fromDbToAppAccount);
+  const account = findAccountByLookup(accounts, lookupType);
+
+  if (!account) {
+    console.warn(`Account not found for lookup type: ${lookupType}`);
+    return null;
+  }
+
+  return { id: account.id, name: account.name, code: account.code, balance: account.balance || 0 };
+};
 
 const fromDb = (dbPo: any): PurchaseOrder => ({
   id: dbPo.id,
@@ -274,14 +318,8 @@ export const usePurchaseOrders = () => {
       }
 
       if (payableData) {
-        // Get liability account (Hutang Usaha - code 2100 or 2110)
-        const { data: liabilityAccount } = await supabase
-          .from('accounts')
-          .select('id')
-          .eq('type', 'Kewajiban')
-          .or('code.eq.2100,code.eq.2110,name.ilike.%hutang usaha%')
-          .limit(1)
-          .single();
+        // Get liability account (Hutang Usaha) using lookup service
+        const liabilityAccount = await getAccountByLookup('HUTANG_USAHA');
 
         // Pay the accounts payable (this will update liability account)
         await payAccountsPayable.mutateAsync({

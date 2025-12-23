@@ -5,14 +5,14 @@ const config: CapacitorConfig = {
   appName: 'Aquvit ERP',
   webDir: 'dist',
   server: {
-    // Load web app from VPS (WebView wrapper mode)
-    url: 'https://app.aquvit.id',
+    // Load from local assets first (for server selector)
+    // Then navigate to selected server URL
     androidScheme: 'https',
     cleartext: false
   },
   android: {
     allowMixedContent: false,
-    webContentsDebuggingEnabled: false // Disable for production
+    webContentsDebuggingEnabled: true // Enable for debugging
   }
 };
 

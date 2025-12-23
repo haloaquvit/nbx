@@ -127,7 +127,13 @@
       "Bash(set \"JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr\")",
       "Bash(cmd.exe /c \"cd /d d:\\App\\Aquvit Fix - Copy\\android && set JAVA_HOME=C:\\Program Files\\Android\\Android Studio\\jbr && gradlew.bat assembleDebug\")",
       "Bash(cmd.exe:*)",
-      "Bash(timeout /t 6)"
+      "Bash(timeout /t 6)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MzlhZjMyYy00Mzg4LTRkNjItOTk5Ny04MmQwMTZlYjZlNTIiLCJ1c2VyX2lkIjoiNTM5YWYzMmMtNDM4OC00ZDYyLTk5OTctODJkMDE2ZWI2ZTUyIiwiZW1haWwiOiJpbnB1dHBpcEBnbWFpbC5jb20iLCJyb2xlIjoib3duZXIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiaWF0IjoxNzY2NDMzNTU1LCJleHAiOjE3NjcwMzgzNTV9.xgHTMpw15S7Wq5Pe3RYqdPZfppuPOeS1bjp9-B1pCkM\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI1MzlhZjMyYy00Mzg4LTRkNjItOTk5Ny04MmQwMTZlYjZlNTIiLCJ1c2VyX2lkIjoiNTM5YWYzMmMtNDM4OC00ZDYyLTk5OTctODJkMDE2ZWI2ZTUyIiwiZW1haWwiOiJpbnB1dHBpcEBnbWFpbC5jb20iLCJyb2xlIjoib3duZXIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiaWF0IjoxNzY2NDMzOTIwLCJleHAiOjE3NjcwMzg3MjB9.6kxa36L4crWrCWJ8GWO9zkwcRLLyjscOanetGkUiC8Q\")",
+      "Bash(PGPASSWORD=\"Aquvit2024!\" psql -h 103.197.190.54 -U aquvit -d aquvit -c \"SELECT COUNT(*) as total_transactions FROM transactions WHERE branch_id = ''2462d89d-5fb2-4cac-b241-85048af234be'';\")",
+      "Bash(tar:*)",
+      "Bash(timeout:*)",
+      "Bash(start:*)"
     ],
     "deny": [],
     "ask": [],

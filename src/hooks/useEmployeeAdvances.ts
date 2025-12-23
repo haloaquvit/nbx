@@ -1,23 +1,60 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { EmployeeAdvance, AdvanceRepayment } from '@/types/employeeAdvance'
-import { useAccounts } from './useAccounts';
 import { useAuth } from './useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useBranch } from '@/contexts/BranchContext';
+import { findAccountByLookup } from '@/services/accountLookupService';
+import { Account } from '@/types/account';
+import { createAdvanceJournal } from '@/services/journalService';
 
-// Helper to get Piutang Karyawan account (code 1220) from database
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
+// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// Jurnal otomatis dibuat melalui journalService untuk setiap transaksi panjar
+// ============================================================================
+
+// Helper to map DB account to App account format
+const fromDbToAppAccount = (dbAccount: any): Account => ({
+  id: dbAccount.id,
+  name: dbAccount.name,
+  type: dbAccount.type,
+  balance: Number(dbAccount.balance) || 0,
+  initialBalance: Number(dbAccount.initial_balance) || 0,
+  isPaymentAccount: dbAccount.is_payment_account,
+  createdAt: new Date(dbAccount.created_at),
+  code: dbAccount.code || undefined,
+  parentId: dbAccount.parent_id || undefined,
+  level: dbAccount.level || 1,
+  normalBalance: dbAccount.normal_balance || 'DEBIT',
+  isHeader: dbAccount.is_header || false,
+  isActive: dbAccount.is_active !== false,
+  sortOrder: dbAccount.sort_order || 0,
+  branchId: dbAccount.branch_id || undefined,
+});
+
+// Helper to get Piutang Karyawan account using lookup service (by name/type)
 const getPiutangKaryawanAccount = async (): Promise<{ id: string; name: string } | null> => {
   const { data, error } = await supabase
     .from('accounts')
-    .select('id, name')
-    .eq('code', '1220')
-    .single();
+    .select('*')
+    .order('code');
 
   if (error || !data) {
-    console.warn('Piutang Karyawan account (1220) not found:', error?.message);
+    console.warn('Failed to fetch accounts for Piutang Karyawan lookup:', error?.message);
     return null;
   }
-  return data;
+
+  const accounts = data.map(fromDbToAppAccount);
+  const piutangAccount = findAccountByLookup(accounts, 'PIUTANG_KARYAWAN');
+
+  if (!piutangAccount) {
+    console.warn('Piutang Karyawan account not found using lookup service');
+    return null;
+  }
+
+  return { id: piutangAccount.id, name: piutangAccount.name };
 };
 
 const fromDbToApp = (dbAdvance: any): EmployeeAdvance => ({
@@ -55,7 +92,6 @@ const fromAppToDb = (appAdvance: Partial<EmployeeAdvance>) => {
 
 export const useEmployeeAdvances = () => {
   const queryClient = useQueryClient();
-  const { updateAccountBalance } = useAccounts();
   const { user } = useAuth();
   const { currentBranch } = useBranch();
 
@@ -112,47 +148,110 @@ export const useEmployeeAdvances = () => {
 
       if (error) throw new Error(error.message);
 
-      // Decrease payment account (kas/bank)
-      updateAccountBalance.mutate({ accountId: newData.accountId, amount: -newData.amount });
-
-      // Increase Piutang Karyawan account (1220) - this is an asset (receivable from employee)
+      // Get Piutang Karyawan account using lookup service
       const piutangAccount = await getPiutangKaryawanAccount();
-      if (piutangAccount) {
-        updateAccountBalance.mutate({ accountId: piutangAccount.id, amount: newData.amount });
-        console.log(`Increased Piutang Karyawan (${piutangAccount.id}) by ${newData.amount}`);
-      } else {
-        console.warn('Piutang Karyawan account (1220) not found, skipping balance update');
-      }
 
-      // Record in cash_history for advance tracking
+      // ============================================================================
+      // DOUBLE-ENTRY ACCOUNTING FOR PANJAR KARYAWAN
+      // Journal Entry:
+      // - Debit: Piutang Karyawan (increase asset - employee owes company)
+      // - Credit: Kas/Bank (decrease asset - cash out)
+      //
+      // Saldo dihitung dari cash_history, jadi HARUS dicatat di cash_history
+      // untuk kedua akun agar muncul di Neraca
+      // ============================================================================
       if (newData.accountId && user) {
         try {
+          const description = `Panjar karyawan untuk ${newData.employeeName}: ${newData.notes || 'Tidak ada keterangan'}`;
+
+          // 1. Record DEBIT to Piutang Karyawan (piutang bertambah = kas masuk ke akun piutang)
+          if (piutangAccount) {
+            const piutangRecord = {
+              account_id: piutangAccount.id,
+              transaction_type: 'income', // Piutang bertambah = aset bertambah
+              type: 'panjar_pengambilan', // Custom type for panjar
+              amount: newData.amount,
+              description: `[DEBIT] ${description}`,
+              reference_number: data.id,
+              created_by: user.id,
+              created_by_name: user.name || user.email || 'Unknown User',
+              source_type: 'employee_advance',
+              branch_id: currentBranch?.id || null,
+            };
+
+            const { error: piutangError } = await supabase
+              .from('cash_history')
+              .insert(piutangRecord);
+
+            if (piutangError) {
+              console.error('Failed to record piutang in cash history:', piutangError.message);
+            } else {
+              console.log(`✅ Piutang Karyawan (${piutangAccount.id}) increased by ${newData.amount}`);
+            }
+          } else {
+            console.warn('⚠️ Piutang Karyawan account not found, skipping piutang recording');
+          }
+
+          // 2. Record CREDIT to Kas/Bank (kas berkurang = expense)
           const cashFlowRecord = {
             account_id: newData.accountId,
-            account_name: newData.accountName || 'Unknown Account',
+            transaction_type: 'expense',
             type: 'panjar_pengambilan',
             amount: newData.amount,
-            description: `Panjar karyawan untuk ${newData.employeeName}: ${newData.notes || 'Tidak ada keterangan'}`,
-            reference_id: data.id,
-            reference_name: `Panjar ${data.id}`,
-            user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User',
+            description: `[CREDIT] ${description}`,
+            reference_number: data.id,
+            created_by: user.id,
+            created_by_name: user.name || user.email || 'Unknown User',
+            source_type: 'employee_advance',
             branch_id: currentBranch?.id || null,
           };
-
-          console.log('Recording advance in cash history:', cashFlowRecord);
 
           const { error: cashFlowError } = await supabase
             .from('cash_history')
             .insert(cashFlowRecord);
 
           if (cashFlowError) {
-            console.error('Failed to record advance in cash flow:', cashFlowError.message);
+            console.error('Failed to record cash flow:', cashFlowError.message);
           } else {
-            console.log('Successfully recorded advance in cash history');
+            console.log(`✅ Kas/Bank decreased by ${newData.amount}`);
           }
+
+          console.log('📝 Double-entry for panjar completed:', {
+            debit: { account: piutangAccount?.name, amount: newData.amount },
+            credit: { account: newData.accountName, amount: newData.amount }
+          });
+
         } catch (error) {
           console.error('Error recording advance cash flow:', error);
+        }
+      }
+
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR PANJAR
+      // ============================================================================
+      // Jurnal otomatis untuk pemberian panjar:
+      // Dr. Panjar Karyawan   xxx
+      //   Cr. Kas/Bank             xxx
+      // ============================================================================
+      if (currentBranch?.id) {
+        try {
+          const journalResult = await createAdvanceJournal({
+            advanceId: data.id,
+            advanceDate: new Date(newData.date),
+            amount: newData.amount,
+            employeeName: newData.employeeName,
+            type: 'given',
+            description: newData.notes,
+            branchId: currentBranch.id,
+          });
+
+          if (journalResult.success) {
+            console.log('✅ Jurnal panjar auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Gagal membuat jurnal panjar otomatis:', journalResult.error);
+          }
+        } catch (journalError) {
+          console.error('Error creating advance journal:', journalError);
         }
       }
 
@@ -162,6 +261,7 @@ export const useEmployeeAdvances = () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     },
   });
 
@@ -188,7 +288,15 @@ export const useEmployeeAdvances = () => {
       });
       if (rpcError) throw new Error(rpcError.message);
 
-      // Record repayment in cash_history as income (panjar pelunasan)
+      // ============================================================================
+      // DOUBLE-ENTRY ACCOUNTING FOR PELUNASAN PANJAR
+      // Journal Entry:
+      // - Debit: Kas/Bank (increase asset - cash in)
+      // - Credit: Piutang Karyawan (decrease asset - employee paid back)
+      //
+      // Saldo dihitung dari cash_history, jadi HARUS dicatat di cash_history
+      // untuk kedua akun agar muncul di Neraca
+      // ============================================================================
       if (accountId && user) {
         try {
           // Get advance details for the description
@@ -198,43 +306,102 @@ export const useEmployeeAdvances = () => {
             .eq('id', advanceId)
             .single();
 
+          const description = `Pelunasan panjar dari ${advance?.employee_name || 'karyawan'} - ${advanceId}`;
+          const piutangAccount = await getPiutangKaryawanAccount();
+
+          // 1. Record DEBIT to Kas/Bank (kas bertambah = income)
           const cashFlowRecord = {
             account_id: accountId,
-            account_name: accountName || 'Unknown Account',
+            transaction_type: 'income',
             type: 'panjar_pelunasan',
             amount: repaymentData.amount,
-            description: `Pelunasan panjar dari ${advance?.employee_name || 'karyawan'} - ${advanceId}`,
-            reference_id: newRepayment.id,
-            reference_name: `Pelunasan Panjar ${newRepayment.id}`,
-            user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User',
+            description: `[DEBIT] ${description}`,
+            reference_number: newRepayment.id,
+            created_by: user.id,
+            created_by_name: user.name || user.email || 'Unknown User',
+            source_type: 'advance_repayment',
             branch_id: currentBranch?.id || null,
           };
-
-          console.log('Recording repayment in cash history:', cashFlowRecord);
 
           const { error: cashFlowError } = await supabase
             .from('cash_history')
             .insert(cashFlowRecord);
 
           if (cashFlowError) {
-            console.error('Failed to record repayment in cash flow:', cashFlowError.message);
+            console.error('Failed to record cash income:', cashFlowError.message);
           } else {
-            console.log('Successfully recorded repayment in cash history');
-            // Update account balance for the repayment
-            if (accountId) {
-              // Increase payment account (kas/bank)
-              updateAccountBalance.mutate({ accountId, amount: repaymentData.amount });
-              // Decrease Piutang Karyawan account (1220) - reduce asset (receivable)
-              const piutangAccount = await getPiutangKaryawanAccount();
-              if (piutangAccount) {
-                updateAccountBalance.mutate({ accountId: piutangAccount.id, amount: -repaymentData.amount });
-                console.log(`Decreased Piutang Karyawan (${piutangAccount.id}) by ${repaymentData.amount}`);
-              }
+            console.log(`✅ Kas/Bank increased by ${repaymentData.amount}`);
+          }
+
+          // 2. Record CREDIT to Piutang Karyawan (piutang berkurang = expense dari akun piutang)
+          if (piutangAccount) {
+            const piutangRecord = {
+              account_id: piutangAccount.id,
+              transaction_type: 'expense', // Piutang berkurang = aset berkurang
+              type: 'panjar_pelunasan',
+              amount: repaymentData.amount,
+              description: `[CREDIT] ${description}`,
+              reference_number: newRepayment.id,
+              created_by: user.id,
+              created_by_name: user.name || user.email || 'Unknown User',
+              source_type: 'advance_repayment',
+              branch_id: currentBranch?.id || null,
+            };
+
+            const { error: piutangError } = await supabase
+              .from('cash_history')
+              .insert(piutangRecord);
+
+            if (piutangError) {
+              console.error('Failed to record piutang decrease:', piutangError.message);
+            } else {
+              console.log(`✅ Piutang Karyawan (${piutangAccount.id}) decreased by ${repaymentData.amount}`);
             }
           }
+
+          console.log('📝 Double-entry for pelunasan panjar completed:', {
+            debit: { account: accountName, amount: repaymentData.amount },
+            credit: { account: piutangAccount?.name, amount: repaymentData.amount }
+          });
+
         } catch (error) {
           console.error('Error recording repayment cash flow:', error);
+        }
+      }
+
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR PELUNASAN PANJAR
+      // ============================================================================
+      // Jurnal otomatis untuk pengembalian panjar:
+      // Dr. Kas/Bank          xxx
+      //   Cr. Panjar Karyawan      xxx
+      // ============================================================================
+      if (currentBranch?.id) {
+        try {
+          // Get advance details for the description
+          const { data: advance } = await supabase
+            .from('employee_advances')
+            .select('employee_name')
+            .eq('id', advanceId)
+            .single();
+
+          const journalResult = await createAdvanceJournal({
+            advanceId: newRepayment.id,
+            advanceDate: new Date(repaymentData.date),
+            amount: repaymentData.amount,
+            employeeName: advance?.employee_name || 'Karyawan',
+            type: 'returned',
+            description: `Pelunasan panjar ${advanceId}`,
+            branchId: currentBranch.id,
+          });
+
+          if (journalResult.success) {
+            console.log('✅ Jurnal pelunasan panjar auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Gagal membuat jurnal pelunasan otomatis:', journalResult.error);
+          }
+        } catch (journalError) {
+          console.error('Error creating repayment journal:', journalError);
         }
       }
     },
@@ -242,43 +409,58 @@ export const useEmployeeAdvances = () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     }
   });
 
   const deleteAdvance = useMutation({
     mutationFn: async (advanceToDelete: EmployeeAdvance): Promise<void> => {
-      // First delete related cash_history records
+      // ============================================================================
+      // VOID JURNAL PANJAR
+      // Balance otomatis ter-rollback karena dihitung dari journal_entries
+      // ============================================================================
+      try {
+        const { error: voidError } = await supabase
+          .from('journal_entries')
+          .update({ status: 'voided' })
+          .eq('reference_id', advanceToDelete.id)
+          .eq('reference_type', 'advance');
+
+        if (voidError) {
+          console.error('Failed to void advance journal:', voidError.message);
+        } else {
+          console.log('✅ Advance journal voided:', advanceToDelete.id);
+        }
+      } catch (err) {
+        console.error('Error voiding advance journal:', err);
+      }
+
+      // Delete related cash_history records by reference_number (advance ID) - untuk monitoring saja
       const { error: cashHistoryError } = await supabase
         .from('cash_history')
         .delete()
-        .eq('reference_id', advanceToDelete.id);
-      
+        .eq('reference_number', advanceToDelete.id);
+
       if (cashHistoryError) {
         console.error('Failed to delete related cash history:', cashHistoryError.message);
-        // Continue anyway, don't throw
+      } else {
+        console.log(`✅ Deleted cash_history records for advance ${advanceToDelete.id}`);
       }
 
       // Delete associated repayments first
       await supabase.from('advance_repayments').delete().eq('advance_id', advanceToDelete.id);
-      
+
       // Then delete the advance itself
       const { error } = await supabase.from('employee_advances').delete().eq('id', advanceToDelete.id);
       if (error) throw new Error(error.message);
 
-      // Reimburse the payment account with the original amount
-      updateAccountBalance.mutate({ accountId: advanceToDelete.accountId, amount: advanceToDelete.amount });
-
-      // Decrease Piutang Karyawan account (1220) since we're removing the advance
-      const piutangAccount = await getPiutangKaryawanAccount();
-      if (piutangAccount) {
-        updateAccountBalance.mutate({ accountId: piutangAccount.id, amount: -advanceToDelete.amount });
-        console.log(`Decreased Piutang Karyawan (${piutangAccount.id}) by ${advanceToDelete.amount} (delete)`);
-      }
+      console.log(`✅ Advance ${advanceToDelete.id} deleted`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     }
   });
 

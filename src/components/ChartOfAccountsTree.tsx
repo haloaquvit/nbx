@@ -168,16 +168,21 @@ const TreeNode: React.FC<TreeNodeProps> = ({
             </Badge>
           </div>
 
-          {/* Balance hidden - view balances in Buku Besar (Cash Flow) page instead */}
-          {/* {!account.isHeader && (
-            <div className="text-xs text-muted-foreground mt-0.5">
-              Balance: {new Intl.NumberFormat('id-ID', {
+          {/* Balance info for non-header accounts */}
+          {!account.isHeader && (
+            <div className="text-xs text-muted-foreground mt-0.5 flex gap-3">
+              <span>Saldo Awal: {new Intl.NumberFormat('id-ID', {
                 style: 'currency',
                 currency: 'IDR',
                 minimumFractionDigits: 0
-              }).format(account.balance)}
+              }).format(account.initialBalance || 0)}</span>
+              <span className="font-medium">Saldo: {new Intl.NumberFormat('id-ID', {
+                style: 'currency',
+                currency: 'IDR',
+                minimumFractionDigits: 0
+              }).format(account.balance)}</span>
             </div>
-          )} */}
+          )}
         </div>
 
         {/* Actions */}

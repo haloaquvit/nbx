@@ -165,7 +165,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
 
       // Get customer name from form, fallback to existing customer name or timestamp
       const customerName = watch('name')?.trim() || customer?.name?.trim() || `customer-${Date.now()}`
-      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName, 'Customers_Images')
+      const result = await PhotoUploadService.uploadPhoto(compressedFile, customerName, 'customers')
 
       if (!result) {
         throw new Error('Gagal mengupload foto ke server.')

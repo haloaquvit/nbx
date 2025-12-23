@@ -18,6 +18,14 @@ import { useBranch } from "@/contexts/BranchContext"
 import { useQueryClient } from "@tanstack/react-query"
 import { supabase } from "@/integrations/supabase/client"
 import { Wallet } from "lucide-react"
+import { createReceivablePaymentJournal } from "@/services/journalService"
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
+// Pembayaran piutang menggunakan createReceivablePaymentJournal
+// ============================================================================
 
 // Base payment schema - will be refined per transaction
 const getPaymentSchema = (maxAmount: number) => z.object({
@@ -45,7 +53,7 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
   const { user } = useAuth()
   const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
-  const { accounts, updateAccountBalance } = useAccounts()
+  const { accounts } = useAccounts()
   
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const remainingAmount = transaction ? transaction.total - (transaction.paidAmount || 0) : 0
@@ -92,45 +100,42 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         throw new Error(paymentError.message);
       }
 
-      // Update account balance (increase cash - Debit Kas/Bank)
-      await updateAccountBalance.mutateAsync({ accountId: data.paymentAccountId, amount: data.amount });
-
       // ============================================================================
-      // DOUBLE ENTRY: Decrease Piutang Usaha account (Credit Piutang Usaha)
+      // AUTO-GENERATE JOURNAL FOR RECEIVABLE PAYMENT
+      // Dr. Kas/Bank         xxx
+      //   Cr. Piutang Usaha       xxx
       // ============================================================================
-      // Find Piutang Usaha account (code 1200 or 1210) and decrease its balance
-      const piutangAccount = accounts?.find(acc =>
-        acc.code === '1200' ||
-        acc.code === '1210' ||
-        acc.name.toLowerCase().includes('piutang usaha')
-      );
+      if (currentBranch?.id) {
+        const journalResult = await createReceivablePaymentJournal({
+          receivableId: transaction.id,
+          paymentDate: new Date(),
+          amount: data.amount,
+          customerName: transaction.customerName || 'Customer',
+          invoiceNumber: transaction.id,
+          branchId: currentBranch.id,
+        });
 
-      if (piutangAccount) {
-        // Decrease piutang balance (negative amount = credit/decrease asset)
-        await updateAccountBalance.mutateAsync({
-          accountId: piutangAccount.id,
-          amount: -data.amount // Negative to decrease
-        });
-        console.log('✅ Piutang Usaha decreased:', {
-          account: piutangAccount.name,
-          code: piutangAccount.code,
-          amount: -data.amount
-        });
-      } else {
-        console.warn('⚠️ Piutang Usaha account (1200/1210) not found in COA');
+        if (journalResult.success) {
+          console.log('✅ Receivable payment journal auto-generated:', journalResult.journalId);
+        } else {
+          console.warn('⚠️ Failed to create receivable payment journal:', journalResult.error);
+        }
       }
 
-      // Record payment in cash_history table for cash flow tracking
+      // Record payment in cash_history table for cash flow tracking (MONITORING ONLY)
+      // cash_history table columns: id, account_id, transaction_type, amount, description,
+      // reference_number, created_by, created_by_name, source_type, created_at, branch_id, type
+      // IMPORTANT: transaction_type must be 'income' or 'expense' (database constraint)
       const paymentRecord = {
         account_id: data.paymentAccountId,
-        account_name: selectedAccount.name.trim(), // Remove extra spaces
+        transaction_type: 'income',
         type: 'pembayaran_piutang',
         amount: Number(data.amount), // Ensure it's a number
         description: `Pembayaran piutang dari ${transaction.customerName} - Order: ${transaction.id}${data.notes ? ' | ' + data.notes : ''}`,
-        reference_id: transaction.id,
-        reference_name: `Piutang ${transaction.id}`,
-        user_id: user.id || null, // Allow null if user.id is undefined
-        user_name: user.name || user.email || 'Unknown User',
+        reference_number: transaction.id,
+        created_by: user.id || null, // Allow null if user.id is undefined
+        created_by_name: user.name || user.email || 'Unknown User',
+        source_type: 'receivable_payment',
         branch_id: currentBranch?.id || null, // ADD BRANCH ID
       };
 
@@ -174,6 +179,7 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         queryClient.invalidateQueries({ queryKey: ['cashBalance'] }),
         queryClient.invalidateQueries({ queryKey: ['paymentHistory'] }),
         queryClient.invalidateQueries({ queryKey: ['accounts'] }),
+        queryClient.invalidateQueries({ queryKey: ['journalEntries'] }),
       ]);
       
       // Force immediate refetch to update UI without waiting for background refetch

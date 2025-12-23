@@ -54,6 +54,9 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
     })),
     photo: undefined,
   }))
+
+  // State untuk preview foto
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   
   // FIX: Update form items when transaction.deliverySummary changes (e.g., after delivery deletion)
   useEffect(() => {
@@ -135,7 +138,19 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
     const file = e.target.files?.[0]
     if (file) {
       setFormData(prev => ({ ...prev, photo: file }))
+
+      // Create preview
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setPhotoPreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
     }
+  }
+
+  const removePhoto = () => {
+    setFormData(prev => ({ ...prev, photo: undefined }))
+    setPhotoPreview(null)
   }
 
   const handleSubmit = async () => {
@@ -355,26 +370,61 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
 
       <div>
         <Label>Foto Laporan Pengantaran (Opsional)</Label>
-        <Input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={handlePhotoCapture}
-          className="mt-2"
-        />
-        {formData.photo && (
+        {!photoPreview ? (
           <div className="mt-2">
+            <Input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoCapture}
+              className="hidden"
+              id="delivery-photo-upload"
+            />
+            <div
+              className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
+              onClick={() => document.getElementById('delivery-photo-upload')?.click()}
+            >
+              <div className="text-4xl mb-2">📷</div>
+              <p className="text-sm text-gray-600">Klik untuk mengambil/pilih foto</p>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 space-y-3">
+            <div className="relative">
+              <img
+                src={photoPreview}
+                alt="Preview foto pengantaran"
+                className="w-full max-h-64 object-contain rounded-lg border"
+              />
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={removePhoto}
+                className="absolute top-2 right-2"
+              >
+                ✕
+              </Button>
+            </div>
             <p className="text-sm text-muted-foreground">
-              File terpilih: {formData.photo.name}
+              File: {formData.photo?.name}
             </p>
+            <Input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoCapture}
+              className="hidden"
+              id="delivery-photo-upload"
+            />
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
-              onClick={() => setFormData(prev => ({ ...prev, photo: undefined }))}
-              className="mt-1"
+              onClick={() => document.getElementById('delivery-photo-upload')?.click()}
+              className="w-full"
             >
-              Hapus foto
+              Ganti Foto
             </Button>
           </div>
         )}

@@ -2,6 +2,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Asset, AssetFormData, AssetSummary } from '@/types/assets';
 import { useBranch } from '@/contexts/BranchContext';
+import { createAssetPurchaseJournal, createDepreciationJournal, voidJournalEntry } from '@/services/journalService';
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
+// Pembelian aset menggunakan createAssetPurchaseJournal
+// Penyusutan menggunakan createDepreciationJournal
+// ============================================================================
 
 // Fetch all assets
 export function useAssets() {
@@ -256,29 +265,35 @@ export function useCreateAsset() {
       if (error) throw error;
 
       // ============================================================================
-      // ASSET COA INTEGRATION
-      // Update asset account balance (Debit - increase asset value)
-      // Note: This is for initial asset entry, not purchase with cash
+      // ASSET COA INTEGRATION VIA JOURNAL
+      // Auto-generate journal: Dr. Aset Tetap, Cr. Kas (tunai)
       // ============================================================================
-      if (accountId && formData.purchasePrice > 0) {
-        const { data: account, error: accountError } = await supabase
+      if (accountId && formData.purchasePrice > 0 && currentBranch?.id) {
+        // Get account info for journal
+        const { data: accountData } = await supabase
           .from('accounts')
-          .select('balance')
+          .select('id, code, name')
           .eq('id', accountId)
           .single();
 
-        if (!accountError && account) {
-          const newBalance = Number(account.balance) + Number(formData.purchasePrice);
-          await supabase
-            .from('accounts')
-            .update({ balance: newBalance })
-            .eq('id', accountId);
-
-          console.log('✅ Asset account balance updated:', {
-            accountId,
+        if (accountData) {
+          const journalResult = await createAssetPurchaseJournal({
+            assetId: id,
+            purchaseDate: formData.purchaseDate,
             amount: formData.purchasePrice,
-            newBalance
+            assetAccountId: accountData.id,
+            assetAccountCode: accountData.code || '',
+            assetAccountName: accountData.name,
+            assetName: formData.assetName,
+            paymentMethod: 'cash', // Default to cash, can be extended
+            branchId: currentBranch.id,
           });
+
+          if (journalResult.success) {
+            console.log('✅ Asset purchase journal auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Failed to create asset purchase journal:', journalResult.error);
+          }
         }
       }
 
@@ -287,6 +302,7 @@ export function useCreateAsset() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     },
   });
 }
@@ -386,10 +402,10 @@ export function useCalculateAssetValue() {
 }
 
 // ============================================================================
-// DEPRECIATION ACCOUNTING
+// DEPRECIATION ACCOUNTING VIA JOURNAL
 // Record depreciation expense for an asset:
-// Debit: 6240 Beban Penyusutan (increase expense)
-// Credit: 1420 Akumulasi Penyusutan (increase contra-asset)
+// Dr. Beban Penyusutan (6240)
+//   Cr. Akumulasi Penyusutan (1420/1450)
 // ============================================================================
 export function useRecordDepreciation() {
   const queryClient = useQueryClient();
@@ -405,6 +421,10 @@ export function useRecordDepreciation() {
         throw new Error('Depreciation amount must be greater than 0');
       }
 
+      if (!currentBranch?.id) {
+        throw new Error('Branch tidak ditemukan');
+      }
+
       // Get asset details
       const { data: asset, error: assetError } = await supabase
         .from('assets')
@@ -416,39 +436,23 @@ export function useRecordDepreciation() {
         throw new Error('Asset not found');
       }
 
-      // Find Beban Penyusutan account (6240)
-      const { data: bebanPenyusutanAccount } = await supabase
-        .from('accounts')
-        .select('id, name, code, balance')
-        .eq('code', '6240')
-        .single();
+      // ============================================================================
+      // DEPRECIATION VIA JOURNAL - tidak update balance langsung
+      // ============================================================================
+      const journalResult = await createDepreciationJournal({
+        assetId,
+        depreciationDate: new Date(),
+        amount: depreciationAmount,
+        assetName: asset.asset_name || asset.name,
+        period,
+        branchId: currentBranch.id,
+      });
 
-      // Find Akumulasi Penyusutan account (1420 or 1450)
-      const { data: akumulasiAccount } = await supabase
-        .from('accounts')
-        .select('id, name, code, balance')
-        .or('code.eq.1420,code.eq.1450')
-        .limit(1)
-        .single();
-
-      if (!bebanPenyusutanAccount || !akumulasiAccount) {
-        throw new Error('Beban Penyusutan (6240) or Akumulasi Penyusutan (1420/1450) account not found');
+      if (!journalResult.success) {
+        throw new Error(journalResult.error || 'Gagal membuat jurnal penyusutan');
       }
 
-      // Update Beban Penyusutan (Debit - increase expense)
-      const newBebanBalance = (bebanPenyusutanAccount.balance || 0) + depreciationAmount;
-      await supabase
-        .from('accounts')
-        .update({ balance: newBebanBalance })
-        .eq('id', bebanPenyusutanAccount.id);
-
-      // Update Akumulasi Penyusutan (Credit - increase contra-asset)
-      // For contra-asset accounts, credit increases the balance
-      const newAkumulasiBalance = (akumulasiAccount.balance || 0) + depreciationAmount;
-      await supabase
-        .from('accounts')
-        .update({ balance: newAkumulasiBalance })
-        .eq('id', akumulasiAccount.id);
+      console.log('✅ Depreciation journal auto-generated:', journalResult.journalId);
 
       // Update asset current value
       const newCurrentValue = Math.max(0, (asset.current_value || asset.purchase_price) - depreciationAmount);
@@ -457,28 +461,30 @@ export function useRecordDepreciation() {
         .update({ current_value: newCurrentValue })
         .eq('id', assetId);
 
-      // Record in cash_history for audit trail
-      await supabase
-        .from('cash_history')
-        .insert({
-          account_id: bebanPenyusutanAccount.id,
-          account_name: bebanPenyusutanAccount.name,
-          type: 'pengeluaran',
-          amount: depreciationAmount,
-          description: `Penyusutan ${asset.asset_name} periode ${period}`,
-          reference_id: assetId,
-          reference_name: `Aset ${asset.asset_code || asset.asset_name}`,
-          branch_id: currentBranch?.id || null,
-          expense_account_id: bebanPenyusutanAccount.id,
-          expense_account_name: bebanPenyusutanAccount.name,
-        });
+      // Record in cash_history for audit trail (MONITORING ONLY)
+      try {
+        await supabase
+          .from('cash_history')
+          .insert({
+            account_id: null, // No direct account update
+            type: 'penyusutan',
+            amount: depreciationAmount,
+            description: `Penyusutan ${asset.asset_name} periode ${period}`,
+            reference_id: assetId,
+            reference_name: `Aset ${asset.asset_code || asset.asset_name}`,
+            branch_id: currentBranch.id,
+            source_type: 'depreciation',
+          });
+      } catch (historyError) {
+        console.warn('cash_history recording failed (non-critical):', historyError);
+      }
 
       console.log('✅ Depreciation accounting created:', {
         asset: asset.asset_name,
-        bebanPenyusutan: { account: bebanPenyusutanAccount.code, amount: depreciationAmount },
-        akumulasi: { account: akumulasiAccount.code, amount: depreciationAmount },
+        amount: depreciationAmount,
         newCurrentValue,
-        period
+        period,
+        journalId: journalResult.journalId
       });
 
       return {
@@ -491,6 +497,7 @@ export function useRecordDepreciation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     },
   });
 }

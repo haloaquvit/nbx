@@ -13,6 +13,59 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { useBranch } from '@/contexts/BranchContext'
 import { useAuth } from './useAuth'
+import { findAccountByLookup, AccountLookupType } from '@/services/accountLookupService'
+import { Account } from '@/types/account'
+import { createPayrollJournal } from '@/services/journalService'
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
+// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// Jurnal otomatis dibuat melalui journalService untuk setiap transaksi payroll
+// ============================================================================
+
+// Helper to map DB account to App account format
+const fromDbToAppAccount = (dbAccount: any): Account => ({
+  id: dbAccount.id,
+  name: dbAccount.name,
+  type: dbAccount.type,
+  balance: Number(dbAccount.balance) || 0,
+  initialBalance: Number(dbAccount.initial_balance) || 0,
+  isPaymentAccount: dbAccount.is_payment_account,
+  createdAt: new Date(dbAccount.created_at),
+  code: dbAccount.code || undefined,
+  parentId: dbAccount.parent_id || undefined,
+  level: dbAccount.level || 1,
+  normalBalance: dbAccount.normal_balance || 'DEBIT',
+  isHeader: dbAccount.is_header || false,
+  isActive: dbAccount.is_active !== false,
+  sortOrder: dbAccount.sort_order || 0,
+  branchId: dbAccount.branch_id || undefined,
+});
+
+// Helper to get account by lookup type (using name/type based matching)
+const getAccountByLookup = async (lookupType: AccountLookupType): Promise<{ id: string; name: string; code?: string; balance: number } | null> => {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .order('code');
+
+  if (error || !data) {
+    console.warn(`Failed to fetch accounts for ${lookupType} lookup:`, error?.message);
+    return null;
+  }
+
+  const accounts = data.map(fromDbToAppAccount);
+  const account = findAccountByLookup(accounts, lookupType);
+
+  if (!account) {
+    console.warn(`Account not found for lookup type: ${lookupType}`);
+    return null;
+  }
+
+  return { id: account.id, name: account.name, code: account.code, balance: account.balance || 0 };
+};
 
 // Helper functions for data transformation
 const fromDbToEmployeeSalary = (dbData: any): EmployeeSalary => ({
@@ -527,80 +580,41 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
       console.log('✅ Payroll record updated successfully');
 
-      // Update account balance (deduct the payment) - Direct SQL approach
-      console.log('💳 Updating account balance directly:', {
-        account_id: paymentAccountId,
-        amount: -payrollRecord.net_salary,
-        description: 'Deduct payroll payment from account'
-      });
-
-      // Get current balance first
-      const { data: currentAccount, error: fetchAccountError } = await supabase
-        .from('accounts')
-        .select('balance, name')
-        .eq('id', paymentAccountId)
-        .single();
-
-      if (fetchAccountError) {
-        console.error('💥 Failed to fetch account:', fetchAccountError);
-        throw new Error(`Failed to fetch account: ${fetchAccountError.message}`);
-      }
-
-      console.log('💰 Current account state:', currentAccount);
-
-      // Update balance by deducting payroll amount
-      const newBalance = (currentAccount.balance || 0) + (-payrollRecord.net_salary);
-
-      const { error: balanceError } = await supabase
-        .from('accounts')
-        .update({ balance: newBalance })
-        .eq('id', paymentAccountId);
-
-      if (balanceError) {
-        console.error('💥 Account Balance Update Error:', balanceError);
-        throw new Error(`Failed to update account balance: ${balanceError.message}`);
-      }
-
-      console.log('✅ Account balance updated successfully:', {
-        account: currentAccount.name,
-        oldBalance: currentAccount.balance,
-        payrollAmount: payrollRecord.net_salary,
-        newBalance: newBalance
-      });
+      // ============================================================================
+      // BALANCE UPDATE LANGSUNG DIHAPUS
+      // Semua saldo sekarang dihitung dari journal_entries
+      // Beban Gaji, Kas, Panjar Karyawan semua di-jurnal via createPayrollJournal
+      // ============================================================================
 
       // ============================================================================
-      // BEBAN GAJI ACCOUNTING
-      // Journal: Debit 6210 Beban Gaji (increase expense)
-      // Note: Credit to Kas is already handled above (balance update)
+      // AUTO-GENERATE JOURNAL ENTRY FOR PAYROLL
       // ============================================================================
-      try {
-        // Find Beban Gaji account (6210 or 6200)
-        const { data: bebanGajiAccount } = await supabase
-          .from('accounts')
-          .select('id, name, code, balance')
-          .or('code.eq.6210,code.eq.6200')
-          .limit(1)
-          .single();
-
-        if (bebanGajiAccount && payrollRecord.net_salary > 0) {
-          // Update Beban Gaji (Debit - increase expense)
-          const newBebanGajiBalance = (bebanGajiAccount.balance || 0) + payrollRecord.net_salary;
-          await supabase
-            .from('accounts')
-            .update({ balance: newBebanGajiBalance })
-            .eq('id', bebanGajiAccount.id);
-
-          console.log('✅ Beban Gaji accounting created:', {
-            account: bebanGajiAccount.code,
-            amount: payrollRecord.net_salary,
-            employee: payrollRecord.employee_name
+      // Jurnal otomatis untuk pembayaran gaji:
+      // Dr. Beban Gaji        xxx
+      //   Cr. Kas/Bank             xxx
+      //   Cr. Panjar Karyawan      xxx (jika ada potongan panjar)
+      // ============================================================================
+      if (currentBranch?.id) {
+        try {
+          const deductionAmount = payrollRecord.deduction_amount || 0;
+          const journalResult = await createPayrollJournal({
+            payrollId: id,
+            payrollDate: paymentDate,
+            employeeName: payrollRecord.employee_name,
+            grossSalary: payrollRecord.gross_salary || payrollRecord.net_salary + deductionAmount,
+            advanceDeduction: deductionAmount,
+            netSalary: payrollRecord.net_salary,
+            branchId: currentBranch.id,
           });
-        } else {
-          console.warn('⚠️ Beban Gaji (6210/6200) account not found in COA');
+
+          if (journalResult.success) {
+            console.log('✅ Jurnal payroll auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Gagal membuat jurnal payroll otomatis:', journalResult.error);
+          }
+        } catch (journalError) {
+          console.error('Error creating payroll journal:', journalError);
         }
-      } catch (bebanGajiError) {
-        console.error('Error creating beban gaji accounting:', bebanGajiError);
-        // Don't fail payment if accounting fails
       }
 
       // Log advance deduction info for debugging
@@ -664,6 +678,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
         queryClient.invalidateQueries({ queryKey: ['cashFlow'] }),
         queryClient.invalidateQueries({ queryKey: ['cashBalance'] }),
         queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] }), // For advance deduction updates
+        queryClient.invalidateQueries({ queryKey: ['journalEntries'] }), // For auto-generated journal
       ]);
 
       // Force immediate refetch to update UI without waiting for background refetch
@@ -690,10 +705,28 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
       if (fetchError) throw fetchError;
 
-      // If payroll was paid, we need to:
-      // 1. Delete cash_history record
-      // 2. Restore account balance
-      if (payrollRecord.status === 'paid' && payrollRecord.payment_account_id) {
+      // ============================================================================
+      // VOID JURNAL PAYROLL
+      // Balance otomatis ter-rollback karena dihitung dari journal_entries
+      // ============================================================================
+      try {
+        const { error: voidError } = await supabase
+          .from('journal_entries')
+          .update({ status: 'voided' })
+          .eq('reference_id', payrollId)
+          .eq('reference_type', 'payroll');
+
+        if (voidError) {
+          console.error('Failed to void payroll journal:', voidError.message);
+        } else {
+          console.log('✅ Payroll journal voided:', payrollId);
+        }
+      } catch (err) {
+        console.error('Error voiding payroll journal:', err);
+      }
+
+      // If payroll was paid, delete cash_history record (untuk monitoring saja)
+      if (payrollRecord.status === 'paid') {
         // Delete cash_history record
         const { error: cashError } = await supabase
           .from('cash_history')
@@ -709,38 +742,6 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
             .delete()
             .eq('reference_id', payrollId)
             .eq('type', 'kas_keluar_manual');
-        }
-
-        // Restore account balance (add back the payment amount)
-        const { data: account, error: accountFetchError } = await supabase
-          .from('accounts')
-          .select('balance')
-          .eq('id', payrollRecord.payment_account_id)
-          .single();
-
-        if (!accountFetchError && account) {
-          const restoredBalance = (account.balance || 0) + payrollRecord.net_salary;
-          await supabase
-            .from('accounts')
-            .update({ balance: restoredBalance })
-            .eq('id', payrollRecord.payment_account_id);
-        }
-
-        // Rollback Beban Gaji (Credit - decrease expense)
-        const { data: bebanGajiAccount } = await supabase
-          .from('accounts')
-          .select('id, balance')
-          .or('code.eq.6210,code.eq.6200')
-          .limit(1)
-          .single();
-
-        if (bebanGajiAccount) {
-          await supabase
-            .from('accounts')
-            .update({ balance: (bebanGajiAccount.balance || 0) - payrollRecord.net_salary })
-            .eq('id', bebanGajiAccount.id);
-
-          console.log('✅ Beban Gaji reversed:', { amount: -payrollRecord.net_salary });
         }
       }
 
@@ -759,6 +760,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
       queryClient.invalidateQueries({ queryKey: ['payrollSummary'] });
       queryClient.invalidateQueries({ queryKey: ['cashHistory'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
       toast({
         title: 'Success',
         description: 'Payroll record deleted successfully',

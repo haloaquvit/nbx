@@ -59,7 +59,7 @@ export const PosForm = () => {
   const queryClient = useQueryClient()
   const { products, isLoading: isLoadingProducts } = useProducts()
   const { users } = useUsers();
-  const { accounts, updateAccountBalance } = useAccounts();
+  const { accounts } = useAccounts();
   const { addTransaction } = useTransactions();
   const { data: salesEmployees } = useSalesEmployees();
   const { customers } = useCustomers();
@@ -405,19 +405,10 @@ export const PosForm = () => {
 
     addTransaction.mutate({ newTransaction }, {
       onSuccess: async (savedData) => {
-        // Update account balance if there's a payment (cash flow is already handled in useTransactions.ts)
-        if (paidAmount > 0 && paymentAccountId) {
-          try {
-            await updateAccountBalance.mutateAsync({ accountId: paymentAccountId, amount: paidAmount });
-          } catch (paymentError) {
-            console.error('Error updating account balance:', paymentError);
-            toast({
-              variant: "destructive",
-              title: "Warning",
-              description: "Transaksi berhasil disimpan tetapi ada masalah dalam update saldo akun."
-            });
-          }
-        }
+        // ============================================================================
+        // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
+        // addTransaction sudah memanggil createSalesJournal yang akan auto-post jurnal
+        // ============================================================================
 
         setSavedTransaction(savedData);
         toast({ title: "Sukses", description: "Transaksi dan pembayaran berhasil disimpan." });

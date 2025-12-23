@@ -13,7 +13,18 @@ import { useToast } from "./ui/use-toast"
 import { useAuth } from "@/hooks/useAuth"
 import { supabase } from "@/integrations/supabase/client"
 import { useQueryClient } from "@tanstack/react-query"
+import { useBranch } from "@/contexts/BranchContext"
 import { TrendingUp, TrendingDown } from "lucide-react"
+import { createManualCashInJournal, createManualCashOutJournal } from "@/services/journalService"
+import { useState } from "react"
+
+// ============================================================================
+// CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
+// ============================================================================
+// Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
+// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// Kas manual menggunakan createManualCashInJournal / createManualCashOutJournal
+// ============================================================================
 
 const cashTransactionSchema = z.object({
   accountId: z.string().min(1, "Pilih akun terlebih dahulu"),
@@ -32,10 +43,12 @@ interface CashInOutDialogProps {
 }
 
 export function CashInOutDialog({ open, onOpenChange, type, title, description }: CashInOutDialogProps) {
-  const { accounts, updateAccountBalance } = useAccounts()
+  const { accounts } = useAccounts()
   const { toast } = useToast()
   const { user } = useAuth()
+  const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
+  const [isSubmitting, setIsSubmitting] = useState(false)
   
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<CashTransactionFormData>({
     resolver: zodResolver(cashTransactionSchema),
@@ -60,62 +73,93 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
       return
     }
 
-    const adjustmentAmount = type === "in" ? data.amount : -data.amount
-    
+    if (!currentBranch?.id) {
+      toast({ variant: "destructive", title: "Error", description: "Branch tidak ditemukan" })
+      return
+    }
+
+    setIsSubmitting(true)
+
     try {
-      // Update account balance
-      await updateAccountBalance.mutateAsync({
-        accountId: data.accountId,
-        amount: adjustmentAmount
-      })
+      const referenceId = `MANUAL-${Date.now()}`;
 
-      // Try to create cash history record if table exists
-      try {
-        const { error: cashHistoryError } = await supabase
-          .from('cash_history')
-          .insert({
-            account_id: data.accountId,
-            account_name: selectedAccount.name,
-            type: type === "in" ? "kas_masuk_manual" : "kas_keluar_manual",
-            amount: data.amount,
-            description: data.description,
-            reference_id: `MANUAL-${Date.now()}`,
-            reference_name: `Manual ${type === "in" ? "Kas Masuk" : "Kas Keluar"} ${Date.now()}`,
-            user_id: user.id,
-            user_name: user.name || user.email || "Unknown User"
-          })
-
-        if (cashHistoryError && !cashHistoryError.message.includes('does not exist') && cashHistoryError.code !== 'PGRST116') {
-          throw new Error(`Failed to record cash transaction: ${cashHistoryError.message}`)
-        }
-      } catch (historyError: any) {
-        // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
-        if (historyError.code === 'PGRST116' || historyError.code === '42P01' || historyError.code === 'PGRST205' || 
-            historyError.code === '23502' || historyError.message.includes('does not exist') || 
-            historyError.message.includes('violates check constraint') || historyError.message.includes('violates not-null constraint')) {
-          console.warn('cash_history table issue, cash transaction completed without history tracking:', historyError.message);
-        } else {
-          throw historyError;
-        }
+      // ============================================================================
+      // BALANCE UPDATE VIA JURNAL - TIDAK LAGI updateAccountBalance
+      // ============================================================================
+      // Jurnal otomatis untuk kas masuk/keluar:
+      // Kas Masuk: Dr. Kas, Cr. Pendapatan Lain-lain
+      // Kas Keluar: Dr. Beban Lain-lain, Cr. Kas
+      // ============================================================================
+      let journalResult;
+      if (type === "in") {
+        journalResult = await createManualCashInJournal({
+          referenceId,
+          transactionDate: new Date(),
+          amount: data.amount,
+          description: data.description,
+          cashAccountId: selectedAccount.id,
+          cashAccountCode: selectedAccount.code || '',
+          cashAccountName: selectedAccount.name,
+          branchId: currentBranch.id,
+        });
+      } else {
+        journalResult = await createManualCashOutJournal({
+          referenceId,
+          transactionDate: new Date(),
+          amount: data.amount,
+          description: data.description,
+          cashAccountId: selectedAccount.id,
+          cashAccountCode: selectedAccount.code || '',
+          cashAccountName: selectedAccount.name,
+          branchId: currentBranch.id,
+        });
       }
-      
-      // Invalidate cash flow queries
+
+      if (!journalResult.success) {
+        throw new Error(journalResult.error || 'Gagal membuat jurnal kas');
+      }
+
+      console.log(`✅ Jurnal kas ${type} auto-generated:`, journalResult.journalId);
+
+      // Record in cash_history for monitoring (TIDAK update balance)
+      try {
+        await supabase.from('cash_history').insert({
+          account_id: data.accountId,
+          transaction_type: type === "in" ? "income" : "expense",
+          type: type === "in" ? "kas_masuk_manual" : "kas_keluar_manual",
+          amount: data.amount,
+          description: data.description,
+          reference_number: referenceId,
+          created_by: user.id,
+          created_by_name: user.name || user.email || "Unknown User",
+          source_type: 'manual',
+          branch_id: currentBranch.id,
+        });
+      } catch (historyError) {
+        console.warn('cash_history recording failed (non-critical):', historyError);
+      }
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] })
       queryClient.invalidateQueries({ queryKey: ['cashBalance'] })
-      
-      toast({ 
-        title: "Sukses", 
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
+
+      toast({
+        title: "Sukses",
         description: `${title} sebesar ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(data.amount)} berhasil dicatat.`
       })
-      
+
       reset()
       onOpenChange(false)
     } catch (error) {
-      toast({ 
-        variant: "destructive", 
-        title: "Gagal", 
+      toast({
+        variant: "destructive",
+        title: "Gagal",
         description: error instanceof Error ? error.message : "Terjadi kesalahan"
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -211,12 +255,12 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Batal
             </Button>
-            <Button 
-              type="submit" 
-              disabled={updateAccountBalance.isPending}
+            <Button
+              type="submit"
+              disabled={isSubmitting}
               className={type === "in" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}
             >
-              {updateAccountBalance.isPending ? "Menyimpan..." : `Simpan ${title}`}
+              {isSubmitting ? "Menyimpan..." : `Simpan ${title}`}
             </Button>
           </div>
         </form>

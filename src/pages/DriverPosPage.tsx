@@ -25,7 +25,7 @@ export default function DriverPosPage() {
   const { user } = useAuth()
   const { customers } = useCustomers()
   const { products } = useProducts()
-  const { accounts, updateAccountBalance } = useAccounts()
+  const { accounts } = useAccounts()
   const { addTransaction } = useTransactions()
 
   // Check if driver has active retasi (is_returned = false)
@@ -318,23 +318,14 @@ export default function DriverPosPage() {
         dueDate: paidAmount < total ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null // 30 days
       }
 
-      const savedTransaction = await addTransaction.mutateAsync({ 
-        newTransaction 
+      const savedTransaction = await addTransaction.mutateAsync({
+        newTransaction
       })
 
-      // Update account balance if there's a payment
-      if (paidAmount > 0 && paymentAccount) {
-        try {
-          await updateAccountBalance.mutateAsync({ accountId: paymentAccount, amount: paidAmount });
-        } catch (paymentError) {
-          console.error('Error updating account balance:', paymentError);
-          toast({ 
-            variant: "destructive", 
-            title: "Warning", 
-            description: "Transaksi berhasil disimpan tetapi ada masalah dalam update saldo akun." 
-          });
-        }
-      }
+      // ============================================================================
+      // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
+      // addTransaction sudah memanggil createSalesJournal yang akan auto-post jurnal
+      // ============================================================================
 
       setCreatedTransaction(savedTransaction)
       

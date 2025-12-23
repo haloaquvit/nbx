@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -62,7 +62,14 @@ const FinancialReportsPage = () => {
 
   // Branch context
   const { currentBranch, availableBranches, canAccessAllBranches } = useBranch();
-  const [selectedBranchId, setSelectedBranchId] = useState<string>(currentBranch?.id || '');
+  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+
+  // Sync selectedBranchId when currentBranch changes (after loading)
+  useEffect(() => {
+    if (currentBranch?.id && !selectedBranchId) {
+      setSelectedBranchId(currentBranch.id);
+    }
+  }, [currentBranch?.id]);
 
   const handleGenerateBalanceSheet = async () => {
     if (!selectedBranchId) {
@@ -177,27 +184,30 @@ const FinancialReportsPage = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Branch Selector */}
-          {canAccessAllBranches && availableBranches.length > 1 && (
-            <div className="space-y-2">
-              <Label htmlFor="branchSelect" className="flex items-center gap-2">
-                <Building2 className="w-4 h-4" />
-                Pilih Cabang
-              </Label>
-              <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
-                <SelectTrigger id="branchSelect">
-                  <SelectValue placeholder="Pilih cabang..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableBranches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Branch Selector - ALWAYS show for debugging */}
+          <div className="space-y-2">
+            <Label htmlFor="branchSelect" className="flex items-center gap-2">
+              <Building2 className="w-4 h-4" />
+              Pilih Cabang untuk Laporan
+            </Label>
+            <Select value={selectedBranchId} onValueChange={setSelectedBranchId}>
+              <SelectTrigger id="branchSelect">
+                <SelectValue placeholder="Pilih cabang..." />
+              </SelectTrigger>
+              <SelectContent>
+                {availableBranches.map((branch) => (
+                  <SelectItem key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {selectedBranchId && (
+              <p className="text-xs text-muted-foreground">
+                Branch ID: {selectedBranchId}
+              </p>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
@@ -663,10 +673,12 @@ const FinancialReportsPage = () => {
                         <span>Pembayaran piutang</span>
                         <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromReceivablePayments || 0)}</span>
                       </div>
-                      <div className="flex justify-between pl-4">
-                        <span>Pelunasan panjar karyawan</span>
-                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment || 0)}</span>
-                      </div>
+                      {cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment > 0 && (
+                        <div className="flex justify-between pl-4">
+                          <span>Pelunasan panjar karyawan</span>
+                          <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment || 0)}</span>
+                        </div>
+                      )}
                       <div className="flex justify-between pl-4">
                         <span>Penerimaan operasi lain</span>
                         <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromOtherOperating || 0)}</span>
@@ -681,13 +693,15 @@ const FinancialReportsPage = () => {
                     <div className="space-y-1">
                       <h4 className="font-medium text-red-600">Pembayaran kas untuk:</h4>
                       <div className="flex justify-between pl-4">
-                        <span>Pembelian bahan baku</span>
+                        <span>Pembayaran ke supplier</span>
                         <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forRawMaterials || 0)})</span>
                       </div>
-                      <div className="flex justify-between pl-4">
-                        <span>Pembayaran hutang (Supplier, Bank, dll)</span>
-                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments || 0)})</span>
-                      </div>
+                      {cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments > 0 && (
+                        <div className="flex justify-between pl-4">
+                          <span>Pembayaran hutang usaha lainnya</span>
+                          <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments || 0)})</span>
+                        </div>
+                      )}
                       <div className="flex justify-between pl-4">
                         <span>Hutang Bunga Atas Hutang Bank</span>
                         <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forInterestExpense || 0)})</span>
@@ -696,10 +710,12 @@ const FinancialReportsPage = () => {
                         <span>Upah tenaga kerja langsung</span>
                         <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forDirectLabor || 0)})</span>
                       </div>
-                      <div className="flex justify-between pl-4">
-                        <span>Panjar karyawan</span>
-                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances || 0)})</span>
-                      </div>
+                      {cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances > 0 && (
+                        <div className="flex justify-between pl-4">
+                          <span>Pemberian panjar karyawan</span>
+                          <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances || 0)})</span>
+                        </div>
+                      )}
                       <div className="flex justify-between pl-4">
                         <span>Biaya overhead pabrik</span>
                         <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forManufacturingOverhead || 0)})</span>
@@ -750,10 +766,41 @@ const FinancialReportsPage = () => {
                   {/* Financing Activities */}
                   <div className="space-y-2">
                     <h3 className="text-lg font-semibold text-green-700 border-b pb-2">AKTIVITAS PENDANAAN</h3>
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Tidak ada aktivitas pendanaan</span>
-                      <span className="font-mono">-</span>
-                    </div>
+
+                    {/* Owner Investments */}
+                    {cashFlowStatement.financingActivities.ownerInvestments.map((item, index) => (
+                      <div key={`owner-inv-${index}`} className="flex justify-between">
+                        <span>{item.description}</span>
+                        <span className="font-mono">{item.formattedAmount}</span>
+                      </div>
+                    ))}
+
+                    {/* Owner Withdrawals */}
+                    {cashFlowStatement.financingActivities.ownerWithdrawals.map((item, index) => (
+                      <div key={`owner-wd-${index}`} className="flex justify-between">
+                        <span>{item.description}</span>
+                        <span className="font-mono">{item.formattedAmount}</span>
+                      </div>
+                    ))}
+
+                    {/* Loans */}
+                    {cashFlowStatement.financingActivities.loans.map((item, index) => (
+                      <div key={`loan-${index}`} className="flex justify-between">
+                        <span>{item.description}</span>
+                        <span className="font-mono">{item.formattedAmount}</span>
+                      </div>
+                    ))}
+
+                    {/* Show "no activity" if all arrays are empty */}
+                    {cashFlowStatement.financingActivities.ownerInvestments.length === 0 &&
+                     cashFlowStatement.financingActivities.ownerWithdrawals.length === 0 &&
+                     cashFlowStatement.financingActivities.loans.length === 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>Tidak ada aktivitas pendanaan</span>
+                        <span className="font-mono">-</span>
+                      </div>
+                    )}
+
                     <div className="flex justify-between font-medium border-t pt-2">
                       <span>Kas Bersih dari Aktivitas Pendanaan</span>
                       <span className="font-mono">{formatCurrency(cashFlowStatement.financingActivities.netCashFromFinancing)}</span>

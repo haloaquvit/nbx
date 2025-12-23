@@ -107,24 +107,32 @@ export function getCurrentServerUrl(): string | null {
   }
 }
 
-function getTenantConfig(): TenantConfig {
-  // Auto-detect base URL from current domain or selected server
-  let baseUrl: string;
+// Get the base URL for API calls - works for both web and APK
+function getBaseUrl(): string {
+  if (typeof window === 'undefined') return 'https://app.aquvit.id';
 
-  if (typeof window !== 'undefined') {
-    if (isCapacitorApp()) {
-      // Capacitor/mobile app - use selected server
-      // If no server selected, use a placeholder (App.tsx will show selector first)
-      const selectedUrl = getSelectedServerUrl();
-      baseUrl = selectedUrl || 'https://app.aquvit.id'; // Placeholder, won't be used if selector shown
-    } else {
-      // Web browser - use current origin (app.aquvit.id or erp.aquvit.id)
-      baseUrl = window.location.origin;
-    }
-  } else {
-    // SSR fallback
-    baseUrl = 'https://app.aquvit.id';
+  // Check if we're on a production domain (web browser)
+  const origin = window.location.origin;
+  if (origin.includes('app.aquvit.id') || origin.includes('erp.aquvit.id')) {
+    return origin;
   }
+
+  // For Capacitor/APK, use selected server from localStorage
+  if (isCapacitorApp()) {
+    const selectedUrl = getSelectedServerUrl();
+    if (selectedUrl) {
+      return selectedUrl;
+    }
+    // No server selected yet - return empty to trigger server selector
+    return '';
+  }
+
+  // For localhost/development, always use Nabire server
+  return 'https://app.aquvit.id';
+}
+
+function getTenantConfig(): TenantConfig {
+  const baseUrl = getBaseUrl();
 
   return {
     supabaseUrl: baseUrl,
@@ -134,44 +142,77 @@ function getTenantConfig(): TenantConfig {
   };
 }
 
-const config = getTenantConfig();
-
 // Create Supabase-compatible client for PostgREST
-// Custom fetch injects JWT token to every request
-export const supabase: SupabaseClient = createClient(
-  config.supabaseUrl,
-  config.supabaseAnonKey,
-  {
-    auth: {
-      persistSession: false, // We handle session ourselves
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
-    global: {
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+// Custom fetch dynamically uses the selected server URL
+function createSupabaseClient(): SupabaseClient {
+  const config = getTenantConfig();
+
+  return createClient(
+    config.supabaseUrl,
+    config.supabaseAnonKey,
+    {
+      auth: {
+        persistSession: false, // We handle session ourselves
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
       },
-      // Custom fetch to inject JWT token
-      fetch: (url: RequestInfo | URL, options?: RequestInit) => {
-        const finalUrl = url.toString();
-        const token = getPostgRESTToken();
+      global: {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        // Custom fetch to inject JWT token AND use dynamic base URL
+        fetch: (url: RequestInfo | URL, options?: RequestInit) => {
+          let finalUrl = url.toString();
+          const token = getPostgRESTToken();
 
-        // Merge headers with Authorization if we have a token
-        const headers = new Headers(options?.headers);
-        if (token && !headers.has('Authorization')) {
-          headers.set('Authorization', `Bearer ${token}`);
-        }
+          // For APK: replace the base URL with the selected server
+          // This is needed because supabase client is initialized once
+          const currentBaseUrl = getBaseUrl();
+          if (!finalUrl.startsWith(currentBaseUrl)) {
+            // URL might be using old base URL, replace it
+            const urlObj = new URL(finalUrl);
+            const newBaseUrl = new URL(currentBaseUrl);
+            urlObj.protocol = newBaseUrl.protocol;
+            urlObj.host = newBaseUrl.host;
+            finalUrl = urlObj.toString();
+          }
 
-        return fetch(finalUrl, {
-          ...options,
-          headers,
-        });
+          // Fix: Remove 'columns' parameter that causes 404 on PostgREST
+          // Supabase JS v2.52+ sends columns with quoted values which PostgREST doesn't accept
+          try {
+            const urlObj = new URL(finalUrl);
+            if (urlObj.searchParams.has('columns')) {
+              urlObj.searchParams.delete('columns');
+              finalUrl = urlObj.toString();
+            }
+          } catch (e) {
+            // URL parsing failed, continue with original URL
+          }
+
+          // Merge headers with Authorization if we have a token
+          const headers = new Headers(options?.headers);
+          if (token && !headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${token}`);
+          }
+
+          return fetch(finalUrl, {
+            ...options,
+            headers,
+          });
+        },
       },
-    },
-  }
-);
+    }
+  );
+}
 
-// Export config for use in auth context
-export const tenantConfig = config;
+export const supabase: SupabaseClient = createSupabaseClient();
+
+// Export config getter for use in auth context (dynamic)
+export function getTenantConfigDynamic(): TenantConfig {
+  return getTenantConfig();
+}
+
+// Legacy export for compatibility
+export const tenantConfig = getTenantConfig();
 export const isPostgRESTMode = true; // Always true now

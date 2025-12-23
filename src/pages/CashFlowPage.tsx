@@ -16,9 +16,9 @@ export function CashFlowPage() {
     <div className="container mx-auto py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold">Buku Besar & Arus Kas</h1>
+          <h1 className="text-3xl font-bold">Buku Kas Harian</h1>
           <p className="text-muted-foreground">
-            Pantau mutasi akun dan aktivitas kas masuk/keluar
+            Monitoring kas harian dan mutasi akun kas/bank
           </p>
         </div>
 
@@ -146,7 +146,7 @@ export function CashFlowPage() {
         <TabsList className="grid w-full grid-cols-2 max-w-md">
           <TabsTrigger value="cash-flow" className="flex items-center gap-2">
             <Wallet className="h-4 w-4" />
-            Arus Kas
+            Mutasi Kas
           </TabsTrigger>
           <TabsTrigger value="general-ledger" className="flex items-center gap-2">
             <BookOpen className="h-4 w-4" />
