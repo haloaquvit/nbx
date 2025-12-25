@@ -2521,3 +2521,4 @@ sudo -u postgres psql -d aquvit_db -f /tmp/add_salary_deduction_and_ppn_columns.
 | `src/hooks/usePayroll.ts` | 🔧 MODIFIED | Handle salary_deduction |
 | `database/add_salary_deduction_and_ppn_columns.sql` | 🆕 NEW | SQL migration script |
 
+# CI Test
