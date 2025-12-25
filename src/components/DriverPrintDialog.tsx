@@ -12,8 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Transaction } from "@/types/transaction"
-import { format } from "date-fns"
-import { id as idLocale } from "date-fns/locale/id"
+import { safeFormatDate } from "@/utils/officeTime"
 import { Printer, Check, FileDown, X } from "lucide-react"
 import { PrintReceiptDialog } from "@/components/PrintReceiptDialog"
 
@@ -82,7 +81,7 @@ export function DriverPrintDialog({
                 <div className="flex justify-between">
                   <span>Tanggal:</span>
                   <span className="font-medium">
-                    {format(transaction.orderDate, "d MMM yyyy, HH:mm", { locale: idLocale })}
+                    {safeFormatDate(transaction.orderDate)}
                   </span>
                 </div>
                 <div className="flex justify-between border-t pt-2">

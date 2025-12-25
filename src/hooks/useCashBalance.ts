@@ -21,6 +21,16 @@ interface CashBalance {
   }>;
 }
 
+/**
+ * useCashBalance - Menghitung saldo kas dari JOURNAL ENTRIES
+ *
+ * ARSITEKTUR BARU:
+ * - Saldo akun dihitung dari journal_entry_lines (di useAccounts.ts)
+ * - Kas masuk/keluar hari ini dihitung dari journal_entry_lines untuk akun kas/bank
+ * - TIDAK LAGI menggunakan cash_history table
+ *
+ * Prinsip: Journal entries adalah SUMBER KEBENARAN untuk semua perhitungan keuangan
+ */
 export const useCashBalance = () => {
   const { currentBranch } = useBranch();
   const { accounts } = useAccounts(); // Get accounts with calculated balances per branch
@@ -28,58 +38,9 @@ export const useCashBalance = () => {
   const { data: cashBalance, isLoading, error } = useQuery<CashBalance>({
     queryKey: ['cashBalance', currentBranch?.id, accounts?.length],
     queryFn: async () => {
-      // Get today's date range
+      // Get today's date range (in local timezone)
       const today = new Date();
-      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-
-      // Get all cash flow records (filtered by branch)
-      let cashFlowQuery = supabase
-        .from('cash_history')
-        .select('*')
-        .order('created_at', { ascending: true });
-
-      // Apply branch filter
-      if (currentBranch?.id) {
-        cashFlowQuery = cashFlowQuery.eq('branch_id', currentBranch.id);
-      }
-
-      const { data: allCashFlow, error: cashFlowError } = await cashFlowQuery;
-
-      if (cashFlowError) {
-        // If table doesn't exist, return basic balance data from accounts only
-        if (cashFlowError.code === 'PGRST116' || cashFlowError.message.includes('does not exist')) {
-          console.warn('cash_history table does not exist, calculating balance from accounts only');
-
-          // Use accounts from useAccounts (already filtered and calculated per branch)
-          const paymentAccounts = (accounts || []).filter(acc => acc.isPaymentAccount);
-
-          let totalBalance = 0;
-          const accountBalances = paymentAccounts.map(account => {
-            totalBalance += account.balance || 0;
-            return {
-              accountId: account.id,
-              accountName: account.name,
-              currentBalance: account.balance || 0,
-              previousBalance: account.balance || 0,
-              todayIncome: 0,
-              todayExpense: 0,
-              todayNet: 0,
-              todayChange: 0
-            };
-          });
-
-          return {
-            currentBalance: totalBalance,
-            todayIncome: 0,
-            todayExpense: 0,
-            todayNet: 0,
-            previousBalance: totalBalance,
-            accountBalances
-          };
-        }
-        throw new Error(`Failed to fetch cash history: ${cashFlowError.message}`);
-      }
+      const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD format
 
       // Use accounts from useAccounts (already filtered and calculated per branch)
       const paymentAccounts = (accounts || []).filter(acc => acc.isPaymentAccount);
@@ -88,13 +49,14 @@ export const useCashBalance = () => {
       let todayIncome = 0;
       let todayExpense = 0;
       let totalBalance = 0;
-      const accountBalances = new Map();
+      const accountBalancesMap = new Map();
 
       // Initialize account data with calculated balances from useAccounts
       paymentAccounts.forEach(account => {
-        accountBalances.set(account.id, {
+        accountBalancesMap.set(account.id, {
           accountId: account.id,
           accountName: account.name,
+          accountCode: account.code,
           currentBalance: account.balance || 0,
           previousBalance: 0,
           todayIncome: 0,
@@ -105,104 +67,110 @@ export const useCashBalance = () => {
         totalBalance += account.balance || 0;
       });
 
-      // Debug: Log payroll records found
-      const payrollRecords = (allCashFlow || []).filter(record =>
-        record.type === 'gaji_karyawan' ||
-        record.type === 'pembayaran_gaji' ||
-        (record.type === 'kas_keluar_manual' &&
-         (record.description?.includes('Pembayaran gaji') || record.description?.includes('Payroll Payment')))
-      );
+      // ============================================================================
+      // CALCULATE TODAY'S CASH MOVEMENT FROM JOURNAL_ENTRY_LINES
+      // ============================================================================
+      // Untuk menghitung kas masuk/keluar hari ini, kita perlu:
+      // 1. Ambil semua journal_entry_lines untuk akun kas/bank (isPaymentAccount)
+      // 2. Filter hanya jurnal hari ini yang posted dan tidak voided
+      // 3. Debit = kas masuk, Credit = kas keluar (untuk akun Aset)
+      // ============================================================================
 
-      console.log('💰 Debug Cash Balance Calculation:');
-      console.log('📊 Total cash flow records:', (allCashFlow || []).length);
-      console.log('💸 Payroll records found:', payrollRecords.length);
-      payrollRecords.forEach(record => {
-        console.log(`  - ${record.type}: ${record.amount} (${record.description})`);
+      const paymentAccountIds = paymentAccounts.map(acc => acc.id);
+
+      if (paymentAccountIds.length === 0) {
+        console.log('💰 No payment accounts found');
+        return {
+          currentBalance: totalBalance,
+          todayIncome: 0,
+          todayExpense: 0,
+          todayNet: 0,
+          previousBalance: totalBalance,
+          accountBalances: Array.from(accountBalancesMap.values())
+        };
+      }
+
+      // Get today's journal entry lines for payment accounts
+      const { data: todayJournalLines, error: journalError } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          account_id,
+          debit_amount,
+          credit_amount,
+          journal_entries!inner (
+            entry_date,
+            branch_id,
+            status,
+            is_voided,
+            reference_type,
+            description
+          )
+        `)
+        .in('account_id', paymentAccountIds);
+
+      if (journalError) {
+        console.error('❌ Failed to fetch journal lines for cash balance:', journalError);
+        // Return balance from accounts only
+        return {
+          currentBalance: totalBalance,
+          todayIncome: 0,
+          todayExpense: 0,
+          todayNet: 0,
+          previousBalance: totalBalance,
+          accountBalances: Array.from(accountBalancesMap.values())
+        };
+      }
+
+      // Filter and calculate today's transactions
+      const todayLines = (todayJournalLines || []).filter((line: any) => {
+        const journal = line.journal_entries;
+        if (!journal) return false;
+
+        // Must be today, posted, not voided, and same branch
+        return journal.entry_date === todayStr &&
+               journal.status === 'posted' &&
+               journal.is_voided === false &&
+               journal.branch_id === currentBranch?.id;
       });
-      console.log('📅 Today range:', todayStart, 'to', todayEnd);
 
-      // Process cash flow records to calculate today's activity only
-      (allCashFlow || []).forEach(record => {
-        const recordDate = new Date(record.created_at);
-        const isToday = recordDate >= todayStart && recordDate < todayEnd;
-        
-        // Only process today's transactions for income/expense calculation
-        if (isToday) {
-          // Debug log today's records
-          if (record.type === 'gaji_karyawan' || record.type === 'pembayaran_gaji' ||
-              (record.type === 'kas_keluar_manual' && record.description?.includes('Pembayaran gaji'))) {
-            console.log('🎯 Processing payroll record for today:', {
-              type: record.type,
-              amount: record.amount,
-              description: record.description,
-              date: record.created_at
-            });
-          }
-          // Skip transfers in total calculation (they don't change total cash, only move between accounts)
-          if (record.source_type === 'transfer_masuk' || record.source_type === 'transfer_keluar') {
-            // Still update per-account data for transfers
-            if (record.account_id && accountBalances.has(record.account_id)) {
-              const current = accountBalances.get(record.account_id);
-              if (record.source_type === 'transfer_masuk') {
-                current.todayIncome += record.amount;
-              } else if (record.source_type === 'transfer_keluar') {
-                current.todayExpense += record.amount;
-              }
-              current.todayNet = current.todayIncome - current.todayExpense;
-              current.todayChange = current.todayNet;
-            }
-            return; // Skip adding to total income/expense
-          }
+      console.log('💰 Today journal lines for payment accounts:', todayLines.length);
 
-          // Determine if this is income or expense (exclude transfers)
-          const isIncome = record.transaction_type === 'income' || 
-            (record.type && ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(record.type));
-            
-          // All other types should be considered expenses
-          const isExpense = record.transaction_type === 'expense' ||
-            (record.type && ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji'].includes(record.type));
+      // Calculate today's income and expense per account
+      // For Asset accounts (Kas/Bank): Debit = income (masuk), Credit = expense (keluar)
+      todayLines.forEach((line: any) => {
+        const accountId = line.account_id;
+        const debitAmount = Number(line.debit_amount) || 0;
+        const creditAmount = Number(line.credit_amount) || 0;
 
-          if (isIncome) {
-            todayIncome += record.amount;
-          } else if (isExpense) {
-            todayExpense += record.amount;
-            // Debug: Log which records contribute to today's expenses
-            if (record.type === 'gaji_karyawan' || record.type === 'pembayaran_gaji' ||
-                (record.type === 'kas_keluar_manual' && record.description?.includes('Pembayaran gaji'))) {
-              console.log('➕ Adding payroll to today expense:', record.amount, 'Total so far:', todayExpense);
-            }
-          }
+        // Update global totals
+        todayIncome += debitAmount;
+        todayExpense += creditAmount;
 
-          // Update account today data
-          if (record.account_id && accountBalances.has(record.account_id)) {
-            const current = accountBalances.get(record.account_id);
-            if (isIncome) {
-              current.todayIncome += record.amount;
-            } else if (isExpense) {
-              current.todayExpense += record.amount;
-            }
-            current.todayNet = current.todayIncome - current.todayExpense;
-            current.todayChange = current.todayNet;
-          }
+        // Update per-account data
+        if (accountBalancesMap.has(accountId)) {
+          const accountData = accountBalancesMap.get(accountId);
+          accountData.todayIncome += debitAmount;
+          accountData.todayExpense += creditAmount;
+          accountData.todayNet = accountData.todayIncome - accountData.todayExpense;
+          accountData.todayChange = accountData.todayNet;
         }
       });
 
-      // Calculate totals based on accounts table + today's activity
+      // Calculate totals
       const todayNet = todayIncome - todayExpense;
       const totalPreviousBalance = totalBalance - todayNet;
 
-      // Debug summary
-      console.log('📊 Final Cash Balance Summary:');
-      console.log(`💰 Today Income: Rp ${todayIncome.toLocaleString('id-ID')}`);
-      console.log(`💸 Today Expense: Rp ${todayExpense.toLocaleString('id-ID')}`);
-      console.log(`📈 Today Net: Rp ${todayNet.toLocaleString('id-ID')}`);
-      console.log(`🏦 Total Balance: Rp ${totalBalance.toLocaleString('id-ID')}`);
-      console.log('---');
-
       // Calculate previous balance for each account
-      accountBalances.forEach(account => {
+      accountBalancesMap.forEach(account => {
         account.previousBalance = account.currentBalance - account.todayNet;
       });
+
+      // Debug summary
+      console.log('📊 Cash Balance Summary (from Journal):');
+      console.log(`💰 Today Income (Debit to Kas/Bank): Rp ${todayIncome.toLocaleString('id-ID')}`);
+      console.log(`💸 Today Expense (Credit from Kas/Bank): Rp ${todayExpense.toLocaleString('id-ID')}`);
+      console.log(`📈 Today Net: Rp ${todayNet.toLocaleString('id-ID')}`);
+      console.log(`🏦 Total Balance: Rp ${totalBalance.toLocaleString('id-ID')}`);
 
       return {
         currentBalance: totalBalance,
@@ -210,13 +178,13 @@ export const useCashBalance = () => {
         todayExpense,
         todayNet,
         previousBalance: totalPreviousBalance,
-        accountBalances: Array.from(accountBalances.values())
+        accountBalances: Array.from(accountBalancesMap.values())
       };
     },
-    enabled: !!currentBranch, // Only run when branch is selected
+    enabled: !!currentBranch && !!accounts, // Only run when branch and accounts are loaded
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes cache
-    refetchOnMount: true, // Auto-refetch when switching branches
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     retry: 1,

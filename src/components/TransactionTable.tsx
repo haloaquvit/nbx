@@ -425,18 +425,22 @@ export function TransactionTable() {
   const handleExportExcel = () => {
     // Use filteredTransactions directly
     const exportTransactions = filteredTransactions;
-    
+
     // Calculate summations
     const totalSum = exportTransactions.reduce((sum, t) => sum + t.total, 0);
     const paidSum = exportTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
     const remainingSum = exportTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0);
-    
+    const ppnSum = exportTransactions.reduce((sum, t) => sum + (t.ppnEnabled ? (t.ppnAmount || 0) : 0), 0);
+    const subtotalSum = exportTransactions.reduce((sum, t) => sum + (t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total), 0);
+
     const exportData = exportTransactions.map(t => ({
       'No Order': t.id,
       'Pelanggan': t.customerName,
       'Tgl Order': t.orderDate ? format(new Date(t.orderDate), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
       'Kasir': t.cashierName,
       'Produk': t.items.map(item => item.product.name).join(", "),
+      'Subtotal (DPP)': t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total,
+      'PPN': t.ppnEnabled ? (t.ppnAmount || 0) : 0,
       'Total': t.total,
       'Dibayar': t.paidAmount || 0,
       'Sisa': t.total - (t.paidAmount || 0),
@@ -444,7 +448,7 @@ export function TransactionTable() {
                           (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
       'Status PPN': t.ppnEnabled ? (t.ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude') : 'Non PPN'
     }));
-    
+
     // Add summary row
     exportData.push({
       'No Order': '',
@@ -452,13 +456,15 @@ export function TransactionTable() {
       'Tgl Order': '',
       'Kasir': '',
       'Produk': `TOTAL (${exportTransactions.length} transaksi)`,
+      'Subtotal (DPP)': subtotalSum,
+      'PPN': ppnSum,
       'Total': totalSum,
       'Dibayar': paidSum,
       'Sisa': remainingSum,
       'Status Pembayaran': '',
       'Status PPN': ''
     });
-    
+
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Transaksi");
@@ -471,21 +477,23 @@ export function TransactionTable() {
       filename += `-${ppnFilter}`;
     }
     filename += '.xlsx';
-    
+
     XLSX.writeFile(workbook, filename);
   };
 
   const handleExportPdf = () => {
     // Use filteredTransactions directly
     const exportTransactions = filteredTransactions;
-    
+
     // Calculate summations
     const totalSum = exportTransactions.reduce((sum, t) => sum + t.total, 0);
     const paidSum = exportTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
     const remainingSum = exportTransactions.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0);
-    
-    const doc = new jsPDF();
-    
+    const ppnSum = exportTransactions.reduce((sum, t) => sum + (t.ppnEnabled ? (t.ppnAmount || 0) : 0), 0);
+    const subtotalSum = exportTransactions.reduce((sum, t) => sum + (t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total), 0);
+
+    const doc = new jsPDF('landscape'); // Use landscape for more columns
+
     // Add title and filter info
     doc.setFontSize(16);
     doc.text('Data Transaksi', 14, 15);
@@ -497,44 +505,66 @@ export function TransactionTable() {
     } else {
       doc.text(`Export Date: ${format(new Date(), "dd/MM/yyyy HH:mm")}`, 14, 30);
     }
-    
-    // Data table
+
+    const formatCurrency = (value: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
+
+    // Data table with PPN column
     autoTable(doc, {
-      head: [['No. Order', 'Pelanggan', 'Tgl Order', 'Total', 'Dibayar', 'Sisa', 'Status Bayar', 'Status PPN']],
+      head: [['No. Order', 'Pelanggan', 'Tgl Order', 'DPP', 'PPN', 'Total', 'Dibayar', 'Sisa', 'Status', 'PPN']],
       body: [
-        ...exportTransactions.map(t => [
-          t.id,
-          t.customerName,
-          t.orderDate ? format(new Date(t.orderDate), "dd/MM/yy", { locale: id }) : 'N/A',
-          new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(t.total),
-          new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(t.paidAmount || 0),
-          new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(t.total - (t.paidAmount || 0)),
-          (t.paidAmount || 0) === 0 ? 'Kredit' :
-          (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
-          t.ppnEnabled ? (t.ppnMode === 'include' ? 'PPN Inc' : 'PPN Exc') : 'Non PPN'
-        ]),
+        ...exportTransactions.map(t => {
+          const subtotal = t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total;
+          const ppn = t.ppnEnabled ? (t.ppnAmount || 0) : 0;
+          return [
+            t.id,
+            t.customerName,
+            t.orderDate ? format(new Date(t.orderDate), "dd/MM/yy", { locale: id }) : 'N/A',
+            formatCurrency(subtotal),
+            ppn > 0 ? formatCurrency(ppn) : '-',
+            formatCurrency(t.total),
+            formatCurrency(t.paidAmount || 0),
+            formatCurrency(t.total - (t.paidAmount || 0)),
+            (t.paidAmount || 0) === 0 ? 'Kredit' :
+            (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
+            t.ppnEnabled ? (t.ppnMode === 'include' ? 'Inc' : 'Exc') : '-'
+          ];
+        }),
         // Summary row
         [
           '',
           '',
           `TOTAL (${exportTransactions.length})`,
-          new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalSum),
-          new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(paidSum),
-          new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(remainingSum),
+          formatCurrency(subtotalSum),
+          formatCurrency(ppnSum),
+          formatCurrency(totalSum),
+          formatCurrency(paidSum),
+          formatCurrency(remainingSum),
           '',
           ''
         ]
       ],
       startY: 35,
       styles: {
-        fontSize: 8,
+        fontSize: 7,
         cellPadding: 1.5
       },
       headStyles: {
         fillColor: [41, 128, 185],
         textColor: 255,
-        fontSize: 8,
+        fontSize: 7,
         fontStyle: 'bold'
+      },
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 35 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 25, halign: 'right' },
+        4: { cellWidth: 22, halign: 'right' },
+        5: { cellWidth: 25, halign: 'right' },
+        6: { cellWidth: 25, halign: 'right' },
+        7: { cellWidth: 25, halign: 'right' },
+        8: { cellWidth: 18, halign: 'center' },
+        9: { cellWidth: 15, halign: 'center' }
       },
       didParseCell: function (data: any) {
         // Highlight summary row

@@ -9,7 +9,7 @@ export const useEmployees = () => {
   const { currentBranch, canAccessAllBranches } = useBranch();
 
   const { data: employees, isLoading, error, isError } = useQuery<Employee[]>({
-    queryKey: ['employees', currentBranch?.id],
+    queryKey: ['employees', currentBranch?.id, canAccessAllBranches],
     queryFn: async () => {
       try {
         // Simple approach - just get profiles data, don't crash on error
@@ -17,8 +17,9 @@ export const useEmployees = () => {
           .from('profiles')
           .select('id, email, full_name, username, role, phone, address, status, branch_id');
 
-        // Apply branch filter - ALWAYS filter by selected branch
-        if (currentBranch?.id) {
+        // Apply branch filter - only if user cannot access all branches
+        // Owner/Admin can see all employees regardless of branch
+        if (currentBranch?.id && !canAccessAllBranches) {
           query = query.eq('branch_id', currentBranch.id);
         }
 
@@ -191,18 +192,20 @@ export const useEmployees = () => {
       let error = null;
       
       // Approach 1: Standard update
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
       try {
         const result = await supabase
           .from('profiles')
           .update(updateData)
           .eq('id', id)
           .select()
-          .single();
-        
-        data = result.data;
+          .limit(1);
+
+        const resultData = Array.isArray(result.data) ? result.data[0] : result.data;
+        data = resultData;
         error = result.error;
-        
-        if (!error) {
+
+        if (!error && data) {
           console.log('[useEmployees] Standard update successful:', data);
           return data;
         }
@@ -267,12 +270,14 @@ export const useEmployees = () => {
       } else {
         // Supabase mode - use email reset flow
         // Get user email first
-        const { data: profile, error: profileError } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: profileRaw, error: profileError } = await supabase
           .from('profiles')
           .select('email')
           .eq('id', userId)
-          .single();
+          .limit(1);
 
+        const profile = Array.isArray(profileRaw) ? profileRaw[0] : profileRaw;
         if (profileError || !profile?.email) {
           throw new Error('Tidak dapat menemukan email karyawan');
         }

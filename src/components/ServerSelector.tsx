@@ -7,14 +7,14 @@ const SERVERS = [
   {
     id: 'nabire',
     name: 'Aquvit Nabire',
-    url: 'https://app.aquvit.id',
+    url: 'https://nbx.aquvit.id',
     description: 'Server utama Nabire',
     icon: '🏭',
   },
   {
     id: 'manokwari',
     name: 'Aquvit Manokwari',
-    url: 'https://erp.aquvit.id',
+    url: 'https://mkw.aquvit.id',
     description: 'Server Manokwari',
     icon: '🏢',
   },

@@ -49,24 +49,69 @@ export function BranchProvider({ children }: { children: ReactNode }) {
       setLoading(true);
 
       // Get user's profile with branch info
-      const { data: profile } = await supabase
+      const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('branch_id')
         .eq('id', user.id)
-        .single();
+        .limit(1);
+
+      // Handle both array and object response (PostgREST compatibility)
+      const profile = Array.isArray(profileData) ? profileData[0] : profileData;
 
       if (!profile?.branch_id) {
-        console.warn('User has no branch assigned');
+        // Jika user belum ada branch_id, coba ambil branch pertama yang aktif sebagai fallback
+        const { data: fallbackBranches } = await supabase
+          .from('branches')
+          .select('*')
+          .eq('is_active', true)
+          .limit(1);
+
+        if (fallbackBranches && fallbackBranches.length > 0) {
+          const fallbackBranch = fallbackBranches[0];
+          setCurrentBranch({
+            id: fallbackBranch.id,
+            companyId: fallbackBranch.company_id,
+            name: fallbackBranch.name,
+            code: fallbackBranch.code,
+            address: fallbackBranch.address,
+            phone: fallbackBranch.phone,
+            email: fallbackBranch.email,
+            managerId: fallbackBranch.manager_id,
+            managerName: fallbackBranch.manager_name,
+            isActive: fallbackBranch.is_active,
+            settings: fallbackBranch.settings,
+            createdAt: new Date(fallbackBranch.created_at),
+            updatedAt: new Date(fallbackBranch.updated_at),
+          });
+          setAvailableBranches([{
+            id: fallbackBranch.id,
+            companyId: fallbackBranch.company_id,
+            name: fallbackBranch.name,
+            code: fallbackBranch.code,
+            address: fallbackBranch.address,
+            phone: fallbackBranch.phone,
+            email: fallbackBranch.email,
+            managerId: fallbackBranch.manager_id,
+            managerName: fallbackBranch.manager_name,
+            isActive: fallbackBranch.is_active,
+            settings: fallbackBranch.settings,
+            createdAt: new Date(fallbackBranch.created_at),
+            updatedAt: new Date(fallbackBranch.updated_at),
+          }]);
+        }
         setLoading(false);
         return;
       }
 
       // Get current branch details
-      const { data: branch } = await supabase
+      const { data: branchData } = await supabase
         .from('branches')
         .select('*')
         .eq('id', profile.branch_id)
-        .single();
+        .limit(1);
+
+      // Handle both array and object response
+      const branch = Array.isArray(branchData) ? branchData[0] : branchData;
 
       if (branch) {
         // For users who can access all branches, check localStorage first
@@ -75,14 +120,15 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
         if (canAccessAllBranches && savedBranchId && savedBranchId !== branch.id) {
           // User previously selected a different branch, load that one instead
-          const { data: savedBranch } = await supabase
+          const { data: savedBranchData } = await supabase
             .from('branches')
             .select('*')
             .eq('id', savedBranchId)
-            .single();
+            .limit(1);
+
+          const savedBranch = Array.isArray(savedBranchData) ? savedBranchData[0] : savedBranchData;
 
           if (savedBranch) {
-            console.log('[BranchContext] Restoring saved branch:', savedBranch.name);
             setCurrentBranch({
               id: savedBranch.id,
               companyId: savedBranch.company_id,
@@ -137,11 +183,13 @@ export function BranchProvider({ children }: { children: ReactNode }) {
 
         // Get company details (only if company_id exists)
         if (branch.company_id) {
-          const { data: company } = await supabase
+          const { data: companyData } = await supabase
             .from('companies')
             .select('*')
             .eq('id', branch.company_id)
-            .single();
+            .limit(1);
+
+          const company = Array.isArray(companyData) ? companyData[0] : companyData;
 
           if (company) {
           setCurrentCompany({
@@ -195,7 +243,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
         );
       }
     } catch (error) {
-      console.error('Error fetching branches:', error);
+      // Silent error handling
     } finally {
       setLoading(false);
     }
@@ -205,18 +253,12 @@ export function BranchProvider({ children }: { children: ReactNode }) {
   // PENTING: Refresh halaman setelah switch branch untuk memastikan semua data fresh
   const switchBranch = (branchId: string) => {
     if (!canAccessAllBranches) {
-      console.warn('User cannot switch branches');
       return;
     }
 
     const branch = availableBranches.find((b) => b.id === branchId);
     if (branch) {
-      // Save to localStorage FIRST - this will be restored after refresh
       localStorage.setItem('selectedBranchId', branchId);
-      console.log('[BranchContext] Switching to branch:', branch.name, '- Refreshing page...');
-
-      // Refresh halaman untuk memastikan semua komponen mendapatkan data branch yang benar
-      // Ini mencegah masalah state lama yang menyebabkan data masuk ke branch yang salah
       window.location.reload();
     }
   };
@@ -229,6 +271,8 @@ export function BranchProvider({ children }: { children: ReactNode }) {
         const branch = availableBranches.find((b) => b.id === savedBranchId);
         if (branch) {
           setCurrentBranch(branch);
+        } else {
+          localStorage.removeItem('selectedBranchId');
         }
       }
       restoredBranchRef.current = true;

@@ -24,43 +24,19 @@ export class StockService {
       let movementType: StockMovementType;
       let reason: StockMovementReason = 'PRODUCTION_CONSUMPTION';
 
-      // Determine stock movement based on product type and quantity (negative for restore)  
-      if (product.type === 'Stock' as any) {
-        if (item.quantity < 0) {
-          // Restoring stock (negative quantity means restore)
-          newStock = currentStock - item.quantity; // Add back to stock (subtract negative)
-          movementType = 'IN';
-          reason = 'ADJUSTMENT';
-        } else {
-          // Stock items: production reduces stock
-          newStock = currentStock - item.quantity;
-          movementType = 'OUT';
-          reason = 'PRODUCTION_CONSUMPTION';
-        }
-      } else if (product.type === 'Beli' as any) {
-        if (item.quantity < 0) {
-          // Restoring usage tracking
-          newStock = currentStock - item.quantity; // Reverse the usage tracking
-          movementType = 'IN';
-          reason = 'ADJUSTMENT';
-        } else {
-          // Beli items: track usage/consumption (no actual stock reduction but track usage)
-          newStock = currentStock + item.quantity; // Track cumulative usage
-          movementType = 'OUT'; // This is consumption/usage
-          reason = 'PRODUCTION_CONSUMPTION'; // Changed to valid constraint value
-        }
+      // Determine stock movement based on product type and quantity (negative for restore)
+      // Product types in database: 'Produksi' or 'Jual Langsung'
+      // Both should reduce stock when sold!
+      if (item.quantity < 0) {
+        // Restoring stock (negative quantity means restore)
+        newStock = currentStock - item.quantity; // Add back to stock (subtract negative)
+        movementType = 'IN';
+        reason = 'ADJUSTMENT';
       } else {
-        if (item.quantity < 0) {
-          // Default restore behavior
-          newStock = currentStock - item.quantity; // Add back to stock
-          movementType = 'IN';
-          reason = 'ADJUSTMENT';
-        } else {
-          // Default to stock behavior
-          newStock = currentStock - item.quantity;
-          movementType = 'OUT';
-          reason = 'PRODUCTION_CONSUMPTION';
-        }
+        // All product types: reduce stock when sold
+        newStock = currentStock - item.quantity;
+        movementType = 'OUT';
+        reason = 'PRODUCTION_CONSUMPTION';
       }
 
       // Create stock movement record
@@ -83,14 +59,18 @@ export class StockService {
 
       movements.push(movement);
 
-      // Update product stock based on product type and reference type:
-      // 1. During delivery: update stock for all products (production items delivered)
-      // 2. During transaction: only update stock for "Jual Langsung" products (immediate sale)
-      const isJualLangsung = product.type === 'Jual Langsung' || product.type === 'Beli';
-      const shouldUpdateStock = referenceType === 'delivery' || (referenceType === 'transaction' && isJualLangsung);
+      // Update product stock based on reference type and isOfficeSale flag:
+      //
+      // LAKU KANTOR (isOfficeSale=true): Stock berkurang saat TRANSAKSI (tidak ada delivery)
+      // BUKAN LAKU KANTOR (isOfficeSale=false): Stock berkurang saat DELIVERY (diantar ke customer)
+      //
+      // Ini memastikan stok tidak berkurang 2x untuk transaksi dengan delivery
+      const isOfficeSale = (item as any).isOfficeSale === true;
+      const shouldUpdateStock = referenceType === 'delivery' ||
+                                (referenceType === 'transaction' && isOfficeSale);
 
       if (shouldUpdateStock) {
-        console.log(`📦 Updating stock for ${product.name} (${product.type}): ${currentStock} → ${newStock}`);
+        console.log(`📦 Updating stock for ${product.name} (${product.type}, officeSale=${isOfficeSale}): ${currentStock} → ${newStock}`);
         await StockService.updateProductStock(product.id, newStock);
       }
     }

@@ -138,11 +138,18 @@ const toDb = (appTransaction: Partial<Omit<Transaction, 'createdAt'>>) => {
     payment_account_id: appTransaction.paymentAccountId || null,
     order_date: appTransaction.orderDate,
     finish_date: appTransaction.finishDate || null,
+    due_date: appTransaction.dueDate || null, // Tanggal jatuh tempo untuk piutang
     items: itemsWithSales,
+    subtotal: appTransaction.subtotal,
+    ppn_enabled: appTransaction.ppnEnabled || false,
+    ppn_mode: appTransaction.ppnMode || 'exclude',
+    ppn_percentage: appTransaction.ppnPercentage || 11,
+    ppn_amount: appTransaction.ppnAmount || 0,
     total: appTransaction.total,
     paid_amount: appTransaction.paidAmount,
     payment_status: appTransaction.paymentStatus,
     status: appTransaction.status,
+    is_office_sale: appTransaction.isOfficeSale || false,
   };
 
   // Add retasi fields for driver POS transactions
@@ -226,19 +233,57 @@ export const useTransactions = (filters?: {
       };
 
       // Insert transaction - sales info is now embedded in notes field
-      const { data: savedTransaction, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: initialTransactionRaw, error } = await supabase
         .from('transactions')
         .insert([dbData])
         .select()
-        .single();
-        
+        .limit(1);
+
       if (error) throw new Error(error.message);
 
+      // Handle array response from PostgREST
+      const initialTransaction = Array.isArray(initialTransactionRaw) ? initialTransactionRaw[0] : initialTransactionRaw;
+
+      // Fallback: If insert succeeded but no data returned, fetch by ID
+      let savedTransaction = initialTransaction;
+      if (!savedTransaction || !savedTransaction.id) {
+        console.warn('[useTransactions] Insert succeeded but no data returned - trying to fetch by ID');
+
+        // The ID should be in dbData since we generate it client-side
+        const transactionId = dbData.id;
+        if (transactionId) {
+          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          const { data: fetchedTransactionRaw, error: fetchError } = await supabase
+            .from('transactions')
+            .select('*')
+            .eq('id', transactionId)
+            .limit(1);
+
+          const fetchedTransaction = Array.isArray(fetchedTransactionRaw) ? fetchedTransactionRaw[0] : fetchedTransactionRaw;
+          if (fetchError || !fetchedTransaction) {
+            console.error('[useTransactions] Failed to fetch transaction after insert:', fetchError);
+            throw new Error('Gagal menyimpan transaksi - data tidak dapat diambil dari database');
+          }
+
+          savedTransaction = fetchedTransaction;
+          console.log('[useTransactions] Successfully fetched transaction after insert:', savedTransaction.id);
+        } else {
+          console.error('[useTransactions] No transaction ID available for fallback fetch');
+          throw new Error('Gagal menyimpan transaksi - ID tidak tersedia');
+        }
+      }
+
       // Process stock movements for this transaction
+      // Pass isOfficeSale flag to each item so StockService knows whether to update stock immediately
       try {
+        const itemsWithOfficeSale = newTransaction.items.map(item => ({
+          ...item,
+          isOfficeSale: newTransaction.isOfficeSale || false
+        }));
         await StockService.processTransactionStock(
           savedTransaction.id,
-          newTransaction.items,
+          itemsWithOfficeSale,
           newTransaction.cashierId,
           newTransaction.cashierName
         );
@@ -272,12 +317,14 @@ export const useTransactions = (filters?: {
       if (newTransaction.paidAmount > 0 && newTransaction.paymentAccountId) {
         try {
           // First, fetch the account name
-          const { data: accountData, error: accountError } = await supabase
+          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          const { data: accountDataRaw, error: accountError } = await supabase
             .from('accounts')
             .select('name')
             .eq('id', newTransaction.paymentAccountId)
-            .single();
+            .limit(1);
 
+          const accountData = Array.isArray(accountDataRaw) ? accountDataRaw[0] : accountDataRaw;
           if (accountError) {
             console.error('Failed to fetch account name:', accountError.message);
           }
@@ -337,20 +384,59 @@ export const useTransactions = (filters?: {
           const regularItems = newTransaction.items?.filter((item: any) => !item.isBonus) || [];
 
           if (regularItems.length > 0) {
-            const productIds = regularItems.map((item: any) => item.product?.id).filter(Boolean);
+            // Use FIFO method to calculate HPP from inventory batches
+            for (const item of regularItems) {
+              const productId = item.product?.id;
+              const quantity = item.quantity || 0;
 
-            if (productIds.length > 0) {
-              const { data: productsData } = await supabase
-                .from('products')
-                .select('id, cost_price, base_price')
-                .in('id', productIds);
+              if (productId && quantity > 0) {
+                try {
+                  // Call consume_inventory_fifo to consume stock and get HPP
+                  const { data: fifoResult, error: fifoError } = await supabase
+                    .rpc('consume_inventory_fifo', {
+                      p_product_id: productId,
+                      p_branch_id: currentBranch?.id || null,
+                      p_quantity: quantity,
+                      p_transaction_id: savedTransaction.id,
+                    });
 
-              for (const item of regularItems) {
-                const product = productsData?.find(p => p.id === item.product?.id);
-                if (product) {
-                  // Use cost_price if available, otherwise estimate as 70% of base_price
-                  const costPrice = product.cost_price || (product.base_price * 0.7);
-                  totalHPP += costPrice * (item.quantity || 0);
+                  if (fifoError) {
+                    console.warn('FIFO consumption failed, using fallback:', fifoError.message);
+                    // Fallback: Use product's cost_price or base_price directly
+                    // Use .limit(1) and handle array response because our client forces Accept: application/json
+                    const { data: productDataRaw } = await supabase
+                      .from('products')
+                      .select('cost_price, base_price')
+                      .eq('id', productId)
+                      .limit(1);
+                    const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                    // Use cost_price if available, otherwise use base_price (selling price as approximation)
+                    const costPrice = productData?.cost_price || productData?.base_price || 0;
+                    totalHPP += costPrice * quantity;
+                    console.log('Fallback HPP calculated:', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
+                  } else if (fifoResult && fifoResult.length > 0) {
+                    // FIFO success - use the calculated HPP
+                    totalHPP += Number(fifoResult[0].total_hpp) || 0;
+                    console.log('FIFO HPP calculated:', {
+                      productId,
+                      quantity,
+                      hpp: fifoResult[0].total_hpp,
+                      batches: fifoResult[0].batches_consumed,
+                    });
+                  }
+                } catch (err) {
+                  console.error('Error calling FIFO:', err);
+                  // Fallback to direct cost_price or base_price
+                  // Use .limit(1) and handle array response because our client forces Accept: application/json
+                  const { data: productDataRaw2 } = await supabase
+                    .from('products')
+                    .select('cost_price, base_price')
+                    .eq('id', productId)
+                    .limit(1);
+                  const productData = Array.isArray(productDataRaw2) ? productDataRaw2[0] : productDataRaw2;
+                  const costPrice = productData?.cost_price || productData?.base_price || 0;
+                  totalHPP += costPrice * quantity;
+                  console.log('Fallback HPP (catch):', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
                 }
               }
             }
@@ -366,10 +452,19 @@ export const useTransactions = (filters?: {
             customerName: newTransaction.customerName,
             branchId: currentBranch.id,
             hppAmount: totalHPP, // Include HPP for proper accounting
+            // PPN (Sales Tax) data
+            ppnEnabled: newTransaction.ppnEnabled,
+            ppnAmount: newTransaction.ppnAmount,
+            subtotal: newTransaction.subtotal,
           });
 
           if (journalResult.success) {
-            console.log('✅ Jurnal penjualan auto-generated:', journalResult.journalId, { totalHPP });
+            console.log('✅ Jurnal penjualan auto-generated:', journalResult.journalId, {
+              totalHPP,
+              ppnEnabled: newTransaction.ppnEnabled,
+              ppnAmount: newTransaction.ppnAmount,
+              subtotal: newTransaction.subtotal
+            });
           } else {
             console.warn('⚠️ Gagal membuat jurnal penjualan otomatis:', journalResult.error);
           }
@@ -399,15 +494,19 @@ export const useTransactions = (filters?: {
   const updateTransaction = useMutation({
     mutationFn: async (updatedTransaction: Transaction): Promise<Transaction> => {
       const dbData = toDb(updatedTransaction);
-      const { data: savedTransaction, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: savedTransactionRaw, error } = await supabase
         .from('transactions')
         .update(dbData)
         .eq('id', updatedTransaction.id)
         .select()
-        .single();
-      
+        .limit(1);
+
       if (error) throw new Error(error.message);
-      
+
+      const savedTransaction = Array.isArray(savedTransactionRaw) ? savedTransactionRaw[0] : savedTransactionRaw;
+      if (!savedTransaction) throw new Error('Failed to update transaction');
+
       return fromDb(savedTransaction);
     },
     onSuccess: () => {
@@ -421,16 +520,16 @@ export const useTransactions = (filters?: {
   })
 
   const payReceivable = useMutation({
-    mutationFn: async ({ 
-      transactionId, 
-      amount, 
+    mutationFn: async ({
+      transactionId,
+      amount,
       accountId,
       accountName,
       notes,
       recordedBy,
-      recordedByName 
-    }: { 
-      transactionId: string; 
+      recordedByName
+    }: {
+      transactionId: string;
       amount: number;
       accountId?: string;
       accountName?: string;
@@ -438,6 +537,20 @@ export const useTransactions = (filters?: {
       recordedBy?: string;
       recordedByName?: string;
     }): Promise<void> => {
+      // Get transaction data for customer name
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: transactionDataRaw, error: fetchError } = await supabase
+        .from('transactions')
+        .select('customer_name, id')
+        .eq('id', transactionId)
+        .limit(1);
+
+      const transactionData = Array.isArray(transactionDataRaw) ? transactionDataRaw[0] : transactionDataRaw;
+      if (fetchError) {
+        console.error('Failed to fetch transaction for receivable payment:', fetchError);
+      }
+
+      // Call RPC to update payment
       const { error } = await supabase.rpc('pay_receivable_with_history', {
         p_transaction_id: transactionId,
         p_amount: amount,
@@ -448,11 +561,43 @@ export const useTransactions = (filters?: {
         p_recorded_by_name: recordedByName
       });
       if (error) throw new Error(error.message);
+
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR PEMBAYARAN PIUTANG
+      // ============================================================================
+      // Jurnal otomatis untuk pembayaran piutang:
+      // Dr. Kas/Bank           xxx
+      //   Cr. Piutang Usaha        xxx
+      // ============================================================================
+      if (currentBranch?.id && amount > 0) {
+        try {
+          const journalResult = await createReceivablePaymentJournal({
+            receivableId: transactionId,
+            paymentDate: new Date(),
+            amount: amount,
+            customerName: transactionData?.customer_name || 'Pelanggan',
+            invoiceNumber: transactionId,
+            branchId: currentBranch.id,
+          });
+
+          if (journalResult.success) {
+            console.log('✅ Jurnal pembayaran piutang auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Gagal membuat jurnal pembayaran piutang otomatis:', journalResult.error);
+          }
+        } catch (journalError) {
+          console.error('Error creating receivable payment journal:', journalError);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
       queryClient.invalidateQueries({ queryKey: ['paymentHistory'] });
       queryClient.invalidateQueries({ queryKey: ['paymentHistoryBatch'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['cashBalance'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     }
   });
 
@@ -477,13 +622,16 @@ export const useTransactions = (filters?: {
   const updateTransactionStatus = useMutation({
     mutationFn: async ({ transactionId, status, userId, userName }: { transactionId: string, status: string, userId?: string, userName?: string }) => {
       // Get transaction data before updating status
-      const { data: transaction, error: fetchError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: transactionRaw, error: fetchError } = await supabase
         .from('transactions')
         .select('*')
         .eq('id', transactionId)
-        .single();
-      
+        .limit(1);
+
+      const transaction = Array.isArray(transactionRaw) ? transactionRaw[0] : transactionRaw;
       if (fetchError) throw new Error(fetchError.message);
+      if (!transaction) throw new Error('Transaction not found');
 
       // Update transaction status
       const { error } = await supabase
@@ -505,34 +653,117 @@ export const useTransactions = (filters?: {
   const deleteTransaction = useMutation({
     mutationFn: async (transactionId: string) => {
       // Step 1: Get transaction data before deletion
-      const { data: transaction, error: fetchError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: transactionRaw, error: fetchError } = await supabase
         .from('transactions')
         .select('*')
         .eq('id', transactionId)
-        .single();
-        
+        .limit(1);
+
       if (fetchError) throw new Error(`Failed to fetch transaction: ${fetchError.message}`);
-      
-      // Step 2: Stock restoration is handled by delivery deletion (see Step 8)
-      // Transaction creation doesn't reduce stock - only delivery does
-      // So we don't need to restore stock from transaction items here
-      console.log('Stock restoration will be handled by delivery deletion (Step 8)');
-      
+
+      // Handle array response from PostgREST
+      const transaction = Array.isArray(transactionRaw) ? transactionRaw[0] : transactionRaw;
+      if (!transaction) throw new Error('Transaction not found');
+
+      // Step 2: Restore product stock from transaction items (ONLY for Laku Kantor)
+      // Laku Kantor (isOfficeSale=true): Stok berkurang saat transaksi, restore saat delete
+      // Bukan Laku Kantor: Stok berkurang saat delivery, restore saat delete delivery (Step 8)
+      const isOfficeSale = transaction.is_office_sale === true;
+      if (isOfficeSale) {
+        console.log('Restoring stock from transaction items (Laku Kantor)...');
+        try {
+          const transactionItems = transaction.items || [];
+          console.log('Transaction items to restore:', JSON.stringify(transactionItems, null, 2));
+
+          for (const item of transactionItems) {
+            // Skip sales metadata items
+            if (item._isSalesMeta) continue;
+
+            // Handle both formats: item.product.id (new) and item.productId (legacy)
+            const productId = item.product?.id || item.productId;
+            const productName = item.product?.name || item.productName || 'Unknown';
+            const quantity = item.quantity || 0;
+
+            console.log(`Processing item: productId=${productId}, productName=${productName}, quantity=${quantity}`);
+
+            if (productId && quantity > 0) {
+              // Get current stock - use .limit(1) and handle array response
+              const { data: productRaw } = await supabase
+                .from('products')
+                .select('current_stock, name')
+                .eq('id', productId)
+                .limit(1);
+
+              const productData = Array.isArray(productRaw) ? productRaw[0] : productRaw;
+              if (productData) {
+                const currentStock = productData.current_stock || 0;
+                const newStock = currentStock + quantity; // Restore stock
+
+                const { error: stockError } = await supabase
+                  .from('products')
+                  .update({ current_stock: newStock })
+                  .eq('id', productId);
+
+                if (stockError) {
+                  console.error(`Failed to restore stock for ${productData.name}:`, stockError);
+                } else {
+                  console.log(`📦 Stock restored for ${productData.name}: ${currentStock} → ${newStock}`);
+                }
+              } else {
+                console.warn(`Product not found for ID: ${productId}`);
+              }
+            } else {
+              console.warn(`Skipping item - no productId or quantity: productId=${productId}, quantity=${quantity}`);
+            }
+          }
+        } catch (stockRestoreError) {
+          console.error('Error restoring stock:', stockRestoreError);
+          // Continue with deletion even if stock restore fails
+        }
+      } else {
+        console.log('Stock restoration will be handled by delivery deletion (not Laku Kantor)');
+      }
+
       // ============================================================================
       // Step 3: VOID JURNAL TRANSAKSI
       // Balance otomatis ter-rollback karena dihitung dari journal_entries
+      // useAccounts.ts filter: status === 'posted' && is_voided === false
       // ============================================================================
       try {
-        const { error: voidError } = await supabase
+        const { data: voidedJournals, error: voidError } = await supabase
           .from('journal_entries')
-          .update({ status: 'voided' })
+          .update({
+            status: 'voided',
+            is_voided: true,
+            voided_at: new Date().toISOString()
+          })
           .eq('reference_id', transactionId)
-          .eq('reference_type', 'transaction');
+          .eq('reference_type', 'transaction')
+          .select('id, entry_number');
 
         if (voidError) {
           console.error('Failed to void sales journal:', voidError.message);
         } else {
-          console.log('✅ Sales journal voided:', transactionId);
+          console.log('✅ Sales journal voided:', transactionId, 'Journals:', voidedJournals?.length || 0);
+        }
+
+        // Also void any receivable payment journals linked to this transaction
+        const { data: voidedReceivableJournals, error: receivableVoidError } = await supabase
+          .from('journal_entries')
+          .update({
+            status: 'voided',
+            is_voided: true,
+            voided_at: new Date().toISOString()
+          })
+          .eq('reference_id', transactionId)
+          .eq('reference_type', 'receivable')
+          .select('id, entry_number');
+
+        if (receivableVoidError) {
+          console.error('Failed to void receivable payment journals:', receivableVoidError.message);
+        } else if (voidedReceivableJournals && voidedReceivableJournals.length > 0) {
+          console.log('✅ Receivable payment journals voided:', voidedReceivableJournals.length);
         }
       } catch (err) {
         console.error('Error voiding sales journal:', err);
@@ -570,11 +801,12 @@ export const useTransactions = (filters?: {
       console.log('Attempting to delete cash_history records for transaction:', transactionId);
       
       // Get all cash_history records for this transaction first (for debugging)
+      // Note: The column is 'reference_number' not 'reference_id'
       const { data: existingCashHistory } = await supabase
         .from('cash_history')
         .select('*')
-        .or(`reference_id.eq.${transactionId},description.ilike.%${transactionId}%`);
-        
+        .or(`reference_number.eq.${transactionId},description.ilike.%${transactionId}%`);
+
       console.log('Found cash_history records to delete:', existingCashHistory);
       
       // Also check with exact patterns used when saving
@@ -585,20 +817,20 @@ export const useTransactions = (filters?: {
         
       console.log('Found with exact pattern:', exactPattern);
       
-      // Delete by reference_id (primary method)
+      // Delete by reference_number (primary method)
       const { data: deleted1, error: cashHistoryError1 } = await supabase
         .from('cash_history')
         .delete()
-        .eq('reference_id', transactionId)
+        .eq('reference_number', transactionId)
         .select();
-      
-      console.log('Deleted by reference_id:', deleted1, 'Error:', cashHistoryError1);
-      
-      // If no records deleted by reference_id, log the actual records for debugging
+
+      console.log('Deleted by reference_number:', deleted1, 'Error:', cashHistoryError1);
+
+      // If no records deleted by reference_number, log the actual records for debugging
       if ((!deleted1 || deleted1.length === 0) && existingCashHistory && existingCashHistory.length > 0) {
         console.log('Records exist but were not deleted. First record details:', {
           id: existingCashHistory[0].id,
-          reference_id: existingCashHistory[0].reference_id,
+          reference_number: existingCashHistory[0].reference_number,
           description: existingCashHistory[0].description,
           user_id: existingCashHistory[0].user_id,
           type: existingCashHistory[0].type
@@ -628,7 +860,7 @@ export const useTransactions = (filters?: {
       const { count } = await supabase
         .from('cash_history')
         .select('*', { count: 'exact', head: true })
-        .or(`reference_id.eq.${transactionId},description.like.%${transactionId}%`);
+        .or(`reference_number.eq.${transactionId},description.like.%${transactionId}%`);
         
       console.log('Remaining cash_history records for this transaction:', count);
       
@@ -809,85 +1041,91 @@ export const useTransactions = (filters?: {
           console.error('Failed to get deliveries:', deliveriesError);
         } else if (deliveries && deliveries.length > 0) {
           console.log(`Found ${deliveries.length} deliveries to delete with stock restoration`);
-          
-          // First restore stock for each delivery before deletion
-          for (const delivery of deliveries) {
-            try {
-              // Get delivery details and items for stock restoration
-              const { data: deliveryData, error: deliveryError } = await supabase
-                .from('deliveries')
-                .select(`
-                  *,
-                  items:delivery_items(*)
-                `)
-                .eq('id', delivery.id)
-                .single();
 
-              if (deliveryError) {
-                console.error(`Failed to get delivery ${delivery.id}:`, deliveryError);
-                continue;
-              }
+          // For non-office sale transactions, stock was reduced at delivery
+          // So we need to restore stock when deleting deliveries
+          if (!isOfficeSale) {
+            for (const delivery of deliveries) {
+              try {
+                // Get delivery details and items for stock restoration
+                const { data: deliveryRaw, error: deliveryError } = await supabase
+                  .from('deliveries')
+                  .select(`
+                    *,
+                    items:delivery_items(*)
+                  `)
+                  .eq('id', delivery.id)
+                  .limit(1);
 
-              if (deliveryData.items && deliveryData.items.length > 0) {
-                // Get all unique product IDs
-                const productIds = [...new Set(deliveryData.items.map((item: any) => item.product_id))];
-                
-                if (productIds.length > 0) {
-                  const { data: productsData } = await supabase
-                    .from('products')
-                    .select('id, name, current_stock')
-                    .in('id', productIds);
+                if (deliveryError) {
+                  console.error(`Failed to get delivery ${delivery.id}:`, deliveryError);
+                  continue;
+                }
 
-                  // Restore stock for each delivered item
-                  for (const item of deliveryData.items) {
-                    const productData = productsData?.find(p => p.id === item.product_id);
-                    
-                    if (productData) {
-                      const currentStock = productData.current_stock || 0;
-                      const newStock = currentStock + item.quantity_delivered; // Add back delivered quantity
-                      
-                      console.log(`📦 Restoring stock for ${item.product_name}: ${currentStock} + ${item.quantity_delivered} = ${newStock}`);
-                      
-                      const { error: updateError } = await supabase
-                        .from('products')
-                        .update({ current_stock: newStock })
-                        .eq('id', item.product_id);
-                        
-                      if (updateError) {
-                        console.error(`Failed to restore stock for ${item.product_name}:`, updateError);
-                      } else {
-                        console.log(`✅ Stock restored for ${item.product_name}`);
+                const deliveryData = Array.isArray(deliveryRaw) ? deliveryRaw[0] : deliveryRaw;
+                if (deliveryData?.items && deliveryData.items.length > 0) {
+                  // Get all unique product IDs
+                  const productIds = [...new Set(deliveryData.items.map((item: any) => item.product_id))];
+
+                  if (productIds.length > 0) {
+                    const { data: productsData } = await supabase
+                      .from('products')
+                      .select('id, name, current_stock')
+                      .in('id', productIds);
+
+                    // Restore stock for each delivered item
+                    for (const item of deliveryData.items) {
+                      const productData = productsData?.find(p => p.id === item.product_id);
+
+                      if (productData) {
+                        const currentStock = productData.current_stock || 0;
+                        const newStock = currentStock + item.quantity_delivered;
+
+                        console.log(`📦 Restoring stock for ${item.product_name}: ${currentStock} + ${item.quantity_delivered} = ${newStock}`);
+
+                        const { error: updateError } = await supabase
+                          .from('products')
+                          .update({ current_stock: newStock })
+                          .eq('id', item.product_id);
+
+                        if (updateError) {
+                          console.error(`Failed to restore stock for ${item.product_name}:`, updateError);
+                        } else {
+                          console.log(`✅ Stock restored for ${item.product_name}`);
+                        }
                       }
                     }
                   }
                 }
+              } catch (stockError) {
+                console.error(`Error restoring stock for delivery ${delivery.id}:`, stockError);
               }
-            } catch (stockError) {
-              console.error(`Error restoring stock for delivery ${delivery.id}:`, stockError);
-              // Continue with other deliveries
             }
+          }
 
-            // Now delete delivery items
+          // Delete delivery items for each delivery
+          for (const delivery of deliveries) {
+            // Delete delivery items
             const { data: deletedItems, error: itemsError } = await supabase
               .from('delivery_items')
               .delete()
               .eq('delivery_id', delivery.id)
               .select();
-              
+
             if (itemsError) {
               console.error(`Failed to delete items for delivery ${delivery.id}:`, itemsError);
             } else {
               console.log(`Deleted ${deletedItems?.length || 0} delivery items for delivery ${delivery.id}`);
             }
           }
-          
+
           // Delete deliveries
           const { data: deletedDeliveries, error: deleteDeliveriesError } = await supabase
             .from('deliveries')
             .delete()
             .eq('transaction_id', transactionId)
             .select();
-            
+
           if (deleteDeliveriesError) {
             console.error('Failed to delete deliveries:', deleteDeliveriesError);
           } else {
@@ -939,22 +1177,39 @@ export const useTransactions = (filters?: {
     },
   });
 
-  return { transactions, isLoading, addTransaction, updateTransaction, payReceivable, deleteReceivable, updateTransactionStatus, deductMaterials, deleteTransaction }
+  // Update due date for receivables
+  const updateDueDate = useMutation({
+    mutationFn: async ({ transactionId, dueDate }: { transactionId: string; dueDate: Date | null }) => {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ due_date: dueDate ? dueDate.toISOString() : null })
+        .eq('id', transactionId);
+
+      if (error) throw new Error(`Gagal mengubah jatuh tempo: ${error.message}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    },
+  });
+
+  return { transactions, isLoading, addTransaction, updateTransaction, payReceivable, deleteReceivable, updateTransactionStatus, deductMaterials, deleteTransaction, updateDueDate }
 }
 
 export const useTransactionById = (id: string) => {
   const { data: transaction, isLoading } = useQuery<Transaction | undefined>({
     queryKey: ['transaction', id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: rawData, error } = await supabase
         .from('transactions')
         .select('*')
         .eq('id', id)
-        .single();
+        .limit(1);
       if (error) {
         console.error(error.message);
         return undefined;
-      };
+      }
+      const data = Array.isArray(rawData) ? rawData[0] : rawData;
+      if (!data) return undefined;
       return fromDb(data);
     },
     enabled: !!id,

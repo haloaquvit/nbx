@@ -110,11 +110,12 @@ export class MaterialMovementService {
     dateFrom?: Date,
     dateTo?: Date
   ): Promise<any[]> {
+    // Note: PostgREST doesn't support !inner, using regular nested select
     let query = supabase
       .from('material_stock_movements')
       .select(`
         *,
-        materials!inner(name, type, unit, price_per_unit)
+        materials(name, type, unit, price_per_unit)
       `)
       .order('created_at', { ascending: false });
 
@@ -125,7 +126,10 @@ export class MaterialMovementService {
       query = query.lte('created_at', dateTo.toISOString());
     }
 
-    const { data: movements, error } = await query;
+    const { data: rawMovements, error } = await query;
+
+    // Filter out movements without materials (simulating !inner behavior)
+    const movements = (rawMovements || []).filter((m: any) => m.materials !== null);
     
     if (error) {
       console.error('Error fetching material movements:', error);

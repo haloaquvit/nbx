@@ -42,6 +42,8 @@ export function PayrollRecordDialog({
 
   // Form fields that can be adjusted
   const [bonusAmount, setBonusAmount] = useState(0)
+  const [salaryDeduction, setSalaryDeduction] = useState(0) // Potongan gaji (keterlambatan, absensi, dll)
+  const [salaryDeductionReason, setSalaryDeductionReason] = useState("") // Alasan potongan
   const [customAdvanceDeduction, setCustomAdvanceDeduction] = useState<number>(0) // Default 0, not auto
   const [paymentAccountId, setPaymentAccountId] = useState<string>("")
   const [notes, setNotes] = useState("")
@@ -114,6 +116,11 @@ export function PayrollRecordDialog({
 
     setIsCreating(true)
     try {
+      // Combine notes with salary deduction reason if any
+      const finalNotes = salaryDeduction > 0 && salaryDeductionReason
+        ? `${notes}${notes ? '\n' : ''}Potongan Gaji: ${salaryDeductionReason}`
+        : notes
+
       await createPayrollRecord.mutateAsync({
         employeeId: calculation.employeeId,
         periodYear: calculation.periodYear,
@@ -122,8 +129,9 @@ export function PayrollRecordDialog({
         commissionAmount: calculation.commissionAmount,
         bonusAmount: bonusAmount,
         deductionAmount: actualAdvanceDeduct, // Custom or auto-calculated advance deduction
+        salaryDeduction: salaryDeduction, // Potongan gaji tambahan
         paymentAccountId,
-        notes
+        notes: finalNotes
       })
 
       toast({
@@ -135,6 +143,8 @@ export function PayrollRecordDialog({
       setSelectedEmployeeId("")
       setCalculation(null)
       setBonusAmount(0)
+      setSalaryDeduction(0)
+      setSalaryDeductionReason("")
       setCustomAdvanceDeduction(0) // Reset to default 0
       setPaymentAccountId("")
       setNotes("")
@@ -159,15 +169,18 @@ export function PayrollRecordDialog({
   }
 
   // Recalculate when bonus or advance deduction changes
-  const baseSal = calculation?.baseSalary || calculation?.base_salary || 0
-  const commissionAmt = calculation?.commissionAmount || calculation?.commission_amount || 0
-  const maxAdvanceDeduct = calculation?.advanceDeduction || calculation?.advance_deduction || 0
+  // RPC may return snake_case, so we cast to any for fallback access
+  const calcAny = calculation as any
+  const baseSal = calculation?.baseSalary || calcAny?.base_salary || 0
+  const commissionAmt = calculation?.commissionAmount || calcAny?.commission_amount || 0
+  const maxAdvanceDeduct = calculation?.advanceDeduction || calcAny?.advance_deduction || 0
 
   // Always use custom advance deduction (default 0, user can change)
   const actualAdvanceDeduct = Math.max(0, customAdvanceDeduction) // Ensure no negative values
 
   const recalculatedGross = calculation ? baseSal + commissionAmt + bonusAmount : 0
-  const recalculatedNet = calculation ? recalculatedGross - actualAdvanceDeduct : 0
+  const totalDeductions = actualAdvanceDeduct + salaryDeduction // Total potongan = potong panjar + potong gaji
+  const recalculatedNet = calculation ? recalculatedGross - totalDeductions : 0
 
   const selectedEmployee = employees?.find(emp => emp.id === selectedEmployeeId)
   const paymentAccount = accounts?.find(acc => acc.id === paymentAccountId)
@@ -232,6 +245,30 @@ export function PayrollRecordDialog({
                     onChange={(e) => setBonusAmount(Number(e.target.value) || 0)}
                     placeholder="0"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="salaryDeduction">Potongan Gaji</Label>
+                  <Input
+                    id="salaryDeduction"
+                    type="number"
+                    value={salaryDeduction}
+                    onChange={(e) => setSalaryDeduction(Number(e.target.value) || 0)}
+                    placeholder="0"
+                    min={0}
+                  />
+                  {salaryDeduction > 0 && (
+                    <Input
+                      id="salaryDeductionReason"
+                      value={salaryDeductionReason}
+                      onChange={(e) => setSalaryDeductionReason(e.target.value)}
+                      placeholder="Alasan potongan (keterlambatan, absensi, dll)"
+                      className="mt-2"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Potongan gaji untuk keterlambatan, absensi, atau potongan lainnya
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -327,18 +364,18 @@ export function PayrollRecordDialog({
                     <div className="flex justify-between">
                       <span>Gaji Pokok:</span>
                       <span className="font-medium">
-                        {formatCurrency(calculation.baseSalary || calculation.base_salary || 0)}
+                        {formatCurrency(baseSal)}
                         <small className="text-muted-foreground ml-2">
-                          ({calculation.baseSalary || calculation.base_salary || 0})
+                          ({baseSal})
                         </small>
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span>Komisi:</span>
                       <span className="font-medium text-green-600">
-                        {formatCurrency(calculation.commissionAmount || calculation.commission_amount || 0)}
+                        {formatCurrency(commissionAmt)}
                         <small className="text-muted-foreground ml-2">
-                          ({calculation.commissionAmount || calculation.commission_amount || 0})
+                          ({commissionAmt})
                         </small>
                       </span>
                     </div>
@@ -371,9 +408,9 @@ export function PayrollRecordDialog({
                     <div className="flex justify-between">
                       <span>Sisa Panjar:</span>
                       <span className="font-medium text-orange-600">
-                        {formatCurrency(calculation.outstandingAdvances || calculation.outstanding_advances || 0)}
+                        {formatCurrency(calculation?.outstandingAdvances || calcAny?.outstanding_advances || 0)}
                         <small className="text-muted-foreground ml-2">
-                          ({calculation.outstandingAdvances || calculation.outstanding_advances || 0})
+                          ({calculation?.outstandingAdvances || calcAny?.outstanding_advances || 0})
                         </small>
                       </span>
                     </div>
@@ -381,12 +418,33 @@ export function PayrollRecordDialog({
                       <span>Potong Panjar:</span>
                       <span className={`font-medium ${actualAdvanceDeduct > 0 ? 'text-red-600' : 'text-gray-500'}`}>
                         {actualAdvanceDeduct > 0 ?
-                          `(${formatCurrency(actualAdvanceDeduct)})` :
-                          'Tidak ada pemotongan'
+                          `- ${formatCurrency(actualAdvanceDeduct)}` :
+                          'Tidak ada'
                         }
-                        <small className="text-blue-600 ml-2">
-                          ({customAdvanceDeduction === 0 ? 'tidak potong' : 'potong manual'})
-                        </small>
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Potongan Gaji:</span>
+                      <span className={`font-medium ${salaryDeduction > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                        {salaryDeduction > 0 ?
+                          `- ${formatCurrency(salaryDeduction)}` :
+                          'Tidak ada'
+                        }
+                        {salaryDeduction > 0 && salaryDeductionReason && (
+                          <small className="text-muted-foreground ml-2">
+                            ({salaryDeductionReason})
+                          </small>
+                        )}
+                      </span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between font-medium">
+                      <span>Total Potongan:</span>
+                      <span className={`${totalDeductions > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                        {totalDeductions > 0 ?
+                          `- ${formatCurrency(totalDeductions)}` :
+                          'Rp 0'
+                        }
                       </span>
                     </div>
                     {actualAdvanceDeduct > 0 && (

@@ -12,11 +12,17 @@ import { postgrestAuth } from '@/integrations/supabase/postgrestAuth';
 import { Employee } from '@/types/employee';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
+// Idle timeout configuration (in milliseconds)
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const IDLE_WARNING_MS = 4 * 60 * 1000; // Warning at 4 minutes (1 minute before logout)
+
 interface AuthContextType {
   session: Session | null;
   user: Employee | null;
   isLoading: boolean;
   signOut: () => Promise<void>;
+  idleWarning: boolean; // Show warning before auto logout
+  resetIdleTimer: () => void; // Manual reset for user activity
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,9 +31,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [idleWarning, setIdleWarning] = useState(false);
 
   // Simple cache for user profiles to avoid repeated DB calls
   const profileCacheRef = useRef<Map<string, Employee>>(new Map());
+
+  // Idle timer refs
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
 
   // Simplified and fast user profile creation from auth data
   const createUserFromAuth = (authUser: any): Employee => {
@@ -102,6 +114,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Sign out
   const signOut = useCallback(async () => {
     try {
+      // Clear idle timers
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+      setIdleWarning(false);
+
       // Clear cache
       profileCacheRef.current.clear();
 
@@ -116,6 +133,63 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Silent error handling to prevent console spam
     }
   }, []);
+
+  // Reset idle timer - called on user activity
+  const resetIdleTimer = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    setIdleWarning(false);
+
+    // Clear existing timers
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+
+    // Only set timers if user is logged in
+    if (!session) return;
+
+    // Set warning timer (1 minute before logout)
+    warningTimerRef.current = setTimeout(() => {
+      setIdleWarning(true);
+      console.log('⚠️ Idle warning: akan logout dalam 1 menit karena tidak ada aktivitas');
+    }, IDLE_WARNING_MS);
+
+    // Set logout timer
+    idleTimerRef.current = setTimeout(() => {
+      console.log('🔒 Auto logout karena idle 5 menit');
+      signOut();
+    }, IDLE_TIMEOUT_MS);
+  }, [session, signOut]);
+
+  // Setup idle detection listeners
+  useEffect(() => {
+    if (!session) return;
+
+    const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'];
+
+    const handleActivity = () => {
+      // Throttle activity detection to avoid too many resets
+      const now = Date.now();
+      if (now - lastActivityRef.current > 1000) { // Only reset if more than 1 second since last activity
+        resetIdleTimer();
+      }
+    };
+
+    // Add event listeners
+    activityEvents.forEach(event => {
+      document.addEventListener(event, handleActivity, { passive: true });
+    });
+
+    // Initialize timer
+    resetIdleTimer();
+
+    // Cleanup
+    return () => {
+      activityEvents.forEach(event => {
+        document.removeEventListener(event, handleActivity);
+      });
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    };
+  }, [session, resetIdleTimer]);
 
   // Initial session check on mount - simplified
   useEffect(() => {
@@ -225,7 +299,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ session, user, isLoading, signOut }}
+      value={{ session, user, isLoading, signOut, idleWarning, resetIdleTimer }}
     >
       {children}
     </AuthContext.Provider>

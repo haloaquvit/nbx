@@ -34,10 +34,11 @@ import {
   formatCurrency
 } from '@/utils/financialStatementsUtils';
 import { useToast } from '@/hooks/use-toast';
-import { downloadCashFlowPDF } from '@/components/CashFlowPDF';
-import { downloadBalanceSheetPDF } from '@/components/BalanceSheetPDF';
-import { downloadIncomeStatementPDF } from '@/components/IncomeStatementPDF';
+import { downloadCashFlowPDF, PrinterInfo as CashFlowPrinterInfo } from '@/components/CashFlowPDF';
+import { downloadBalanceSheetPDF, PrinterInfo as BalanceSheetPrinterInfo } from '@/components/BalanceSheetPDF';
+import { downloadIncomeStatementPDF, PrinterInfo } from '@/components/IncomeStatementPDF';
 import { useBranch } from '@/contexts/BranchContext';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Select,
   SelectContent,
@@ -53,12 +54,14 @@ const FinancialReportsPage = () => {
 
   const [loading, setLoading] = useState({ balanceSheet: false, incomeStatement: false, cashFlow: false });
 
-  // Default to current month
+  // Default to current month - all reports use same date range
   const [periodFrom, setPeriodFrom] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [periodTo, setPeriodTo] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [asOfDate, setAsOfDate] = useState(format(new Date(), 'yyyy-MM-dd'));
 
   const { toast } = useToast();
+
+  // Auth context for printer info
+  const { user } = useAuth();
 
   // Branch context
   const { currentBranch, availableBranches, canAccessAllBranches } = useBranch();
@@ -82,11 +85,12 @@ const FinancialReportsPage = () => {
     }
     setLoading(prev => ({ ...prev, balanceSheet: true }));
     try {
-      const data = await generateBalanceSheet(new Date(asOfDate), selectedBranchId);
+      // Use periodTo as the balance sheet date (as of date)
+      const data = await generateBalanceSheet(new Date(periodTo), selectedBranchId);
       setBalanceSheet(data);
       toast({
         title: 'Sukses',
-        description: 'Neraca berhasil dibuat dari data real aplikasi'
+        description: `Neraca per ${format(new Date(periodTo), 'd MMMM yyyy', { locale: id })} berhasil dibuat`
       });
     } catch (error) {
       toast({
@@ -209,7 +213,7 @@ const FinancialReportsPage = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="periodFrom">Dari Tanggal</Label>
               <Input
@@ -227,15 +231,9 @@ const FinancialReportsPage = () => {
                 value={periodTo}
                 onChange={(e) => setPeriodTo(e.target.value)}
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="asOfDate">Neraca Per Tanggal</Label>
-              <Input
-                id="asOfDate"
-                type="date"
-                value={asOfDate}
-                onChange={(e) => setAsOfDate(e.target.value)}
-              />
+              <p className="text-xs text-muted-foreground">
+                Neraca akan dibuat per tanggal ini
+              </p>
             </div>
           </div>
           
@@ -329,7 +327,7 @@ const FinancialReportsPage = () => {
                     NERACA (Balance Sheet)
                   </CardTitle>
                   <CardDescription>
-                    Per {format(new Date(asOfDate), 'd MMMM yyyy', { locale: id })}
+                    Per {format(new Date(periodTo), 'd MMMM yyyy', { locale: id })}
                   </CardDescription>
                 </div>
                 <div className="flex items-center gap-2">
@@ -347,7 +345,13 @@ const FinancialReportsPage = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => downloadBalanceSheetPDF(balanceSheet, new Date(asOfDate), currentBranch?.name || 'PT AQUVIT MANUFACTURE')}
+                    onClick={() => {
+                      const printerInfo: BalanceSheetPrinterInfo = {
+                        name: user?.name || user?.email || 'Unknown User',
+                        position: user?.role || undefined
+                      };
+                      downloadBalanceSheetPDF(balanceSheet, new Date(periodTo), currentBranch?.name || 'PT AQUVIT MANUFACTURE', printerInfo);
+                    }}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Export PDF
@@ -370,6 +374,12 @@ const FinancialReportsPage = () => {
                         </div>
                       ))}
                       {balanceSheet.assets.currentAssets.piutangUsaha.map(item => (
+                        <div key={item.accountId} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName}</span>
+                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                        </div>
+                      ))}
+                      {balanceSheet.assets.currentAssets.piutangPajak?.map(item => (
                         <div key={item.accountId} className="flex justify-between pl-4">
                           <span className="text-sm">{item.accountName}</span>
                           <span className="text-sm font-mono">{item.formattedBalance}</span>
@@ -428,6 +438,24 @@ const FinancialReportsPage = () => {
                     <div className="space-y-2">
                       <h4 className="font-medium text-gray-700">Kewajiban Lancar:</h4>
                       {balanceSheet.liabilities.currentLiabilities.hutangUsaha.map(item => (
+                        <div key={item.accountId} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName}</span>
+                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                        </div>
+                      ))}
+                      {balanceSheet.liabilities.currentLiabilities.hutangBank.map(item => (
+                        <div key={item.accountId} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName}</span>
+                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                        </div>
+                      ))}
+                      {balanceSheet.liabilities.currentLiabilities.hutangKartuKredit.map(item => (
+                        <div key={item.accountId} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName}</span>
+                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                        </div>
+                      ))}
+                      {balanceSheet.liabilities.currentLiabilities.hutangLain.map(item => (
                         <div key={item.accountId} className="flex justify-between pl-4">
                           <span className="text-sm">{item.accountName}</span>
                           <span className="text-sm font-mono">{item.formattedBalance}</span>
@@ -517,7 +545,13 @@ const FinancialReportsPage = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => downloadIncomeStatementPDF(incomeStatement, currentBranch?.name || 'PT AQUVIT MANUFACTURE')}
+                  onClick={() => {
+                    const printerInfo: PrinterInfo = {
+                      name: user?.name || user?.email || 'Unknown User',
+                      position: user?.role || undefined
+                    };
+                    downloadIncomeStatementPDF(incomeStatement, currentBranch?.name || 'PT AQUVIT MANUFACTURE', printerInfo);
+                  }}
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Export PDF
@@ -650,7 +684,13 @@ const FinancialReportsPage = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => downloadCashFlowPDF(cashFlowStatement, currentBranch?.name || 'PT AQUVIT MANUFACTURE')}
+                  onClick={() => {
+                    const printerInfo: CashFlowPrinterInfo = {
+                      name: user?.name || user?.email || 'Unknown User',
+                      position: user?.role || undefined
+                    };
+                    downloadCashFlowPDF(cashFlowStatement, currentBranch?.name || 'PT AQUVIT MANUFACTURE', printerInfo);
+                  }}
                 >
                   <Download className="h-4 w-4 mr-2" />
                   Export PDF
@@ -665,24 +705,37 @@ const FinancialReportsPage = () => {
                     {/* Cash Receipts */}
                     <div className="space-y-1">
                       <h4 className="font-medium text-blue-600">Penerimaan kas dari:</h4>
-                      <div className="flex justify-between pl-4">
-                        <span>Pelanggan</span>
-                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromCustomers || 0)}</span>
-                      </div>
-                      <div className="flex justify-between pl-4">
-                        <span>Pembayaran piutang</span>
-                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromReceivablePayments || 0)}</span>
-                      </div>
-                      {cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment > 0 && (
-                        <div className="flex justify-between pl-4">
-                          <span>Pelunasan panjar karyawan</span>
-                          <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment || 0)}</span>
+                      {/* Show receipts by account for more detail */}
+                      {cashFlowStatement.operatingActivities.cashReceipts?.byAccount?.map((item, index) => (
+                        <div key={index} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName} ({item.accountCode})</span>
+                          <span className="font-mono">{formatCurrency(item.amount)}</span>
                         </div>
+                      ))}
+                      {/* Fallback to summary if no detail */}
+                      {(!cashFlowStatement.operatingActivities.cashReceipts?.byAccount ||
+                        cashFlowStatement.operatingActivities.cashReceipts.byAccount.length === 0) && (
+                        <>
+                          <div className="flex justify-between pl-4">
+                            <span>Pelanggan</span>
+                            <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromCustomers || 0)}</span>
+                          </div>
+                          <div className="flex justify-between pl-4">
+                            <span>Pembayaran piutang</span>
+                            <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromReceivablePayments || 0)}</span>
+                          </div>
+                          {cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment > 0 && (
+                            <div className="flex justify-between pl-4">
+                              <span>Pelunasan panjar karyawan</span>
+                              <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromAdvanceRepayment || 0)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between pl-4">
+                            <span>Penerimaan operasi lain</span>
+                            <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromOtherOperating || 0)}</span>
+                          </div>
+                        </>
                       )}
-                      <div className="flex justify-between pl-4">
-                        <span>Penerimaan operasi lain</span>
-                        <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.fromOtherOperating || 0)}</span>
-                      </div>
                       <div className="flex justify-between font-medium text-green-600 border-b pb-1">
                         <span className="pl-4">Total penerimaan kas</span>
                         <span className="font-mono">{formatCurrency(cashFlowStatement.operatingActivities.cashReceipts?.total || 0)}</span>
@@ -692,43 +745,56 @@ const FinancialReportsPage = () => {
                     {/* Cash Payments */}
                     <div className="space-y-1">
                       <h4 className="font-medium text-red-600">Pembayaran kas untuk:</h4>
-                      <div className="flex justify-between pl-4">
-                        <span>Pembayaran ke supplier</span>
-                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forRawMaterials || 0)})</span>
-                      </div>
-                      {cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments > 0 && (
-                        <div className="flex justify-between pl-4">
-                          <span>Pembayaran hutang usaha lainnya</span>
-                          <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments || 0)})</span>
+                      {/* Show payments by account for more detail */}
+                      {cashFlowStatement.operatingActivities.cashPayments?.byAccount?.map((item, index) => (
+                        <div key={index} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName} ({item.accountCode})</span>
+                          <span className="font-mono">({formatCurrency(item.amount)})</span>
                         </div>
-                      )}
-                      <div className="flex justify-between pl-4">
-                        <span>Hutang Bunga Atas Hutang Bank</span>
-                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forInterestExpense || 0)})</span>
-                      </div>
-                      <div className="flex justify-between pl-4">
-                        <span>Upah tenaga kerja langsung</span>
-                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forDirectLabor || 0)})</span>
-                      </div>
-                      {cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances > 0 && (
-                        <div className="flex justify-between pl-4">
-                          <span>Pemberian panjar karyawan</span>
-                          <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances || 0)})</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between pl-4">
-                        <span>Biaya overhead pabrik</span>
-                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forManufacturingOverhead || 0)})</span>
-                      </div>
-                      <div className="flex justify-between pl-4">
-                        <span>Beban operasi lainnya</span>
-                        <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forOperatingExpenses || 0)})</span>
-                      </div>
-                      {cashFlowStatement.operatingActivities.cashPayments?.forTaxes > 0 && (
-                        <div className="flex justify-between pl-4">
-                          <span>Pajak penghasilan</span>
-                          <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments.forTaxes)})</span>
-                        </div>
+                      ))}
+                      {/* Fallback to summary if no detail */}
+                      {(!cashFlowStatement.operatingActivities.cashPayments?.byAccount ||
+                        cashFlowStatement.operatingActivities.cashPayments.byAccount.length === 0) && (
+                        <>
+                          <div className="flex justify-between pl-4">
+                            <span>Pembayaran ke supplier</span>
+                            <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forRawMaterials || 0)})</span>
+                          </div>
+                          {cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments > 0 && (
+                            <div className="flex justify-between pl-4">
+                              <span>Pembayaran hutang usaha lainnya</span>
+                              <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forPayablePayments || 0)})</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between pl-4">
+                            <span>Hutang Bunga Atas Hutang Bank</span>
+                            <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forInterestExpense || 0)})</span>
+                          </div>
+                          <div className="flex justify-between pl-4">
+                            <span>Upah tenaga kerja langsung</span>
+                            <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forDirectLabor || 0)})</span>
+                          </div>
+                          {cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances > 0 && (
+                            <div className="flex justify-between pl-4">
+                              <span>Pemberian panjar karyawan</span>
+                              <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forEmployeeAdvances || 0)})</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between pl-4">
+                            <span>Biaya overhead pabrik</span>
+                            <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forManufacturingOverhead || 0)})</span>
+                          </div>
+                          <div className="flex justify-between pl-4">
+                            <span>Beban operasi lainnya</span>
+                            <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments?.forOperatingExpenses || 0)})</span>
+                          </div>
+                          {cashFlowStatement.operatingActivities.cashPayments?.forTaxes > 0 && (
+                            <div className="flex justify-between pl-4">
+                              <span>Pajak penghasilan</span>
+                              <span className="font-mono">({formatCurrency(cashFlowStatement.operatingActivities.cashPayments.forTaxes)})</span>
+                            </div>
+                          )}
+                        </>
                       )}
                       <div className="flex justify-between font-medium text-red-600 border-b pb-1">
                         <span className="pl-4">Total pembayaran kas</span>

@@ -23,7 +23,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
-import { Trash2, AlertTriangle, Database, ShoppingCart, Package, DollarSign, Users, Truck, Settings, Building2, HandCoins, Heart } from 'lucide-react';
+import { Trash2, AlertTriangle, Database, ShoppingCart, Package, DollarSign, Users, Truck, Settings, Building2, HandCoins, Heart, BookOpen } from 'lucide-react';
 import { supabase, isPostgRESTMode } from '@/integrations/supabase/client';
 import { postgrestAuth } from '@/integrations/supabase/postgrestAuth';
 import { toast } from 'sonner';
@@ -103,6 +103,16 @@ const dataCategories: DataCategory[] = [
     ]
   },
   {
+    id: 'journal',
+    name: 'Journal Entries',
+    description: 'Jurnal umum dan semua transaksi akuntansi (HARUS direset sebelum COA)',
+    icon: <BookOpen className="w-4 h-4" />,
+    tables: [
+      'journal_entry_lines',
+      'journal_entries'
+    ]
+  },
+  {
     id: 'finance',
     name: 'Finance & Accounting',
     description: 'Akun keuangan, kas, dan laporan',
@@ -117,14 +127,23 @@ const dataCategories: DataCategory[] = [
       'manual_journal_entry_lines',
       'balance_adjustments'
     ],
-    dependencies: ['accounts']
+    dependencies: ['journal']
   },
   {
     id: 'accounts',
-    name: 'Chart of Accounts',
+    name: 'Chart of Accounts (Reset Balance)',
     description: 'Reset saldo akun ke 0 (struktur akun tetap)',
     icon: <DollarSign className="w-4 h-4" />,
-    tables: ['accounts']
+    tables: ['accounts_balance_only'],
+    dependencies: ['journal']
+  },
+  {
+    id: 'accounts_delete',
+    name: 'Chart of Accounts (Hapus Semua)',
+    description: 'HAPUS SEMUA AKUN - Gunakan ini untuk reset COA sepenuhnya',
+    icon: <Trash2 className="w-4 h-4" />,
+    tables: ['accounts'],
+    dependencies: ['journal']
   },
   {
     id: 'hr',
@@ -355,8 +374,14 @@ export const ResetDatabaseDialog = () => {
       // Validation: Check if tables exist before attempting to clear
       const validTables: string[] = [];
       const invalidTables: string[] = [];
-      
+
       for (const table of tablesToClear) {
+        // Skip virtual tables (used for special handling)
+        if (table === 'accounts_balance_only') {
+          validTables.push(table);
+          continue;
+        }
+
         try {
           // Test if table exists by attempting to select 0 rows
           const { error } = await supabase
@@ -384,8 +409,8 @@ export const ResetDatabaseDialog = () => {
       let failedTables: string[] = [];
 
       // Clear each valid table in reverse order (to handle foreign key constraints)
-      // Skip 'accounts' table - we only reset balances, not delete accounts
-      const reversedTables = [...validTables].reverse().filter(t => t !== 'accounts');
+      // Skip 'accounts_balance_only' - this is handled separately
+      const reversedTables = [...validTables].reverse().filter(t => t !== 'accounts_balance_only');
 
       for (const table of reversedTables) {
         try {
@@ -425,16 +450,48 @@ export const ResetDatabaseDialog = () => {
           const { error } = await supabase
             .from('accounts')
             .update({ balance: 0, initial_balance: 0 })
-            .neq('id', '');
+            .neq('id', '00000000-0000-0000-0000-000000000000');
 
           if (error) {
             console.warn('Could not reset account balances:', error);
+            failedTables.push('accounts (balance reset)');
           } else {
             clearedTables.push('accounts (balance reset)');
             console.log('Successfully reset account balances to 0');
+            toast.success('Berhasil reset saldo semua akun ke 0');
           }
         } catch (err) {
           console.warn('Could not reset account balances:', err);
+          failedTables.push('accounts (balance reset)');
+        }
+      }
+
+      // Delete all accounts if accounts_delete category is selected
+      if (filteredCategories.includes('accounts_delete')) {
+        try {
+          console.log('Deleting all accounts...');
+          const { count, error: countError } = await supabase
+            .from('accounts')
+            .select('*', { count: 'exact', head: true });
+
+          const { error } = await supabase
+            .from('accounts')
+            .delete()
+            .neq('id', '00000000-0000-0000-0000-000000000000');
+
+          if (error) {
+            console.error('Could not delete accounts:', error);
+            failedTables.push('accounts');
+            toast.error('Gagal menghapus akun: ' + error.message);
+          } else {
+            clearedTables.push('accounts');
+            console.log(`Successfully deleted ${count || 0} accounts`);
+            toast.success(`Berhasil menghapus ${count || 0} akun dari COA`);
+          }
+        } catch (err: any) {
+          console.error('Could not delete accounts:', err);
+          failedTables.push('accounts');
+          toast.error('Gagal menghapus akun: ' + err.message);
         }
       }
 

@@ -322,12 +322,14 @@ export const useRetasi = (filters?: {
       console.log('[useRetasi] Inserting retasi with data:', insertData);
       
       // Insert main retasi record
-      const { data: retasi, error: retasiError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: retasiRaw, error: retasiError } = await supabase
         .from('retasi')
         .insert(insertData)
         .select()
-        .single();
+        .limit(1);
 
+      const retasi = Array.isArray(retasiRaw) ? retasiRaw[0] : retasiRaw;
       console.log('[useRetasi] Insert result:', { retasi, retasiError });
 
       if (retasiError) {
@@ -377,14 +379,17 @@ export const useRetasi = (filters?: {
   // Update retasi
   const updateRetasi = useMutation({
     mutationFn: async ({ id, ...updateData }: UpdateRetasiData & { id: string }): Promise<Retasi> => {
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('retasi')
         .update(toDb(updateData))
         .eq('id', id)
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to update retasi');
       return fromDb(data);
     },
     onSuccess: () => {

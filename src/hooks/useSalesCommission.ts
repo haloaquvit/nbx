@@ -43,6 +43,7 @@ export const useSalesEmployees = () => {
 
 export const useSalesCommissionSettings = () => {
   const queryClient = useQueryClient()
+  const { currentBranch } = useBranch()
 
   const { data: settings, isLoading } = useQuery<SalesCommissionSetting[]>({
     queryKey: ['sales-commission-settings'],
@@ -76,7 +77,8 @@ export const useSalesCommissionSettings = () => {
 
   const createSetting = useMutation({
     mutationFn: async (data: Omit<SalesCommissionSetting, 'id' | 'createdAt' | 'updatedAt'>) => {
-      const { data: result, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('sales_commission_settings')
         .insert({
           sales_id: data.salesId,
@@ -87,9 +89,10 @@ export const useSalesCommissionSettings = () => {
           branch_id: currentBranch?.id || null,
         })
         .select()
-        .single()
+        .limit(1)
 
       if (error) throw error
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
       return result
     },
     onSuccess: () => {
@@ -99,7 +102,8 @@ export const useSalesCommissionSettings = () => {
 
   const updateSetting = useMutation({
     mutationFn: async (data: Partial<SalesCommissionSetting> & { id: string }) => {
-      const { data: result, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('sales_commission_settings')
         .update({
           commission_type: data.commissionType,
@@ -109,9 +113,10 @@ export const useSalesCommissionSettings = () => {
         })
         .eq('id', data.id)
         .select()
-        .single()
+        .limit(1)
 
       if (error) throw error
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
       return result
     },
     onSuccess: () => {
@@ -151,12 +156,14 @@ export const useSalesCommissionReport = (salesId?: string, startDate?: Date, end
       if (!salesId || !startDate || !endDate) return null
 
       // Get sales commission setting
-      const { data: setting } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: settingRaw } = await supabase
         .from('sales_commission_settings')
         .select('commission_type, commission_value')
         .eq('sales_id', salesId)
         .eq('is_active', true)
-        .single()
+        .limit(1)
+      const setting = Array.isArray(settingRaw) ? settingRaw[0] : settingRaw
 
       if (!setting) return null
 
@@ -218,11 +225,13 @@ export const useSalesCommissionReport = (salesId?: string, startDate?: Date, end
       })
 
       // Get sales name
-      const { data: salesProfile } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: salesProfileRaw } = await supabase
         .from('profiles')
         .select('full_name')
         .eq('id', salesId)
-        .single()
+        .limit(1)
+      const salesProfile = Array.isArray(salesProfileRaw) ? salesProfileRaw[0] : salesProfileRaw
 
       return {
         salesId,

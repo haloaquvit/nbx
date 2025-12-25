@@ -123,13 +123,16 @@ export const useSuppliers = () => {
         ...toDbSupplier(data),
         branch_id: currentBranch?.id || null,
       }
-      const { data: result, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('suppliers')
         .insert(dbData)
         .select()
-        .single()
+        .limit(1)
 
       if (error) throw new Error(error.message)
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
+      if (!result) throw new Error('Failed to create supplier')
       return fromDbSupplier(result)
     },
     onSuccess: () => {
@@ -141,14 +144,17 @@ export const useSuppliers = () => {
   const updateSupplier = useMutation({
     mutationFn: async ({ id, data }: { id: string, data: UpdateSupplierData }): Promise<Supplier> => {
       const dbData = toDbSupplier(data)
-      const { data: result, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('suppliers')
         .update(dbData)
         .eq('id', id)
         .select()
-        .single()
-      
+        .limit(1)
+
       if (error) throw new Error(error.message)
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
+      if (!result) throw new Error('Failed to update supplier')
       return fromDbSupplier(result)
     },
     onSuccess: () => {
@@ -252,7 +258,8 @@ export const useSupplierMaterials = () => {
   // Create supplier material
   const createSupplierMaterial = useMutation({
     mutationFn: async (data: CreateSupplierMaterialData) => {
-      const { data: result, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('supplier_materials')
         .insert({
           supplier_id: data.supplierId,
@@ -264,9 +271,10 @@ export const useSupplierMaterials = () => {
           notes: data.notes
         })
         .select()
-        .single()
-      
+        .limit(1)
+
       if (error) throw new Error(error.message)
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
       return result
     },
     onSuccess: () => {

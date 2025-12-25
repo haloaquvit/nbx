@@ -10,7 +10,10 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, ArrowUpDown, MapPin, Camera, Search } from "lucide-react"
+import { MoreHorizontal, ArrowUpDown, MapPin, Camera, Search, Users, Clock } from "lucide-react"
+import { format, differenceInDays } from "date-fns"
+import { id as idLocale } from "date-fns/locale"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useNavigate } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
@@ -107,12 +110,65 @@ export const getColumns = (
             column.toggleSorting(column.getIsSorted() === "asc");
           }}
         >
-          Orderan Terkait
+          Orderan
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       )
     },
     cell: ({ row }) => <div className="text-center">{row.getValue("orderCount")}</div>
+  },
+  {
+    accessorKey: "lastOrderDate",
+    header: ({ column }) => {
+      return (
+        <Button
+          variant="ghost"
+          onClick={(e) => {
+            e.stopPropagation();
+            column.toggleSorting(column.getIsSorted() === "asc");
+          }}
+        >
+          Order Terakhir
+          <ArrowUpDown className="ml-2 h-4 w-4" />
+        </Button>
+      )
+    },
+    cell: ({ row }) => {
+      const lastOrderDate = row.getValue("lastOrderDate") as Date | null;
+      if (!lastOrderDate) {
+        return <span className="text-muted-foreground text-xs">Belum pernah</span>;
+      }
+
+      const daysSinceLastOrder = differenceInDays(new Date(), lastOrderDate);
+      const formattedDate = format(lastOrderDate, "d MMM yyyy", { locale: idLocale });
+
+      // Color coding based on days since last order
+      let colorClass = "text-green-600"; // < 30 days
+      if (daysSinceLastOrder > 90) {
+        colorClass = "text-red-600";
+      } else if (daysSinceLastOrder > 60) {
+        colorClass = "text-orange-600";
+      } else if (daysSinceLastOrder > 30) {
+        colorClass = "text-yellow-600";
+      }
+
+      return (
+        <div className="text-xs">
+          <div>{formattedDate}</div>
+          <div className={`${colorClass} font-medium`}>
+            {daysSinceLastOrder === 0 ? "Hari ini" : `${daysSinceLastOrder} hari lalu`}
+          </div>
+        </div>
+      );
+    },
+    sortingFn: (rowA, rowB, columnId) => {
+      const dateA = rowA.getValue(columnId) as Date | null;
+      const dateB = rowB.getValue(columnId) as Date | null;
+      if (!dateA && !dateB) return 0;
+      if (!dateA) return 1;
+      if (!dateB) return -1;
+      return dateA.getTime() - dateB.getTime();
+    }
   },
   {
     id: "location",
@@ -236,15 +292,47 @@ interface CustomerTableProps {
   onEditCustomer?: (customer: Customer) => void
 }
 
+type InactivityFilter = 'all' | 'active' | 'inactive' | 'inactive_30' | 'inactive_60' | 'inactive_90';
+
 export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
   const { customers, isLoading, deleteCustomer } = useCustomers()
   const { user } = useAuthContext()
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = React.useState('')
+  const [activityFilter, setActivityFilter] = React.useState<InactivityFilter>('all')
   const navigate = useNavigate()
 
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false)
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | null>(null)
+
+  // Filter customers by activity and inactivity period
+  const filteredCustomers = React.useMemo(() => {
+    const today = new Date();
+    return (customers || []).filter(customer => {
+      if (activityFilter === 'all') return true;
+      if (activityFilter === 'active') return (customer.orderCount || 0) > 0;
+      if (activityFilter === 'inactive') return (customer.orderCount || 0) === 0;
+
+      // Inactivity filters based on last order date
+      if (activityFilter === 'inactive_30') {
+        if (!customer.lastOrderDate) return true; // Never ordered = inactive
+        const days = differenceInDays(today, new Date(customer.lastOrderDate));
+        return days > 30;
+      }
+      if (activityFilter === 'inactive_60') {
+        if (!customer.lastOrderDate) return true;
+        const days = differenceInDays(today, new Date(customer.lastOrderDate));
+        return days > 60;
+      }
+      if (activityFilter === 'inactive_90') {
+        if (!customer.lastOrderDate) return true;
+        const days = differenceInDays(today, new Date(customer.lastOrderDate));
+        return days > 90;
+      }
+
+      return true;
+    });
+  }, [customers, activityFilter]);
 
   const handleEditClick = (customer: Customer) => {
     if (onEditCustomer) {
@@ -274,7 +362,7 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
   const columns = React.useMemo(() => getColumns(handleEditClick, handleDeleteClick, user?.role), [user?.role]);
 
   const table = useReactTable({
-    data: customers || [],
+    data: filteredCustomers,
     columns,
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
@@ -304,6 +392,27 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
               className="pl-10 input-glow"
             />
           </div>
+          {/* Activity Filter */}
+          <Select value={activityFilter} onValueChange={(v) => setActivityFilter(v as InactivityFilter)}>
+            <SelectTrigger className="w-[200px]">
+              <Clock className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Filter Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Pelanggan</SelectItem>
+              <SelectItem value="active">Pernah Order</SelectItem>
+              <SelectItem value="inactive">Belum Pernah Order</SelectItem>
+              <SelectItem value="inactive_30">
+                <span className="text-yellow-600">Tidak pesan &gt;30 hari</span>
+              </SelectItem>
+              <SelectItem value="inactive_60">
+                <span className="text-orange-600">Tidak pesan &gt;60 hari</span>
+              </SelectItem>
+              <SelectItem value="inactive_90">
+                <span className="text-red-600">Tidak pesan &gt;90 hari</span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <div className="text-sm text-muted-foreground">
             {table.getRowModel().rows.length} dari {customers?.length || 0} pelanggan
           </div>
@@ -457,6 +566,38 @@ export function CustomerTable({ onEditCustomer }: CustomerTableProps) {
                     <span className="text-xs font-medium text-blue-700">Orders:</span>
                     <span className="text-xs font-bold text-blue-800">{customer.orderCount || 0}</span>
                   </div>
+
+                  {/* Last Order Date Badge */}
+                  {customer.lastOrderDate ? (
+                    (() => {
+                      const daysSince = differenceInDays(new Date(), new Date(customer.lastOrderDate));
+                      let bgColor = "bg-green-50";
+                      let textColor = "text-green-700";
+                      if (daysSince > 90) {
+                        bgColor = "bg-red-50";
+                        textColor = "text-red-700";
+                      } else if (daysSince > 60) {
+                        bgColor = "bg-orange-50";
+                        textColor = "text-orange-700";
+                      } else if (daysSince > 30) {
+                        bgColor = "bg-yellow-50";
+                        textColor = "text-yellow-700";
+                      }
+                      return (
+                        <div className={`flex items-center gap-1 ${bgColor} px-2 py-1 rounded-md`}>
+                          <Clock className="h-3 w-3" />
+                          <span className={`text-xs font-medium ${textColor}`}>
+                            {daysSince === 0 ? "Hari ini" : `${daysSince} hari lalu`}
+                          </span>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="flex items-center gap-1 bg-gray-50 px-2 py-1 rounded-md">
+                      <Clock className="h-3 w-3 text-gray-400" />
+                      <span className="text-xs font-medium text-gray-500">Belum order</span>
+                    </div>
+                  )}
 
                   {customer.jumlah_galon_titip && customer.jumlah_galon_titip > 0 && (
                     <div className="flex items-center gap-1 bg-orange-50 px-2 py-1 rounded-md">

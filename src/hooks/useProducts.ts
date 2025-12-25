@@ -13,6 +13,7 @@ const fromDb = (dbProduct: any): Product => ({
   basePrice: Number(dbProduct.base_price) || 0,
   costPrice: dbProduct.cost_price ? Number(dbProduct.cost_price) : undefined, // Harga pokok untuk Jual Langsung
   unit: dbProduct.unit || 'pcs',
+  initialStock: Number(dbProduct.initial_stock || 0), // Stock awal untuk balancing
   currentStock: Number(dbProduct.current_stock || 0),
   minStock: Number(dbProduct.min_stock || 0),
   minOrder: Number(dbProduct.min_order) || 1,
@@ -25,11 +26,12 @@ const fromDb = (dbProduct: any): Product => ({
 
 // App to DB mapping - only include columns that exist in the database
 const toDb = (appProduct: Partial<Product>) => {
-  const { id, createdAt, updatedAt, basePrice, costPrice, minOrder, currentStock, minStock, ...rest } = appProduct;
+  const { id, createdAt, updatedAt, basePrice, costPrice, minOrder, initialStock, currentStock, minStock, ...rest } = appProduct;
   const dbData: any = { ...rest };
   if (basePrice !== undefined) dbData.base_price = basePrice;
   if (costPrice !== undefined) dbData.cost_price = costPrice;
   if (minOrder !== undefined) dbData.min_order = minOrder;
+  if (initialStock !== undefined) dbData.initial_stock = initialStock;
   if (currentStock !== undefined) dbData.current_stock = currentStock;
   if (minStock !== undefined) dbData.min_stock = minStock;
 
@@ -83,40 +85,48 @@ export const useProducts = () => {
         // Update existing product
         logDebug('Product Update', { id: product.id, updateData: dbData });
         
-        const { data, error } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: dataRaw, error } = await supabase
           .from('products')
           .update(dbData)
           .eq('id', product.id)
           .select()
-          .single();
-          
+          .limit(1);
+
         if (error) {
           logError('Product Update', error);
           throw new Error(`Update failed: ${error.message}${error.details ? ` - ${error.details}` : ''}${error.hint ? ` (${error.hint})` : ''}`);
         }
-        
+
+        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+        if (!data) throw new Error('Failed to update product');
         logDebug('Product Update Success', data);
         return fromDb(data);
       } else {
         // Insert new product - let database generate UUID automatically
+        // Jika currentStock tidak di-set, gunakan initialStock sebagai nilai awal
         const insertData = {
           ...dbData,
           branch_id: currentBranch?.id || null,
+          current_stock: dbData.current_stock || dbData.initial_stock || 0,
         };
 
         logDebug('Product Insert', { insertData });
 
-        const { data, error } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: dataRaw, error } = await supabase
           .from('products')
           .insert(insertData)
           .select()
-          .single();
-          
+          .limit(1);
+
         if (error) {
           logError('Product Insert', error);
           throw new Error(`Insert failed: ${error.message}${error.details ? ` - ${error.details}` : ''}${error.hint ? ` (${error.hint})` : ''}`);
         }
-        
+
+        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+        if (!data) throw new Error('Failed to insert product');
         logDebug('Product Insert Success', data);
         return fromDb(data);
       }
@@ -128,13 +138,16 @@ export const useProducts = () => {
 
   const updateStock = useMutation({
     mutationFn: async ({ productId, newStock }: { productId: string, newStock: number }): Promise<Product> => {
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('products')
         .update({ current_stock: newStock })
         .eq('id', productId)
         .select()
-        .single();
+        .limit(1);
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to update stock');
       return fromDb(data);
     },
     onSuccess: () => {

@@ -142,12 +142,14 @@ export function useDeleteCommissionEntry() {
       console.log('🗑️ Deleting commission entry:', entryId)
       
       // Get commission entry details to check if we need to delete expense
-      const { data: commissionEntry } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: commissionEntryRaw } = await supabase
         .from('commission_entries')
         .select('role, delivery_id')
         .eq('id', entryId)
-        .single()
-      
+        .limit(1)
+      const commissionEntry = Array.isArray(commissionEntryRaw) ? commissionEntryRaw[0] : commissionEntryRaw
+
       // Only delete expense entry for sales commission (not delivery commission)
       if (commissionEntry && commissionEntry.role === 'sales' && !commissionEntry.delivery_id) {
         try {

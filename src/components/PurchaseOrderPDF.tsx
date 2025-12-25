@@ -307,9 +307,19 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
             </table>
           </div>
 
+          {/* Expedition Info */}
+          {purchaseOrder.expedition && (
+            <div className="mb-6">
+              <h3 className="font-semibold text-gray-900 mb-2">Ekspedisi / Pengiriman:</h3>
+              <div className="bg-blue-50 p-4 rounded border border-blue-200">
+                <p className="text-sm font-medium text-blue-900">{purchaseOrder.expedition}</p>
+              </div>
+            </div>
+          )}
+
           {/* Notes */}
           {purchaseOrder.notes && (
-            <div className="mb-8">
+            <div className="mb-6">
               <h3 className="font-semibold text-gray-900 mb-2">Catatan:</h3>
               <p className="text-sm bg-gray-50 p-4 rounded">{purchaseOrder.notes}</p>
             </div>

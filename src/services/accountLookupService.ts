@@ -19,9 +19,13 @@ export type AccountLookupType =
   | 'PERSEDIAAN_BAHAN'    // Persediaan bahan baku
   | 'PERSEDIAAN_BARANG'   // Persediaan barang jadi
   | 'PERSEDIAAN_WIP'      // Work in Progress
+  | 'PIUTANG_PAJAK'       // Piutang Pajak / PPN Masukan (Tax Receivable)
 
   // Kewajiban
   | 'HUTANG_USAHA'        // Hutang ke supplier
+  | 'HUTANG_BANK'         // Hutang bank / pinjaman bank
+  | 'HUTANG_KARTU_KREDIT' // Hutang kartu kredit
+  | 'HUTANG_LAIN'         // Hutang lain-lain
   | 'HUTANG_GAJI'         // Hutang gaji karyawan
   | 'HUTANG_PAJAK'        // Hutang pajak
 
@@ -101,19 +105,38 @@ const LOOKUP_PATTERNS: Record<AccountLookupType, LookupPattern> = {
     type: 'Aset',
     namePatterns: ['work in progress', 'wip', 'dalam proses', 'barang dalam proses'],
   },
+  PIUTANG_PAJAK: {
+    type: 'Aset',
+    namePatterns: ['piutang pajak', 'ppn masukan', 'pajak masukan', 'vat receivable', 'tax receivable', 'input tax', 'ppn dibayar dimuka'],
+    excludePatterns: ['hutang pajak', 'pajak keluaran', 'ppn keluaran'],
+  },
 
   // === KEWAJIBAN ===
   HUTANG_USAHA: {
-    type: ['Kewajiban', 'Liabilitas'],
+    type: ['Kewajiban', 'Liabilitas', 'Liability'],
     namePatterns: ['hutang usaha', 'hutang dagang', 'utang usaha', 'utang dagang', 'account payable', 'hutang supplier'],
-    excludePatterns: ['hutang gaji', 'hutang pajak'],
+    excludePatterns: ['hutang gaji', 'hutang pajak', 'hutang bank', 'hutang kartu'],
+  },
+  HUTANG_BANK: {
+    type: ['Kewajiban', 'Liabilitas', 'Liability'],
+    namePatterns: ['hutang bank', 'utang bank', 'pinjaman bank', 'kredit bank', 'loan bank'],
+    excludePatterns: ['kartu kredit'],
+  },
+  HUTANG_KARTU_KREDIT: {
+    type: ['Kewajiban', 'Liabilitas', 'Liability'],
+    namePatterns: ['hutang kartu kredit', 'utang kartu kredit', 'kartu kredit', 'credit card'],
+  },
+  HUTANG_LAIN: {
+    type: ['Kewajiban', 'Liabilitas', 'Liability'],
+    namePatterns: ['hutang lain', 'utang lain', 'kewajiban lain', 'other payable'],
+    excludePatterns: ['hutang usaha', 'hutang bank', 'hutang gaji', 'hutang pajak', 'kartu kredit'],
   },
   HUTANG_GAJI: {
-    type: ['Kewajiban', 'Liabilitas'],
+    type: ['Kewajiban', 'Liabilitas', 'Liability'],
     namePatterns: ['hutang gaji', 'utang gaji', 'gaji terutang', 'accrued salary'],
   },
   HUTANG_PAJAK: {
-    type: ['Kewajiban', 'Liabilitas'],
+    type: ['Kewajiban', 'Liabilitas', 'Liability'],
     namePatterns: ['hutang pajak', 'utang pajak', 'pajak terutang', 'pph terutang', 'ppn terutang'],
   },
 
@@ -479,16 +502,25 @@ export function getTotalInventory(accounts: Account[]): {
 export function getTotalLiabilities(accounts: Account[]): {
   total: number;
   hutangUsaha: number;
+  hutangBank: number;
+  hutangKartuKredit: number;
+  hutangLain: number;
   hutangGaji: number;
   hutangPajak: number;
 } {
   const hutangUsaha = getBalanceByLookup(accounts, 'HUTANG_USAHA');
+  const hutangBank = getBalanceByLookup(accounts, 'HUTANG_BANK');
+  const hutangKartuKredit = getBalanceByLookup(accounts, 'HUTANG_KARTU_KREDIT');
+  const hutangLain = getBalanceByLookup(accounts, 'HUTANG_LAIN');
   const hutangGaji = getBalanceByLookup(accounts, 'HUTANG_GAJI');
   const hutangPajak = getBalanceByLookup(accounts, 'HUTANG_PAJAK');
 
   return {
-    total: hutangUsaha + hutangGaji + hutangPajak,
+    total: hutangUsaha + hutangBank + hutangKartuKredit + hutangLain + hutangGaji + hutangPajak,
     hutangUsaha,
+    hutangBank,
+    hutangKartuKredit,
+    hutangLain,
     hutangGaji,
     hutangPajak,
   };

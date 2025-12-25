@@ -219,6 +219,17 @@ export const PosForm = () => {
     setPaidAmount(totalTagihan);
   }, [totalTagihan]);
 
+  // Auto-select sales jika user login dengan role sales
+  useEffect(() => {
+    if (currentUser?.role?.toLowerCase() === 'sales' && currentUser?.id) {
+      // Cek apakah user ada di daftar salesEmployees
+      const userAsSales = salesEmployees?.find(s => s.id === currentUser.id);
+      if (userAsSales) {
+        setSelectedSales(currentUser.id);
+      }
+    }
+  }, [currentUser, salesEmployees]);
+
   // Auto-focus product search input when dropdown opens
   useEffect(() => {
     if (showProductDropdown && productSearchInputRef.current) {

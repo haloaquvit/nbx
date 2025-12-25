@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Plus, Trash2, ShoppingCart, User, Package, CreditCard, AlertCircle, Phone, MapPin } from "lucide-react"
+import { Truck, Plus, Trash2, ShoppingCart, User, Package, CreditCard, AlertCircle, Phone, MapPin, Calendar } from "lucide-react"
 import { useCustomers } from "@/hooks/useCustomers"
 import { useProducts } from "@/hooks/useProducts"
 import { useAccounts } from "@/hooks/useAccounts"
@@ -42,6 +42,11 @@ export default function DriverPosPage() {
   const [notes, setNotes] = useState("")
   const [paymentAccount, setPaymentAccount] = useState("")
   const [paidAmount, setPaidAmount] = useState(0)
+  const [dueDate, setDueDate] = useState(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 30); // Default 30 days
+    return date.toISOString().split('T')[0];
+  })
 
   // Dialog states
   const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false)
@@ -315,7 +320,7 @@ export default function DriverPosPage() {
         paymentStatus: paidAmount >= total ? 'Lunas' : 'Belum Lunas',
         status: 'Pesanan Masuk', // Will be updated after delivery
         isOfficeSale: false, // No office sale option for driver POS
-        dueDate: paidAmount < total ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null // 30 days
+        dueDate: paidAmount < total ? new Date(dueDate) : null // Use manual due date input
       }
 
       const savedTransaction = await addTransaction.mutateAsync({
@@ -338,6 +343,10 @@ export default function DriverPosPage() {
       setNotes("")
       setPaymentAccount("")
       setPaidAmount(0)
+      // Reset due date to 30 days from now
+      const newDueDate = new Date();
+      newDueDate.setDate(newDueDate.getDate() + 30);
+      setDueDate(newDueDate.toISOString().split('T')[0])
       
       toast({
         title: "Transaksi Berhasil",
@@ -441,10 +450,7 @@ export default function DriverPosPage() {
                           setShowCustomerDropdown(false)
                         }}
                       >
-                        <div className="flex flex-col">
-                          <span className="font-medium text-base">{customer.name}</span>
-                          <span className="text-sm text-gray-500">{customer.phone}</span>
-                        </div>
+                        <span className="font-medium text-base">{customer.name}</span>
                       </div>
                     ))}
                   </div>
@@ -462,10 +468,7 @@ export default function DriverPosPage() {
                 <SelectContent>
                   {customers?.map((customer) => (
                     <SelectItem key={customer.id} value={customer.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{customer.name}</span>
-                        <span className="text-xs text-muted-foreground">{customer.phone}</span>
-                      </div>
+                      {customer.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -480,9 +483,6 @@ export default function DriverPosPage() {
                   <div className="flex-1 min-w-0">
                     <div className="text-base font-medium">{selectedCustomerData.name}</div>
                     <div className="text-sm text-muted-foreground mt-1">{selectedCustomerData.address}</div>
-                    {selectedCustomerData.phone && (
-                      <div className="text-sm text-blue-600 mt-1">📞 {selectedCustomerData.phone}</div>
-                    )}
                     {selectedCustomerData.jumlah_galon_titip !== undefined && selectedCustomerData.jumlah_galon_titip > 0 && (
                       <div className="text-sm text-green-600 mt-1 font-medium">
                         🥤 Galon Titip: {selectedCustomerData.jumlah_galon_titip} galon
@@ -800,6 +800,26 @@ export default function DriverPosPage() {
                   </Badge>
                 </div>
               </div>
+
+              {/* Due Date Input - Only show when payment is not complete */}
+              {paidAmount < total && (
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                  <Label className="text-base font-medium flex items-center gap-2 text-orange-800">
+                    <Calendar className="h-4 w-4" />
+                    Tanggal Jatuh Tempo
+                  </Label>
+                  <Input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="mt-2 h-12 text-base"
+                  />
+                  <p className="text-xs text-orange-600 mt-2">
+                    Default: 30 hari dari sekarang. Ubah sesuai kesepakatan dengan pelanggan.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <Label className="text-base font-medium">Catatan</Label>

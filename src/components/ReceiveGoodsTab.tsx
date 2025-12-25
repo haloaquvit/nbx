@@ -12,6 +12,7 @@ import { id } from "date-fns/locale/id"
 import { supabase } from "@/integrations/supabase/client"
 import { useQuery } from "@tanstack/react-query"
 import { Package, Search, FileDown, Printer, Eye, User, Clock, Truck, CheckCircle, ArrowRight } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import * as XLSX from 'xlsx'
 import { useCompanySettings } from "@/hooks/useCompanySettings"
 import { useBranch } from "@/contexts/BranchContext"
@@ -29,12 +30,15 @@ interface ReceiveGoodsRecord {
   supplierName?: string
   previousStock: number
   newStock: number
+  includePpn?: boolean
+  ppnAmount?: number
 }
 
 export function ReceiveGoodsTab() {
   const [searchTerm, setSearchTerm] = React.useState("")
   const [selectedRecord, setSelectedRecord] = React.useState<ReceiveGoodsRecord | null>(null)
   const [detailDialogOpen, setDetailDialogOpen] = React.useState(false)
+  const [ppnFilter, setPpnFilter] = React.useState<'all' | 'with_ppn' | 'without_ppn'>('all')
   const { settings } = useCompanySettings()
   const { currentBranch } = useBranch()
   const printRef = React.useRef<HTMLDivElement>(null)
@@ -87,14 +91,19 @@ export function ReceiveGoodsTab() {
         (data || []).map(async (movement: any) => {
           let supplierName = undefined
 
+          let includePpn = false
+          let ppnAmount = 0
+
           if (movement.reference_id && movement.reference_type === 'purchase_order') {
             const { data: poData } = await supabase
               .from('purchase_orders')
-              .select('supplier_name')
+              .select('supplier_name, include_ppn, ppn_amount')
               .eq('id', movement.reference_id)
               .single()
 
             supplierName = poData?.supplier_name
+            includePpn = poData?.include_ppn || false
+            ppnAmount = poData?.ppn_amount || 0
           }
 
           return {
@@ -109,6 +118,8 @@ export function ReceiveGoodsTab() {
             supplierName: supplierName,
             previousStock: movement.previous_stock,
             newStock: movement.new_stock,
+            includePpn: includePpn,
+            ppnAmount: ppnAmount,
           } as ReceiveGoodsRecord
         })
       )
@@ -119,13 +130,22 @@ export function ReceiveGoodsTab() {
     refetchOnMount: true, // Auto-refetch when switching branches
   })
 
-  // Filter records by search term
-  const filteredRecords = receiveRecords?.filter(record =>
-    record.poId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.materialName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.supplierName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    record.receivedBy.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || []
+  // Filter records by search term and PPN
+  const filteredRecords = receiveRecords?.filter(record => {
+    // Search filter
+    const matchesSearch =
+      record.poId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      record.materialName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      record.supplierName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      record.receivedBy.toLowerCase().includes(searchTerm.toLowerCase())
+
+    // PPN filter
+    const matchesPpn = ppnFilter === 'all' ||
+      (ppnFilter === 'with_ppn' && record.includePpn) ||
+      (ppnFilter === 'without_ppn' && !record.includePpn)
+
+    return matchesSearch && matchesPpn
+  }) || []
 
   // Export to Excel
   const handleExportExcel = () => {
@@ -180,9 +200,9 @@ export function ReceiveGoodsTab() {
     const printWindow = window.open('', '', 'width=800,height=600')
     if (!printWindow) return
 
-    const companyName = settings?.companyName || 'Perusahaan'
-    const companyAddress = settings?.companyAddress || ''
-    const companyPhone = settings?.companyPhone || ''
+    const companyName = settings?.name || 'Perusahaan'
+    const companyAddress = settings?.address || ''
+    const companyPhone = settings?.phone || ''
 
     printWindow.document.write(`
       <!DOCTYPE html>
@@ -308,6 +328,16 @@ export function ReceiveGoodsTab() {
               className="pl-10"
             />
           </div>
+          <Select value={ppnFilter} onValueChange={(v) => setPpnFilter(v as 'all' | 'with_ppn' | 'without_ppn')}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Filter PPN" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua</SelectItem>
+              <SelectItem value="with_ppn">Dengan PPN</SelectItem>
+              <SelectItem value="without_ppn">Tanpa PPN</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             size="sm"

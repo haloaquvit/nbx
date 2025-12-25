@@ -4,8 +4,20 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { FileDown, Printer, Download } from "lucide-react"
 import { Delivery, TransactionDeliveryInfo } from "@/types/delivery"
-import { format } from "date-fns"
+import { format, isValid } from "date-fns"
 import { id } from "date-fns/locale/id"
+
+// Helper function to safely format date
+function safeFormatDate(date: Date | string | null | undefined, formatStr: string): string {
+  if (!date) return '-';
+  try {
+    const dateObj = date instanceof Date ? date : new Date(date);
+    if (!isValid(dateObj)) return '-';
+    return format(dateObj, formatStr, { locale: id });
+  } catch {
+    return '-';
+  }
+}
 import { useCompanySettings } from "@/hooks/useCompanySettings"
 import { useTransactions } from "@/hooks/useTransactions"
 import { createCompressedPDF } from "@/utils/pdfUtils"
@@ -202,8 +214,8 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               <h2 className="text-3xl font-bold text-gray-300 mb-4">SURAT JALAN</h2>
               <div className="text-sm text-gray-600 space-y-1">
                 <p><strong className="text-gray-800">No:</strong> {delivery.transactionId}-{delivery.deliveryNumber}</p>
-                <p><strong className="text-gray-800">Tanggal:</strong> {format(delivery.deliveryDate, "d MMMM yyyy", { locale: id })}</p>
-                <p><strong className="text-gray-800">Jam:</strong> {format(delivery.deliveryDate, "HH:mm", { locale: id })} WIB</p>
+                <p><strong className="text-gray-800">Tanggal:</strong> {safeFormatDate(delivery.deliveryDate, "d MMMM yyyy")}</p>
+                <p><strong className="text-gray-800">Jam:</strong> {safeFormatDate(delivery.deliveryDate, "HH:mm")} WIB</p>
               </div>
             </div>
           </div>
@@ -258,9 +270,13 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                   
                   // Calculate cumulative delivered quantity up to and including this delivery
                   // by finding all deliveries for this product up to this delivery's creation date
+                  const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
                   const cumulativeDeliveredAtThisPoint = transaction.deliveries
                     ? transaction.deliveries
-                        .filter(d => d.createdAt <= delivery.createdAt)
+                        .filter(d => {
+                          const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
+                          return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
+                        })
                         .reduce((sum, d) => {
                           const productItem = d.items.find(di => di.productId === item.productId)
                           return sum + (productItem?.quantityDelivered || 0)
@@ -361,7 +377,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               <div className="text-sm font-bold mb-1">SURAT JALAN</div>
               <div className="text-xs space-y-0.5">
                 <div><strong>No:</strong> {delivery.transactionId}-{delivery.deliveryNumber}</div>
-                <div><strong>Tgl:</strong> {format(delivery.deliveryDate, "dd/MM/yy HH:mm", { locale: id })}</div>
+                <div><strong>Tgl:</strong> {safeFormatDate(delivery.deliveryDate, "dd/MM/yy HH:mm")}</div>
                 <div><strong>Kepada:</strong> {transaction.customerName}</div>
                 <div><strong>Driver:</strong> {delivery.driverName || '-'}</div>
                 {delivery.helperName && (
@@ -393,9 +409,13 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                 
                 // Calculate cumulative delivered quantity up to and including this delivery
                 // by finding all deliveries for this product up to this delivery's creation date
+                const deliveryCreatedAt2 = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
                 const cumulativeDeliveredAtThisPoint = transaction.deliveries
                   ? transaction.deliveries
-                      .filter(d => d.createdAt <= delivery.createdAt)
+                      .filter(d => {
+                        const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
+                        return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt2) && dCreatedAt <= deliveryCreatedAt2
+                      })
                       .reduce((sum, d) => {
                         const productItem = d.items.find(di => di.productId === item.productId)
                         return sum + (productItem?.quantityDelivered || 0)

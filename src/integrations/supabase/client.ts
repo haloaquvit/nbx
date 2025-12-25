@@ -16,29 +16,44 @@ const SERVER_STORAGE_KEY = 'aquvit_selected_server';
 
 // Server configurations
 const SERVERS: Record<string, string> = {
-  'nabire': 'https://app.aquvit.id',
-  'manokwari': 'https://erp.aquvit.id',
+  'nabire': 'https://nbx.aquvit.id',
+  'manokwari': 'https://mkw.aquvit.id',
 };
 
 // Helper to get JWT token from localStorage
 function getPostgRESTToken(): string | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const session = JSON.parse(stored);
-      // Check if token is expired
-      const tokenParts = session.access_token?.split('.');
-      if (tokenParts?.length === 3) {
-        const payload = JSON.parse(atob(tokenParts[1]));
-        if (payload.exp * 1000 > Date.now()) {
-          return session.access_token;
-        }
-      }
+    if (!stored) {
+      // Token tidak ada di localStorage - kemungkinan belum login atau race condition
+      return null;
     }
+
+    const session = JSON.parse(stored);
+    if (!session.access_token) {
+      console.warn('[Client] Session exists but no access_token');
+      return null;
+    }
+
+    // Check if token is expired
+    const tokenParts = session.access_token.split('.');
+    if (tokenParts.length !== 3) {
+      console.warn('[Client] Invalid JWT format');
+      return null;
+    }
+
+    const payload = JSON.parse(atob(tokenParts[1]));
+    const isExpired = payload.exp * 1000 <= Date.now();
+    if (isExpired) {
+      console.warn('[Client] Token expired, will use anon');
+      return null;
+    }
+
+    return session.access_token;
   } catch (e) {
-    console.error('Error reading PostgREST token:', e);
+    console.error('[Client] Error getting token:', e);
+    return null;
   }
-  return null;
 }
 
 // Valid anon JWT for PostgREST (expires in 100 years)
@@ -109,11 +124,11 @@ export function getCurrentServerUrl(): string | null {
 
 // Get the base URL for API calls - works for both web and APK
 function getBaseUrl(): string {
-  if (typeof window === 'undefined') return 'https://app.aquvit.id';
+  if (typeof window === 'undefined') return 'https://nbx.aquvit.id';
 
   // Check if we're on a production domain (web browser)
   const origin = window.location.origin;
-  if (origin.includes('app.aquvit.id') || origin.includes('erp.aquvit.id')) {
+  if (origin.includes('nbx.aquvit.id') || origin.includes('mkw.aquvit.id')) {
     return origin;
   }
 
@@ -128,7 +143,7 @@ function getBaseUrl(): string {
   }
 
   // For localhost/development, always use Nabire server
-  return 'https://app.aquvit.id';
+  return 'https://nbx.aquvit.id';
 }
 
 function getTenantConfig(): TenantConfig {
@@ -190,10 +205,52 @@ function createSupabaseClient(): SupabaseClient {
             // URL parsing failed, continue with original URL
           }
 
-          // Merge headers with Authorization if we have a token
+          // Merge headers with Authorization - ALWAYS use user token if available
+          // This overrides the ANON_JWT that Supabase client adds by default
           const headers = new Headers(options?.headers);
-          if (token && !headers.has('Authorization')) {
+          if (token) {
+            // Always replace with user token (override Supabase's default anon token)
             headers.set('Authorization', `Bearer ${token}`);
+          } else {
+            // DEBUG: Log when using anon (no user token available)
+            const urlPath = new URL(finalUrl).pathname;
+            if (!urlPath.includes('/auth/')) {
+              console.warn(`[Client] ⚠️ No user token for: ${urlPath} - using anon role`);
+            }
+          }
+
+          // Force Accept header for PostgREST compatibility
+          // Supabase JS uses 'application/vnd.pgrst.object+json' for .single() which causes 406 error
+          const currentAccept = headers.get('Accept');
+          if (currentAccept?.includes('vnd.pgrst')) {
+            headers.set('Accept', 'application/json');
+          }
+
+          // Handle upsert for PostgREST - convert on_conflict query param to Prefer header
+          try {
+            const urlObj = new URL(finalUrl);
+            if (urlObj.searchParams.has('on_conflict')) {
+              // PostgREST requires Prefer header for upsert, not query param
+              const currentPrefer = headers.get('Prefer') || '';
+              if (!currentPrefer.includes('resolution=')) {
+                headers.set('Prefer', currentPrefer ? `${currentPrefer},resolution=merge-duplicates` : 'resolution=merge-duplicates');
+              }
+              // Remove on_conflict from URL as PostgREST uses Prefer header
+              urlObj.searchParams.delete('on_conflict');
+              finalUrl = urlObj.toString();
+            }
+          } catch (e) {
+            // URL parsing failed, continue
+          }
+
+          // Ensure Prefer header includes return=representation for POST/PATCH/PUT
+          // This tells PostgREST to return the inserted/updated row(s)
+          const method = options?.method?.toUpperCase() || 'GET';
+          if (method === 'POST' || method === 'PATCH' || method === 'PUT') {
+            const currentPrefer = headers.get('Prefer') || '';
+            if (!currentPrefer.includes('return=')) {
+              headers.set('Prefer', currentPrefer ? `${currentPrefer},return=representation` : 'return=representation');
+            }
           }
 
           return fetch(finalUrl, {

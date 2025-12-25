@@ -111,12 +111,18 @@ export function useTransactionsReadyForDelivery() {
 
           // Calculate delivery summary manually
           const deliverySummary: DeliverySummaryItem[] = []
-          
+
           // Parse transaction items and filter out items without valid product IDs
+          // Also filter out sales metadata items (those with _isSalesMeta flag)
           const transactionItems = transaction.items || []
           for (const item of transactionItems) {
+            // Skip sales metadata items
+            if (item._isSalesMeta) {
+              continue
+            }
+
             const productId = item.product?.id
-            
+
             // Skip items without valid product ID
             if (!productId) {
               console.warn('[useTransactionsReadyForDelivery] Skipping item without product ID:', item)
@@ -184,13 +190,18 @@ export function useTransactionDeliveryInfo(transactionId: string) {
     queryKey: ['transaction-delivery-info', transactionId],
     queryFn: async (): Promise<TransactionDeliveryInfo | null> => {
       // Get transaction details
-      const { data: transactionData, error: transactionError } = await supabase
+      // Use .limit(1) instead of .single() because our client forces Accept: application/json
+      // which causes .single() to return an array instead of an object
+      const { data: transactionRawData, error: transactionError } = await supabase
         .from('transactions')
         .select('*')
         .eq('id', transactionId)
-        .single()
+        .limit(1)
 
       if (transactionError) throw transactionError
+
+      // Handle array response from PostgREST
+      const transactionData = Array.isArray(transactionRawData) ? transactionRawData[0] : transactionRawData
       if (!transactionData) return null
 
       // Get delivery history with driver and helper names from profiles table
@@ -237,18 +248,18 @@ export function useTransactionDeliveryInfo(transactionId: string) {
 
       // Calculate delivery summary manually - IMPROVED VERSION
       const deliverySummary: DeliverySummaryItem[] = []
-      
-      console.log('📊 Calculating delivery summary for transaction:', {
-        transactionId,
-        deliveriesCount: deliveries.length,
-        transactionItemsCount: (transactionData.items || []).length
-      })
-      
+
       // Parse transaction items and filter out items without valid product IDs
+      // Also filter out sales metadata items (those with _isSalesMeta flag)
       const transactionItems = transactionData.items || []
       for (const item of transactionItems) {
+        // Skip sales metadata items
+        if (item._isSalesMeta) {
+          continue
+        }
+
         const productId = item.product?.id
-        
+
         // Skip items without valid product ID
         if (!productId) {
           console.warn('⚠️ Skipping transaction item without product ID:', item)
@@ -277,14 +288,6 @@ export function useTransactionDeliveryInfo(transactionId: string) {
 
         // Calculate remaining quantity with validation
         const remainingQuantity = Math.max(0, orderedQuantity - deliveredQuantity)
-        
-        console.log(`📦 Product summary: ${productName}`, {
-          productId,
-          orderedQuantity,
-          deliveredQuantity,
-          remainingQuantity,
-          deliveryItemsFound
-        })
 
         deliverySummary.push({
           productId,
@@ -297,16 +300,6 @@ export function useTransactionDeliveryInfo(transactionId: string) {
           height,
         })
       }
-      
-      console.log('✅ Delivery summary calculated:', {
-        summaryItemsCount: deliverySummary.length,
-        summary: deliverySummary.map(item => ({
-          name: item.productName,
-          ordered: item.orderedQuantity,
-          delivered: item.deliveredQuantity,
-          remaining: item.remainingQuantity
-        }))
-      })
 
       return {
         id: transactionData.id,
@@ -358,23 +351,27 @@ export function useDeliveries() {
       }
 
       // Get customer name and address from transaction
-      const { data: transactionData, error: transactionError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: transactionRawData, error: transactionError } = await supabase
         .from('transactions')
         .select('customer_name, customer_id, customers(address, phone)')
         .eq('id', request.transactionId)
-        .single()
+        .limit(1)
 
       if (transactionError) {
         console.error('[useDeliveries] Transaction fetch error:', transactionError)
-        
+
         // Handle network connection issues
-        if (transactionError.message?.includes('Failed to fetch') || 
+        if (transactionError.message?.includes('Failed to fetch') ||
             transactionError.message?.includes('ERR_CONNECTION_CLOSED')) {
           throw new Error('Koneksi internet bermasalah. Silakan periksa koneksi dan coba lagi.')
         }
-        
+
         throw new Error(`Tidak dapat mengambil data transaksi: ${transactionError.message}`)
       }
+
+      // Handle array response from PostgREST
+      const transactionData = Array.isArray(transactionRawData) ? transactionRawData[0] : transactionRawData
 
       // Get next delivery number for this transaction
       const { data: existingDeliveries } = await supabase
@@ -390,47 +387,39 @@ export function useDeliveries() {
 
       console.log(`📦 Creating delivery #${nextDeliveryNumber} for transaction ${request.transactionId}`);
 
-      // Create delivery record (handle table not existing gracefully)
+      // Create delivery record using RPC function (SECURITY DEFINER)
+      // This bypasses RLS SELECT restrictions and guarantees RETURNING works
       let deliveryData;
-      const { data: initialDeliveryData, error: deliveryError } = await supabase
-        .from('deliveries')
-        .insert({
-          transaction_id: request.transactionId,
-          delivery_number: nextDeliveryNumber,
-          customer_name: transactionData?.customer_name || '',
-          customer_address: transactionData?.customers?.address || '',
-          customer_phone: transactionData?.customers?.phone || '',
-          delivery_date: new Date().toISOString(), // Always use server time for consistency
-          photo_url: photoUrl,
-          notes: request.notes,
-          driver_id: request.driverId,
-          helper_id: request.helperId,
-          branch_id: currentBranch?.id || null,
+      const { data: rpcResult, error: deliveryError } = await supabase
+        .rpc('insert_delivery', {
+          p_transaction_id: request.transactionId,
+          p_delivery_number: nextDeliveryNumber,
+          p_customer_name: transactionData?.customer_name || '',
+          p_customer_address: transactionData?.customers?.address || '',
+          p_customer_phone: transactionData?.customers?.phone || '',
+          p_delivery_date: new Date().toISOString(),
+          p_photo_url: photoUrl || null,
+          p_notes: request.notes || null,
+          p_driver_id: request.driverId || null,
+          p_helper_id: request.helperId || null,
+          p_branch_id: currentBranch?.id || null,
         })
-        .select()
-        .single()
 
+      // RPC returns array, get first item
+      const initialDeliveryData = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
+
+      if (!deliveryError && initialDeliveryData) {
+        deliveryData = initialDeliveryData;
+      }
 
       if (deliveryError) {
         console.error('[useDeliveries] Delivery creation error:', deliveryError)
-        console.error('[useDeliveries] Insert data was:', {
-          transaction_id: request.transactionId,
-          customer_name: transactionData?.customer_name || '',
-          customer_address: transactionData?.customers?.address || '',
-          customer_phone: transactionData?.customers?.phone || '',
-          delivery_date: request.deliveryDate.toISOString(),
-          photo_url: photoUrl,
-          notes: request.notes,
-          driver_id: request.driverId,
-          helper_id: request.helperId,
-        })
 
         if (deliveryError.message.includes('relation "deliveries" does not exist')) {
           throw new Error('Tabel pengantaran belum tersedia. Silakan jalankan database migration terlebih dahulu.')
         }
 
         if (deliveryError.code === '23505' && (deliveryError.message.includes('deliveries_delivery_number_key') || deliveryError.message.includes('deliveries_transaction_delivery_number_key'))) {
-          console.warn('Delivery number conflict detected, retrying with next number...');
 
           // Retry with next available number
           const { data: retryDeliveries } = await supabase
@@ -444,38 +433,34 @@ export function useDeliveries() {
             ? retryDeliveries[0].delivery_number + 1
             : 1;
 
-          console.log(`🔄 Retrying with delivery #${retryDeliveryNumber}`);
-
-          // Try again with updated number
-          const { data: retryDeliveryData, error: retryError } = await supabase
-            .from('deliveries')
-            .insert({
-              transaction_id: request.transactionId,
-              delivery_number: retryDeliveryNumber,
-              customer_name: transactionData?.customer_name || '',
-              customer_address: transactionData?.customers?.address || '',
-              customer_phone: transactionData?.customers?.phone || '',
-              delivery_date: new Date().toISOString(),
-              photo_url: photoUrl,
-              notes: request.notes,
-              driver_id: request.driverId,
-              helper_id: request.helperId,
-              branch_id: currentBranch?.id || null,
-            })
-            .select()
-            .single();
+          // Try again with updated number using RPC
+          const { data: retryRpcResult, error: retryError } = await supabase
+            .rpc('insert_delivery', {
+              p_transaction_id: request.transactionId,
+              p_delivery_number: retryDeliveryNumber,
+              p_customer_name: transactionData?.customer_name || '',
+              p_customer_address: transactionData?.customers?.address || '',
+              p_customer_phone: transactionData?.customers?.phone || '',
+              p_delivery_date: new Date().toISOString(),
+              p_photo_url: photoUrl || null,
+              p_notes: request.notes || null,
+              p_driver_id: request.driverId || null,
+              p_helper_id: request.helperId || null,
+              p_branch_id: currentBranch?.id || null,
+            });
 
           if (retryError) {
             throw new Error(`Failed to create delivery after retry: ${retryError.message}`);
           }
+
+          // RPC returns array, get first item
+          const retryDeliveryData = Array.isArray(retryRpcResult) ? retryRpcResult[0] : retryRpcResult;
 
           // Use retry data for the rest of the function
           deliveryData = retryDeliveryData;
         } else {
           throw new Error(`Database error: ${deliveryError.message}`)
         }
-      } else {
-        deliveryData = initialDeliveryData;
       }
 
       // Validate product IDs exist in products table first
@@ -500,21 +485,21 @@ export function useDeliveries() {
         const invalidProductIds = productIds.filter(id => !validProductIds.has(id))
         
         if (invalidProductIds.length > 0) {
-          console.warn('[useDeliveries] Invalid product IDs found, will skip these items:', invalidProductIds)
-          // Instead of failing completely, we'll filter out invalid products and continue
-          // This handles cases where transaction items reference deleted/invalid products
-          
-          // We'll let the component handle user notification by checking the result
           // Store invalid product info for user notification
           (deliveryData as any)._invalidProductIds = invalidProductIds
         }
       }
 
+      // Validate deliveryData.id exists before creating delivery items
+      if (!deliveryData || !deliveryData.id) {
+        throw new Error('Gagal membuat record pengantaran - delivery ID tidak ditemukan')
+      }
+
       // Create delivery items with minimal columns first (defensive approach)
       const deliveryItems = request.items
-        .filter(item => 
-          item.quantityDelivered > 0 && 
-          item.productId && 
+        .filter(item =>
+          item.quantityDelivered > 0 &&
+          item.productId &&
           validProductIds.has(item.productId) // Only include items with valid product IDs
         )
         .map(item => {
@@ -577,7 +562,7 @@ export function useDeliveries() {
         const { data, error: itemsError } = await supabase
           .from('delivery_items')
           .insert(deliveryItems)
-          .select()
+          .select('*')
 
         if (itemsError) {
           console.error('[useDeliveries] Delivery items creation error:', itemsError)
@@ -608,22 +593,27 @@ export function useDeliveries() {
       // Update transaction status automatically based on delivery completion
       try {
         // Get transaction details to check if all items are delivered
-        const { data: updatedTransaction, error: transactionError } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: updatedTransactionRaw, error: transactionError } = await supabase
           .from('transactions')
           .select('*')
           .eq('id', request.transactionId)
-          .single()
-        
+          .limit(1)
+
+        // Handle array response from PostgREST
+        const updatedTransaction = Array.isArray(updatedTransactionRaw) ? updatedTransactionRaw[0] : updatedTransactionRaw
+
         if (transactionError) {
           console.error('Failed to fetch transaction for status update:', transactionError)
         } else if (updatedTransaction) {
           // Calculate total ordered vs delivered quantities
-          const transactionItems = updatedTransaction.items || []
+          // Filter out sales metadata items (those with _isSalesMeta flag)
+          const transactionItems = (updatedTransaction.items || []).filter((item: any) => !item._isSalesMeta)
           const deliveryItemsForThisTransaction = request.items.filter(item => item.quantityDelivered > 0)
-          
+
           let allItemsDelivered = true
           let anyItemsDelivered = false
-          
+
           for (const transactionItem of transactionItems) {
             const productId = transactionItem.product?.id
             if (!productId) continue
@@ -680,6 +670,75 @@ export function useDeliveries() {
         // Don't fail delivery creation if status update fails
       }
 
+      // Fetch driver and helper names if IDs are provided
+      let driverName: string | undefined;
+      let helperName: string | undefined;
+
+      console.log('[useDeliveries] Fetching driver/helper names:', {
+        driverId: deliveryData.driver_id,
+        helperId: deliveryData.helper_id
+      });
+
+      if (deliveryData.driver_id) {
+        try {
+          const { data: driverData, error: driverError } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', deliveryData.driver_id)
+            .limit(1);
+
+          console.log('[useDeliveries] Driver fetch result:', {
+            driverData,
+            driverError,
+            type: typeof driverData,
+            isArray: Array.isArray(driverData)
+          });
+
+          // PostgREST always returns array, get first item
+          if (driverData && Array.isArray(driverData) && driverData.length > 0) {
+            driverName = driverData[0].full_name || undefined;
+          } else if (driverData && !Array.isArray(driverData)) {
+            // Fallback for object response
+            driverName = (driverData as any).full_name || undefined;
+          }
+
+          console.log('[useDeliveries] Extracted driverName:', driverName);
+        } catch (err) {
+          console.error('[useDeliveries] Error fetching driver:', err);
+        }
+      }
+
+      if (deliveryData.helper_id) {
+        try {
+          const { data: helperData, error: helperError } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', deliveryData.helper_id)
+            .limit(1);
+
+          console.log('[useDeliveries] Helper fetch result:', {
+            helperData,
+            helperError,
+            type: typeof helperData,
+            isArray: Array.isArray(helperData)
+          });
+
+          // PostgREST always returns array, get first item
+          if (helperData && Array.isArray(helperData) && helperData.length > 0) {
+            helperName = helperData[0].full_name || undefined;
+          } else if (helperData && !Array.isArray(helperData)) {
+            // Fallback for object response
+            helperName = (helperData as any).full_name || undefined;
+          }
+
+          console.log('[useDeliveries] Extracted helperName:', helperName);
+        } catch (err) {
+          console.error('[useDeliveries] Error fetching helper:', err);
+        }
+      }
+
+      console.log('[useDeliveries] Final names:', { driverName, helperName });
+
       // Return complete delivery object
       const result = {
         id: deliveryData.id,
@@ -689,7 +748,9 @@ export function useDeliveries() {
         photoUrl: deliveryData.photo_url,
         notes: deliveryData.notes,
         driverId: deliveryData.driver_id,
+        driverName,
         helperId: deliveryData.helper_id,
+        helperName,
         items: itemsData.map((item: any) => ({
           id: item.id,
           deliveryId: item.delivery_id,
@@ -720,6 +781,51 @@ export function useDeliveries() {
         // Don't fail delivery creation if commission generation fails
       }
 
+      // ============================================================================
+      // REDUCE PRODUCT STOCK when delivery is created (for non-office sale)
+      // Laku Kantor: stok berkurang saat transaksi
+      // Bukan Laku Kantor: stok berkurang saat DELIVERY (ini)
+      // ============================================================================
+      try {
+        if (itemsData && itemsData.length > 0) {
+          console.log('📦 Reducing product stock for delivery items...');
+
+          for (const item of itemsData) {
+            if (item.product_id && item.quantity_delivered > 0) {
+              // Get current stock
+              // Use .limit(1) and handle array response because our client forces Accept: application/json
+              const { data: productRawData } = await supabase
+                .from('products')
+                .select('current_stock, name')
+                .eq('id', item.product_id)
+                .limit(1);
+
+              // Handle array response from PostgREST
+              const productData = Array.isArray(productRawData) ? productRawData[0] : productRawData;
+
+              if (productData) {
+                const currentStock = productData.current_stock || 0;
+                const newStock = currentStock - item.quantity_delivered;
+
+                const { error: stockError } = await supabase
+                  .from('products')
+                  .update({ current_stock: newStock })
+                  .eq('id', item.product_id);
+
+                if (stockError) {
+                  console.error(`Failed to reduce stock for ${productData.name}:`, stockError);
+                } else {
+                  console.log(`📦 Stock reduced for ${productData.name}: ${currentStock} → ${newStock}`);
+                }
+              }
+            }
+          }
+        }
+      } catch (stockError) {
+        console.error('Error reducing product stock:', stockError);
+        // Don't fail delivery creation if stock update fails
+      }
+
       // Note: Bonus accounting is now handled in useTransactions.ts when transaction is created
       // Note: Revenue Recognition & HPP Penjualan is also handled in useTransactions.ts
       // This ensures consistent accounting - all journal entries at transaction level
@@ -730,10 +836,14 @@ export function useDeliveries() {
       // Only invalidate essential queries for better performance
       queryClient.invalidateQueries({ queryKey: ['transactions-ready-for-delivery'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] }) // Refresh product stock
     },
   })
 
-  // Delete delivery and restore stock
+  // Delete delivery and restore stock (for non-office sale transactions)
+  // Alur stok:
+  // - Laku Kantor: Stok berkurang saat transaksi → restore saat delete transaksi
+  // - Bukan Laku Kantor: Stok berkurang saat delivery → restore saat delete delivery
   const deleteDelivery = useMutation({
     mutationFn: async (deliveryId: string): Promise<void> => {
       // Check user permission using context user (works with both Supabase and PostgREST)
@@ -748,26 +858,31 @@ export function useDeliveries() {
       }
 
       // Get delivery details including items
-      const { data: deliveryData, error: deliveryError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: deliveryRawData, error: deliveryError } = await supabase
         .from('deliveries')
         .select(`
           *,
           items:delivery_items(*)
         `)
         .eq('id', deliveryId)
-        .single()
+        .limit(1)
 
       if (deliveryError) {
         throw new Error(`Gagal mengambil data pengantaran: ${deliveryError.message}`)
       }
 
+      // Handle array response from PostgREST
+      const deliveryData = Array.isArray(deliveryRawData) ? deliveryRawData[0] : deliveryRawData
+
       if (!deliveryData) {
         throw new Error('Data pengantaran tidak ditemukan')
       }
 
-      // Restore stock for each delivered item - IMPROVED VERSION
+      // Restore stock for each delivered item
+      // Stok berkurang saat delivery untuk transaksi non-office sale
+      // Jadi harus di-restore saat delivery dihapus
       try {
-        // Use context user (already validated above)
         if (user && deliveryData.items?.length > 0) {
           console.log('🔄 Starting stock restoration for deleted delivery:', {
             deliveryId,
@@ -779,16 +894,20 @@ export function useDeliveries() {
           for (const item of deliveryData.items) {
             try {
               // Get current product data
-              const { data: productData, error: productError } = await supabase
+              // Use .limit(1) and handle array response because our client forces Accept: application/json
+              const { data: productRawData, error: productError } = await supabase
                 .from('products')
                 .select('id, name, type, current_stock')
                 .eq('id', item.product_id)
-                .single()
+                .limit(1)
 
               if (productError) {
                 console.error(`❌ Error getting product data for ${item.product_name}:`, productError)
                 continue
               }
+
+              // Handle array response from PostgREST
+              const productData = Array.isArray(productRawData) ? productRawData[0] : productRawData
 
               if (!productData) {
                 console.error(`❌ Product not found for ${item.product_name} (${item.product_id})`)
@@ -827,8 +946,8 @@ export function useDeliveries() {
                   reference_id: deliveryId,
                   reference_type: 'delivery_deletion',
                   notes: `Stock restored from deleted delivery ${deliveryData.delivery_number}`,
-                  created_by: userData.user.id,
-                  created_by_name: profileData?.full_name || 'Unknown User'
+                  created_by: user?.id || null,
+                  created_by_name: user?.name || user?.email || 'Unknown User'
                 })
 
               if (movementError) {
@@ -906,17 +1025,22 @@ export function useDeliveries() {
           .eq('transaction_id', transactionId)
 
         // Get transaction details
-        const { data: transactionData } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: transactionRawData } = await supabase
           .from('transactions')
           .select('*')
           .eq('id', transactionId)
-          .single()
+          .limit(1)
+
+        // Handle array response from PostgREST
+        const transactionData = Array.isArray(transactionRawData) ? transactionRawData[0] : transactionRawData
 
         if (transactionData) {
           let allItemsDelivered = true
           let anyItemsDelivered = false
 
-          const transactionItems = transactionData.items || []
+          // Filter out sales metadata items (those with _isSalesMeta flag)
+          const transactionItems = (transactionData.items || []).filter((item: any) => !item._isSalesMeta)
 
           for (const transactionItem of transactionItems) {
             const productId = transactionItem.product?.id

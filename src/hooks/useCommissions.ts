@@ -79,7 +79,7 @@ export function useCommissionRules() {
     }
   }
 
-  const updateCommissionRate = async (productId: string, role: 'sales' | 'driver' | 'helper', ratePerQty: number) => {
+  const updateCommissionRate = async (productId: string, role: string, ratePerQty: number) => {
     try {
       // First check if table exists
       const { data: tableCheck, error: tableError } = await supabase
@@ -92,15 +92,20 @@ export function useCommissionRules() {
       }
 
       // Get product information first
-      const { data: product, error: productError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: productRaw, error: productError } = await supabase
         .from('products')
         .select('name')
         .eq('id', productId)
-        .single()
+        .limit(1)
 
       if (productError) {
         console.error('Error fetching product:', productError)
         throw new Error(`Product tidak ditemukan: ${productError.message}`)
+      }
+      const product = Array.isArray(productRaw) ? productRaw[0] : productRaw
+      if (!product) {
+        throw new Error('Product tidak ditemukan')
       }
 
       console.log('✅ Product found:', product.name, 'for commission rule');
@@ -178,6 +183,7 @@ export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: st
   const { user } = useAuth()
   const { currentBranch, canAccessAllBranches } = useBranch()
   const [entries, setEntries] = useState<CommissionEntry[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchEntries = useCallback(async (startDate?: Date, endDate?: Date, role?: string) => {
@@ -315,12 +321,14 @@ export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: st
       console.log('🗑️ Deleting commission entry:', entryId);
       
       // Get commission entry details to check if we need to delete expense
-      const { data: commissionEntry } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: commissionEntryRaw } = await supabase
         .from('commission_entries')
         .select('role, delivery_id')
         .eq('id', entryId)
-        .single()
-      
+        .limit(1)
+      const commissionEntry = Array.isArray(commissionEntryRaw) ? commissionEntryRaw[0] : commissionEntryRaw
+
       // Only delete expense entry for sales commission (not delivery commission)
       if (commissionEntry && commissionEntry.role === 'sales' && !commissionEntry.delivery_id) {
         try {

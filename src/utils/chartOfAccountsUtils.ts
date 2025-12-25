@@ -5,74 +5,90 @@
 
 import { Account, AccountTreeNode, CoATemplate, AccountCategory, NormalBalance } from '@/types/account';
 
-// Standard Chart of Accounts Template untuk Aquvit
+// ============================================================================
+// STANDARD CHART OF ACCOUNTS TEMPLATE UNTUK AQUVIT
+// ============================================================================
+// Template ini disesuaikan dengan kode akun yang digunakan di database:
+// - Kode 4 digit tanpa separator (1120, bukan 1-1100)
+// - Hierarki: Level 1 (Header Utama), Level 2 (Sub-Header), Level 3 (Detail)
+// - Akun yang sering digunakan di journalService.ts:
+//   1120 = Kas Tunai, 1210 = Piutang Usaha, 1220 = Piutang Karyawan (Panjar)
+//   1320 = Persediaan Bahan Baku, 2110 = Hutang Usaha
+//   4100 = Pendapatan Usaha, 4200 = Pendapatan Lain-lain
+//   5100 = Harga Pokok Produk, 6100 = Beban Gaji dan Upah
+//   6500 = Beban Penyusutan, 6700 = Beban Lain-lain
+//   1430 = Akumulasi Penyusutan
+// ============================================================================
+
 export const STANDARD_COA_TEMPLATE: CoATemplate[] = [
-  // ========== ASET ==========
+  // ========== ASET (1xxx) ==========
   { code: '1000', name: 'ASET', category: 'ASET', level: 1, normalBalance: 'DEBIT', isHeader: true, sortOrder: 1000 },
-  
-  // Kas dan Setara Kas
+
+  // Kas dan Setara Kas (11xx)
   { code: '1100', name: 'Kas dan Setara Kas', category: 'ASET', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '1000', sortOrder: 1100 },
-  { code: '1110', name: 'Kas Tunai', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1110 },
-  { code: '1111', name: 'Bank BCA', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1111 },
-  { code: '1112', name: 'Bank Mandiri', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1112 },
-  { code: '1113', name: 'Bank Lainnya', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1113 },
-  
-  // Piutang
+  { code: '1120', name: 'Kas Tunai', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1120 },
+  { code: '1130', name: 'Bank BCA', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1130 },
+  { code: '1140', name: 'Bank Mandiri', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1140 },
+  { code: '1150', name: 'Bank Lainnya', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1150 },
+
+  // Piutang (12xx)
   { code: '1200', name: 'Piutang', category: 'ASET', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '1000', sortOrder: 1200 },
   { code: '1210', name: 'Piutang Usaha', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1200', sortOrder: 1210 },
   { code: '1220', name: 'Piutang Karyawan', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1200', sortOrder: 1220 },
-  
-  // Persediaan
+
+  // Persediaan (13xx)
   { code: '1300', name: 'Persediaan', category: 'ASET', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '1000', sortOrder: 1300 },
-  { code: '1310', name: 'Persediaan Bahan Baku', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1300', sortOrder: 1310 },
-  { code: '1320', name: 'Persediaan Produk Jadi', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1300', sortOrder: 1320 },
-  
-  // Aset Tetap
+  { code: '1310', name: 'Persediaan Barang Dagang', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1300', sortOrder: 1310 },
+  { code: '1320', name: 'Persediaan Bahan Baku', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1300', sortOrder: 1320 },
+
+  // Aset Tetap (14xx)
   { code: '1400', name: 'Aset Tetap', category: 'ASET', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '1000', sortOrder: 1400 },
-  { code: '1410', name: 'Peralatan Produksi', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1400', sortOrder: 1410 },
-  { code: '1420', name: 'Kendaraan', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1400', sortOrder: 1420 },
-  
-  // ========== KEWAJIBAN ==========
+  { code: '1410', name: 'Kendaraan', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1400', sortOrder: 1410 },
+  { code: '1420', name: 'Peralatan', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1400', sortOrder: 1420 },
+  { code: '1430', name: 'Akumulasi Penyusutan', category: 'ASET', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '1400', sortOrder: 1430 },
+
+  // ========== KEWAJIBAN (2xxx) ==========
   { code: '2000', name: 'KEWAJIBAN', category: 'KEWAJIBAN', level: 1, normalBalance: 'CREDIT', isHeader: true, sortOrder: 2000 },
-  
-  // Kewajiban Lancar
-  { code: '2100', name: 'Kewajiban Lancar', category: 'KEWAJIBAN', level: 2, normalBalance: 'CREDIT', isHeader: true, parentCode: '2000', sortOrder: 2100 },
-  { code: '2110', name: 'Utang Usaha', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2110 },
-  { code: '2120', name: 'Utang Gaji', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2120 },
-  { code: '2130', name: 'Utang Pajak', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2130 },
-  
-  // ========== MODAL ==========
+
+  // Kewajiban Jangka Pendek (21xx)
+  { code: '2100', name: 'Kewajiban Jangka Pendek', category: 'KEWAJIBAN', level: 2, normalBalance: 'CREDIT', isHeader: true, parentCode: '2000', sortOrder: 2100 },
+  { code: '2110', name: 'Hutang Usaha', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2110 },
+  { code: '2120', name: 'Hutang Gaji', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2120 },
+  { code: '2130', name: 'Hutang Pajak', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2130 },
+
+  // Kewajiban Jangka Panjang (22xx)
+  { code: '2200', name: 'Kewajiban Jangka Panjang', category: 'KEWAJIBAN', level: 2, normalBalance: 'CREDIT', isHeader: true, parentCode: '2000', sortOrder: 2200 },
+  { code: '2210', name: 'Hutang Bank', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2200', sortOrder: 2210 },
+
+  // ========== MODAL (3xxx) ==========
   { code: '3000', name: 'MODAL', category: 'MODAL', level: 1, normalBalance: 'CREDIT', isHeader: true, sortOrder: 3000 },
-  { code: '3100', name: 'Modal Pemilik', category: 'MODAL', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '3000', sortOrder: 3100 },
+  { code: '3100', name: 'Modal Disetor', category: 'MODAL', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '3000', sortOrder: 3100 },
   { code: '3200', name: 'Laba Ditahan', category: 'MODAL', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '3000', sortOrder: 3200 },
-  { code: '3300', name: 'Prive', category: 'MODAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '3000', sortOrder: 3300 },
-  
-  // ========== PENDAPATAN ==========
+  { code: '3300', name: 'Laba Tahun Berjalan', category: 'MODAL', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '3000', sortOrder: 3300 },
+
+  // ========== PENDAPATAN (4xxx) ==========
   { code: '4000', name: 'PENDAPATAN', category: 'PENDAPATAN', level: 1, normalBalance: 'CREDIT', isHeader: true, sortOrder: 4000 },
-  { code: '4100', name: 'Pendapatan Penjualan', category: 'PENDAPATAN', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '4000', sortOrder: 4100 },
-  { code: '4200', name: 'Pendapatan Jasa', category: 'PENDAPATAN', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '4000', sortOrder: 4200 },
-  { code: '4300', name: 'Pendapatan Lain-lain', category: 'PENDAPATAN', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '4000', sortOrder: 4300 },
-  
-  // ========== HARGA POKOK PENJUALAN ==========
+  { code: '4100', name: 'Pendapatan Usaha', category: 'PENDAPATAN', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '4000', sortOrder: 4100 },
+  { code: '4110', name: 'Penjualan Produk', category: 'PENDAPATAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '4100', sortOrder: 4110 },
+  { code: '4120', name: 'Penjualan Jasa', category: 'PENDAPATAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '4100', sortOrder: 4120 },
+  { code: '4200', name: 'Pendapatan Lain-lain', category: 'PENDAPATAN', level: 2, normalBalance: 'CREDIT', isHeader: false, parentCode: '4000', sortOrder: 4200 },
+  { code: '4210', name: 'Pendapatan Bunga', category: 'PENDAPATAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '4200', sortOrder: 4210 },
+  { code: '4220', name: 'Pendapatan Lainnya', category: 'PENDAPATAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '4200', sortOrder: 4220 },
+
+  // ========== HARGA POKOK PENJUALAN (5xxx) ==========
   { code: '5000', name: 'HARGA POKOK PENJUALAN', category: 'HPP', level: 1, normalBalance: 'DEBIT', isHeader: true, sortOrder: 5000 },
-  { code: '5100', name: 'HPP Bahan Baku', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5100 },
-  { code: '5200', name: 'HPP Tenaga Kerja', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5200 },
-  { code: '5300', name: 'HPP Overhead', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5300 },
-  
-  // ========== BEBAN OPERASIONAL ==========
+  { code: '5100', name: 'Harga Pokok Produk', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5100 },
+  { code: '5200', name: 'Biaya Bahan Baku', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5200 },
+
+  // ========== BEBAN OPERASIONAL (6xxx) ==========
   { code: '6000', name: 'BEBAN OPERASIONAL', category: 'BEBAN_OPERASIONAL', level: 1, normalBalance: 'DEBIT', isHeader: true, sortOrder: 6000 },
-  
-  // Beban Penjualan
-  { code: '6100', name: 'Beban Penjualan', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '6000', sortOrder: 6100 },
-  { code: '6110', name: 'Beban Gaji Sales', category: 'BEBAN_OPERASIONAL', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '6100', sortOrder: 6110 },
-  { code: '6120', name: 'Beban Transportasi', category: 'BEBAN_OPERASIONAL', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '6100', sortOrder: 6120 },
-  
-  // Beban Umum & Administrasi
-  { code: '6200', name: 'Beban Umum & Administrasi', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '6000', sortOrder: 6200 },
-  { code: '6210', name: 'Beban Gaji Karyawan', category: 'BEBAN_OPERASIONAL', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '6200', sortOrder: 6210 },
-  { code: '6220', name: 'Beban Listrik', category: 'BEBAN_OPERASIONAL', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '6200', sortOrder: 6220 },
-  { code: '6230', name: 'Beban Telepon', category: 'BEBAN_OPERASIONAL', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '6200', sortOrder: 6230 },
-  { code: '6240', name: 'Beban Penyusutan', category: 'BEBAN_OPERASIONAL', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '6200', sortOrder: 6240 },
+  { code: '6100', name: 'Beban Gaji dan Upah', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6100 },
+  { code: '6200', name: 'Beban Transportasi', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6200 },
+  { code: '6300', name: 'Beban Listrik dan Air', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6300 },
+  { code: '6400', name: 'Beban Sewa', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6400 },
+  { code: '6500', name: 'Beban Penyusutan', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6500 },
+  { code: '6600', name: 'Beban Administrasi', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6600 },
+  { code: '6700', name: 'Beban Lain-lain', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6700 },
 ];
 
 /**

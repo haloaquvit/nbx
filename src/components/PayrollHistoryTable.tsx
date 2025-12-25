@@ -26,47 +26,97 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 import { History, DollarSign, Printer, Trash2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { usePayrollRecords } from '@/hooks/usePayroll'
+import { useBranch } from '@/contexts/BranchContext'
 import { isOwner } from '@/utils/roleUtils'
 
 interface PayrollPayment {
   id: string
+  entry_number: string
   account_name: string
+  account_code: string
   amount: number
   description: string
-  user_name: string
+  employee_name: string
+  entry_date: string
   created_at: string
   reference_id: string
-  reference_name: string
+  status: string
 }
 
 export const PayrollHistoryTable = () => {
   const { user } = useAuth()
+  const { currentBranch } = useBranch()
   const { deletePayrollRecord } = usePayrollRecords({})
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [paymentToDelete, setPaymentToDelete] = useState<PayrollPayment | null>(null)
 
-  // Fetch payroll payment history from cash_history
+  // Fetch payroll payment history from journal_entries (new system)
   const { data: payrollHistory, isLoading } = useQuery<PayrollPayment[]>({
-    queryKey: ['payrollHistory'],
+    queryKey: ['payrollHistory', currentBranch?.id],
     queryFn: async () => {
-      console.log('🔍 Fetching payroll history from cash_history...')
+      console.log('🔍 Fetching payroll history from journal_entries...')
 
-      const { data, error } = await supabase
-        .from('cash_history')
-        .select('*')
-        .eq('type', 'gaji_karyawan')
+      // Get payroll journal entries with their credit lines (payment account)
+      const { data: journalEntries, error: journalError } = await supabase
+        .from('journal_entries')
+        .select(`
+          id,
+          entry_number,
+          entry_date,
+          description,
+          reference_id,
+          status,
+          is_voided,
+          total_credit,
+          created_at,
+          journal_entry_lines (
+            account_code,
+            account_name,
+            credit_amount
+          )
+        `)
+        .eq('reference_type', 'payroll')
+        .eq('status', 'posted')
+        .eq('is_voided', false)
+        .eq('branch_id', currentBranch?.id)
         .order('created_at', { ascending: false })
 
-      console.log('📊 Payroll history query result:', { data, error })
+      console.log('📊 Payroll journal entries result:', { journalEntries, journalError })
 
-      if (error) {
-        console.error('❌ Failed to fetch payroll history:', error)
-        throw error
+      if (journalError) {
+        console.error('❌ Failed to fetch payroll journal entries:', journalError)
+        throw journalError
       }
 
-      console.log(`✅ Found ${data?.length || 0} payroll payment records`)
-      return data || []
+      // Transform journal entries to PayrollPayment format
+      const payments: PayrollPayment[] = (journalEntries || []).map((entry: any) => {
+        // Find the payment account line (the one with credit_amount for Kas/Bank)
+        const paymentLine = entry.journal_entry_lines?.find(
+          (line: any) => line.credit_amount > 0 && line.account_code?.startsWith('1')
+        )
+
+        // Extract employee name from description (format: "Pembayaran Gaji - Employee Name")
+        const employeeName = entry.description?.replace('Pembayaran Gaji - ', '') || 'Unknown'
+
+        return {
+          id: entry.id,
+          entry_number: entry.entry_number,
+          account_name: paymentLine?.account_name || 'Kas',
+          account_code: paymentLine?.account_code || '',
+          amount: paymentLine?.credit_amount || entry.total_credit || 0,
+          description: entry.description,
+          employee_name: employeeName,
+          entry_date: entry.entry_date,
+          created_at: entry.created_at,
+          reference_id: entry.reference_id,
+          status: entry.status,
+        }
+      })
+
+      console.log(`✅ Found ${payments.length} payroll payment records`)
+      return payments
     },
+    enabled: !!currentBranch?.id,
     staleTime: 2 * 60 * 1000, // 2 minutes
   })
 
@@ -217,20 +267,17 @@ export const PayrollHistoryTable = () => {
               <tr>
                 <td>${index + 1}</td>
                 <td>
-                  ${formatDate(new Date(payment.created_at))}<br>
-                  <small style="color: #666;">${new Date(payment.created_at).toLocaleTimeString('id-ID', {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}</small>
+                  ${formatDate(new Date(payment.entry_date))}<br>
+                  <small style="color: #666;">${payment.entry_number}</small>
                 </td>
                 <td>
-                  ${payment.reference_name?.replace('Payroll ', '') || 'N/A'}<br>
+                  ${payment.employee_name}<br>
                   <small style="color: #666;">ID: ${payment.reference_id}</small>
                 </td>
                 <td>${payment.description}</td>
-                <td>${payment.account_name}</td>
+                <td>${payment.account_code} - ${payment.account_name}</td>
                 <td class="amount">${formatCurrency(payment.amount)}</td>
-                <td>${payment.user_name}</td>
+                <td>-</td>
               </tr>
             `).join('')}
           </tbody>
@@ -274,7 +321,7 @@ export const PayrollHistoryTable = () => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Bukti Pembayaran Gaji - ${payment.reference_name?.replace('Payroll ', '') || 'N/A'}</title>
+        <title>Bukti Pembayaran Gaji - ${payment.employee_name}</title>
         <style>
           body {
             font-family: Arial, sans-serif;
@@ -379,7 +426,7 @@ export const PayrollHistoryTable = () => {
       <body>
         <div class="header">
           <h1>BUKTI PEMBAYARAN GAJI</h1>
-          <p>Nomor: ${payment.id}</p>
+          <p>Nomor: ${payment.entry_number}</p>
           <p>Dicetak pada: ${new Date().toLocaleString('id-ID', {
             day: '2-digit',
             month: 'long',
@@ -393,16 +440,12 @@ export const PayrollHistoryTable = () => {
           <div class="info-row">
             <div class="info-label">Tanggal Pembayaran:</div>
             <div class="info-value">
-              ${formatDate(new Date(payment.created_at))}
-              ${new Date(payment.created_at).toLocaleTimeString('id-ID', {
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
+              ${formatDate(new Date(payment.entry_date))}
             </div>
           </div>
           <div class="info-row">
             <div class="info-label">Nama Karyawan:</div>
-            <div class="info-value">${payment.reference_name?.replace('Payroll ', '') || 'N/A'}</div>
+            <div class="info-value">${payment.employee_name}</div>
           </div>
           ${payrollDetail ? `
           <div class="info-row">
@@ -411,16 +454,12 @@ export const PayrollHistoryTable = () => {
           </div>
           ` : ''}
           <div class="info-row">
-            <div class="info-label">ID Payroll:</div>
-            <div class="info-value">${payment.reference_id}</div>
+            <div class="info-label">No. Jurnal:</div>
+            <div class="info-value">${payment.entry_number}</div>
           </div>
           <div class="info-row">
             <div class="info-label">Akun Pembayaran:</div>
-            <div class="info-value">${payment.account_name}</div>
-          </div>
-          <div class="info-row">
-            <div class="info-label">Dibayar Oleh:</div>
-            <div class="info-value">${payment.user_name}</div>
+            <div class="info-value">${payment.account_code} - ${payment.account_name}</div>
           </div>
         </div>
 
@@ -500,11 +539,11 @@ export const PayrollHistoryTable = () => {
           <div class="signature-section">
             <div class="signature-box">
               <div>Penerima,</div>
-              <div class="signature-line">${payment.reference_name?.replace('Payroll ', '') || 'N/A'}</div>
+              <div class="signature-line">${payment.employee_name}</div>
             </div>
             <div class="signature-box">
               <div>Yang Membayar,</div>
-              <div class="signature-line">${payment.user_name}</div>
+              <div class="signature-line">_________________</div>
             </div>
           </div>
 
@@ -596,10 +635,9 @@ export const PayrollHistoryTable = () => {
             <TableRow>
               <TableHead>Tanggal</TableHead>
               <TableHead>Karyawan</TableHead>
-              <TableHead>Deskripsi</TableHead>
+              <TableHead>No. Jurnal</TableHead>
               <TableHead>Akun Pembayaran</TableHead>
               <TableHead className="text-right">Jumlah</TableHead>
-              <TableHead>Dibayar Oleh</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-center">Aksi</TableHead>
             </TableRow>
@@ -609,7 +647,7 @@ export const PayrollHistoryTable = () => {
               <TableRow key={payment.id}>
                 <TableCell>
                   <div>
-                    <p className="font-medium">{formatDate(new Date(payment.created_at))}</p>
+                    <p className="font-medium">{formatDate(new Date(payment.entry_date))}</p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(payment.created_at).toLocaleTimeString('id-ID', {
                         hour: '2-digit',
@@ -620,29 +658,24 @@ export const PayrollHistoryTable = () => {
                 </TableCell>
                 <TableCell>
                   <div>
-                    <p className="font-medium">
-                      {payment.reference_name?.replace('Payroll ', '') || 'N/A'}
-                    </p>
+                    <p className="font-medium">{payment.employee_name}</p>
                     <p className="text-xs text-muted-foreground">
-                      ID: {payment.reference_id}
+                      ID: {payment.reference_id.slice(0, 8)}...
                     </p>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <p className="text-sm">{payment.description}</p>
+                  <p className="text-sm font-mono">{payment.entry_number}</p>
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className="text-xs">
-                    {payment.account_name}
+                    {payment.account_code} - {payment.account_name}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right">
                   <span className="font-semibold text-green-600">
                     {formatCurrency(payment.amount)}
                   </span>
-                </TableCell>
-                <TableCell>
-                  <p className="text-sm">{payment.user_name}</p>
                 </TableCell>
                 <TableCell>
                   <Badge className="bg-green-100 text-green-700 hover:bg-green-200">
@@ -689,7 +722,7 @@ export const PayrollHistoryTable = () => {
                 <>
                   Apakah Anda yakin ingin menghapus pembayaran gaji untuk{' '}
                   <span className="font-semibold">
-                    {paymentToDelete.reference_name?.replace('Payroll ', '') || 'karyawan ini'}
+                    {paymentToDelete.employee_name}
                   </span>
                   ?
                   <br /><br />
@@ -697,7 +730,7 @@ export const PayrollHistoryTable = () => {
                     ⚠️ Menghapus pembayaran ini akan:
                     <ul className="list-disc ml-6 mt-2">
                       <li>Menghapus record gaji dari sistem</li>
-                      <li>Menghapus catatan dari arus kas</li>
+                      <li>Menghapus jurnal pembayaran</li>
                       <li>Mengembalikan saldo akun pembayaran sebesar {formatCurrency(paymentToDelete.amount)}</li>
                     </ul>
                   </span>

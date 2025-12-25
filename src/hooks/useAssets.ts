@@ -79,13 +79,16 @@ export function useAsset(id?: string) {
     queryFn: async () => {
       if (!id) return null;
 
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('assets')
         .select('*')
         .eq('id', id)
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) return null;
 
       return {
         id: data.id,
@@ -211,12 +214,14 @@ export function useCreateAsset() {
         const accountCode = categoryToAccountCode[formData.category] || '1400';
 
         // Find account by code
-        const { data: accountData } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: accountDataRaw } = await supabase
           .from('accounts')
           .select('id')
           .eq('code', accountCode)
           .eq('is_active', true)
-          .single();
+          .limit(1);
+        const accountData = Array.isArray(accountDataRaw) ? accountDataRaw[0] : accountDataRaw;
 
         if (accountData) {
           accountId = accountData.id;
@@ -270,11 +275,13 @@ export function useCreateAsset() {
       // ============================================================================
       if (accountId && formData.purchasePrice > 0 && currentBranch?.id) {
         // Get account info for journal
-        const { data: accountData } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: accountDataRaw2 } = await supabase
           .from('accounts')
           .select('id, code, name')
           .eq('id', accountId)
-          .single();
+          .limit(1);
+        const accountData = Array.isArray(accountDataRaw2) ? accountDataRaw2[0] : accountDataRaw2;
 
         if (accountData) {
           const journalResult = await createAssetPurchaseJournal({
@@ -426,11 +433,13 @@ export function useRecordDepreciation() {
       }
 
       // Get asset details
-      const { data: asset, error: assetError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: assetRaw, error: assetError } = await supabase
         .from('assets')
         .select('*')
         .eq('id', assetId)
-        .single();
+        .limit(1);
+      const asset = Array.isArray(assetRaw) ? assetRaw[0] : assetRaw;
 
       if (assetError || !asset) {
         throw new Error('Asset not found');

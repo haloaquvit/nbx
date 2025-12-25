@@ -10,6 +10,7 @@ import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
 import { findAccountByLookup, AccountLookupType } from '@/services/accountLookupService'
 import { Account } from '@/types/account'
+import { createMaterialPurchaseJournal, createProductPurchaseJournal } from '@/services/journalService'
 
 // Helper to map DB account to App account format
 const fromDbToAppAccount = (dbAccount: any): Account => ({
@@ -66,7 +67,9 @@ const fromDb = (dbPo: any): PurchaseOrder => ({
   createdAt: new Date(dbPo.created_at),
   notes: dbPo.notes,
   totalCost: dbPo.total_cost,
+  subtotal: dbPo.subtotal,
   includePpn: dbPo.include_ppn,
+  ppnMode: dbPo.ppn_mode || 'exclude',
   ppnAmount: dbPo.ppn_amount,
   paymentAccountId: dbPo.payment_account_id,
   orderDate: dbPo.order_date ? new Date(dbPo.order_date) : undefined,
@@ -96,7 +99,9 @@ const toDb = (appPo: Partial<PurchaseOrder>) => ({
   status: appPo.status,
   notes: appPo.notes || null,
   total_cost: appPo.totalCost || null,
+  subtotal: appPo.subtotal || null,
   include_ppn: appPo.includePpn || false,
+  ppn_mode: appPo.ppnMode || 'exclude',
   ppn_amount: appPo.ppnAmount || 0,
   payment_account_id: appPo.paymentAccountId || null,
   order_date: appPo.orderDate || null,
@@ -163,7 +168,9 @@ export const usePurchaseOrders = () => {
           supplier_id: newPoData.supplierId,
           supplier_name: newPoData.supplierName,
           total_cost: newPoData.totalCost,
+          subtotal: newPoData.subtotal || null,
           include_ppn: newPoData.includePpn || false,
+          ppn_mode: newPoData.ppnMode || 'exclude',
           ppn_amount: newPoData.ppnAmount || 0,
           expedition: newPoData.expedition || null,
           order_date: newPoData.orderDate || new Date(),
@@ -175,16 +182,19 @@ export const usePurchaseOrders = () => {
 
         console.log('[addPurchaseOrder] Inserting PO header:', poHeader);
 
-        const { data: poData, error: poError } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: poDataRaw, error: poError } = await supabase
           .from('purchase_orders')
           .insert(poHeader)
           .select()
-          .single();
+          .limit(1);
 
         if (poError) {
           console.error('[addPurchaseOrder] PO header insert error:', poError);
           throw new Error(poError.message);
         }
+        const poData = Array.isArray(poDataRaw) ? poDataRaw[0] : poDataRaw;
+        if (!poData) throw new Error('Failed to create purchase order');
 
         // Insert PO items
         const poItems = newPoData.items.map((item: any) => ({
@@ -221,13 +231,16 @@ export const usePurchaseOrders = () => {
 
         console.log('[addPurchaseOrder] DB data to insert (legacy):', dbData);
 
-        const { data, error } = await supabase.from('purchase_orders').insert(dbData).select().single();
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: dataRaw, error } = await supabase.from('purchase_orders').insert(dbData).select().limit(1);
 
         if (error) {
           console.error('[addPurchaseOrder] Database error:', error);
           throw new Error(error.message);
         }
 
+        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+        if (!data) throw new Error('Failed to create purchase order');
         console.log('[addPurchaseOrder] Success:', data);
         return fromDb(data);
       }
@@ -241,8 +254,11 @@ export const usePurchaseOrders = () => {
     mutationFn: async ({ poId, status, updateData }: { poId: string, status: PurchaseOrderStatus, updateData?: any }): Promise<PurchaseOrder> => {
       const dbUpdateData = { status, ...updateData };
 
-      const { data, error } = await supabase.from('purchase_orders').update(dbUpdateData).eq('id', poId).select().single();
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase.from('purchase_orders').update(dbUpdateData).eq('id', poId).select().limit(1);
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to update purchase order status');
 
       // Create accounts payable when PO is approved
       if (status === 'Approved' && data.total_cost && data.supplier_name) {
@@ -250,11 +266,13 @@ export const usePurchaseOrders = () => {
 
         // Calculate due date based on supplier's payment terms
         if (data.supplier_id) {
-          const { data: supplierData } = await supabase
+          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          const { data: supplierDataRaw } = await supabase
             .from('suppliers')
             .select('payment_terms')
             .eq('id', data.supplier_id)
-            .single();
+            .limit(1);
+          const supplierData = Array.isArray(supplierDataRaw) ? supplierDataRaw[0] : supplierDataRaw;
 
           if (supplierData?.payment_terms) {
             const paymentTerms = supplierData.payment_terms;
@@ -281,6 +299,116 @@ export const usePurchaseOrders = () => {
           status: 'Outstanding',
           paidAmount: 0, // Always start with 0
         });
+
+        // ============================================================================
+        // JURNAL PEMBELIAN (Saat PO di-approve oleh Owner/Admin)
+        //
+        // Untuk Bahan Baku:
+        // Dr. Persediaan Bahan Baku (1320)  xxx
+        //   Cr. Hutang Usaha (2110)              xxx
+        //
+        // Untuk Produk Jadi:
+        // Dr. Persediaan Barang Dagang (1310)  xxx
+        //   Cr. Hutang Usaha (2110)                 xxx
+        // ============================================================================
+        try {
+          // Fetch PO items to get material and product details
+          const { data: poItems } = await supabase
+            .from('purchase_order_items')
+            .select('*, materials:material_id(name), products:product_id(name)')
+            .eq('purchase_order_id', data.id);
+
+          // Separate materials and products
+          const materialItems = poItems?.filter((item: any) => item.material_id && !item.product_id) || [];
+          const productItems = poItems?.filter((item: any) => item.product_id && !item.material_id) || [];
+
+          // Calculate subtotals
+          const subtotalAll = poItems?.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0) || 0;
+          const materialSubtotal = materialItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
+          const productSubtotal = productItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
+
+          // Calculate PPN proportions if include_ppn is true
+          let materialTotal = materialSubtotal;
+          let productTotal = productSubtotal;
+          let materialPpn = 0;
+          let productPpn = 0;
+
+          if (data.include_ppn && data.ppn_amount > 0 && subtotalAll > 0) {
+            // Distribute PPN proportionally
+            if (materialSubtotal > 0) {
+              const materialPpnRatio = materialSubtotal / subtotalAll;
+              materialPpn = Math.round(data.ppn_amount * materialPpnRatio);
+              materialTotal = materialSubtotal + materialPpn;
+            }
+            if (productSubtotal > 0) {
+              const productPpnRatio = productSubtotal / subtotalAll;
+              productPpn = Math.round(data.ppn_amount * productPpnRatio);
+              productTotal = productSubtotal + productPpn;
+            }
+          }
+
+          // Build details strings
+          const materialDetails = materialItems.length > 0
+            ? materialItems.map((item: any) => `${item.materials?.name || 'Unknown'} x${item.quantity}`).join(', ')
+            : data.material_name || '';
+
+          const productDetails = productItems
+            .map((item: any) => `${item.products?.name || 'Unknown'} x${item.quantity}`)
+            .join(', ');
+
+          // Create journal for MATERIALS (-> Persediaan Bahan Baku 1320)
+          // Jika ada PPN, PPN Masukan dicatat ke Piutang Pajak (1230)
+          if (materialTotal > 0 && materialDetails && currentBranch?.id) {
+            const journalResult = await createMaterialPurchaseJournal({
+              poId: data.id,
+              poRef: data.id,
+              approvalDate: new Date(),
+              amount: materialTotal,
+              subtotal: materialSubtotal,
+              ppnAmount: materialPpn,
+              materialDetails,
+              supplierName: data.supplier_name,
+              branchId: currentBranch.id,
+            });
+
+            if (journalResult.success) {
+              console.log('✅ Jurnal pembelian bahan baku auto-generated:', journalResult.journalId);
+              if (materialPpn > 0) {
+                console.log('   ✅ PPN Masukan (Piutang Pajak) dicatat: Rp', materialPpn.toLocaleString('id-ID'));
+              }
+            } else {
+              console.warn('⚠️ Gagal membuat jurnal pembelian bahan:', journalResult.error);
+            }
+          }
+
+          // Create journal for PRODUCTS (-> Persediaan Barang Dagang 1310)
+          // Jika ada PPN, PPN Masukan dicatat ke Piutang Pajak (1230)
+          if (productTotal > 0 && productDetails && currentBranch?.id) {
+            const journalResult = await createProductPurchaseJournal({
+              poId: data.id,
+              poRef: data.id,
+              approvalDate: new Date(),
+              amount: productTotal,
+              subtotal: productSubtotal,
+              ppnAmount: productPpn,
+              productDetails,
+              supplierName: data.supplier_name,
+              branchId: currentBranch.id,
+            });
+
+            if (journalResult.success) {
+              console.log('✅ Jurnal pembelian produk jadi auto-generated:', journalResult.journalId);
+              if (productPpn > 0) {
+                console.log('   ✅ PPN Masukan (Piutang Pajak) dicatat: Rp', productPpn.toLocaleString('id-ID'));
+              }
+            } else {
+              console.warn('⚠️ Gagal membuat jurnal pembelian produk:', journalResult.error);
+            }
+          }
+        } catch (journalError) {
+          console.error('Error creating purchase journal:', journalError);
+          // Don't fail PO approval if journal fails
+        }
       }
 
       return fromDb(data);
@@ -288,6 +416,8 @@ export const usePurchaseOrders = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
       queryClient.invalidateQueries({ queryKey: ['accountsPayable'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 
@@ -296,23 +426,28 @@ export const usePurchaseOrders = () => {
       const paymentDate = new Date();
       
       // Update PO status to Dibayar
-      const { data: updatedPo, error } = await supabase.from('purchase_orders').update({
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: updatedPoRaw, error } = await supabase.from('purchase_orders').update({
         status: 'Dibayar',
         total_cost: totalCost,
         payment_account_id: paymentAccountId,
         payment_date: paymentDate,
-      }).eq('id', poId).select().single();
+      }).eq('id', poId).select().limit(1);
 
       if (error) throw error;
+      const updatedPo = Array.isArray(updatedPoRaw) ? updatedPoRaw[0] : updatedPoRaw;
+      if (!updatedPo) throw new Error('Failed to update payment status');
 
       // Find corresponding accounts payable and pay it
-      const { data: payableData, error: payableError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: payableDataRaw, error: payableError } = await supabase
         .from('accounts_payable')
         .select('*')
         .eq('purchase_order_id', poId)
         .eq('status', 'Outstanding')
-        .single();
+        .limit(1);
 
+      const payableData = Array.isArray(payableDataRaw) ? payableDataRaw[0] : payableDataRaw;
       if (payableError && payableError.code !== 'PGRST116') { // PGRST116 = no rows returned
         console.warn('No accounts payable found for PO:', poId);
       }
@@ -345,11 +480,13 @@ export const usePurchaseOrders = () => {
       if (paymentAccountId && user) {
         try {
           // Get account name for the payment account
-          const { data: account } = await supabase
+          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          const { data: accountRaw } = await supabase
             .from('accounts')
             .select('name')
             .eq('id', paymentAccountId)
-            .single();
+            .limit(1);
+          const account = Array.isArray(accountRaw) ? accountRaw[0] : accountRaw;
 
           const cashFlowRecord = {
             account_id: paymentAccountId,
@@ -417,6 +554,7 @@ export const usePurchaseOrders = () => {
         materialId?: string;
         productId?: string;
         quantity: number;
+        unitPrice: number;
         itemName: string;
         materialType?: string;
       }
@@ -431,6 +569,7 @@ export const usePurchaseOrders = () => {
           materialId: item.material_id,
           productId: item.product_id,
           quantity: item.quantity,
+          unitPrice: item.unit_price || 0,
           itemName: item.item_type === 'product'
             ? (item.products?.name || 'Unknown Product')
             : (item.materials?.name || 'Unknown Material'),
@@ -438,16 +577,19 @@ export const usePurchaseOrders = () => {
         }));
       } else if (po.materialId) {
         // Legacy single-item PO (material only)
-        const { data: material } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: materialRaw } = await supabase
           .from('materials')
           .select('name, type')
           .eq('id', po.materialId)
-          .single();
+          .limit(1);
+        const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
 
         itemsToProcess = [{
           itemType: 'material',
           materialId: po.materialId,
           quantity: po.quantity || 0,
+          unitPrice: po.unitPrice || 0,
           itemName: material?.name || po.materialName || 'Unknown',
           materialType: material?.type || 'Stock',
         }];
@@ -459,11 +601,13 @@ export const usePurchaseOrders = () => {
       for (const item of itemsToProcess) {
         if (item.itemType === 'material' && item.materialId) {
           // Process MATERIAL
-          const { data: material } = await supabase
+          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          const { data: materialRaw2 } = await supabase
             .from('materials')
             .select('stock')
             .eq('id', item.materialId)
-            .single();
+            .limit(1);
+          const material = Array.isArray(materialRaw2) ? materialRaw2[0] : materialRaw2;
 
           const previousStock = Number(material?.stock) || 0;
           const newStock = previousStock + item.quantity;
@@ -507,13 +651,37 @@ export const usePurchaseOrders = () => {
           // Update material stock
           await addStock.mutateAsync({ materialId: item.materialId, quantity: item.quantity });
 
+          // Create inventory batch for material FIFO tracking
+          // Ini penting untuk kalkulasi HPP produksi dengan harga beli yang bervariasi
+          const { error: materialBatchError } = await supabase
+            .from('inventory_batches')
+            .insert({
+              material_id: item.materialId,
+              branch_id: currentBranch?.id || null,
+              purchase_order_id: po.id,
+              supplier_id: po.supplierId || null,
+              initial_quantity: item.quantity,
+              remaining_quantity: item.quantity,
+              unit_cost: item.unitPrice, // Harga beli dari PO (bisa berbeda per supplier)
+              notes: `PO ${po.id} - ${item.itemName}`,
+            });
+
+          if (materialBatchError) {
+            console.error('Failed to create material inventory batch:', materialBatchError);
+            // Continue anyway, batch is for tracking HPP not critical
+          } else {
+            console.log(`✅ Material batch created for FIFO: ${item.itemName} @ Rp${item.unitPrice}/unit`);
+          }
+
         } else if (item.itemType === 'product' && item.productId) {
           // Process PRODUCT (Jual Langsung)
-          const { data: product } = await supabase
+          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          const { data: productRaw } = await supabase
             .from('products')
             .select('current_stock')
             .eq('id', item.productId)
-            .single();
+            .limit(1);
+          const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
 
           const previousStock = Number(product?.current_stock) || 0;
           const newStock = previousStock + item.quantity;
@@ -538,11 +706,33 @@ export const usePurchaseOrders = () => {
           }
 
           console.log('Product stock updated successfully');
+
+          // Create inventory batch for FIFO tracking
+          const { error: batchError } = await supabase
+            .from('inventory_batches')
+            .insert({
+              product_id: item.productId,
+              branch_id: currentBranch?.id || null,
+              purchase_order_id: po.id,
+              supplier_id: po.supplierId || null,
+              initial_quantity: item.quantity,
+              remaining_quantity: item.quantity,
+              unit_cost: item.unitPrice, // Harga beli dari PO
+              notes: `PO ${po.id} - ${item.itemName}`,
+            });
+
+          if (batchError) {
+            console.error('Failed to create inventory batch:', batchError);
+            // Continue anyway, batch is for tracking HPP not critical
+          } else {
+            console.log('Inventory batch created for FIFO tracking');
+          }
         }
       }
 
       // Update PO status to Diterima with received_date
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('purchase_orders')
         .update({
           status: 'Diterima',
@@ -550,9 +740,11 @@ export const usePurchaseOrders = () => {
         })
         .eq('id', po.id)
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to update receive status');
 
       return fromDb(data);
     },

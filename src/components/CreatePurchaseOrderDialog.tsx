@@ -63,6 +63,7 @@ interface PurchasableItem {
 const formSchema = z.object({
   supplierId: z.string().min(1, "Supplier harus dipilih"),
   includePpn: z.boolean().default(false),
+  ppnMode: z.enum(['include', 'exclude']).default('exclude'),
   expedition: z.string().optional(),
   orderDate: z.date().optional(),
   expectedDeliveryDate: z.date().optional(),
@@ -137,6 +138,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
     defaultValues: {
       supplierId: "",
       includePpn: false,
+      ppnMode: "exclude",
       expedition: "",
       orderDate: new Date(),
       notes: "",
@@ -159,6 +161,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
       form.reset({
         supplierId: "",
         includePpn: false,
+        ppnMode: "exclude",
         expedition: "",
         orderDate: new Date(),
         notes: "",
@@ -169,11 +172,22 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
 
   const selectedSupplier = activeSuppliers?.find(s => s.id === form.watch("supplierId"))
   const includePpn = form.watch("includePpn") || false
+  const ppnMode = form.watch("ppnMode") || "exclude"
 
-  // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
-  const ppnAmount = includePpn ? subtotal * 0.11 : 0
-  const totalCost = subtotal + ppnAmount
+  // Calculate totals based on PPN mode
+  const itemsTotal = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+
+  // PPN Include: itemsTotal sudah termasuk PPN, hitung subtotal
+  // PPN Exclude: itemsTotal adalah subtotal, tambahkan PPN di atas
+  const subtotal = includePpn && ppnMode === 'include'
+    ? Math.round(itemsTotal / 1.11)
+    : itemsTotal
+  const ppnAmount = includePpn
+    ? (ppnMode === 'include' ? itemsTotal - subtotal : Math.round(subtotal * 0.11))
+    : 0
+  const totalCost = includePpn
+    ? (ppnMode === 'include' ? itemsTotal : subtotal + ppnAmount)
+    : subtotal
 
   // Add new item
   const addItem = (preselectedItemId?: string) => {
@@ -310,7 +324,9 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
 
     const poData = {
       includePpn: values.includePpn,
+      ppnMode: values.ppnMode,
       ppnAmount: ppnAmount,
+      subtotal: subtotal,
       totalCost: totalCost,
       requestedBy: user.name,
       status: 'Pending' as const,
@@ -534,7 +550,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center space-x-2">
               <Checkbox
                 id="includePpn"
@@ -545,29 +561,76 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
                 Termasuk PPN 11%
               </Label>
             </div>
+
+            {/* PPN Mode Selection */}
+            {includePpn && (
+              <div className="ml-6 space-y-2">
+                <Label className="text-sm text-muted-foreground">Mode PPN:</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="ppnMode"
+                      value="exclude"
+                      checked={ppnMode === 'exclude'}
+                      onChange={() => form.setValue("ppnMode", "exclude")}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm">PPN Exclude (ditambahkan)</span>
+                  </label>
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="ppnMode"
+                      value="include"
+                      checked={ppnMode === 'include'}
+                      onChange={() => form.setValue("ppnMode", "include")}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm">PPN Include (sudah termasuk)</span>
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {ppnMode === 'exclude'
+                    ? 'Harga item belum termasuk PPN. PPN 11% akan ditambahkan di atas subtotal.'
+                    : 'Harga item sudah termasuk PPN 11%. Subtotal akan dihitung dari total.'}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
             <Label>Total Cost</Label>
             <div className="px-3 py-2 bg-muted rounded-md space-y-1">
+              {includePpn && ppnMode === 'include' && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span className="text-sm">Total Input:</span>
+                  <span className="font-mono text-sm">Rp {itemsTotal.toLocaleString('id-ID')}</span>
+                </div>
+              )}
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Subtotal:</span>
+                <span className="text-sm text-muted-foreground">Subtotal (DPP):</span>
                 <span className="font-mono">Rp {subtotal.toLocaleString('id-ID')}</span>
               </div>
               {includePpn && (
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">PPN 11%:</span>
+                <div className="flex justify-between text-blue-600">
+                  <span className="text-sm">PPN 11% (Piutang Pajak):</span>
                   <span className="font-mono">Rp {ppnAmount.toLocaleString('id-ID')}</span>
                 </div>
               )}
               <div className="flex justify-between font-semibold border-t pt-1 mt-1">
-                <span>Total:</span>
+                <span>Total Hutang:</span>
                 <span className="font-mono">Rp {totalCost.toLocaleString('id-ID')}</span>
               </div>
             </div>
             {selectedSupplier && (
               <div className="text-sm text-muted-foreground">
                 Payment Terms: {selectedSupplier.paymentTerms}
+              </div>
+            )}
+            {includePpn && (
+              <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                PPN Masukan akan dicatat sebagai Piutang Pajak (akun 1230) saat PO di-approve
               </div>
             )}
           </div>

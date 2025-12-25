@@ -1,16 +1,20 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+// Using native select for better compatibility with dialog
+import { Label } from "@/components/ui/label"
 import { PayrollRecord } from "@/types/payroll"
+import { useAccounts } from "@/hooks/useAccounts"
 import { DollarSign, User, Calendar, CreditCard, FileText } from "lucide-react"
 
 interface PaymentConfirmationDialogProps {
   isOpen: boolean
   onOpenChange: (open: boolean) => void
   payrollRecord: PayrollRecord | null
-  onConfirm: () => void
+  onConfirm: (paymentAccountId: string) => void
   isProcessing: boolean
 }
 
@@ -21,6 +25,34 @@ export function PaymentConfirmationDialog({
   onConfirm,
   isProcessing
 }: PaymentConfirmationDialogProps) {
+  const { accounts } = useAccounts()
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("")
+
+  // Filter only payment accounts (kas/bank)
+  const paymentAccounts = accounts?.filter(acc => acc.isPaymentAccount) || []
+
+  // Reset selected account when dialog opens - only once when dialog opens
+  useEffect(() => {
+    if (isOpen && paymentAccounts.length > 0) {
+      // Only set default if no account is selected yet
+      if (!selectedAccountId) {
+        // If payroll has a payment account, use it as default
+        if (payrollRecord?.paymentAccountId) {
+          setSelectedAccountId(payrollRecord.paymentAccountId)
+        } else {
+          // Otherwise select first payment account
+          setSelectedAccountId(paymentAccounts[0].id)
+        }
+      }
+    }
+    // Reset when dialog closes
+    if (!isOpen) {
+      setSelectedAccountId("")
+    }
+  }, [isOpen, paymentAccounts.length])
+
+  const selectedAccount = accounts?.find(acc => acc.id === selectedAccountId)
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
@@ -29,15 +61,12 @@ export function PaymentConfirmationDialog({
     }).format(amount)
   }
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat("id-ID", {
-      day: "numeric",
-      month: "long",
-      year: "numeric"
-    }).format(date)
-  }
-
   if (!payrollRecord) return null
+
+  const handleConfirm = () => {
+    if (!selectedAccountId) return
+    onConfirm(selectedAccountId)
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -119,14 +148,40 @@ export function PaymentConfirmationDialog({
 
           <Separator />
 
-          {/* Payment Account */}
+          {/* Payment Account Selection - Using Radio Buttons */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <CreditCard className="h-4 w-4" />
               <span>Akun Pembayaran</span>
             </div>
-            <div className="pl-6">
-              <p className="font-medium">{payrollRecord.paymentAccountName || 'Akun Kas'}</p>
+            <div className="pl-6 space-y-2">
+              {paymentAccounts.map((account) => (
+                <label
+                  key={account.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    selectedAccountId === account.id
+                      ? 'border-green-500 bg-green-50 dark:bg-green-950'
+                      : 'border-input hover:bg-accent'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="paymentAccount"
+                    value={account.id}
+                    checked={selectedAccountId === account.id}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    className="h-4 w-4 text-green-600"
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">
+                      {account.code ? `${account.code} - ` : ''}{account.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Saldo: {formatCurrency(account.balance || 0)}
+                    </p>
+                  </div>
+                </label>
+              ))}
             </div>
           </div>
 
@@ -147,8 +202,8 @@ export function PaymentConfirmationDialog({
             Batal
           </Button>
           <Button
-            onClick={onConfirm}
-            disabled={isProcessing}
+            onClick={handleConfirm}
+            disabled={isProcessing || !selectedAccountId}
             className="bg-green-600 hover:bg-green-700"
           >
             {isProcessing ? "Memproses..." : "Setujui & Bayar"}

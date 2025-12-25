@@ -3,8 +3,20 @@ import { Dialog, DialogContent, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Transaction } from "@/types/transaction"
-import { format } from "date-fns"
+import { format, isValid } from "date-fns"
 import { id } from "date-fns/locale/id"
+
+// Helper function to safely format date
+function safeFormatDate(date: Date | string | null | undefined, formatStr: string): string {
+  if (!date) return '-';
+  try {
+    const dateObj = date instanceof Date ? date : new Date(date);
+    if (!isValid(dateObj)) return '-';
+    return format(dateObj, formatStr, { locale: id });
+  } catch {
+    return '-';
+  }
+}
 import { Printer, X, FileDown } from "lucide-react"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -16,6 +28,7 @@ interface PrintReceiptDialogProps {
   onOpenChange: (open: boolean) => void
   transaction: Transaction | null
   template: 'receipt' | 'invoice'
+  onClose?: () => void // Callback when user clicks close after printing
 }
 
 const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transaction, companyInfo?: CompanyInfo | null }) => {
@@ -30,7 +43,7 @@ const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transactio
       </header>
       <div className="text-xs space-y-0.5 my-2 border-y border-dashed border-black py-1">
         <div className="flex justify-between"><span>No:</span> <strong>{transaction.id}</strong></div>
-        <div className="flex justify-between"><span>Tgl:</span> <span>{orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : 'N/A'}</span></div>
+        <div className="flex justify-between"><span>Tgl:</span> <span>{safeFormatDate(orderDate, "dd/MM/yy HH:mm")}</span></div>
         <div className="flex justify-between"><span>Plgn:</span> <span>{transaction.customerName}</span></div>
         <div className="flex justify-between"><span>Kasir:</span> <span>{transaction.cashierName}</span></div>
       </div>
@@ -80,7 +93,7 @@ const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transactio
           {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
             <div className="flex justify-between">
               <span>Jatuh Tempo:</span>
-              <span className="font-semibold">{format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</span>
+              <span className="font-semibold">{safeFormatDate(transaction.dueDate, "dd/MM/yyyy")}</span>
             </div>
           )}
           {transaction.paymentStatus !== 'Lunas' && (
@@ -140,7 +153,7 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
             </p>
             <p className="text-sm text-gray-700">
               <span className="font-semibold text-blue-800">Tanggal:</span><br/>
-              <span className="font-medium">{orderDate ? format(orderDate, "d MMMM yyyy", { locale: id }) : 'N/A'}</span>
+              <span className="font-medium">{safeFormatDate(orderDate, "d MMMM yyyy")}</span>
             </p>
           </div>
         </div>
@@ -213,7 +226,7 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
                   <div className="flex justify-between items-center">
                     <span className="text-red-800 font-semibold">JATUH TEMPO:</span>
                     <span className="text-red-900 font-bold">
-                      {format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id })}
+                      {safeFormatDate(transaction.dueDate, "d MMMM yyyy")}
                     </span>
                   </div>
                 </div>
@@ -265,8 +278,16 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
   )
 }
 
-export function PrintReceiptDialog({ open, onOpenChange, transaction, template }: PrintReceiptDialogProps) {
+export function PrintReceiptDialog({ open, onOpenChange, transaction, template, onClose }: PrintReceiptDialogProps) {
   const { settings: companyInfo } = useCompanySettings();
+
+  // Handle close button click
+  const handleClose = () => {
+    onOpenChange(false);
+    if (onClose) {
+      onClose();
+    }
+  };
 
   const generateInvoicePdf = () => {
     if (!transaction) return;
@@ -301,7 +322,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
     doc.setFontSize(11).setTextColor(255, 255, 255);
     doc.text(`No: ${transaction.id}`, pageWidth - margin, 33, { align: 'right' });
-    doc.text(`Tanggal: ${format(orderDate, "d MMMM yyyy", { locale: id })}`, pageWidth - margin, 39, { align: 'right' });
+    doc.text(`Tanggal: ${safeFormatDate(orderDate, "d MMMM yyyy")}`, pageWidth - margin, 39, { align: 'right' });
     // Customer info section with background
     let y = 65;
     doc.setTextColor(0, 0, 0);
@@ -382,7 +403,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
       doc.roundedRect(summaryX, summaryY, summaryWidth, 10, 3, 3, 'F');
       doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(185, 28, 28);
       doc.text("JATUH TEMPO:", summaryX + 5, summaryY + 6);
-      doc.text(format(new Date(transaction.dueDate), "d MMMM yyyy", { locale: id }), pageWidth - margin - 5, summaryY + 6, { align: 'right' });
+      doc.text(safeFormatDate(transaction.dueDate, "d MMMM yyyy"), pageWidth - margin - 5, summaryY + 6, { align: 'right' });
       summaryY += 12;
       doc.setTextColor(0); // Reset color to black
     }
@@ -599,7 +620,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
               <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR PENJUALAN</div>
               <div style="font-size: 10.5pt; margin-top: 2mm; line-height: 1.5;">
                 <strong>No:</strong> ${transaction.id}<br/>
-                <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}<br/>
+                <strong>Tanggal:</strong> ${safeFormatDate(orderDate, "dd MMMM yyyy")}<br/>
                 <strong>Status:</strong> ${transaction.paymentStatus === 'Lunas' ? 'Tunai' : 'Kredit'}
               </div>
             </td>
@@ -616,7 +637,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
             </td>
             <td style="width: 50%; vertical-align: top; text-align: right;">
               <div style="font-size: 10.5pt;"><strong>Kasir:</strong> ${transaction.cashierName}</div>
-              ${transaction.dueDate ? `<div style="font-size: 10.5pt;"><strong>Jatuh Tempo:</strong> ${format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</div>` : ''}
+              ${transaction.dueDate ? `<div style="font-size: 10.5pt;"><strong>Jatuh Tempo:</strong> ${safeFormatDate(transaction.dueDate, "dd/MM/yyyy")}</div>` : ''}
             </td>
           </tr>
         </table>
@@ -683,21 +704,48 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
           </tr>
         </table>
 
-        <!-- Footer -->
-        <div style="margin-top: 10mm; border-top: 0.5px solid #ccc; padding-top: 3mm;">
-          <table style="width: 100%;">
+        <!-- Status Bayar Section -->
+        <table style="width: 100%; margin-top: 4mm; border: 0.5px solid #000;">
+          <tr>
+            <td style="width: 50%; padding: 2mm 3mm; font-size: 11pt; font-weight: bold; background: ${transaction.paymentStatus === 'Lunas' ? '#d4edda' : '#fff3cd'};">
+              STATUS: ${transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+            </td>
+            <td style="width: 50%; padding: 2mm 3mm; font-size: 10.5pt; text-align: right;">
+              ${transaction.paymentStatus !== 'Lunas' ? `<strong>Sisa Bayar: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</strong>` : 'Pembayaran Lengkap'}
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer dengan Tanda Tangan -->
+        <div style="margin-top: 8mm; border-top: 0.5px solid #ccc; padding-top: 3mm;">
+          <!-- Tanda Tangan Section - 3 Kolom -->
+          <table style="width: 100%; margin-bottom: 5mm;">
             <tr>
-              <td style="width: 50%; text-align: center; vertical-align: bottom;">
-                <div style="font-size: 10.5pt; margin-bottom: 15mm;">Hormat Kami,</div>
-                <div style="border-top: 0.5px solid #000; display: inline-block; padding-top: 1mm; min-width: 50mm;">
+              <td style="width: 33%; text-align: center; vertical-align: top; padding: 2mm;">
+                <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 20mm;">Penerima,</div>
+                <div style="border-top: 0.5px solid #000; display: inline-block; padding-top: 1mm; min-width: 45mm;">
+                  <span style="font-size: 9.5pt; color: #666;">(..............................)</span>
+                </div>
+              </td>
+              <td style="width: 33%; text-align: center; vertical-align: top; padding: 2mm;">
+                <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 20mm;">Pengirim,</div>
+                <div style="border-top: 0.5px solid #000; display: inline-block; padding-top: 1mm; min-width: 45mm;">
+                  <span style="font-size: 9.5pt; color: #666;">(..............................)</span>
+                </div>
+              </td>
+              <td style="width: 33%; text-align: center; vertical-align: top; padding: 2mm;">
+                <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 20mm;">Hormat Kami,</div>
+                <div style="border-top: 0.5px solid #000; display: inline-block; padding-top: 1mm; min-width: 45mm;">
                   <strong style="font-size: 10.5pt;">${transaction.cashierName}</strong>
                 </div>
               </td>
-              <td style="width: 50%; text-align: center; font-size: 9.5pt; color: #666; vertical-align: bottom;">
-                Dicetak: ${format(new Date(), "dd MMMM yyyy, HH:mm", { locale: id })} WIB
-              </td>
             </tr>
           </table>
+
+          <!-- Printed Date -->
+          <div style="text-align: center; font-size: 9.5pt; color: #666; padding-top: 2mm; border-top: 0.5px dashed #ccc;">
+            Dicetak: ${format(new Date(), "dd MMMM yyyy, HH:mm", { locale: id })} WIB
+          </div>
         </div>
       </div>
     `;
@@ -785,147 +833,93 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
   };
 
   // Fungsi cetak Rawbt Thermal 80mm
+  // RawBT URL Scheme: rawbt:base64,[base64_encoded_data]
+  // Dokumentasi: https://rawbt.ru/en/docs/
   const handleRawbtPrint = () => {
     if (!transaction) return;
 
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
-    
-    // Format teks untuk printer thermal 80mm sesuai template preview
+
+    // Format teks untuk printer thermal 80mm - PLAIN TEXT (RawBT akan handle ESC/POS)
     let receiptText = '';
-    
-    // Header - exactly like preview
-    receiptText += '\x1B\x40'; // ESC @ (Initialize printer)
-    receiptText += '\x1B\x61\x01'; // Center alignment
-    receiptText += (companyInfo?.name || 'Nota Transaksi') + '\n';
+
+    // Header - center
+    receiptText += '[C]<b>' + (companyInfo?.name || 'Nota Transaksi') + '</b>\n';
     if (companyInfo?.address) {
-      receiptText += companyInfo.address + '\n';
+      receiptText += '[C]' + companyInfo.address + '\n';
     }
     if (companyInfo?.phone) {
-      receiptText += companyInfo.phone + '\n';
+      receiptText += '[C]' + companyInfo.phone + '\n';
     }
-    receiptText += '\x1B\x61\x00'; // Left alignment
-    
-    // Transaction info section - with border
-    receiptText += '--------------------------------\n';
-    receiptText += `No: ${transaction.id}\n`;
-    receiptText += `Tgl: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : 'N/A'}\n`;
-    receiptText += `Plgn: ${transaction.customerName}\n`;
-    receiptText += `Kasir: ${transaction.cashierName}\n`;
-    receiptText += '--------------------------------\n';
-    
-    // Items header - exactly like preview
-    receiptText += 'Item                        Total\n';
-    receiptText += '--------------------------------\n';
-    
-    // Items - format like preview
+    receiptText += '[C]================================\n';
+
+    // Transaction info section - left align
+    receiptText += '[L]No: ' + transaction.id + '\n';
+    receiptText += '[L]Tgl: ' + safeFormatDate(orderDate, "dd/MM/yy HH:mm") + '\n';
+    receiptText += '[L]Plgn: ' + transaction.customerName + '\n';
+    receiptText += '[L]Kasir: ' + transaction.cashierName + '\n';
+    receiptText += '[C]================================\n';
+
+    // Items header
+    receiptText += '[L]<b>Item</b>[R]<b>Total</b>\n';
+    receiptText += '[C]--------------------------------\n';
+
+    // Items - format seperti struk
     transaction.items.forEach((item) => {
-      // First line: product name
-      receiptText += item.product.name + '\n';
-      
-      // Second line: quantity x @price, then total on right
-      const qtyPrice = `${item.quantity}x @${new Intl.NumberFormat("id-ID").format(item.price)}`;
+      // Product name
+      receiptText += '[L]' + item.product.name + '\n';
+      // Quantity x price = total
+      const qtyPrice = item.quantity + 'x @' + new Intl.NumberFormat("id-ID").format(item.price);
       const itemTotal = new Intl.NumberFormat("id-ID").format(item.price * item.quantity);
-      
-      // Calculate spacing to align total to right (32 chars total width)
-      const spacing = 32 - qtyPrice.length - itemTotal.length;
-      receiptText += qtyPrice + ' '.repeat(Math.max(0, spacing)) + itemTotal + '\n';
+      receiptText += '[L]  ' + qtyPrice + '[R]' + itemTotal + '\n';
     });
-    
-    receiptText += '--------------------------------\n';
-    
-    // Subtotal - exactly like preview format
-    const subtotalText = 'Subtotal:';
-    const subtotalAmount = new Intl.NumberFormat("id-ID", { 
-      style: "currency", 
-      currency: "IDR",
-      minimumFractionDigits: 0
-    }).format(transaction.subtotal);
-    const subtotalSpacing = 32 - subtotalText.length - subtotalAmount.length;
-    receiptText += subtotalText + ' '.repeat(Math.max(0, subtotalSpacing)) + subtotalAmount + '\n';
-    
+
+    receiptText += '[C]--------------------------------\n';
+
+    // Subtotal
+    const subtotalAmount = new Intl.NumberFormat("id-ID").format(transaction.subtotal);
+    receiptText += '[L]Subtotal:[R]Rp ' + subtotalAmount + '\n';
+
     // PPN if enabled
     if (transaction.ppnEnabled) {
-      const ppnText = `PPN (${transaction.ppnPercentage}%):`;
-      const ppnAmount = new Intl.NumberFormat("id-ID", { 
-        style: "currency", 
-        currency: "IDR",
-        minimumFractionDigits: 0
-      }).format(transaction.ppnAmount);
-      const ppnSpacing = 32 - ppnText.length - ppnAmount.length;
-      receiptText += ppnText + ' '.repeat(Math.max(0, ppnSpacing)) + ppnAmount + '\n';
+      const ppnAmount = new Intl.NumberFormat("id-ID").format(transaction.ppnAmount);
+      receiptText += '[L]PPN (' + transaction.ppnPercentage + '%):[R]Rp ' + ppnAmount + '\n';
     }
-    
-    receiptText += '--------------------------------\n';
-    
-    // Total - bold format exactly like preview
-    const totalText = 'Total:';
-    const totalAmount = new Intl.NumberFormat("id-ID", { 
-      style: "currency", 
-      currency: "IDR",
-      minimumFractionDigits: 0
-    }).format(transaction.total);
-    const totalSpacing = 32 - totalText.length - totalAmount.length;
-    
-    receiptText += '\x1B\x45\x01'; // Bold on
-    receiptText += totalText + ' '.repeat(Math.max(0, totalSpacing)) + totalAmount + '\n';
-    receiptText += '\x1B\x45\x00'; // Bold off
-    
-    // Thank you message
-    receiptText += '\n';
-    receiptText += '\x1B\x61\x01'; // Center alignment
-    receiptText += 'Terima kasih!\n';
-    receiptText += '\x1B\x61\x00'; // Left alignment
-    
-    receiptText += '\n\n\n'; // Feed paper
-    receiptText += '\x1D\x56\x41'; // Cut paper
 
-    // Multiple approaches untuk RawBT
-    const handleRawbtConnection = () => {
-      const encodedText = encodeURIComponent(receiptText);
-      // Method 1: Coba rawbt:// protocol
-      const rawbtUrl = `rawbt:${encodedText}`;
-      const link = document.createElement('a');
-      link.href = rawbtUrl;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      // Method 2: Fallback dengan window.open ke RawBT web interface (jika ada)
-      setTimeout(() => {
-        try {
-          window.open(`http://localhost:8080/?data=${encodedText}`, '_rawbt');
-        } catch (e) {
-          // Method 3: Copy ke clipboard sebagai fallback terakhir
-          navigator.clipboard?.writeText(receiptText).then(() => {
-            const userChoice = confirm(
-              'RawBT tidak terdeteksi!\n\n' +
-              'Teks nota sudah disalin ke clipboard.\n' +
-              'Klik OK untuk membuka RawBT secara manual, atau Cancel untuk menggunakan cara lain.\n\n' +
-              'Instruksi:\n' +
-              '1. Buka aplikasi RawBT\n' +
-              '2. Paste (Ctrl+V) di area teks\n' +
-              '3. Klik Send/Print'
-            );
-            if (userChoice) {
-              try {
-                window.open('ms-windows-store://pdp/?ProductId=9NBLGGH5Z3VL', '_blank');
-              } catch (e) {
-                alert('Silakan buka aplikasi RawBT secara manual dan paste teks yang sudah disalin.');
-              }
-            }
-          }).catch(() => {
-            alert(
-              'Tidak dapat mengakses RawBT atau clipboard.\n\n' +
-              'Silakan:\n' +
-              '1. Install aplikasi RawBT\n' +
-              '2. Copy teks nota secara manual\n' +
-              '3. Paste di RawBT untuk mencetak'
-            );
-          });
-        }
-      }, 1000);
-    };
-    handleRawbtConnection();
+    receiptText += '[C]================================\n';
+
+    // Total - bold
+    const totalAmount = new Intl.NumberFormat("id-ID").format(transaction.total);
+    receiptText += '[L]<b>TOTAL:</b>[R]<b>Rp ' + totalAmount + '</b>\n';
+
+    // Payment info
+    receiptText += '[C]--------------------------------\n';
+    if (transaction.paidAmount > 0) {
+      const paidAmount = new Intl.NumberFormat("id-ID").format(transaction.paidAmount);
+      receiptText += '[L]Dibayar:[R]Rp ' + paidAmount + '\n';
+    }
+    const sisaBayar = transaction.total - (transaction.paidAmount || 0);
+    if (sisaBayar > 0) {
+      const sisaAmount = new Intl.NumberFormat("id-ID").format(sisaBayar);
+      receiptText += '[L]<b>Sisa:</b>[R]<b>Rp ' + sisaAmount + '</b>\n';
+    }
+    receiptText += '[L]Status:[R]' + (transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS') + '\n';
+
+    // Thank you message
+    receiptText += '[C]================================\n';
+    receiptText += '[C]<b>Terima kasih!</b>\n';
+    receiptText += '[C]' + format(new Date(), "dd/MM/yy HH:mm", { locale: id }) + '\n';
+    receiptText += '\n\n\n'; // Feed paper
+
+    // Convert to Base64 for RawBT URL scheme
+    const base64Data = btoa(unescape(encodeURIComponent(receiptText)));
+
+    // RawBT URL scheme format: rawbt:base64,{base64_data}
+    // Alternative format: intent://... for Android
+    const rawbtUrl = 'rawbt:base64,' + base64Data;
+
+    // Try to open RawBT app
+    window.location.href = rawbtUrl;
   };
 
   const handlePdfDownload = () => {
@@ -965,7 +959,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
     doc.setFontSize(8);
     doc.text(`No: ${transaction.id}`, 5, currentY);
     currentY += 4;
-    doc.text(`Tgl: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : 'N/A'}`, 5, currentY);
+    doc.text(`Tgl: ${safeFormatDate(orderDate, "dd/MM/yy HH:mm")}`, 5, currentY);
     currentY += 4;
     doc.text(`Plgn: ${transaction.customerName}`, 5, currentY);
     currentY += 4;
@@ -1026,11 +1020,11 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template }
         <div id="printable-area" className={template === 'receipt' ? 'p-1 bg-white text-black' : ''}>
           {template === 'receipt' ? (<div style={{ width: '80mm' }}><ReceiptTemplate transaction={transaction} companyInfo={companyInfo} /></div>) : (<InvoiceTemplate transaction={transaction} companyInfo={companyInfo} />)}
         </div>
-        <DialogFooter className="p-4 border-t bg-muted/40 no-print">
-          <Button variant="outline" onClick={() => onOpenChange(false)}><X className="mr-2 h-4 w-4" /> Tutup</Button>
+        <DialogFooter className="p-4 border-t bg-muted/40 no-print flex-wrap gap-2">
           <Button variant="outline" onClick={handlePdfDownload}><FileDown className="mr-2 h-4 w-4" /> Simpan PDF</Button>
-          <Button variant="outline" onClick={handleDotMatrixPrint}><Printer className="mr-2 h-4 w-4" /> Cetak Dot Matrix</Button>
-          <Button onClick={handleRawbtPrint}><Printer className="mr-2 h-4 w-4" /> Cetak Rawbt Thermal</Button>
+          <Button variant="outline" onClick={handleDotMatrixPrint}><Printer className="mr-2 h-4 w-4" /> Dot Matrix</Button>
+          <Button onClick={handleRawbtPrint} className="bg-blue-600 hover:bg-blue-700"><Printer className="mr-2 h-4 w-4" /> RawBT</Button>
+          <Button variant="secondary" onClick={handleClose}><X className="mr-2 h-4 w-4" /> Selesai</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

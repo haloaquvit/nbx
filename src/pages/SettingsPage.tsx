@@ -11,16 +11,17 @@ import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { VPSServerSettings } from '@/components/VPSServerSettings'
-import { ResetDatabaseDialog } from '@/components/ResetDatabaseDialog'
 import { isOwner } from '@/utils/roleUtils'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import BranchManagementPage from './BranchManagementPage'
+import { INDONESIA_TIMEZONES } from '@/utils/officeTime'
 
 export default function SettingsPage() {
   const { settings, isLoading, updateSettings } = useCompanySettings();
   const { toast } = useToast();
   const { user } = useAuth();
-  const [localInfo, setLocalInfo] = useState({ name: '', address: '', phone: '', logo: '', latitude: null as number | null, longitude: null as number | null, attendanceRadius: 50 as number | null });
+  const [localInfo, setLocalInfo] = useState({ name: '', address: '', phone: '', logo: '', latitude: null as number | null, longitude: null as number | null, attendanceRadius: 50 as number | null, timezone: 'Asia/Jakarta' });
 
   useEffect(() => {
     if (settings) {
@@ -32,6 +33,7 @@ export default function SettingsPage() {
         latitude: settings.latitude || null,
         longitude: settings.longitude || null,
         attendanceRadius: settings.attendanceRadius || 50,
+        timezone: settings.timezone || 'Asia/Jakarta',
       });
     }
   }, [settings]);
@@ -130,6 +132,22 @@ export default function SettingsPage() {
                 <Label htmlFor="phone">Nomor Telepon / Kontak</Label>
                 <Input id="phone" value={localInfo.phone} onChange={handleInputChange} placeholder="Contoh: 0812-3456-7890" />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="timezone">Zona Waktu</Label>
+                <Select value={localInfo.timezone} onValueChange={(value) => setLocalInfo(prev => ({ ...prev, timezone: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih zona waktu" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INDONESIA_TIMEZONES.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label} ({tz.offset})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Waktu pada sistem akan mengikuti zona waktu ini</p>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>Logo Perusahaan</Label>
@@ -186,28 +204,6 @@ export default function SettingsPage() {
         </CardContent>
             </Card>
           </form>
-          
-          {/* Reset Database Section - Only for Owner */}
-          {isOwner(user) && (
-            <Card className="border-red-200">
-              <CardHeader>
-                <CardTitle className="text-red-600">Reset Database</CardTitle>
-                <CardDescription>
-                  Hapus semua data transaksi dan master data. Data karyawan dan login tidak akan terhapus.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col space-y-4">
-                  <div className="text-sm text-muted-foreground">
-                    Gunakan fitur ini dengan hati-hati. Semua data bisnis akan dihapus secara permanen.
-                  </div>
-                  <div className="flex justify-start">
-                    <ResetDatabaseDialog />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         <TabsContent value="branches" className="space-y-6">

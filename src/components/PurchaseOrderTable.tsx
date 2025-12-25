@@ -17,7 +17,8 @@ import { isAdminOrOwner, isOwner } from '@/utils/roleUtils'
 import { PurchaseOrderPDF } from "./PurchaseOrderPDF"
 import { ReceivePODialog } from "./ReceivePODialog"
 import { EditPurchaseOrderDialog } from "./EditPurchaseOrderDialog"
-import { Trash2, Pencil } from "lucide-react"
+import { Trash2, Pencil, Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +54,27 @@ export function PurchaseOrderTable() {
   const [isReceiveDialogOpen, setIsReceiveDialogOpen] = React.useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [selectedPo, setSelectedPo] = React.useState<PurchaseOrder | null>(null);
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const [ppnFilter, setPpnFilter] = React.useState<'all' | 'with_ppn' | 'without_ppn'>('all');
+
+  // Filter purchase orders
+  const filteredPurchaseOrders = React.useMemo(() => {
+    return (purchaseOrders || []).filter(po => {
+      // Search filter
+      const matchesSearch = searchTerm === '' ||
+        po.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        po.supplierName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        po.requestedBy?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        po.expedition?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      // PPN filter
+      const matchesPpn = ppnFilter === 'all' ||
+        (ppnFilter === 'with_ppn' && po.includePpn) ||
+        (ppnFilter === 'without_ppn' && !po.includePpn);
+
+      return matchesSearch && matchesPpn;
+    });
+  }, [purchaseOrders, searchTerm, ppnFilter]);
 
   const handleStatusChange = (po: PurchaseOrder, newStatus: PurchaseOrderStatus) => {
     updatePoStatus.mutate({ poId: po.id, status: newStatus }, {
@@ -206,7 +228,7 @@ export function PurchaseOrderTable() {
   ]
 
   const table = useReactTable({
-    data: purchaseOrders || [],
+    data: filteredPurchaseOrders,
     columns,
     getCoreRowModel: getCoreRowModel(),
   })
@@ -215,6 +237,30 @@ export function PurchaseOrderTable() {
     <>
       <ReceivePODialog open={isReceiveDialogOpen} onOpenChange={setIsReceiveDialogOpen} purchaseOrder={selectedPo} />
       <EditPurchaseOrderDialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen} purchaseOrder={selectedPo} />
+
+      {/* Search and Filter */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Cari No. PO, supplier, pemohon, ekspedisi..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <Select value={ppnFilter} onValueChange={(v) => setPpnFilter(v as 'all' | 'with_ppn' | 'without_ppn')}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Filter PPN" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Semua</SelectItem>
+            <SelectItem value="with_ppn">Dengan PPN</SelectItem>
+            <SelectItem value="without_ppn">Tanpa PPN</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="rounded-md border">
         <Table>
           <TableHeader>{table.getHeaderGroups().map(hg => <TableRow key={hg.id}>{hg.headers.map(h => <TableHead key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</TableHead>)}</TableRow>)}</TableHeader>

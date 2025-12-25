@@ -40,6 +40,8 @@ import {
   Sparkles,
   HandHeart,
   Building2,
+  Server,
+  MapPin,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -84,6 +86,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/materials", label: "Bahan & Stok", icon: Box, permission: PERMISSIONS.MATERIALS },
       { href: "/production", label: "Produksi", icon: Factory, permission: PERMISSIONS.PRODUCTS },
       { href: "/customers", label: "Pelanggan", icon: Users, permission: PERMISSIONS.CUSTOMERS },
+      { href: "/customer-map", label: "Peta Pelanggan", icon: MapPin, permission: PERMISSIONS.CUSTOMERS },
       { href: "/employees", label: "Karyawan", icon: IdCard, permission: PERMISSIONS.EMPLOYEES },
       { href: "/suppliers", label: "Supplier", icon: Building, permission: PERMISSIONS.MATERIALS },
       { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList, permission: PERMISSIONS.MATERIALS },
@@ -99,7 +102,6 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/accounts-payable", label: "Hutang", icon: DollarSign, permission: PERMISSIONS.FINANCIAL },
       { href: "/expenses", label: "Pengeluaran", icon: FileText, permission: PERMISSIONS.FINANCIAL },
       { href: "/advances", label: "Panjar Karyawan", icon: HandCoins, permission: PERMISSIONS.FINANCIAL },
-      { href: "/commission-manage", label: "Pengaturan Komisi", icon: Calculator, permission: PERMISSIONS.FINANCIAL },
       { href: "/financial-reports", label: "Laporan Keuangan", icon: PieChart, permission: PERMISSIONS.FINANCIAL },
     ].filter(item => hasPermission(item.permission)),
   },
@@ -127,7 +129,12 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/settings", label: "Pengaturan", icon: Settings, permission: PERMISSIONS.SETTINGS },
       { href: "/roles", label: "Manajemen Roles", icon: Shield, permission: PERMISSIONS.ROLES },
       { href: "/branches", label: "Manajemen Cabang", icon: Building2, permission: PERMISSIONS.SETTINGS },
-    ].filter(item => hasPermission(item.permission)),
+      { href: "/web-management", label: "Web Management", icon: Server, permission: PERMISSIONS.SETTINGS, roles: ['owner'] },
+    ].filter(item => {
+      if (!hasPermission(item.permission)) return false;
+      if (item.roles && userRole && !item.roles.includes(userRole.toLowerCase())) return false;
+      return true;
+    }),
   },
 ].filter(section => section.items.length > 0);
 

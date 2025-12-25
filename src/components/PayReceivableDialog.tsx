@@ -113,6 +113,7 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
           customerName: transaction.customerName || 'Customer',
           invoiceNumber: transaction.id,
           branchId: currentBranch.id,
+          paymentAccountId: data.paymentAccountId, // Use selected account
         });
 
         if (journalResult.success) {

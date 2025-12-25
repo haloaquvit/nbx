@@ -106,21 +106,19 @@ export const useAccounts = () => {
 
       // Get all journal_entry_lines for current branch to calculate per-branch balance
       // Only include POSTED journals that are NOT voided
+      // Note: PostgREST doesn't support !inner syntax, so we filter on client side
       const { data: journalLines, error: journalError } = await supabase
         .from('journal_entry_lines')
         .select(`
           account_id,
           debit_amount,
           credit_amount,
-          journal_entries!inner (
+          journal_entries (
             branch_id,
             status,
             is_voided
           )
-        `)
-        .eq('journal_entries.branch_id', currentBranch.id)
-        .eq('journal_entries.status', 'posted')
-        .eq('journal_entries.is_voided', false);
+        `);
 
       if (journalError) {
         console.warn('Error fetching journal_entry_lines for balance calculation:', journalError.message);
@@ -151,7 +149,16 @@ export const useAccounts = () => {
         accountTypes.set(acc.id, acc.type);
       });
 
-      (journalLines || []).forEach((line: any) => {
+      // Filter journal lines on client side (PostgREST doesn't support !inner)
+      const filteredJournalLines = (journalLines || []).filter((line: any) => {
+        const journal = line.journal_entries;
+        if (!journal) return false;
+        return journal.branch_id === currentBranch.id &&
+               journal.status === 'posted' &&
+               journal.is_voided === false;
+      });
+
+      filteredJournalLines.forEach((line: any) => {
         if (!line.account_id) return;
 
         const currentBalance = accountBalanceMap.get(line.account_id) || 0;
@@ -207,12 +214,15 @@ export const useAccounts = () => {
       if (!dbData.branch_id && currentBranch?.id) {
         dbData.branch_id = currentBranch.id;
       }
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('accounts')
         .insert({ ...dbData, id: `acc-${Date.now()}` })
         .select()
-        .single();
+        .limit(1);
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to create account');
       return fromDbToApp(data);
     },
     onSuccess: () => {
@@ -222,8 +232,11 @@ export const useAccounts = () => {
 
   const updateAccountBalance = useMutation({
     mutationFn: async ({ accountId, amount }: { accountId: string, amount: number }) => {
-      const { data: currentAccount, error: fetchError } = await supabase.from('accounts').select('balance').eq('id', accountId).single();
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: currentAccountRaw, error: fetchError } = await supabase.from('accounts').select('balance').eq('id', accountId).limit(1);
       if (fetchError) throw fetchError;
+      const currentAccount = Array.isArray(currentAccountRaw) ? currentAccountRaw[0] : currentAccountRaw;
+      if (!currentAccount) throw new Error('Account not found');
 
       // Ensure both values are numbers to prevent string concatenation
       const currentBalance = Number(currentAccount.balance) || 0;
@@ -238,8 +251,11 @@ export const useAccounts = () => {
         amountType: typeof amountToAdd
       });
 
-      const { data, error: updateError } = await supabase.from('accounts').update({ balance: newBalance }).eq('id', accountId).select().single();
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: updateDataRaw, error: updateError } = await supabase.from('accounts').update({ balance: newBalance }).eq('id', accountId).select().limit(1);
       if (updateError) throw updateError;
+      const data = Array.isArray(updateDataRaw) ? updateDataRaw[0] : updateDataRaw;
+      if (!data) throw new Error('Failed to update account balance');
       return fromDbToApp(data);
     },
     onSuccess: () => {
@@ -250,8 +266,11 @@ export const useAccounts = () => {
   const updateAccount = useMutation({
     mutationFn: async ({ accountId, newData }: { accountId: string, newData: Partial<Account> }) => {
       const dbData = fromAppToDb(newData);
-      const { data, error } = await supabase.from('accounts').update(dbData).eq('id', accountId).select().single();
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase.from('accounts').update(dbData).eq('id', accountId).select().limit(1);
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to update account');
       return fromDbToApp(data);
     },
     onSuccess: () => {
@@ -264,30 +283,36 @@ export const useAccounts = () => {
   const updateInitialBalance = useMutation({
     mutationFn: async ({ accountId, initialBalance }: { accountId: string, initialBalance: number }) => {
       // Get current balance and calculate the difference
-      const { data: currentAccount, error: fetchError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: currentAccountRaw, error: fetchError } = await supabase
         .from('accounts')
         .select('balance, initial_balance')
         .eq('id', accountId)
-        .single();
-      
+        .limit(1);
+
       if (fetchError) throw fetchError;
+      const currentAccount = Array.isArray(currentAccountRaw) ? currentAccountRaw[0] : currentAccountRaw;
+      if (!currentAccount) throw new Error('Account not found');
 
       // Calculate how much the balance should change
       const balanceDifference = initialBalance - (currentAccount.initial_balance || 0);
       const newBalance = currentAccount.balance + balanceDifference;
 
       // Update both initial_balance and balance
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('accounts')
-        .update({ 
+        .update({
           initial_balance: initialBalance,
-          balance: newBalance 
+          balance: newBalance
         })
         .eq('id', accountId)
         .select()
-        .single();
-        
+        .limit(1);
+
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to update initial balance');
       return fromDbToApp(data);
     },
     onSuccess: () => {
@@ -328,10 +353,10 @@ export const useAccounts = () => {
   });
 
   const moveAccount = useMutation({
-    mutationFn: async ({ accountId, newParentId, newSortOrder }: { 
-      accountId: string, 
-      newParentId?: string, 
-      newSortOrder?: number 
+    mutationFn: async ({ accountId, newParentId, newSortOrder }: {
+      accountId: string,
+      newParentId?: string,
+      newSortOrder?: number
     }) => {
       const updateData: any = {};
       if (newParentId !== undefined) {
@@ -341,13 +366,16 @@ export const useAccounts = () => {
         updateData.sort_order = newSortOrder;
       }
 
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('accounts')
         .update(updateData)
         .eq('id', accountId)
         .select()
-        .single();
+        .limit(1);
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to move account');
       return fromDbToApp(data);
     },
     onSuccess: () => {
@@ -445,13 +473,15 @@ export const useAccounts = () => {
   const getAccountBalance = useMutation({
     mutationFn: async (accountId: string, includeChildren = false) => {
       if (!includeChildren) {
-        const { data, error } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: dataRaw, error } = await supabase
           .from('accounts')
           .select('balance')
           .eq('id', accountId)
-          .single();
+          .limit(1);
         if (error) throw error;
-        return Number(data.balance) || 0;
+        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+        return Number(data?.balance) || 0;
       }
 
       // Use the database function for hierarchical balance calculation

@@ -193,33 +193,49 @@ export function MobileCustomerView({ onEditCustomer, onAddCustomer }: MobileCust
                     </div>
                   </div>
 
-                  {/* Location & Photo Actions */}
-                  {(customer.latitude && customer.longitude) || customer.store_photo_url ? (
-                    <div className="flex gap-2 pt-2">
-                      {customer.latitude && customer.longitude && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleViewLocation(customer.latitude!, customer.longitude!)}
-                          className="flex-1 text-xs bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
-                        >
-                          <ExternalLink className="h-3 w-3 mr-1" />
-                          Lihat Lokasi
-                        </Button>
-                      )}
-                      {customer.store_photo_url && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleViewPhoto(customer.store_photo_url!)}
-                          className="flex-1 text-xs bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
-                        >
-                          <Camera className="h-3 w-3 mr-1" />
-                          Lihat Foto
-                        </Button>
-                      )}
+                  {/* Photo Preview */}
+                  {customer.store_photo_url && (
+                    <div
+                      className="relative w-full h-40 bg-gray-100 rounded-lg overflow-hidden cursor-pointer group"
+                      onClick={() => handleViewPhoto(customer.store_photo_url!)}
+                    >
+                      <img
+                        src={PhotoUploadService.getPhotoUrl(customer.store_photo_url, 'Customers_Images')}
+                        alt={`Foto ${customer.name}`}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        onError={(e) => {
+                          // Hide image on error and show placeholder
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          const placeholder = (e.target as HTMLImageElement).nextElementSibling;
+                          if (placeholder) (placeholder as HTMLElement).style.display = 'flex';
+                        }}
+                      />
+                      <div className="hidden flex-col items-center justify-center w-full h-full text-gray-400">
+                        <Camera className="h-8 w-8 mb-2" />
+                        <span className="text-sm">Foto tidak tersedia</span>
+                      </div>
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
+                        <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
+                          Tap untuk perbesar
+                        </span>
+                      </div>
                     </div>
-                  ) : null}
+                  )}
+
+                  {/* Location Action */}
+                  {customer.latitude && customer.longitude && (
+                    <div className="pt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewLocation(customer.latitude!, customer.longitude!)}
+                        className="w-full text-xs bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+                      >
+                        <ExternalLink className="h-3 w-3 mr-1" />
+                        Lihat Lokasi
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Action Buttons */}
                   <div className="flex gap-2 pt-3 border-t border-gray-100">

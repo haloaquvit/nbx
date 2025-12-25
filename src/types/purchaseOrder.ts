@@ -45,7 +45,9 @@ export interface PurchaseOrder {
   // Financial
   totalCost?: number;
   includePpn?: boolean;
+  ppnMode?: 'include' | 'exclude'; // PPN Include = harga sudah termasuk PPN, Exclude = PPN ditambahkan
   ppnAmount?: number;
+  subtotal?: number; // Subtotal sebelum PPN
   paymentAccountId?: string;
 
   // Additional info

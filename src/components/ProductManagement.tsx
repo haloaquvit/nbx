@@ -43,6 +43,7 @@ const EMPTY_FORM_DATA: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
   basePrice: 0,
   costPrice: 0, // Harga pokok untuk produk Jual Langsung
   unit: 'pcs',
+  initialStock: 0, // Stock awal untuk balancing
   currentStock: 0, // Keep for UI, but won't be saved to DB
   minStock: 1, // Keep for UI, but won't be saved to DB
   minOrder: 1,
@@ -91,6 +92,7 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
       basePrice: product.basePrice,
       costPrice: product.costPrice || 0,
       unit: product.unit || 'pcs',
+      initialStock: product.initialStock || 0,
       currentStock: product.currentStock || 0,
       minStock: product.minStock || 1,
       minOrder: product.minOrder,
@@ -282,20 +284,38 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                 <NumberInput id="costPrice" value={formData.costPrice || 0} onChange={(value) => setFormData({...formData, costPrice: value || 0})} min={0} decimalPlaces={2} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="currentStock" className="flex items-center gap-2">
-                  {editingProduct ? 'Stok Saat Ini' : 'Stok Awal'}
-                  <span className="text-xs text-amber-600 font-normal">(Unit)</span>
+                <Label htmlFor="initialStock" className="flex items-center gap-2">
+                  Stok Awal
+                  <span className="text-xs text-amber-600 font-normal">(Balancing)</span>
                 </Label>
-                <NumberInput id="currentStock" value={formData.currentStock || 0} onChange={(value) => setFormData({...formData, currentStock: value || 0})} min={0} decimalPlaces={0} />
+                <NumberInput id="initialStock" value={formData.initialStock || 0} onChange={(value) => setFormData({...formData, initialStock: value || 0})} min={0} decimalPlaces={0} />
               </div>
               <div className="lg:col-span-2 flex items-end">
                 <p className="text-sm text-amber-700">
-                  Harga pokok untuk HPP. Stok akan berkurang saat penjualan dan bertambah saat PO diterima.
+                  Harga pokok untuk HPP. Stok saat ini dihitung otomatis dari stok awal + PO - penjualan.
                 </p>
               </div>
             </div>
           )}
-          
+
+          {/* Stok untuk Produksi */}
+          {formData.type === 'Produksi' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="space-y-2">
+                <Label htmlFor="initialStock" className="flex items-center gap-2">
+                  Stok Awal
+                  <span className="text-xs text-blue-600 font-normal">(Balancing)</span>
+                </Label>
+                <NumberInput id="initialStock" value={formData.initialStock || 0} onChange={(value) => setFormData({...formData, initialStock: value || 0})} min={0} decimalPlaces={0} />
+              </div>
+              <div className="lg:col-span-2 flex items-end">
+                <p className="text-sm text-blue-700">
+                  Stok saat ini dihitung otomatis dari stok awal + produksi - penjualan.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* <div className="space-y-2">
               <Label htmlFor="minStock">Stock Minimal</Label>
@@ -427,11 +447,11 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
               </div>
               
               <Table>
-                <TableHeader><TableRow><TableHead>Nama Produk</TableHead><TableHead>Jenis</TableHead><TableHead>Satuan</TableHead><TableHead>Harga</TableHead><TableHead>Stok</TableHead><TableHead>BOM</TableHead>{canManageProducts && <TableHead>Edit</TableHead>}{canManageProducts && <TableHead>Aksi</TableHead>}</TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Nama Produk</TableHead><TableHead>Jenis</TableHead><TableHead>Satuan</TableHead><TableHead>Harga</TableHead><TableHead>Stok Awal</TableHead><TableHead>Stok</TableHead><TableHead>BOM</TableHead>{canManageProducts && <TableHead>Edit</TableHead>}{canManageProducts && <TableHead>Aksi</TableHead>}</TableRow></TableHeader>
                 <TableBody>
                   {isLoading ? (
                     Array.from({ length: 3 }).map((_, i) => (
-                      <TableRow key={i}><TableCell colSpan={canManageProducts ? 8 : 6}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
+                      <TableRow key={i}><TableCell colSpan={canManageProducts ? 9 : 7}><Skeleton className="h-6 w-full" /></TableCell></TableRow>
                     ))
                   ) : filteredProducts?.map((product) => (
                     <TableRow key={product.id} onClick={() => handleRowClick(product)} className="cursor-pointer hover:bg-muted">
@@ -443,6 +463,11 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                       </TableCell>
                       <TableCell>{product.unit}</TableCell>
                       <TableCell>Rp {product.basePrice.toLocaleString('id-ID')}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {product.initialStock || 0}
+                        </Badge>
+                      </TableCell>
                       <TableCell>
                         <Badge variant={product.currentStock <= 0 ? "destructive" : "secondary"}>
                           {product.currentStock}

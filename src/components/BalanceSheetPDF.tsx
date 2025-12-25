@@ -1,40 +1,44 @@
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { BalanceSheetData, formatCurrency } from '@/utils/financialStatementsUtils';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale/id';
 
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-    lastAutoTable: { finalY: number };
-  }
+export interface PrinterInfo {
+  name: string;
+  position?: string;
 }
 
-export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: string = 'PT AQUVIT MANUFACTURE', asOfDate: Date) => {
+export const generateBalanceSheetPDF = (
+  data: BalanceSheetData,
+  companyName: string = 'PT AQUVIT MANUFACTURE',
+  asOfDate: Date,
+  printerInfo?: PrinterInfo
+) => {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
-  let yPos = 10;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let yPos = 12;
 
-  // Header - Compact
-  doc.setFontSize(12);
+  // Header
+  doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
   doc.text(companyName, pageWidth / 2, yPos, { align: 'center' });
 
-  yPos += 5;
-  doc.setFontSize(11);
+  yPos += 6;
+  doc.setFontSize(12);
   doc.text('NERACA (Balance Sheet)', pageWidth / 2, yPos, { align: 'center' });
 
-  yPos += 4;
-  doc.setFontSize(9);
+  yPos += 5;
+  doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.text(`Per ${format(asOfDate, 'd MMMM yyyy', { locale: id })}`, pageWidth / 2, yPos, { align: 'center' });
 
-  yPos += 3;
-  doc.setFontSize(8);
+  yPos += 4;
+  doc.setFontSize(9);
   doc.text('(Disajikan dalam Rupiah)', pageWidth / 2, yPos, { align: 'center' });
 
-  yPos += 6;
+  yPos += 8;
 
   // Two columns layout
   const colWidth = (pageWidth - 28) / 2;
@@ -42,29 +46,30 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
   const rightX = leftX + colWidth + 4;
 
   // ========== LEFT COLUMN: ASET ==========
-  doc.setFontSize(10);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.text('ASET', leftX, yPos);
-  yPos += 4;
+  yPos += 5;
 
   // Aset Lancar
-  const currentAssetsData = [
+  const currentAssetsData: any[] = [
     ['Aset Lancar', '', { isHeader: true }],
     ...data.assets.currentAssets.kasBank.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.assets.currentAssets.piutangUsaha.map(item => [`  ${item.accountName}`, item.formattedBalance]),
+    ...(data.assets.currentAssets.piutangPajak || []).map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.assets.currentAssets.persediaan.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.assets.currentAssets.panjarKaryawan.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ['Total Aset Lancar', formatCurrency(data.assets.currentAssets.totalCurrentAssets), { isBold: true }],
   ];
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: yPos,
     head: [],
     body: currentAssetsData.map(row => [row[0], row[1]]),
     theme: 'plain',
     styles: {
-      fontSize: 7.5,
-      cellPadding: 0.5
+      fontSize: 8,
+      cellPadding: 0.8
     },
     columnStyles: {
       0: { cellWidth: colWidth * 0.65 },
@@ -75,7 +80,7 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
       if (rowData && rowData[2]) {
         if (rowData[2].isHeader) {
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fontSize = 8;
+          hookData.cell.styles.fontSize = 9;
         }
         if (rowData[2].isBold) {
           hookData.cell.styles.fontStyle = 'bold';
@@ -86,24 +91,24 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
     margin: { left: leftX, right: pageWidth - leftX - colWidth }
   });
 
-  let leftYPos = doc.lastAutoTable.finalY + 2;
+  let leftYPos = (doc as any).lastAutoTable.finalY + 3;
 
   // Aset Tetap
-  const fixedAssetsData = [
+  const fixedAssetsData: any[] = [
     ['Aset Tetap', '', { isHeader: true }],
     ...data.assets.fixedAssets.peralatan.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.assets.fixedAssets.akumulasiPenyusutan.map(item => [`  (${item.accountName})`, `(${item.formattedBalance})`]),
     ['Total Aset Tetap', formatCurrency(data.assets.fixedAssets.totalFixedAssets), { isBold: true }],
   ];
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: leftYPos,
     head: [],
     body: fixedAssetsData.map(row => [row[0], row[1]]),
     theme: 'plain',
     styles: {
-      fontSize: 7.5,
-      cellPadding: 0.5
+      fontSize: 8,
+      cellPadding: 0.8
     },
     columnStyles: {
       0: { cellWidth: colWidth * 0.65 },
@@ -114,7 +119,7 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
       if (rowData && rowData[2]) {
         if (rowData[2].isHeader) {
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fontSize = 8;
+          hookData.cell.styles.fontSize = 9;
         }
         if (rowData[2].isBold) {
           hookData.cell.styles.fontStyle = 'bold';
@@ -125,16 +130,16 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
     margin: { left: leftX, right: pageWidth - leftX - colWidth }
   });
 
-  leftYPos = doc.lastAutoTable.finalY + 2;
+  leftYPos = (doc as any).lastAutoTable.finalY + 3;
 
   // Total Aset
-  doc.autoTable({
+  autoTable(doc, {
     startY: leftYPos,
     body: [['TOTAL ASET', formatCurrency(data.assets.totalAssets)]],
     theme: 'plain',
     styles: {
-      fontSize: 9,
-      cellPadding: 1,
+      fontSize: 10,
+      cellPadding: 1.5,
       fontStyle: 'bold',
       fillColor: [200, 220, 255]
     },
@@ -145,16 +150,18 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
     margin: { left: leftX, right: pageWidth - leftX - colWidth }
   });
 
+  const leftFinalY = (doc as any).lastAutoTable.finalY;
+
   // ========== RIGHT COLUMN: KEWAJIBAN & EKUITAS ==========
   let rightYPos = yPos;
 
-  doc.setFontSize(10);
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.text('KEWAJIBAN & EKUITAS', rightX, rightYPos);
-  rightYPos += 4;
+  rightYPos += 5;
 
   // Kewajiban Lancar
-  const liabilitiesData = [
+  const liabilitiesData: any[] = [
     ['Kewajiban Lancar', '', { isHeader: true }],
     ...data.liabilities.currentLiabilities.hutangUsaha.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.liabilities.currentLiabilities.hutangGaji.map(item => [`  ${item.accountName}`, item.formattedBalance]),
@@ -162,14 +169,14 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
     ['Total Kewajiban', formatCurrency(data.liabilities.totalLiabilities), { isBold: true }],
   ];
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: rightYPos,
     head: [],
     body: liabilitiesData.map(row => [row[0], row[1]]),
     theme: 'plain',
     styles: {
-      fontSize: 7.5,
-      cellPadding: 0.5
+      fontSize: 8,
+      cellPadding: 0.8
     },
     columnStyles: {
       0: { cellWidth: colWidth * 0.65 },
@@ -180,7 +187,7 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
       if (rowData && rowData[2]) {
         if (rowData[2].isHeader) {
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fontSize = 8;
+          hookData.cell.styles.fontSize = 9;
         }
         if (rowData[2].isBold) {
           hookData.cell.styles.fontStyle = 'bold';
@@ -191,24 +198,24 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
     margin: { left: rightX }
   });
 
-  rightYPos = doc.lastAutoTable.finalY + 2;
+  rightYPos = (doc as any).lastAutoTable.finalY + 3;
 
   // Ekuitas
-  const equityData = [
+  const equityData: any[] = [
     ['Ekuitas', '', { isHeader: true }],
     ...data.equity.modalPemilik.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ['  Laba Rugi Ditahan', formatCurrency(data.equity.labaRugiDitahan)],
     ['Total Ekuitas', formatCurrency(data.equity.totalEquity), { isBold: true }],
   ];
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: rightYPos,
     head: [],
     body: equityData.map(row => [row[0], row[1]]),
     theme: 'plain',
     styles: {
-      fontSize: 7.5,
-      cellPadding: 0.5
+      fontSize: 8,
+      cellPadding: 0.8
     },
     columnStyles: {
       0: { cellWidth: colWidth * 0.65 },
@@ -219,7 +226,7 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
       if (rowData && rowData[2]) {
         if (rowData[2].isHeader) {
           hookData.cell.styles.fontStyle = 'bold';
-          hookData.cell.styles.fontSize = 8;
+          hookData.cell.styles.fontSize = 9;
         }
         if (rowData[2].isBold) {
           hookData.cell.styles.fontStyle = 'bold';
@@ -230,16 +237,16 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
     margin: { left: rightX }
   });
 
-  rightYPos = doc.lastAutoTable.finalY + 2;
+  rightYPos = (doc as any).lastAutoTable.finalY + 3;
 
   // Total Kewajiban & Ekuitas
-  doc.autoTable({
+  autoTable(doc, {
     startY: rightYPos,
     body: [['TOTAL KEWAJIBAN & EKUITAS', formatCurrency(data.totalLiabilitiesEquity)]],
     theme: 'plain',
     styles: {
-      fontSize: 9,
-      cellPadding: 1,
+      fontSize: 10,
+      cellPadding: 1.5,
       fontStyle: 'bold',
       fillColor: [255, 220, 200]
     },
@@ -251,33 +258,73 @@ export const generateBalanceSheetPDF = (data: BalanceSheetData, companyName: str
   });
 
   // Balance Status
-  const finalY = Math.max(doc.lastAutoTable.finalY, leftYPos) + 4;
-  doc.setFontSize(8);
+  let yPosBottom = Math.max((doc as any).lastAutoTable.finalY, leftFinalY) + 6;
+  doc.setFontSize(10);
   doc.setFont('helvetica', data.isBalanced ? 'bold' : 'normal');
   doc.setTextColor(data.isBalanced ? 0 : 255, data.isBalanced ? 150 : 0, 0);
   doc.text(
     data.isBalanced ? '✓ Neraca Seimbang' : '✗ Neraca Tidak Seimbang',
     pageWidth / 2,
-    finalY,
+    yPosBottom,
     { align: 'center' }
   );
 
-  // Footer
+  // Signature Section - positioned at bottom of page
+  const signatureY = pageHeight - 55;
+  const signatureWidth = 50;
+  const startX = 20;
+  const gap = (pageWidth - 40 - signatureWidth * 3) / 2;
+
   doc.setTextColor(0, 0, 0);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+
+  // Get printer name
+  const printerName = printerInfo?.name || '(_________________)';
+
+  // Dibuat oleh - with printer name auto-filled
+  doc.text('Dibuat oleh,', startX, signatureY);
+  doc.line(startX, signatureY + 20, startX + signatureWidth, signatureY + 20);
+  doc.setFont('helvetica', 'bold');
+  doc.text(printerName, startX, signatureY + 26);
+  if (printerInfo?.position) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(printerInfo.position, startX, signatureY + 31);
+  }
+
+  // Disetujui oleh
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Disetujui oleh,', startX + signatureWidth + gap, signatureY);
+  doc.line(startX + signatureWidth + gap, signatureY + 20, startX + signatureWidth * 2 + gap, signatureY + 20);
+  doc.text('(_________________)', startX + signatureWidth + gap, signatureY + 26);
+
+  // Mengetahui
+  doc.text('Mengetahui,', startX + (signatureWidth + gap) * 2, signatureY);
+  doc.line(startX + (signatureWidth + gap) * 2, signatureY + 20, startX + signatureWidth * 3 + gap * 2, signatureY + 20);
+  doc.text('(_________________)', startX + (signatureWidth + gap) * 2, signatureY + 26);
+
+  // Footer
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'italic');
-  doc.setFontSize(7);
   doc.text(
-    `Dibuat pada: ${format(data.generatedAt, 'dd MMM yyyy HH:mm', { locale: id })}`,
+    `Dicetak oleh: ${printerInfo?.name || '-'} | Tanggal cetak: ${format(new Date(), 'dd MMM yyyy HH:mm', { locale: id })}`,
     pageWidth / 2,
-    finalY + 3,
+    pageHeight - 8,
     { align: 'center' }
   );
 
   return doc;
 };
 
-export const downloadBalanceSheetPDF = (data: BalanceSheetData, asOfDate: Date, companyName?: string) => {
-  const doc = generateBalanceSheetPDF(data, companyName, asOfDate);
+export const downloadBalanceSheetPDF = (
+  data: BalanceSheetData,
+  asOfDate: Date,
+  companyName?: string,
+  printerInfo?: PrinterInfo
+) => {
+  const doc = generateBalanceSheetPDF(data, companyName, asOfDate, printerInfo);
   const fileName = `Neraca_${format(asOfDate, 'yyyyMMdd')}.pdf`;
   doc.save(fileName);
 };

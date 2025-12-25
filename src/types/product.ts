@@ -12,6 +12,7 @@ export interface Product {
   basePrice: number;
   costPrice?: number; // Harga pokok/modal untuk produk Jual Langsung
   unit: string; // Satuan produk
+  initialStock: number; // Stock awal untuk balancing
   currentStock: number; // Stock saat ini
   minStock: number; // Stock minimum
   minOrder: number;

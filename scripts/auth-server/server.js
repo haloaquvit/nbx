@@ -20,9 +20,9 @@ const JWT_EXPIRES_IN = '7d';
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
   port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'aquavit_db',
+  database: process.env.DB_NAME || 'aquvit_db',
   user: process.env.DB_USER || 'aquavit',
-  password: process.env.DB_PASSWORD || 'Aquvit2024!',
+  password: process.env.DB_PASSWORD || 'Aquvit2024',
 });
 
 app.use(cors());
@@ -51,9 +51,9 @@ app.post('/auth/v1/token', async (req, res) => {
     }
 
     try {
-      // Get user from profiles table
+      // Get user from profiles table (including password_changed_at for token invalidation)
       const result = await pool.query(
-        'SELECT id, email, full_name, role, password_hash FROM profiles WHERE email = $1',
+        'SELECT id, email, full_name, role, password_hash, password_changed_at FROM profiles WHERE email = $1',
         [email.toLowerCase()]
       );
 
@@ -75,6 +75,9 @@ app.post('/auth/v1/token', async (req, res) => {
         });
       }
 
+      // Get password_changed_at timestamp for token invalidation
+      const pca = user.password_changed_at ? Math.floor(new Date(user.password_changed_at).getTime() / 1000) : 0;
+
       // Generate JWT token with user's actual role for RLS
       const token = jwt.sign(
         {
@@ -83,6 +86,7 @@ app.post('/auth/v1/token', async (req, res) => {
           email: user.email,
           role: user.role, // User's actual role (owner, admin, etc) for RLS
           aud: 'authenticated',
+          pca: pca, // password_changed_at - for token invalidation on password reset
           iat: Math.floor(Date.now() / 1000),
           exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days
         },
@@ -124,9 +128,9 @@ app.post('/auth/v1/token', async (req, res) => {
     try {
       const decoded = jwt.verify(refresh_token, Buffer.from(JWT_SECRET, 'base64'));
 
-      // Get fresh user data
+      // Get fresh user data including password_changed_at
       const result = await pool.query(
-        'SELECT id, email, full_name, role FROM profiles WHERE id = $1',
+        'SELECT id, email, full_name, role, password_changed_at FROM profiles WHERE id = $1',
         [decoded.sub]
       );
 
@@ -139,6 +143,17 @@ app.post('/auth/v1/token', async (req, res) => {
 
       const user = result.rows[0];
 
+      // Check if password was changed after token was issued (token invalidation)
+      const currentPca = user.password_changed_at ? Math.floor(new Date(user.password_changed_at).getTime() / 1000) : 0;
+      const tokenPca = decoded.pca || 0;
+
+      if (currentPca > tokenPca) {
+        return res.status(401).json({
+          error: 'invalid_grant',
+          error_description: 'Password was changed. Please login again.'
+        });
+      }
+
       // Generate new token with user's actual role for RLS
       const token = jwt.sign(
         {
@@ -147,6 +162,7 @@ app.post('/auth/v1/token', async (req, res) => {
           email: user.email,
           role: user.role, // User's actual role (owner, admin, etc) for RLS
           aud: 'authenticated',
+          pca: currentPca, // password_changed_at - for token invalidation
           iat: Math.floor(Date.now() / 1000),
           exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60),
         },
@@ -202,7 +218,7 @@ app.get('/auth/v1/user', async (req, res) => {
     const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
 
     const result = await pool.query(
-      'SELECT id, email, full_name, role, created_at FROM profiles WHERE id = $1',
+      'SELECT id, email, full_name, role, created_at, password_changed_at FROM profiles WHERE id = $1',
       [decoded.sub]
     );
 
@@ -214,6 +230,17 @@ app.get('/auth/v1/user', async (req, res) => {
     }
 
     const user = result.rows[0];
+
+    // Check if password was changed after token was issued (token invalidation)
+    const currentPca = user.password_changed_at ? Math.floor(new Date(user.password_changed_at).getTime() / 1000) : 0;
+    const tokenPca = decoded.pca || 0;
+
+    if (currentPca > tokenPca) {
+      return res.status(401).json({
+        error: 'token_invalidated',
+        error_description: 'Password was changed. Please login again.'
+      });
+    }
 
     return res.json({
       id: user.id,
@@ -314,14 +341,14 @@ app.put('/auth/v1/user', async (req, res) => {
     // Hash new password
     const password_hash = await bcrypt.hash(password, 10);
 
-    // Update password
+    // Update password AND password_changed_at to invalidate all other sessions
     await pool.query(
-      'UPDATE profiles SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      'UPDATE profiles SET password_hash = $1, password_changed_at = NOW(), updated_at = NOW() WHERE id = $2',
       [password_hash, decoded.sub]
     );
 
     return res.json({
-      message: 'Password updated successfully'
+      message: 'Password updated successfully. Please login again with your new password.'
     });
 
   } catch (error) {
@@ -368,9 +395,9 @@ app.post('/auth/v1/admin/users/:id/reset-password', async (req, res) => {
     // Hash new password
     const password_hash = await bcrypt.hash(password, 10);
 
-    // Update user's password
+    // Update user's password AND password_changed_at to invalidate all existing tokens
     const result = await pool.query(
-      'UPDATE profiles SET password_hash = $1, updated_at = NOW() WHERE id = $2 RETURNING id, email, full_name',
+      'UPDATE profiles SET password_hash = $1, password_changed_at = NOW(), updated_at = NOW() WHERE id = $2 RETURNING id, email, full_name',
       [password_hash, id]
     );
 
@@ -379,7 +406,7 @@ app.post('/auth/v1/admin/users/:id/reset-password', async (req, res) => {
     }
 
     return res.json({
-      message: 'Password reset successfully',
+      message: 'Password reset successfully. All existing sessions have been invalidated.',
       user: result.rows[0]
     });
 
@@ -433,9 +460,7 @@ app.post('/auth/v1/admin/users', async (req, res) => {
     );
     const defaultBranchId = branchResult.rows.length > 0 ? branchResult.rows[0].id : null;
 
-    // Insert user - disable audit trigger to avoid auth.uid() issue
-    await pool.query('ALTER TABLE profiles DISABLE TRIGGER audit_profiles_trigger');
-
+    // Insert user directly (audit trigger removed - not needed for this operation)
     const result = await pool.query(
       `INSERT INTO profiles (id, email, password_hash, full_name, role, branch_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
@@ -443,17 +468,11 @@ app.post('/auth/v1/admin/users', async (req, res) => {
       [id, email.toLowerCase(), password_hash, full_name || email, role || 'user', defaultBranchId]
     );
 
-    await pool.query('ALTER TABLE profiles ENABLE TRIGGER audit_profiles_trigger');
-
     return res.status(201).json({
       user: result.rows[0]
     });
 
   } catch (error) {
-    // Re-enable trigger in case of error
-    try {
-      await pool.query('ALTER TABLE profiles ENABLE TRIGGER audit_profiles_trigger');
-    } catch (e) {}
 
     if (error.code === '23505') {
       return res.status(400).json({ error: 'Email already exists' });
@@ -462,6 +481,249 @@ app.post('/auth/v1/admin/users', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+/**
+ * POST /auth/v1/admin/backup
+ * Create full database backup (pg_dump) - Owner only
+ * Returns backup metadata
+ */
+app.post('/auth/v1/admin/backup', async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const token = authHeader.substring(7);
+
+  try {
+    const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
+
+    // Check if user is owner
+    const ownerCheck = await pool.query(
+      'SELECT role FROM profiles WHERE id = $1',
+      [decoded.sub]
+    );
+
+    if (ownerCheck.rows.length === 0 || ownerCheck.rows[0].role !== 'owner') {
+      return res.status(403).json({ error: 'forbidden', error_description: 'Owner access required' });
+    }
+
+    // Execute pg_dump
+    const { execSync } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+
+    const backupDir = '/home/deployer/backups';
+    const dbName = process.env.DB_NAME || 'aquvit_db';
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const backupFile = path.join(backupDir, `${dbName}_full_${timestamp}.sql`);
+
+    // Ensure backup directory exists
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    // Run pg_dump
+    execSync(`sudo -u postgres pg_dump ${dbName} > ${backupFile}`, { encoding: 'utf-8' });
+
+    // Compress the backup
+    execSync(`gzip ${backupFile}`, { encoding: 'utf-8' });
+
+    const compressedFile = `${backupFile}.gz`;
+    const stats = fs.statSync(compressedFile);
+
+    // Clean old backups (older than 7 days)
+    execSync(`find ${backupDir} -name "*.gz" -mtime +7 -delete`, { encoding: 'utf-8' });
+
+    return res.json({
+      success: true,
+      message: 'Backup created successfully',
+      backup: {
+        filename: path.basename(compressedFile),
+        path: compressedFile,
+        size: stats.size,
+        sizeFormatted: formatBytes(stats.size),
+        createdAt: new Date().toISOString(),
+        database: dbName
+      }
+    });
+
+  } catch (error) {
+    console.error('Backup error:', error);
+    return res.status(500).json({
+      error: 'backup_failed',
+      error_description: error.message || 'Failed to create backup'
+    });
+  }
+});
+
+/**
+ * GET /auth/v1/admin/backups
+ * List all available backups - Owner only
+ */
+app.get('/auth/v1/admin/backups', async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const token = authHeader.substring(7);
+
+  try {
+    const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
+
+    // Check if user is owner
+    const ownerCheck = await pool.query(
+      'SELECT role FROM profiles WHERE id = $1',
+      [decoded.sub]
+    );
+
+    if (ownerCheck.rows.length === 0 || ownerCheck.rows[0].role !== 'owner') {
+      return res.status(403).json({ error: 'forbidden', error_description: 'Owner access required' });
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const backupDir = '/home/deployer/backups';
+
+    if (!fs.existsSync(backupDir)) {
+      return res.json({ backups: [] });
+    }
+
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.endsWith('.gz'))
+      .map(filename => {
+        const filePath = path.join(backupDir, filename);
+        const stats = fs.statSync(filePath);
+        return {
+          filename,
+          path: filePath,
+          size: stats.size,
+          sizeFormatted: formatBytes(stats.size),
+          createdAt: stats.mtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return res.json({ backups: files });
+
+  } catch (error) {
+    console.error('List backups error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /auth/v1/admin/backup/download/:filename
+ * Download a specific backup file - Owner only
+ */
+app.get('/auth/v1/admin/backup/download/:filename', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const { filename } = req.params;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const token = authHeader.substring(7);
+
+  try {
+    const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
+
+    // Check if user is owner
+    const ownerCheck = await pool.query(
+      'SELECT role FROM profiles WHERE id = $1',
+      [decoded.sub]
+    );
+
+    if (ownerCheck.rows.length === 0 || ownerCheck.rows[0].role !== 'owner') {
+      return res.status(403).json({ error: 'forbidden', error_description: 'Owner access required' });
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const backupDir = '/home/deployer/backups';
+    const filePath = path.join(backupDir, filename);
+
+    // Security check - prevent path traversal
+    if (!filePath.startsWith(backupDir)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Backup file not found' });
+    }
+
+    res.download(filePath, filename);
+
+  } catch (error) {
+    console.error('Download backup error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * DELETE /auth/v1/admin/backup/:filename
+ * Delete a specific backup file - Owner only
+ */
+app.delete('/auth/v1/admin/backup/:filename', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const { filename } = req.params;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const token = authHeader.substring(7);
+
+  try {
+    const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
+
+    // Check if user is owner
+    const ownerCheck = await pool.query(
+      'SELECT role FROM profiles WHERE id = $1',
+      [decoded.sub]
+    );
+
+    if (ownerCheck.rows.length === 0 || ownerCheck.rows[0].role !== 'owner') {
+      return res.status(403).json({ error: 'forbidden', error_description: 'Owner access required' });
+    }
+
+    const fs = require('fs');
+    const path = require('path');
+    const backupDir = '/home/deployer/backups';
+    const filePath = path.join(backupDir, filename);
+
+    // Security check - prevent path traversal
+    if (!filePath.startsWith(backupDir)) {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Backup file not found' });
+    }
+
+    fs.unlinkSync(filePath);
+
+    return res.json({ success: true, message: 'Backup deleted successfully' });
+
+  } catch (error) {
+    console.error('Delete backup error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Helper function to format bytes
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
 
 // Start server
 app.listen(PORT, () => {

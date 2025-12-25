@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
 import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle, FileText, Trash2 } from "lucide-react"
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
-import { format } from "date-fns"
+import { format, isValid } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
@@ -278,7 +278,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
               Pengantaran - {transaction.customerName}
             </CardTitle>
             <CardDescription>
-              Order #{transaction.id} • {format(transaction.orderDate, "d MMMM yyyy", { locale: idLocale })}
+              Order #{transaction.id} • {transaction.orderDate && isValid(new Date(transaction.orderDate)) ? format(new Date(transaction.orderDate), "d MMMM yyyy", { locale: idLocale }) : '-'}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -533,7 +533,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                             Pengantaran #{delivery.deliveryNumber}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            {format(delivery.deliveryDate, "d MMMM yyyy, HH:mm", { locale: idLocale })}
+                            {delivery.deliveryDate && isValid(new Date(delivery.deliveryDate)) ? format(new Date(delivery.deliveryDate), "d MMMM yyyy, HH:mm", { locale: idLocale }) : '-'}
                             {delivery.driverId && ` • Supir: ${delivery.driverName || delivery.driverId}`}
                             {delivery.helperId && ` • Helper: ${delivery.helperName || delivery.helperId}`}
                           </div>

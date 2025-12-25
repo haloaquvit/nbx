@@ -62,14 +62,14 @@ export const getProductSalesBehavior = (productType: ProductType) => {
         trackStock: true,
         reduceStock: true,
         requiresBOM: true,
-        description: 'Produksi: Mengurangi stok, memerlukan BOM untuk produksi'
+        description: 'Produksi: Stok berkurang saat delivery (atau langsung jika Laku Kantor)'
       };
     case 'Jual Langsung':
       return {
         trackStock: true,
-        reduceStock: false,
+        reduceStock: true,
         requiresBOM: false,
-        description: 'Jual Langsung: Tracking penjualan saja, tidak mengurangi stok'
+        description: 'Jual Langsung: Stok berkurang saat delivery (atau langsung jika Laku Kantor)'
       };
     default:
       return {

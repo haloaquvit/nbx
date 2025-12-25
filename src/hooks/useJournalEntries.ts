@@ -109,11 +109,21 @@ export const useJournalEntries = () => {
       // Fetch lines for each entry
       const entries: JournalEntry[] = [];
       for (const entry of data || []) {
-        const { data: lines } = await supabase
+        const { data: lines, error: linesError } = await supabase
           .from('journal_entry_lines')
           .select('*')
           .eq('journal_entry_id', entry.id)
           .order('line_number');
+
+        if (linesError) {
+          console.error(`[useJournalEntries] Error fetching lines for journal ${entry.id}:`, linesError);
+        }
+
+        if (!lines || lines.length === 0) {
+          console.warn(`[useJournalEntries] No lines found for journal ${entry.id} (${entry.entry_number})`);
+        } else {
+          console.log(`[useJournalEntries] Found ${lines.length} lines for journal ${entry.id}`);
+        }
 
         entries.push(fromDbToApp(entry as DbJournalEntry, (lines || []) as DbJournalEntryLine[]));
       }
@@ -126,12 +136,20 @@ export const useJournalEntries = () => {
 
   // Fetch single journal entry
   const fetchJournalEntry = async (id: string): Promise<JournalEntry | null> => {
-    const { data: entry, error } = await supabase
+    // Guard: pastikan id tidak undefined
+    if (!id) {
+      console.warn('[useJournalEntries] fetchJournalEntry called with undefined id');
+      return null;
+    }
+
+    // Use .limit(1) and handle array response because our client forces Accept: application/json
+    const { data: entryRaw, error } = await supabase
       .from('journal_entries')
       .select('*')
       .eq('id', id)
-      .single();
+      .limit(1);
 
+    const entry = Array.isArray(entryRaw) ? entryRaw[0] : entryRaw;
     if (error || !entry) return null;
 
     const { data: lines } = await supabase
@@ -162,7 +180,8 @@ export const useJournalEntries = () => {
       const entryNumber = await generateJournalNumber();
 
       // Insert header
-      const { data: entry, error: headerError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: entryRaw, error: headerError } = await supabase
         .from('journal_entries')
         .insert({
           entry_number: entryNumber,
@@ -178,9 +197,11 @@ export const useJournalEntries = () => {
           branch_id: currentBranch?.id
         })
         .select()
-        .single();
+        .limit(1);
 
       if (headerError) throw headerError;
+      const entry = Array.isArray(entryRaw) ? entryRaw[0] : entryRaw;
+      if (!entry) throw new Error('Failed to create journal entry');
 
       // Insert lines
       const linesToInsert = formData.lines.map((line, index) => ({
@@ -221,7 +242,13 @@ export const useJournalEntries = () => {
   // Post journal entry (change status to posted)
   const postMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { data, error } = await supabase
+      // Guard: pastikan id tidak undefined
+      if (!id) {
+        throw new Error('Journal entry ID is required for posting');
+      }
+
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('journal_entries')
         .update({
           status: 'posted',
@@ -232,9 +259,11 @@ export const useJournalEntries = () => {
         .eq('id', id)
         .eq('status', 'draft')
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to post journal entry');
       return data;
     },
     onSuccess: () => {
@@ -257,7 +286,13 @@ export const useJournalEntries = () => {
   // Void journal entry
   const voidMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      const { data, error } = await supabase
+      // Guard: pastikan id tidak undefined
+      if (!id) {
+        throw new Error('Journal entry ID is required for voiding');
+      }
+
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('journal_entries')
         .update({
           is_voided: true,
@@ -268,9 +303,11 @@ export const useJournalEntries = () => {
         })
         .eq('id', id)
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to void journal entry');
       return data;
     },
     onSuccess: () => {
@@ -293,6 +330,11 @@ export const useJournalEntries = () => {
   // Delete draft journal entry
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      // Guard: pastikan id tidak undefined
+      if (!id) {
+        throw new Error('Journal entry ID is required for deletion');
+      }
+
       // Only allow deleting draft entries
       const { error } = await supabase
         .from('journal_entries')

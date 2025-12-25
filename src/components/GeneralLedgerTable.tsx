@@ -125,8 +125,9 @@ export function GeneralLedgerTable() {
       // ============================================================================
       // QUERY JOURNAL_ENTRY_LINES WITH JOURNAL INFO
       // Only fetch posted, non-voided journals for the current branch
+      // Note: PostgREST doesn't support !inner syntax, so we filter on client side
       // ============================================================================
-      let query = supabase
+      const { data: rawJournalLines, error: journalError } = await supabase
         .from('journal_entry_lines')
         .select(`
           id,
@@ -136,7 +137,7 @@ export function GeneralLedgerTable() {
           debit_amount,
           credit_amount,
           description,
-          journal_entries!inner (
+          journal_entries (
             id,
             entry_number,
             entry_date,
@@ -147,20 +148,28 @@ export function GeneralLedgerTable() {
             is_voided,
             branch_id
           )
-        `)
-        .eq('journal_entries.branch_id', currentBranch.id)
-        .eq('journal_entries.status', 'posted')
-        .eq('journal_entries.is_voided', false)
-        .order('journal_entries(entry_date)', { ascending: true });
+        `);
 
-      if (fromDateStr) {
-        query = query.gte('journal_entries.entry_date', fromDateStr);
-      }
-      if (toDateStr) {
-        query = query.lte('journal_entries.entry_date', toDateStr);
-      }
+      // Filter on client side since PostgREST doesn't support nested filtering with !inner
+      const journalLines = (rawJournalLines || []).filter((line: any) => {
+        const journal = line.journal_entries;
+        if (!journal) return false;
 
-      const { data: journalLines, error: journalError } = await query;
+        // Match branch, status, and voided
+        if (journal.branch_id !== currentBranch.id) return false;
+        if (journal.status !== 'posted') return false;
+        if (journal.is_voided !== false) return false;
+
+        // Date filters
+        const entryDate = journal.entry_date;
+        if (fromDateStr && entryDate < fromDateStr) return false;
+        if (toDateStr && entryDate > toDateStr) return false;
+
+        return true;
+      }).sort((a: any, b: any) => {
+        // Sort by entry_date ascending
+        return a.journal_entries.entry_date.localeCompare(b.journal_entries.entry_date);
+      });
 
       if (journalError) {
         console.error('Error fetching journal lines:', journalError);

@@ -21,6 +21,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
+import { formatOfficeTimeOnly, formatOfficeDate } from "@/utils/officeTime";
 import {
   NavigationMenu,
   NavigationMenuContent,
@@ -176,13 +177,13 @@ export function Header() {
             <span className="text-xs text-white/80 capitalize">{user?.role || 'Guest'} • <span className="text-green-300">Online</span></span>
           </div>
           
-          {/* Live Clock - Show on largest screens */}
+          {/* Live Clock - Show on largest screens (menggunakan timezone kantor) */}
           <div className="hidden 2xl:flex flex-col items-center px-3 py-2 rounded-lg bg-white/15 backdrop-blur-lg border border-white/30 btn-glossy shadow-lg">
             <span className="text-sm font-bold text-white drop-shadow-sm">
-              {currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+              {formatOfficeTimeOnly(currentTime, settings?.timezone || 'Asia/Jakarta')}
             </span>
             <span className="text-xs text-white/80">
-              {currentTime.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
+              {formatOfficeDate(currentTime, settings?.timezone || 'Asia/Jakarta')}
             </span>
           </div>
 

@@ -22,7 +22,40 @@ export const useCustomers = () => {
 
       const { data, error } = await query;
       if (error) throw new Error(error.message);
-      return data || [];
+
+      // Fetch last order date for each customer
+      const customerIds = (data || []).map(c => c.id);
+      if (customerIds.length > 0) {
+        // Get last order date per customer using a single query
+        const { data: lastOrders, error: ordersError } = await supabase
+          .from('transactions')
+          .select('customer_id, order_date')
+          .in('customer_id', customerIds)
+          .order('order_date', { ascending: false });
+
+        if (!ordersError && lastOrders) {
+          // Create a map of customer_id -> last order date
+          const lastOrderMap = new Map<string, string>();
+          for (const order of lastOrders) {
+            if (!lastOrderMap.has(order.customer_id)) {
+              lastOrderMap.set(order.customer_id, order.order_date);
+            }
+          }
+
+          // Enrich customers with lastOrderDate
+          return (data || []).map(customer => ({
+            ...customer,
+            lastOrderDate: lastOrderMap.has(customer.id)
+              ? new Date(lastOrderMap.get(customer.id)!)
+              : null
+          }));
+        }
+      }
+
+      return (data || []).map(customer => ({
+        ...customer,
+        lastOrderDate: null
+      }));
     },
     enabled: !!currentBranch,
     // Optimized for POS and customer management usage
@@ -48,12 +81,15 @@ export const useCustomers = () => {
         branch_id: currentBranch?.id || null,
       };
       
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('customers')
         .insert([customerToInsert])
         .select()
-        .single();
+        .limit(1);
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to create customer');
       return data;
     },
     onSuccess: () => {
@@ -76,14 +112,17 @@ export const useCustomers = () => {
         jumlah_galon_titip: updateData.jumlah_galon_titip,
       };
       
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('customers')
         .update(customerToUpdate)
         .eq('id', id)
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to update customer');
       return data;
     },
     onSuccess: () => {
@@ -123,12 +162,14 @@ export const useCustomerById = (id: string) => {
   const { data: customer, isLoading } = useQuery<Customer | undefined>({
     queryKey: ['customer', id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('customers')
         .select('*')
         .eq('id', id)
-        .single();
+        .limit(1);
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       return data;
     },
     enabled: !!id,

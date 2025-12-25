@@ -29,6 +29,7 @@ export default function ProductPage() {
     type: "Produksi" as ProductType,
     basePrice: 0,
     unit: "pcs",
+    initialStock: 0,
     minStock: 0,
     minOrder: 1,
     description: "",
@@ -68,11 +69,20 @@ export default function ProductPage() {
       key: "basePrice",
       header: "Harga",
       render: (row: any) =>
-        new Intl.NumberFormat("id-ID", { 
-          style: "currency", 
-          currency: "IDR", 
-          maximumFractionDigits: 0 
+        new Intl.NumberFormat("id-ID", {
+          style: "currency",
+          currency: "IDR",
+          maximumFractionDigits: 0
         }).format(row.basePrice),
+    },
+    {
+      key: "initialStock",
+      header: "Stok Awal",
+      render: (row: any) => (
+        <span className="text-gray-600">
+          {row.initialStock || 0}
+        </span>
+      ),
     },
     {
       key: "currentStock",
@@ -184,6 +194,7 @@ export default function ProductPage() {
         type: "Produksi" as ProductType,
         basePrice: 0,
         unit: "pcs",
+        initialStock: 0,
         minStock: 0,
         minOrder: 1,
         description: "",
@@ -208,6 +219,7 @@ export default function ProductPage() {
       'Jenis': product.type,
       'Satuan': product.unit,
       'Harga': product.basePrice,
+      'Stok Awal': product.initialStock || 0,
       'Stok': product.currentStock,
       'Min Stock': product.minStock,
       'Min Order': product.minOrder,
@@ -306,7 +318,21 @@ export default function ProductPage() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <Label htmlFor="initialStock" className="text-sm">
+                        Stok Awal
+                      </Label>
+                      <NumberInput
+                        id="initialStock"
+                        placeholder="0"
+                        value={form.initialStock}
+                        onChange={(value) => setForm({ ...form, initialStock: value || 0 })}
+                        min={0}
+                        decimalPlaces={0}
+                        className="text-sm mt-1"
+                      />
+                    </div>
                     <div>
                       <Label htmlFor="minStock" className="text-sm">
                         Min Stock
@@ -385,6 +411,7 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
     type: product.type,
     basePrice: product.basePrice,
     unit: product.unit,
+    initialStock: product.initialStock || 0,
     minStock: product.minStock,
     minOrder: product.minOrder,
     description: product.description || "",
@@ -500,7 +527,21 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label htmlFor="edit-initialStock" className="text-sm">
+                Stok Awal
+              </Label>
+              <NumberInput
+                id="edit-initialStock"
+                placeholder="0"
+                value={form.initialStock}
+                onChange={(value) => setForm({ ...form, initialStock: value || 0 })}
+                min={0}
+                decimalPlaces={0}
+                className="text-sm mt-1"
+              />
+            </div>
             <div>
               <Label htmlFor="edit-minStock" className="text-sm">
                 Min Stock

@@ -166,13 +166,13 @@ export default function PayrollPage() {
       'No': index + 1,
       'Periode': `${record.periodMonth}/${record.periodYear}`,
       'Karyawan': record.employeeName,
-      'Gaji Pokok': record.baseSalary,
-      'Bonus': record.bonuses || 0,
-      'Komisi': record.commission || 0,
-      'Potongan': record.deductions || 0,
+      'Gaji Pokok': record.baseSalaryAmount,
+      'Bonus': record.bonusAmount || 0,
+      'Komisi': record.commissionAmount || 0,
+      'Potongan': record.deductionAmount || 0,
       'Gaji Bersih': record.netSalary,
       'Status': record.status === 'paid' ? 'Dibayar' : record.status === 'approved' ? 'Disetujui' : 'Draft',
-      'Dibayar Oleh': record.paidBy || '-',
+      'Dibayar Dari': record.paymentAccountName || '-',
     }))
 
     const worksheet = XLSX.utils.json_to_sheet(exportData)
@@ -190,10 +190,10 @@ export default function PayrollPage() {
 
   // Export to PDF
   const handleExportPDF = () => {
-    const totalBaseSalary = filteredPayrollRecords.reduce((sum, r) => sum + r.baseSalary, 0)
-    const totalBonus = filteredPayrollRecords.reduce((sum, r) => sum + (r.bonuses || 0), 0)
-    const totalCommission = filteredPayrollRecords.reduce((sum, r) => sum + (r.commission || 0), 0)
-    const totalDeductions = filteredPayrollRecords.reduce((sum, r) => sum + (r.deductions || 0), 0)
+    const totalBaseSalary = filteredPayrollRecords.reduce((sum, r) => sum + r.baseSalaryAmount, 0)
+    const totalBonus = filteredPayrollRecords.reduce((sum, r) => sum + (r.bonusAmount || 0), 0)
+    const totalCommission = filteredPayrollRecords.reduce((sum, r) => sum + (r.commissionAmount || 0), 0)
+    const totalDeductions = filteredPayrollRecords.reduce((sum, r) => sum + (r.deductionAmount || 0), 0)
     const totalNetSalary = filteredPayrollRecords.reduce((sum, r) => sum + r.netSalary, 0)
 
     const doc = new jsPDF()
@@ -216,10 +216,10 @@ export default function PayrollPage() {
           index + 1,
           `${record.periodMonth}/${record.periodYear}`,
           record.employeeName,
-          formatCurrency(record.baseSalary),
-          formatCurrency(record.bonuses || 0),
-          formatCurrency(record.commission || 0),
-          formatCurrency(record.deductions || 0),
+          formatCurrency(record.baseSalaryAmount),
+          formatCurrency(record.bonusAmount || 0),
+          formatCurrency(record.commissionAmount || 0),
+          formatCurrency(record.deductionAmount || 0),
           formatCurrency(record.netSalary),
           record.status === 'paid' ? 'Dibayar' : record.status === 'approved' ? 'Disetujui' : 'Draft',
         ]),
@@ -746,10 +746,10 @@ export default function PayrollPage() {
                         <TableRow key={record.id}>
                           <TableCell>
                             <div className="text-sm">
-                              {record.paidDate ? format(new Date(record.paidDate), 'd MMM yyyy', { locale: id }) : '-'}
+                              {record.paymentDate ? format(new Date(record.paymentDate), 'd MMM yyyy', { locale: id }) : '-'}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {record.paidDate ? format(new Date(record.paidDate), 'HH:mm') : ''}
+                              {record.paymentDate ? format(new Date(record.paymentDate), 'HH:mm') : ''}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -762,7 +762,7 @@ export default function PayrollPage() {
                             Pembayaran gaji {record.employeeName} - {record.periodMonth}/{record.periodYear}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">{record.paymentAccount || 'Kas dan Setara Kas'}</Badge>
+                            <Badge variant="outline">{record.paymentAccountName || 'Kas dan Setara Kas'}</Badge>
                           </TableCell>
                           <TableCell className="text-right">
                             <span className="font-bold text-green-600">
@@ -770,7 +770,7 @@ export default function PayrollPage() {
                             </span>
                           </TableCell>
                           <TableCell>
-                            {record.paidBy || '-'}
+                            {record.paymentAccountName || '-'}
                           </TableCell>
                           <TableCell>
                             {getPayrollStatusBadge(record.status)}
@@ -808,8 +808,8 @@ export default function PayrollPage() {
                   </div>
                   <p className="text-xs text-green-700 mt-2">
                     Jumlah Transaksi: {filteredPayrollRecords.length} |
-                    Gaji: {formatCurrency(filteredPayrollRecords.reduce((sum, r) => sum + r.baseSalary, 0))} |
-                    Bonus: {formatCurrency(filteredPayrollRecords.reduce((sum, r) => sum + (r.bonuses || 0), 0))}
+                    Gaji: {formatCurrency(filteredPayrollRecords.reduce((sum, r) => sum + r.baseSalaryAmount, 0))} |
+                    Bonus: {formatCurrency(filteredPayrollRecords.reduce((sum, r) => sum + (r.bonusAmount || 0), 0))}
                   </p>
                 </div>
               )}

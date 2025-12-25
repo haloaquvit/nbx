@@ -25,12 +25,114 @@ const fromDbToApp = (dbAccount: any): Account => ({
   branchId: dbAccount.branch_id || undefined,
 });
 
+/**
+ * Calculate account balances from journal entries (same logic as useAccounts.ts)
+ * This ensures financial reports use the same balance calculation as the UI
+ */
+async function calculateAccountBalancesFromJournal(
+  accounts: Account[],
+  branchId: string,
+  asOfDate?: Date
+): Promise<Account[]> {
+  // Get all journal_entry_lines for the branch
+  // Note: PostgREST doesn't support !inner syntax, so we filter on client side
+  const { data: journalLines, error: journalError } = await supabase
+    .from('journal_entry_lines')
+    .select(`
+      account_id,
+      debit_amount,
+      credit_amount,
+      journal_entries (
+        branch_id,
+        status,
+        is_voided,
+        entry_date
+      )
+    `);
+
+  if (journalError) {
+    console.warn('Error fetching journal_entry_lines for balance calculation:', journalError.message);
+    // Fallback to initial_balance only
+    return accounts.map(acc => ({
+      ...acc,
+      balance: acc.initialBalance || 0
+    }));
+  }
+
+  // Initialize balance map with initial_balance
+  const accountBalanceMap = new Map<string, number>();
+  const accountTypes = new Map<string, string>();
+
+  accounts.forEach(acc => {
+    accountBalanceMap.set(acc.id, acc.initialBalance || 0);
+    accountTypes.set(acc.id, acc.type);
+  });
+
+  // Filter journal lines on client side
+  const asOfDateStr = asOfDate ? asOfDate.toISOString().split('T')[0] : null;
+
+  const filteredJournalLines = (journalLines || []).filter((line: any) => {
+    const journal = line.journal_entries;
+    if (!journal) return false;
+
+    const matchesBranch = journal.branch_id === branchId;
+    const matchesStatus = journal.status === 'posted' && journal.is_voided === false;
+    const matchesDate = !asOfDateStr || journal.entry_date <= asOfDateStr;
+
+    return matchesBranch && matchesStatus && matchesDate;
+  });
+
+  // Calculate balance per account
+  filteredJournalLines.forEach((line: any) => {
+    if (!line.account_id) return;
+
+    const currentBalance = accountBalanceMap.get(line.account_id) || 0;
+    const debitAmount = Number(line.debit_amount) || 0;
+    const creditAmount = Number(line.credit_amount) || 0;
+    const accountType = accountTypes.get(line.account_id) || 'Aset';
+
+    // Determine balance change based on account type
+    // Normalize account type for comparison (handle variations like Liabilitas, Liability, etc.)
+    const normalizedType = accountType.toLowerCase();
+    const isDebitNormal =
+      normalizedType.includes('aset') ||
+      normalizedType.includes('asset') ||
+      normalizedType.includes('aktiva') ||
+      normalizedType.includes('beban') ||
+      normalizedType.includes('expense') ||
+      normalizedType.includes('biaya');
+
+    let balanceChange = 0;
+    if (isDebitNormal) {
+      // Aset & Beban: Debit increases, Credit decreases
+      balanceChange = debitAmount - creditAmount;
+    } else {
+      // Kewajiban/Liabilitas, Modal/Ekuitas, Pendapatan: Credit increases, Debit decreases
+      balanceChange = creditAmount - debitAmount;
+    }
+
+    accountBalanceMap.set(line.account_id, currentBalance + balanceChange);
+  });
+
+  // Apply calculated balances to accounts
+  const accountsWithCalculatedBalance = accounts.map(acc => ({
+    ...acc,
+    balance: accountBalanceMap.get(acc.id) ?? 0
+  }));
+
+  console.log('📊 Financial Reports: Calculated balances from journal for branch:', branchId,
+    'Journal lines processed:', filteredJournalLines.length);
+
+  return accountsWithCalculatedBalance;
+}
+
 // Financial Statement Types
 export interface BalanceSheetData {
   assets: {
     currentAssets: {
       kasBank: BalanceSheetItem[];
       piutangUsaha: BalanceSheetItem[];
+      piutangPajak: BalanceSheetItem[];  // Piutang Pajak / PPN Masukan
       persediaan: BalanceSheetItem[];
       panjarKaryawan: BalanceSheetItem[];
       totalCurrentAssets: number;
@@ -45,6 +147,9 @@ export interface BalanceSheetData {
   liabilities: {
     currentLiabilities: {
       hutangUsaha: BalanceSheetItem[];
+      hutangBank: BalanceSheetItem[];
+      hutangKartuKredit: BalanceSheetItem[];
+      hutangLain: BalanceSheetItem[];
       hutangGaji: BalanceSheetItem[];
       hutangPajak: BalanceSheetItem[];
       totalCurrentLiabilities: number;
@@ -208,28 +313,41 @@ export function calculatePercentage(part: number, whole: number): number {
 
 /**
  * Generate Balance Sheet from existing data
+ * ============================================================================
+ * PENTING: Saldo akun dihitung dari journal_entry_lines, BUKAN dari
+ * kolom balance di tabel accounts. Ini memastikan konsistensi dengan
+ * useAccounts.ts yang juga menghitung balance dari jurnal.
+ * ============================================================================
  */
 export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): Promise<BalanceSheetData> {
   const cutoffDate = asOfDate || new Date();
   const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
 
-  // Get all accounts with current balances (filtered by branch if provided)
-  // Setiap branch memiliki COA (Chart of Accounts) sendiri
+  if (!branchId) {
+    throw new Error('Branch ID is required for generating Balance Sheet');
+  }
+
+  // Get all accounts structure (without relying on balance column)
   let accountsQuery = supabase
     .from('accounts')
-    .select('id, name, type, balance, initial_balance, code, branch_id')
+    .select('id, name, type, balance, initial_balance, code, branch_id, is_payment_account, is_header, is_active, level, sort_order, parent_id, created_at')
     .order('code');
 
-  if (branchId) {
-    accountsQuery = accountsQuery.eq('branch_id', branchId);
-  }
+  // Note: We don't filter by branch_id here because COA structure is global
+  // Balance will be calculated per-branch from journal entries
 
   const { data: accountsData, error: accountsError } = await accountsQuery;
 
   if (accountsError) throw new Error(`Failed to fetch accounts: ${accountsError.message}`);
 
-  // Convert DB accounts to App accounts for use with lookup service
-  const accounts = accountsData?.map(fromDbToApp) || [];
+  // Convert DB accounts to App accounts
+  const baseAccounts = accountsData?.map(fromDbToApp) || [];
+
+  // ============================================================================
+  // CALCULATE BALANCES FROM JOURNAL ENTRIES (not from accounts.balance column)
+  // This is the same logic as useAccounts.ts
+  // ============================================================================
+  const accounts = await calculateAccountBalancesFromJournal(baseAccounts, branchId, cutoffDate);
 
   // Get account receivables from transactions (filtered by branch)
   let transactionsQuery = supabase
@@ -290,11 +408,19 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   // Ignore error if table doesn't exist
   const payrollData = payrollError ? [] : (payrollRecords || []);
 
-  // Get products (Jual Langsung) for inventory calculation
+  // ============================================================================
+  // GET ALL PRODUCTS FOR INVENTORY CALCULATION
+  // ============================================================================
+  // Nilai persediaan dihitung langsung dari:
+  // - Persediaan Barang Dagang (1310) = Semua produk × cost_price
+  // - Persediaan Bahan Baku (1320) = Semua materials × price_per_unit
+  // Ini lebih akurat daripada menggunakan saldo akun COA karena:
+  // 1. Stock selalu up-to-date dari tabel products/materials
+  // 2. Tidak perlu initial_balance yang bisa menyebabkan ketidaksesuaian
+  // ============================================================================
   let productsQuery = supabase
     .from('products')
-    .select('id, name, type, current_stock, cost_price, branch_id')
-    .eq('type', 'Jual Langsung');
+    .select('id, name, type, current_stock, cost_price, base_price, branch_id');
 
   if (branchId) {
     productsQuery = productsQuery.eq('branch_id', branchId);
@@ -321,31 +447,45 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   const finalReceivables = totalReceivables > 0 ? totalReceivables : calculatedReceivables;
 
   // ============================================================================
-  // PERSEDIAAN - USING ACCOUNT LOOKUP SERVICE
+  // PERSEDIAAN - DIHITUNG LANGSUNG DARI STOCK × HARGA
   // ============================================================================
-  // Persediaan diambil dari saldo akun COA menggunakan lookup by name/type
-  // Mencari semua jenis persediaan: bahan baku, barang jadi, WIP
+  // Nilai persediaan dihitung langsung dari:
+  // 1. Persediaan Bahan Baku (1320) = materials.stock × materials.price_per_unit
+  // 2. Persediaan Barang Dagang (1310) = products.current_stock × products.cost_price
+  //
+  // PENTING: Tidak menggunakan saldo akun COA atau initial_balance karena:
+  // - Stock di tabel products/materials selalu up-to-date
+  // - Menghindari ketidaksesuaian antara stock fisik dan saldo akuntansi
   // ============================================================================
-  const persediaanBahan = findAllAccountsByLookup(accounts, 'PERSEDIAAN_BAHAN');
-  const persediaanBarang = findAllAccountsByLookup(accounts, 'PERSEDIAAN_BARANG');
-  const persediaanWIP = findAllAccountsByLookup(accounts, 'PERSEDIAAN_WIP');
-  const allPersediaan = [...persediaanBahan, ...persediaanBarang, ...persediaanWIP];
-  const totalInventoryFromCOA = getTotalBalance(allPersediaan);
 
-  // Calculate inventory from materials (raw materials)
+  // Calculate inventory from materials (bahan baku - 1320)
   const materialsInventory = materials?.reduce((sum, material) =>
     sum + ((material.stock || 0) * (material.price_per_unit || 0)), 0) || 0;
 
-  // Calculate inventory from products (Jual Langsung products)
-  // Value = current_stock × cost_price
-  const productsInventory = productsData?.reduce((sum, product) =>
-    sum + ((product.current_stock || 0) * (product.cost_price || 0)), 0) || 0;
+  // Calculate inventory from ALL products (barang dagang - 1310)
+  // Gunakan cost_price jika ada, jika tidak gunakan base_price
+  const productsInventory = productsData?.reduce((sum, product) => {
+    const costPrice = product.cost_price || product.base_price || 0;
+    return sum + ((product.current_stock || 0) * costPrice);
+  }, 0) || 0;
 
-  // Total calculated inventory = materials + products (Jual Langsung)
-  const calculatedInventory = materialsInventory + productsInventory;
+  // Total persediaan = bahan baku + barang dagang
+  const totalInventory = materialsInventory + productsInventory;
 
-  // Use COA value if available and non-zero, otherwise use calculated
-  const totalInventory = totalInventoryFromCOA > 0 ? totalInventoryFromCOA : calculatedInventory;
+  console.log('📦 Inventory Calculation:', {
+    materialsCount: materials?.length || 0,
+    materialsInventory,
+    productsCount: productsData?.length || 0,
+    productsInventory,
+    totalInventory,
+    productDetails: productsData?.slice(0, 5).map(p => ({
+      name: p.name,
+      stock: p.current_stock,
+      costPrice: p.cost_price,
+      basePrice: p.base_price,
+      value: (p.current_stock || 0) * (p.cost_price || p.base_price || 0)
+    }))
+  });
 
   // Calculate outstanding accounts payable
   const totalAccountsPayable = apData.reduce((sum, ap) => {
@@ -391,16 +531,32 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     formattedBalance: formatCurrency(finalReceivables)
   }] : [];
 
-  // Use COA account info if available, otherwise show as calculated
-  // Take the first inventory account for display purposes
-  const firstPersediaanAccount = allPersediaan[0];
-  const persediaan: BalanceSheetItem[] = totalInventory > 0 ? [{
-    accountId: firstPersediaanAccount?.id || 'calculated-inventory',
-    accountCode: firstPersediaanAccount?.code || '1.1.3',
-    accountName: firstPersediaanAccount?.name || 'Persediaan',
-    balance: totalInventory,
-    formattedBalance: formatCurrency(totalInventory)
-  }] : [];
+  // ============================================================================
+  // PERSEDIAAN - Tampilkan terpisah: Barang Dagang dan Bahan Baku
+  // ============================================================================
+  const persediaan: BalanceSheetItem[] = [];
+
+  // Persediaan Barang Dagang (1310) - dari semua produk
+  if (productsInventory > 0) {
+    persediaan.push({
+      accountId: 'calculated-products-inventory',
+      accountCode: '1310',
+      accountName: 'Persediaan Barang Dagang',
+      balance: productsInventory,
+      formattedBalance: formatCurrency(productsInventory)
+    });
+  }
+
+  // Persediaan Bahan Baku (1320) - dari materials
+  if (materialsInventory > 0) {
+    persediaan.push({
+      accountId: 'calculated-materials-inventory',
+      accountCode: '1320',
+      accountName: 'Persediaan Bahan Baku',
+      balance: materialsInventory,
+      formattedBalance: formatCurrency(materialsInventory)
+    });
+  }
 
   // Piutang Karyawan / Panjar Karyawan - Using lookup service
   const piutangKaryawanAccounts = findAllAccountsByLookup(accounts, 'PIUTANG_KARYAWAN');
@@ -414,9 +570,49 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       formattedBalance: formatCurrency(acc.balance || 0)
     }));
 
-  const totalCurrentAssets = 
+  // ============================================================================
+  // PIUTANG PAJAK / PPN MASUKAN - Using lookup service + code fallback
+  // ============================================================================
+  // Piutang Pajak diambil dari:
+  // 1. Akun COA yang memiliki nama: "Piutang Pajak", "PPN Masukan", "Pajak Masukan"
+  // 2. FALLBACK: Akun dengan kode 1230 atau 123x (Piutang Pajak range)
+  // Akun ini dicatat saat PO dengan PPN di-approve:
+  // - Dr. Persediaan (subtotal)
+  // - Dr. PPN Masukan / Piutang Pajak (ppnAmount)
+  // - Cr. Hutang Usaha (total)
+  // ============================================================================
+  let piutangPajakAccounts = findAllAccountsByLookup(accounts, 'PIUTANG_PAJAK');
+
+  // Fallback: If lookup service finds nothing, search by account code (123x range)
+  if (piutangPajakAccounts.length === 0) {
+    piutangPajakAccounts = accounts.filter(acc => {
+      const code = acc.code || '';
+      // Match code 1230, 1231, 1-230, 1-23x, etc.
+      return code.startsWith('123') || code.startsWith('1-23') || code.startsWith('1.23');
+    }).filter(acc => !acc.isHeader);
+  }
+
+  const piutangPajak = piutangPajakAccounts
+    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: acc.balance || 0,
+      formattedBalance: formatCurrency(acc.balance || 0)
+    }));
+
+  console.log('📊 Piutang Pajak Debug:', {
+    foundByLookup: findAllAccountsByLookup(accounts, 'PIUTANG_PAJAK').length,
+    foundByCodeFallback: accounts.filter(acc => (acc.code || '').startsWith('123')).length,
+    finalAccounts: piutangPajakAccounts.map(a => ({ code: a.code, name: a.name, balance: a.balance })),
+    totalPiutangPajak: piutangPajak.reduce((sum, item) => sum + item.balance, 0)
+  });
+
+  const totalCurrentAssets =
     kasBank.reduce((sum, item) => sum + item.balance, 0) +
     piutangUsaha.reduce((sum, item) => sum + item.balance, 0) +
+    piutangPajak.reduce((sum, item) => sum + item.balance, 0) +
     persediaan.reduce((sum, item) => sum + item.balance, 0) +
     panjarKaryawan.reduce((sum, item) => sum + item.balance, 0);
 
@@ -550,6 +746,17 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   const totalAssets = totalCurrentAssets + totalFixedAssets;
 
   // Build liabilities - Using lookup service
+  // ============================================================================
+  // HUTANG USAHA - HANYA DARI SALDO COA (JOURNAL ENTRIES)
+  // ============================================================================
+  // PENTING: Hutang TIDAK BOLEH dihitung 2 kali!
+  // Saldo akun Hutang Usaha di COA sudah mencakup semua hutang dari:
+  // - Jurnal pembelian saat PO di-approve (Dr. Persediaan, Cr. Hutang Usaha)
+  // - Jurnal pembayaran hutang (Dr. Hutang Usaha, Cr. Kas)
+  //
+  // Tabel accounts_payable HANYA digunakan untuk tracking/manajemen hutang,
+  // BUKAN untuk perhitungan neraca. Jangan ditambahkan lagi!
+  // ============================================================================
   const hutangUsahaAccounts = findAllAccountsByLookup(accounts, 'HUTANG_USAHA');
   const hutangUsaha = hutangUsahaAccounts
     .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
@@ -561,18 +768,59 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
     }));
 
-  // Add accounts payable from purchase orders
-  if (totalAccountsPayable > 0) {
-    hutangUsaha.push({
-      accountId: 'calculated-accounts-payable',
-      accountCode: '2100',
-      accountName: 'Hutang Supplier (PO)',
-      balance: totalAccountsPayable,
-      formattedBalance: formatCurrency(totalAccountsPayable)
-    });
-  }
+  // NOTE: totalAccountsPayable dari tabel accounts_payable TIDAK DITAMBAHKAN
+  // karena sudah tercakup dalam saldo akun Hutang Usaha dari journal entries
+
+  // ============================================================================
+  // HUTANG BANK - Pinjaman bank jangka pendek & panjang
+  // ============================================================================
+  const hutangBankAccounts = findAllAccountsByLookup(accounts, 'HUTANG_BANK');
+  const hutangBank = hutangBankAccounts
+    .filter(acc => (acc.balance || 0) !== 0)
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: Math.abs(acc.balance || 0),
+      formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
+    }));
+
+  // ============================================================================
+  // HUTANG KARTU KREDIT
+  // ============================================================================
+  const hutangKartuKreditAccounts = findAllAccountsByLookup(accounts, 'HUTANG_KARTU_KREDIT');
+  const hutangKartuKredit = hutangKartuKreditAccounts
+    .filter(acc => (acc.balance || 0) !== 0)
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: Math.abs(acc.balance || 0),
+      formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
+    }));
+
+  // ============================================================================
+  // HUTANG LAIN-LAIN
+  // ============================================================================
+  const hutangLainAccounts = findAllAccountsByLookup(accounts, 'HUTANG_LAIN');
+  const hutangLain = hutangLainAccounts
+    .filter(acc => (acc.balance || 0) !== 0)
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: Math.abs(acc.balance || 0),
+      formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
+    }));
 
   // Hutang Gaji - Using lookup service
+  // ============================================================================
+  // HUTANG GAJI - HANYA DARI SALDO COA (JOURNAL ENTRIES)
+  // ============================================================================
+  // Sama seperti Hutang Usaha, saldo akun Hutang Gaji di COA sudah mencakup
+  // semua hutang gaji dari jurnal payroll. TIDAK perlu ditambah dari
+  // tabel payroll_records lagi untuk menghindari duplikasi.
+  // ============================================================================
   const hutangGajiAccounts = findAllAccountsByLookup(accounts, 'HUTANG_GAJI');
   const hutangGaji = hutangGajiAccounts
     .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
@@ -584,16 +832,8 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
     }));
 
-  // Add unpaid payroll liabilities
-  if (totalPayrollLiabilities > 0) {
-    hutangGaji.push({
-      accountId: 'calculated-payroll-liabilities',
-      accountCode: '2110',
-      accountName: 'Hutang Gaji Karyawan',
-      balance: totalPayrollLiabilities,
-      formattedBalance: formatCurrency(totalPayrollLiabilities)
-    });
-  }
+  // NOTE: totalPayrollLiabilities dari tabel payroll_records TIDAK DITAMBAHKAN
+  // karena sudah tercakup dalam saldo akun Hutang Gaji dari journal entries
 
   // Hutang Pajak - Using lookup service
   const hutangPajakAccounts = findAllAccountsByLookup(accounts, 'HUTANG_PAJAK');
@@ -607,8 +847,11 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       formattedBalance: formatCurrency(Math.abs(acc.balance || 0))
     }));
 
-  const totalCurrentLiabilities = 
+  const totalCurrentLiabilities =
     hutangUsaha.reduce((sum, item) => sum + item.balance, 0) +
+    hutangBank.reduce((sum, item) => sum + item.balance, 0) +
+    hutangKartuKredit.reduce((sum, item) => sum + item.balance, 0) +
+    hutangLain.reduce((sum, item) => sum + item.balance, 0) +
     hutangGaji.reduce((sum, item) => sum + item.balance, 0) +
     hutangPajak.reduce((sum, item) => sum + item.balance, 0);
 
@@ -626,92 +869,14 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     }));
 
   // ============================================================================
-  // MODAL ASET AWAL (Initial Asset Contributions as Capital)
+  // MODAL - Hanya dari akun Modal di COA
   // ============================================================================
-  // Saldo awal (initial_balance) dari semua akun Aset harus dicatat sebagai
-  // Modal, bukan sebagai Laba Rugi Ditahan. Ini karena:
-  // - Persediaan awal adalah kontribusi modal pemilik saat memulai usaha
-  // - Kas awal adalah setoran modal awal
-  // - Aset tetap awal adalah kontribusi modal dalam bentuk barang
-  //
-  // CATATAN: Jika persediaan dihitung dari tabel materials (fallback),
-  // nilai tersebut juga dianggap sebagai modal awal karena merupakan
-  // kontribusi awal pemilik dalam bentuk barang/bahan.
+  // Modal hanya diambil dari akun tipe Modal yang sudah ada di COA.
+  // Persediaan TIDAK lagi ditambahkan sebagai modal karena:
+  // - Nilai persediaan sudah dihitung langsung dari stock × harga
+  // - Tidak perlu initial_balance untuk persediaan
+  // - Neraca akan balance dengan: Aset = Kewajiban + Modal + Laba Ditahan
   // ============================================================================
-
-  // Get initial_balance from all asset accounts (grouped by category)
-  const assetInitialBalances = {
-    persediaan: 0,
-    kasBank: 0,
-    asetTetap: 0,
-    lainnya: 0
-  };
-
-  accounts?.filter(acc => acc.type?.toLowerCase() === 'aset').forEach(acc => {
-    const initialBal = acc.initialBalance || 0;
-    if (initialBal <= 0) return;
-
-    // Categorize by account code or name
-    if (acc.code?.startsWith('13') || acc.name.toLowerCase().includes('persediaan')) {
-      assetInitialBalances.persediaan += initialBal;
-    } else if (acc.code?.startsWith('11') || acc.name.toLowerCase().includes('kas') || acc.name.toLowerCase().includes('bank')) {
-      assetInitialBalances.kasBank += initialBal;
-    } else if (acc.code?.startsWith('14') || acc.code?.startsWith('15') || acc.code?.startsWith('16') ||
-               acc.name.toLowerCase().includes('peralatan') || acc.name.toLowerCase().includes('kendaraan') ||
-               acc.name.toLowerCase().includes('aset tetap')) {
-      assetInitialBalances.asetTetap += initialBal;
-    } else {
-      assetInitialBalances.lainnya += initialBal;
-    }
-  });
-
-  // PENTING: Jika persediaan dari COA = 0 tapi calculatedInventory > 0,
-  // artinya persediaan dihitung dari materials table (fallback).
-  // Nilai ini adalah persediaan awal yang merupakan kontribusi modal pemilik.
-  if (totalInventoryFromCOA === 0 && calculatedInventory > 0) {
-    assetInitialBalances.persediaan += calculatedInventory;
-  }
-
-  // Add Modal entries for each category with initial balance
-  if (assetInitialBalances.persediaan > 0) {
-    modalPemilik.push({
-      accountId: 'modal-persediaan-awal',
-      accountCode: '3210',
-      accountName: 'Modal Persediaan Awal',
-      balance: assetInitialBalances.persediaan,
-      formattedBalance: formatCurrency(assetInitialBalances.persediaan)
-    });
-  }
-
-  if (assetInitialBalances.kasBank > 0) {
-    modalPemilik.push({
-      accountId: 'modal-kas-awal',
-      accountCode: '3100',
-      accountName: 'Modal Disetor (Kas)',
-      balance: assetInitialBalances.kasBank,
-      formattedBalance: formatCurrency(assetInitialBalances.kasBank)
-    });
-  }
-
-  if (assetInitialBalances.asetTetap > 0) {
-    modalPemilik.push({
-      accountId: 'modal-aset-tetap-awal',
-      accountCode: '3220',
-      accountName: 'Modal Aset Tetap Awal',
-      balance: assetInitialBalances.asetTetap,
-      formattedBalance: formatCurrency(assetInitialBalances.asetTetap)
-    });
-  }
-
-  if (assetInitialBalances.lainnya > 0) {
-    modalPemilik.push({
-      accountId: 'modal-aset-lainnya',
-      accountCode: '3290',
-      accountName: 'Modal Aset Lainnya',
-      balance: assetInitialBalances.lainnya,
-      formattedBalance: formatCurrency(assetInitialBalances.lainnya)
-    });
-  }
 
   // Calculate retained earnings (excludes modal persediaan awal because it's now explicit)
   const labaRugiDitahan = totalAssets - totalLiabilities - modalPemilik.reduce((sum, item) => sum + item.balance, 0);
@@ -727,6 +892,7 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       currentAssets: {
         kasBank,
         piutangUsaha,
+        piutangPajak,
         persediaan,
         panjarKaryawan,
         totalCurrentAssets
@@ -741,6 +907,9 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     liabilities: {
       currentLiabilities: {
         hutangUsaha,
+        hutangBank,
+        hutangKartuKredit,
+        hutangLain,
         hutangGaji,
         hutangPajak,
         totalCurrentLiabilities
@@ -778,8 +947,9 @@ export async function generateIncomeStatement(
 
   // ============================================================================
   // FETCH JOURNAL ENTRIES FOR THE PERIOD
+  // Note: PostgREST doesn't support !inner syntax, so we filter on client side
   // ============================================================================
-  let journalQuery = supabase
+  const { data: rawJournalLines, error: journalError } = await supabase
     .from('journal_entry_lines')
     .select(`
       id,
@@ -789,7 +959,7 @@ export async function generateIncomeStatement(
       debit_amount,
       credit_amount,
       description,
-      journal_entries!inner (
+      journal_entries (
         id,
         entry_number,
         entry_date,
@@ -798,17 +968,18 @@ export async function generateIncomeStatement(
         is_voided,
         branch_id
       )
-    `)
-    .gte('journal_entries.entry_date', fromDateStr)
-    .lte('journal_entries.entry_date', toDateStr)
-    .eq('journal_entries.status', 'posted')
-    .eq('journal_entries.is_voided', false);
+    `);
 
-  if (branchId) {
-    journalQuery = journalQuery.eq('journal_entries.branch_id', branchId);
-  }
-
-  const { data: journalLines, error: journalError } = await journalQuery;
+  // Filter on client side since PostgREST doesn't support nested filtering with !inner
+  const journalLines = (rawJournalLines || []).filter((line: any) => {
+    const journal = line.journal_entries;
+    if (!journal) return false;
+    const entryDate = journal.entry_date;
+    const matchesDate = entryDate >= fromDateStr && entryDate <= toDateStr;
+    const matchesStatus = journal.status === 'posted' && journal.is_voided === false;
+    const matchesBranch = !branchId || journal.branch_id === branchId;
+    return matchesDate && matchesStatus && matchesBranch;
+  });
 
   if (journalError) {
     console.error('Error fetching journal lines:', journalError);
@@ -816,17 +987,13 @@ export async function generateIncomeStatement(
 
   // ============================================================================
   // GET ACCOUNTS TO DETERMINE TYPES
+  // Note: COA (accounts) is GLOBAL - no branch_id filter needed
+  // Branch filtering is already done on journal_entries level
   // ============================================================================
-  let accountsQuery = supabase
+  const { data: accountsData } = await supabase
     .from('accounts')
     .select('id, code, name, type, is_header')
     .order('code');
-
-  if (branchId) {
-    accountsQuery = accountsQuery.eq('branch_id', branchId);
-  }
-
-  const { data: accountsData } = await accountsQuery;
 
   // Create account type lookup
   const accountTypes: Record<string, { type: string; code: string; name: string; isHeader: boolean }> = {};
@@ -842,6 +1009,12 @@ export async function generateIncomeStatement(
   // ============================================================================
   // AGGREGATE JOURNAL LINES BY ACCOUNT
   // ============================================================================
+  // PENTING: Gunakan account_code yang disimpan di journal_entry_lines
+  // sebagai primary key, bukan account_id. Ini karena:
+  // - Akun dibuat per-branch, sehingga ID bisa berbeda antar branch
+  // - Kode akun lebih stabil dan konsisten (4100, 5100, 6100, dll)
+  // - Journal lines sudah menyimpan account_code dan account_name
+  // ============================================================================
   const accountTotals: Record<string, {
     accountId: string;
     accountCode: string;
@@ -852,32 +1025,55 @@ export async function generateIncomeStatement(
   }> = {};
 
   journalLines?.forEach(line => {
+    // Use account_code as the key instead of account_id
+    const accountCode = line.account_code || '';
     const accountId = line.account_id;
     const accountInfo = accountTypes[accountId];
 
-    if (!accountTotals[accountId]) {
-      accountTotals[accountId] = {
+    // Determine account type from:
+    // 1. accountTypes lookup (if found)
+    // 2. Fallback: infer from account_code prefix
+    let accountType = accountInfo?.type || '';
+    if (!accountType) {
+      // Infer type from account code
+      if (accountCode.startsWith('1')) accountType = 'Aset';
+      else if (accountCode.startsWith('2')) accountType = 'Kewajiban';
+      else if (accountCode.startsWith('3')) accountType = 'Modal';
+      else if (accountCode.startsWith('4')) accountType = 'Pendapatan';
+      else if (accountCode.startsWith('5') || accountCode.startsWith('6')) accountType = 'Beban';
+      else if (accountCode.startsWith('7')) accountType = 'Pendapatan';
+      else if (accountCode.startsWith('8')) accountType = 'Beban';
+      else accountType = 'Unknown';
+    }
+
+    if (!accountTotals[accountCode]) {
+      accountTotals[accountCode] = {
         accountId,
-        accountCode: line.account_code || accountInfo?.code || '',
+        accountCode,
         accountName: line.account_name || accountInfo?.name || 'Unknown',
-        accountType: accountInfo?.type || 'Unknown',
+        accountType,
         debit: 0,
         credit: 0
       };
     }
 
-    accountTotals[accountId].debit += line.debit_amount || 0;
-    accountTotals[accountId].credit += line.credit_amount || 0;
+    accountTotals[accountCode].debit += line.debit_amount || 0;
+    accountTotals[accountCode].credit += line.credit_amount || 0;
   });
 
   // ============================================================================
   // PENDAPATAN (Revenue) - Type 'Pendapatan' or code starts with '4'
   // Normal balance: CREDIT (credit increases, debit decreases)
+  // Supports multiple code formats: '4xxx', '4-xxx', '4.xxx'
   // ============================================================================
   const revenueAccounts = Object.values(accountTotals).filter(acc => {
-    const accInfo = accountTypes[acc.accountId];
-    if (accInfo?.isHeader) return false;
-    return acc.accountType.toLowerCase() === 'pendapatan' || acc.accountCode.startsWith('4');
+    const code = acc.accountCode || '';
+    const type = acc.accountType?.toLowerCase() || '';
+    // Check type or code prefix (supports: 4xxx, 4-xxx, 4.xxx formats)
+    return type === 'pendapatan' ||
+           code.startsWith('4') ||
+           code.startsWith('4-') ||
+           code.startsWith('4.');
   });
 
   const penjualan: IncomeStatementItem[] = revenueAccounts
@@ -901,11 +1097,11 @@ export async function generateIncomeStatement(
   // ============================================================================
   // HPP (COGS) - Code starts with '5' (Harga Pokok Penjualan)
   // Normal balance: DEBIT (debit increases)
+  // Supports multiple code formats: '5xxx', '5-xxx', '5.xxx'
   // ============================================================================
   const cogsAccounts = Object.values(accountTotals).filter(acc => {
-    const accInfo = accountTypes[acc.accountId];
-    if (accInfo?.isHeader) return false;
-    return acc.accountCode.startsWith('5');
+    const code = acc.accountCode || '';
+    return code.startsWith('5') || code.startsWith('5-') || code.startsWith('5.');
   });
 
   const bahanBaku: IncomeStatementItem[] = cogsAccounts
@@ -932,13 +1128,15 @@ export async function generateIncomeStatement(
   // ============================================================================
   // BEBAN OPERASIONAL (Operating Expenses) - Type 'Beban' or code starts with '6'
   // Normal balance: DEBIT (debit increases)
+  // Supports multiple code formats: '6xxx', '6-xxx', '6.xxx'
   // ============================================================================
   const expenseAccounts = Object.values(accountTotals).filter(acc => {
-    const accInfo = accountTypes[acc.accountId];
-    if (accInfo?.isHeader) return false;
-    const isExpense = acc.accountType.toLowerCase() === 'beban' || acc.accountCode.startsWith('6');
+    const code = acc.accountCode || '';
+    const type = acc.accountType?.toLowerCase() || '';
+    const isExpense = type === 'beban' ||
+                      code.startsWith('6') || code.startsWith('6-') || code.startsWith('6.');
     // Exclude COGS accounts (already counted)
-    const isCOGS = acc.accountCode.startsWith('5');
+    const isCOGS = code.startsWith('5') || code.startsWith('5-') || code.startsWith('5.');
     return isExpense && !isCOGS;
   });
 
@@ -963,17 +1161,16 @@ export async function generateIncomeStatement(
 
   // ============================================================================
   // PENDAPATAN/BEBAN LAIN-LAIN - Code starts with '7' or '8'
+  // Supports multiple code formats: '7xxx', '7-xxx', '7.xxx', etc.
   // ============================================================================
   const otherIncomeAccounts = Object.values(accountTotals).filter(acc => {
-    const accInfo = accountTypes[acc.accountId];
-    if (accInfo?.isHeader) return false;
-    return acc.accountCode.startsWith('7');
+    const code = acc.accountCode || '';
+    return code.startsWith('7') || code.startsWith('7-') || code.startsWith('7.');
   });
 
   const otherExpenseAccounts = Object.values(accountTotals).filter(acc => {
-    const accInfo = accountTypes[acc.accountId];
-    if (accInfo?.isHeader) return false;
-    return acc.accountCode.startsWith('8');
+    const code = acc.accountCode || '';
+    return code.startsWith('8') || code.startsWith('8-') || code.startsWith('8.');
   });
 
   const pendapatanLainLain: IncomeStatementItem[] = otherIncomeAccounts
@@ -1011,7 +1208,22 @@ export async function generateIncomeStatement(
   const netIncomeBeforeTax = operatingIncome + netOtherIncome;
   const netIncome = netIncomeBeforeTax; // Simplified - no tax calculation yet
 
+  // Debug: Check for missing account mappings
+  const unmappedAccounts = journalLines?.filter((line: any) => !accountTypes[line.account_id]) || [];
+
   console.log('📊 Income Statement from Journal:', {
+    periodFrom: fromDateStr,
+    periodTo: toDateStr,
+    branchId,
+    accountsLoaded: accountsData?.length || 0,
+    journalLinesRaw: rawJournalLines?.length || 0,
+    journalLinesFiltered: journalLines?.length || 0,
+    accountTotalsCount: Object.keys(accountTotals).length,
+    revenueAccountsFound: Object.values(accountTotals).filter(acc => {
+      const code = acc.accountCode || '';
+      const type = acc.accountType?.toLowerCase() || '';
+      return type === 'pendapatan' || code.startsWith('4') || code.startsWith('4-') || code.startsWith('4.');
+    }).length,
     totalRevenue,
     totalCOGS,
     grossProfit,
@@ -1019,7 +1231,23 @@ export async function generateIncomeStatement(
     operatingIncome,
     netOtherIncome,
     netIncome,
-    journalLinesProcessed: journalLines?.length || 0
+    // Debug: show account types available in database
+    accountTypesInDB: [...new Set(accountsData?.map(acc => acc.type) || [])],
+    // Debug: show unmapped journal lines (account_id not found in accounts table)
+    unmappedAccountsCount: unmappedAccounts.length,
+    unmappedAccountIds: unmappedAccounts.slice(0, 5).map((line: any) => ({
+      account_id: line.account_id,
+      account_code: line.account_code,
+      account_name: line.account_name
+    })),
+    // Detail per akun untuk debugging
+    allAccountTotals: Object.values(accountTotals).map(acc => ({
+      code: acc.accountCode,
+      name: acc.accountName,
+      type: acc.accountType,
+      debit: acc.debit,
+      credit: acc.credit
+    }))
   });
 
   return {
@@ -1077,22 +1305,30 @@ export async function generateCashFlowStatement(
   const fromDateStr = periodFrom.toISOString().split('T')[0];
   const toDateStr = periodTo.toISOString().split('T')[0];
 
+  if (!branchId) {
+    throw new Error('Branch ID is required for generating Cash Flow Statement');
+  }
+
   // ============================================================================
   // GET ALL ACCOUNTS FOR CLASSIFICATION
   // ============================================================================
   let allAccountsQuery = supabase
     .from('accounts')
-    .select('id, code, name, type, balance, initial_balance, branch_id')
+    .select('id, code, name, type, balance, initial_balance, branch_id, is_payment_account, is_header, is_active, level, sort_order, parent_id, created_at')
     .order('code');
 
-  if (branchId) {
-    allAccountsQuery = allAccountsQuery.eq('branch_id', branchId);
-  }
+  // Note: We get all accounts (COA is global) and calculate balance per branch
 
   const { data: allAccountsData } = await allAccountsQuery;
 
   // Convert DB accounts to App accounts for use with lookup service
-  const allAccounts = allAccountsData?.map(fromDbToApp) || [];
+  const baseAllAccounts = allAccountsData?.map(fromDbToApp) || [];
+
+  // ============================================================================
+  // CALCULATE BALANCES FROM JOURNAL ENTRIES (not from accounts.balance column)
+  // This ensures ending cash balance is correct based on actual journal entries
+  // ============================================================================
+  const allAccounts = await calculateAccountBalancesFromJournal(baseAllAccounts, branchId, periodTo);
 
   // Create account lookup maps
   const accountById: Record<string, { id: string; code: string; name: string; type: string }> = {};
@@ -1290,8 +1526,10 @@ export async function generateCashFlowStatement(
   const fromAdvanceRepayment = operatingReceipts
     .filter(e => {
       const code = e.counterpartAccount?.code || '';
-      // Piutang Karyawan (13xx)
-      return code.startsWith('13') || code.startsWith('1-3');
+      const name = e.counterpartAccount?.name?.toLowerCase() || '';
+      // Piutang Karyawan/Panjar (1220, 122x) - NOT 13xx which is Persediaan
+      return code.startsWith('122') || code.startsWith('1-22') ||
+             name.includes('panjar') || name.includes('piutang karyawan');
     })
     .reduce((sum, e) => sum + e.amount, 0);
 
@@ -1307,8 +1545,12 @@ export async function generateCashFlowStatement(
   const forRawMaterials = Math.abs(operatingPayments
     .filter(e => {
       const code = e.counterpartAccount?.code || '';
-      // Persediaan (13xx) atau Hutang Usaha (21xx)
-      return code.startsWith('13') || code.startsWith('21') || code.startsWith('1-3') || code.startsWith('2-1');
+      const name = e.counterpartAccount?.name?.toLowerCase() || '';
+      // Persediaan (131x, 132x) atau Hutang Usaha (21xx) - NOT 122x which is Piutang Karyawan
+      const isPersediaan = (code.startsWith('131') || code.startsWith('132') || code.startsWith('1-31') || code.startsWith('1-32') ||
+                          name.includes('persediaan') || name.includes('bahan'));
+      const isHutangUsaha = code.startsWith('211') || code.startsWith('2-11') || name.includes('hutang usaha');
+      return isPersediaan || isHutangUsaha;
     })
     .reduce((sum, e) => sum + e.amount, 0));
 
@@ -1332,8 +1574,10 @@ export async function generateCashFlowStatement(
   const forEmployeeAdvances = Math.abs(operatingPayments
     .filter(e => {
       const code = e.counterpartAccount?.code || '';
-      // Piutang Karyawan
-      return code.startsWith('13') || code.startsWith('1-3');
+      const name = e.counterpartAccount?.name?.toLowerCase() || '';
+      // Piutang Karyawan/Panjar (1220, 122x) - NOT 13xx which is Persediaan
+      return code.startsWith('122') || code.startsWith('1-22') ||
+             name.includes('panjar') || name.includes('piutang karyawan');
     })
     .reduce((sum, e) => sum + e.amount, 0));
 
@@ -1581,7 +1825,24 @@ export async function generateCashFlowStatement(
     beginningCash,
     endingCash,
     journalEntriesProcessed: journalEntries?.length || 0,
-    cashFlowEntriesGenerated: cashFlowEntries.length
+    cashFlowEntriesGenerated: cashFlowEntries.length,
+    // Detail klasifikasi
+    receiptsBreakdown: {
+      fromCustomers: cashReceipts.fromCustomers,
+      fromReceivablePayments: cashReceipts.fromReceivablePayments,
+      fromAdvanceRepayment: cashReceipts.fromAdvanceRepayment,
+      fromOtherOperating: cashReceipts.fromOtherOperating
+    },
+    paymentsBreakdown: {
+      forRawMaterials: cashPayments.forRawMaterials,
+      forPayablePayments: cashPayments.forPayablePayments,
+      forDirectLabor: cashPayments.forDirectLabor,
+      forEmployeeAdvances: cashPayments.forEmployeeAdvances,
+      forOperatingExpenses: cashPayments.forOperatingExpenses
+    },
+    // Detail per akun lawan untuk debugging
+    operatingReceiptsDetail: receiptsByAccountList,
+    operatingPaymentsDetail: paymentsByAccountList
   });
 
   return {

@@ -131,15 +131,18 @@ export const useExpenses = () => {
       };
       console.log('Inserting expense:', insertData);
 
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('expenses')
         .insert(insertData)
         .select()
-        .single();
+        .limit(1);
       if (error) {
         console.error('Expense insert error:', error);
         throw new Error(error.message);
       }
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to create expense');
       
       // ============================================================================
       // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
@@ -256,14 +259,16 @@ export const useExpenses = () => {
         // Continue anyway, don't throw
       }
 
-      const { data: deletedExpense, error: deleteError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: deletedExpenseRaw, error: deleteError } = await supabase
         .from('expenses')
         .delete()
         .eq('id', expenseId)
         .select()
-        .single();
-      
+        .limit(1);
+
       if (deleteError) throw new Error(deleteError.message);
+      const deletedExpense = Array.isArray(deletedExpenseRaw) ? deletedExpenseRaw[0] : deletedExpenseRaw;
       if (!deletedExpense) throw new Error("Pengeluaran tidak ditemukan");
       
       const appExpense = fromDbToApp(deletedExpense);

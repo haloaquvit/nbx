@@ -282,10 +282,11 @@ export function useOptimizedDashboardSummary() {
     logPerformance: true,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        const { data: dataRaw, error } = await supabase
           .from('dashboard_summary')
           .select('*')
-          .single()
+          .limit(1)
 
         if (error) {
           // If view doesn't exist, fallback to direct calculation
@@ -295,6 +296,7 @@ export function useOptimizedDashboardSummary() {
           }
           throw error
         }
+        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
         return data
       } catch (error) {
         console.warn('[Dashboard] Summary query failed, using fallback:', error)

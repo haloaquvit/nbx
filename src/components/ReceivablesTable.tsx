@@ -12,38 +12,58 @@ import { PayReceivableDialog } from "./PayReceivableDialog"
 import { ReceivablesReportPDF } from "./ReceivablesReportPDF"
 // import { PaymentHistoryRow } from "./PaymentHistoryRow" // Removed
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
-import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer } from "lucide-react"
+import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer, Pencil } from "lucide-react"
 import { Input } from "./ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Badge } from "./ui/badge"
 import { useAuthContext } from "@/contexts/AuthContext"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "./ui/alert-dialog"
-import { showSuccess } from "@/utils/toast"
+import { showSuccess, showError } from "@/utils/toast"
 import { isOwner } from '@/utils/roleUtils'
+import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover"
+import { Calendar as CalendarComponent } from "./ui/calendar"
 
 export function ReceivablesTable() {
-  const { transactions, isLoading, deleteReceivable } = useTransactions()
+  const { transactions, isLoading, deleteReceivable, updateDueDate } = useTransactions()
   const { user } = useAuthContext()
   const [isPayDialogOpen, setIsPayDialogOpen] = React.useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false)
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null)
   const [expandedRows, setExpandedRows] = React.useState<Set<string>>(new Set())
   const [filterStatus, setFilterStatus] = React.useState<string>('all')
+  const [filterAging, setFilterAging] = React.useState<string>('all')
+  const [editingDueDateId, setEditingDueDateId] = React.useState<string | null>(null)
+  const [tempDueDate, setTempDueDate] = React.useState<Date | undefined>(undefined)
 
   const getDueStatus = (transaction: Transaction) => {
     if (!transaction.dueDate) return 'no-due-date'
-    
+
     const today = new Date()
     const dueDate = new Date(transaction.dueDate)
     const diffDays = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    
+
     if (diffDays < 0) return 'overdue'
     if (diffDays <= 3) return 'due-soon'
     return 'normal'
   }
 
+  // Calculate aging in days from order date
+  const getAgingDays = (orderDate: Date | string) => {
+    const today = new Date()
+    const order = new Date(orderDate)
+    return Math.floor((today.getTime() - order.getTime()) / (1000 * 60 * 60 * 24))
+  }
+
+  // Get aging category based on days
+  const getAgingCategory = (days: number): { label: string; color: string; bgColor: string } => {
+    if (days <= 30) return { label: '0-30 hari', color: 'text-green-700', bgColor: 'bg-green-100' }
+    if (days <= 60) return { label: '31-60 hari', color: 'text-yellow-700', bgColor: 'bg-yellow-100' }
+    if (days <= 90) return { label: '61-90 hari', color: 'text-orange-700', bgColor: 'bg-orange-100' }
+    return { label: '>90 hari', color: 'text-red-700', bgColor: 'bg-red-100' }
+  }
+
   const receivables = React.useMemo(() => {
-    let filtered = transactions?.filter(t => 
+    let filtered = transactions?.filter(t =>
       t.paymentStatus === 'Belum Lunas' || t.paymentStatus === 'Partial'
     ) || []
 
@@ -56,8 +76,22 @@ export function ReceivablesTable() {
       })
     }
 
+    // Filter by aging
+    if (filterAging !== 'all') {
+      filtered = filtered.filter(t => {
+        const days = getAgingDays(t.orderDate)
+        switch (filterAging) {
+          case '0-30': return days <= 30
+          case '31-60': return days > 30 && days <= 60
+          case '61-90': return days > 60 && days <= 90
+          case '>90': return days > 90
+          default: return true
+        }
+      })
+    }
+
     return filtered
-  }, [transactions, filterStatus])
+  }, [transactions, filterStatus, filterAging])
 
   const receivableIds = React.useMemo(() => {
     return receivables.map(r => r.id)
@@ -102,6 +136,31 @@ export function ReceivablesTable() {
     }
   }
 
+  const handleEditDueDate = (transaction: Transaction) => {
+    setEditingDueDateId(transaction.id)
+    setTempDueDate(transaction.dueDate ? new Date(transaction.dueDate) : undefined)
+  }
+
+  const handleSaveDueDate = async (transactionId: string) => {
+    try {
+      await updateDueDate.mutateAsync({
+        transactionId,
+        dueDate: tempDueDate || null
+      })
+      showSuccess('Tanggal jatuh tempo berhasil diperbarui')
+      setEditingDueDateId(null)
+      setTempDueDate(undefined)
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Gagal mengubah jatuh tempo"
+      showError(errorMessage)
+    }
+  }
+
+  const handleCancelEditDueDate = () => {
+    setEditingDueDateId(null)
+    setTempDueDate(undefined)
+  }
+
 
   const columns: ColumnDef<Transaction>[] = [
     {
@@ -134,29 +193,69 @@ export function ReceivablesTable() {
       id: "dueDate",
       header: "Tgl Jatuh Tempo",
       cell: ({ row }) => {
-        const dueDate = row.original.dueDate
-        if (!dueDate) return <span className="text-gray-400">-</span>
-        
-        const status = getDueStatus(row.original)
+        const transaction = row.original
+        const dueDate = transaction.dueDate
+        const isEditing = editingDueDateId === transaction.id
+
+        const status = getDueStatus(transaction)
         let colorClass = ''
-        
+
         if (status === 'overdue') colorClass = 'text-red-600 font-bold'
         else if (status === 'due-soon') colorClass = 'text-orange-600 font-medium'
         else colorClass = 'text-gray-700'
-        
+
+        if (isEditing) {
+          return (
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 w-32 justify-start text-left font-normal">
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {tempDueDate ? format(tempDueDate, "d MMM yyyy", { locale: id }) : "Pilih tanggal"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={tempDueDate}
+                    onSelect={setTempDueDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              <Button size="sm" variant="default" className="h-8 px-2" onClick={() => handleSaveDueDate(transaction.id)}>
+                Simpan
+              </Button>
+              <Button size="sm" variant="ghost" className="h-8 px-2" onClick={handleCancelEditDueDate}>
+                Batal
+              </Button>
+            </div>
+          )
+        }
+
         return (
-          <div className={colorClass}>
-            {format(new Date(dueDate), "d MMM yyyy", { locale: id })}
-            {status === 'overdue' && (
-              <Badge variant="destructive" className="ml-2 text-xs">
-                Terlambat
-              </Badge>
-            )}
-            {status === 'due-soon' && (
-              <Badge variant="secondary" className="ml-2 text-xs bg-orange-100 text-orange-700">
-                Segera
-              </Badge>
-            )}
+          <div className="flex items-center gap-2">
+            <div className={colorClass}>
+              {dueDate ? format(new Date(dueDate), "d MMM yyyy", { locale: id }) : <span className="text-gray-400">-</span>}
+              {status === 'overdue' && (
+                <Badge variant="destructive" className="ml-2 text-xs">
+                  Terlambat
+                </Badge>
+              )}
+              {status === 'due-soon' && (
+                <Badge variant="secondary" className="ml-2 text-xs bg-orange-100 text-orange-700">
+                  Segera
+                </Badge>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 opacity-50 hover:opacity-100"
+              onClick={() => handleEditDueDate(transaction)}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
           </div>
         )
       }
@@ -208,6 +307,22 @@ export function ReceivablesTable() {
       }
     },
     {
+      id: "aging",
+      header: "Umur Piutang",
+      cell: ({ row }) => {
+        const days = getAgingDays(row.original.orderDate)
+        const category = getAgingCategory(days)
+        return (
+          <div className="flex flex-col items-start gap-1">
+            <span className={`font-bold ${category.color}`}>{days} hari</span>
+            <Badge className={`text-xs ${category.bgColor} ${category.color} border-0`}>
+              {category.label}
+            </Badge>
+          </div>
+        )
+      }
+    },
+    {
       id: "actions",
       cell: ({ row }) => (
         <DropdownMenu>
@@ -249,11 +364,34 @@ export function ReceivablesTable() {
     return receivables.filter(t => getDueStatus(t) === 'due-soon').length
   }, [receivables])
 
+  // Aging counts based on all receivables (not filtered)
+  const allReceivables = React.useMemo(() => {
+    return transactions?.filter(t =>
+      t.paymentStatus === 'Belum Lunas' || t.paymentStatus === 'Partial'
+    ) || []
+  }, [transactions])
+
+  const agingCounts = React.useMemo(() => {
+    const counts = { '0-30': 0, '31-60': 0, '61-90': 0, '>90': 0 }
+    const amounts = { '0-30': 0, '31-60': 0, '61-90': 0, '>90': 0 }
+
+    allReceivables.forEach(t => {
+      const days = getAgingDays(t.orderDate)
+      const remaining = t.total - (t.paidAmount || 0)
+      if (days <= 30) { counts['0-30']++; amounts['0-30'] += remaining }
+      else if (days <= 60) { counts['31-60']++; amounts['31-60'] += remaining }
+      else if (days <= 90) { counts['61-90']++; amounts['61-90'] += remaining }
+      else { counts['>90']++; amounts['>90'] += remaining }
+    })
+
+    return { counts, amounts }
+  }, [allReceivables])
+
   return (
     <>
       {/* Filter Controls */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Select value={filterStatus} onValueChange={setFilterStatus}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Filter Status" />
@@ -266,14 +404,27 @@ export function ReceivablesTable() {
               <SelectItem value="no-due-date">Tanpa Jatuh Tempo</SelectItem>
             </SelectContent>
           </Select>
-          <ReceivablesReportPDF 
+          <Select value={filterAging} onValueChange={setFilterAging}>
+            <SelectTrigger className="w-48">
+              <Clock className="h-4 w-4 mr-2" />
+              <SelectValue placeholder="Filter Umur" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Umur</SelectItem>
+              <SelectItem value="0-30">0-30 hari ({agingCounts.counts['0-30']})</SelectItem>
+              <SelectItem value="31-60">31-60 hari ({agingCounts.counts['31-60']})</SelectItem>
+              <SelectItem value="61-90">61-90 hari ({agingCounts.counts['61-90']})</SelectItem>
+              <SelectItem value=">90">&gt;90 hari ({agingCounts.counts['>90']})</SelectItem>
+            </SelectContent>
+          </Select>
+          <ReceivablesReportPDF
             receivables={receivables}
             filterStatus={filterStatus}
           />
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards - Due Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex items-center gap-2">
@@ -296,8 +447,56 @@ export function ReceivablesTable() {
             <Calendar className="w-5 h-5 text-blue-600" />
             <h3 className="font-medium text-blue-900">Total Piutang</h3>
           </div>
-          <p className="text-2xl font-bold text-blue-600">{receivables.length}</p>
+          <p className="text-2xl font-bold text-blue-600">{allReceivables.length}</p>
           <p className="text-sm text-blue-700">Belum lunas</p>
+        </div>
+      </div>
+
+      {/* Aging Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '0-30' ? 'ring-2 ring-green-500' : ''} bg-green-50 border-green-200 hover:shadow-md`}
+          onClick={() => setFilterAging(filterAging === '0-30' ? 'all' : '0-30')}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-green-500" />
+            <h3 className="font-medium text-green-900 text-sm">0-30 Hari</h3>
+          </div>
+          <p className="text-xl font-bold text-green-700">{agingCounts.counts['0-30']}</p>
+          <p className="text-xs text-green-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['0-30'])}</p>
+        </div>
+        <div
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '31-60' ? 'ring-2 ring-yellow-500' : ''} bg-yellow-50 border-yellow-200 hover:shadow-md`}
+          onClick={() => setFilterAging(filterAging === '31-60' ? 'all' : '31-60')}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-yellow-500" />
+            <h3 className="font-medium text-yellow-900 text-sm">31-60 Hari</h3>
+          </div>
+          <p className="text-xl font-bold text-yellow-700">{agingCounts.counts['31-60']}</p>
+          <p className="text-xs text-yellow-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['31-60'])}</p>
+        </div>
+        <div
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '61-90' ? 'ring-2 ring-orange-500' : ''} bg-orange-50 border-orange-200 hover:shadow-md`}
+          onClick={() => setFilterAging(filterAging === '61-90' ? 'all' : '61-90')}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-orange-500" />
+            <h3 className="font-medium text-orange-900 text-sm">61-90 Hari</h3>
+          </div>
+          <p className="text-xl font-bold text-orange-700">{agingCounts.counts['61-90']}</p>
+          <p className="text-xs text-orange-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['61-90'])}</p>
+        </div>
+        <div
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '>90' ? 'ring-2 ring-red-500' : ''} bg-red-50 border-red-200 hover:shadow-md`}
+          onClick={() => setFilterAging(filterAging === '>90' ? 'all' : '>90')}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-3 h-3 rounded-full bg-red-500" />
+            <h3 className="font-medium text-red-900 text-sm">&gt;90 Hari</h3>
+          </div>
+          <p className="text-xl font-bold text-red-700">{agingCounts.counts['>90']}</p>
+          <p className="text-xs text-red-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['>90'])}</p>
         </div>
       </div>
 

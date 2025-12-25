@@ -3,6 +3,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { BranchProvider } from "@/contexts/BranchContext";
+import { TimezoneProvider } from "@/contexts/TimezoneContext";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Layout } from "@/components/layout/Layout";
 import MobileLayout from "@/components/layout/MobileLayout";
@@ -54,7 +55,6 @@ const DeliveryPage = lazy(() => import("@/pages/DeliveryPage"));
 const DriverPosPage = lazy(() => import("@/pages/DriverPosPage"));
 const SupplierPage = lazy(() => import("@/pages/SupplierPage"));
 const PayrollPage = lazy(() => import("@/pages/PayrollPage"));
-const CommissionManagePage = lazy(() => import("@/pages/CommissionManagePage"));
 const CommissionReportPage = lazy(() => import("@/pages/CommissionReportPage"));
 const FinancialReportsPage = lazy(() => import("@/pages/FinancialReportsPage"));
 const AccountsPayablePage = lazy(() => import("@/pages/AccountsPayablePage"));
@@ -63,19 +63,22 @@ const MaintenancePage = lazy(() => import("@/pages/MaintenancePage"));
 const ZakatPage = lazy(() => import("@/pages/ZakatPage"));
 const BranchManagementPage = lazy(() => import("@/pages/BranchManagementPage"));
 const JournalPage = lazy(() => import("@/pages/JournalPage"));
+const MaterialUsageSummaryPage = lazy(() => import("@/pages/MaterialUsageSummaryPage"));
+const WebManagementPage = lazy(() => import("@/pages/WebManagementPage"));
+const CustomerMapPage = lazy(() => import("@/pages/CustomerMapPage"));
 
 const SERVERS = [
   {
     id: 'nabire',
     name: 'Aquvit Nabire',
-    url: 'https://app.aquvit.id',
+    url: 'https://nbx.aquvit.id',
     description: 'Server utama Nabire',
     icon: '🏭',
   },
   {
     id: 'manokwari',
     name: 'Aquvit Manokwari',
-    url: 'https://erp.aquvit.id',
+    url: 'https://mkw.aquvit.id',
     description: 'Server Manokwari',
     icon: '🏢',
   },
@@ -238,6 +241,7 @@ function WebApp() {
     <ThemeProvider attribute="class" defaultTheme="system" storageKey="vite-ui-theme">
       <AuthProvider>
         <BranchProvider>
+          <TimezoneProvider>
           <BrowserRouter future={{
             v7_startTransition: true,
             v7_relativeSplatPath: true
@@ -257,6 +261,7 @@ function WebApp() {
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
                   <Route path="/customers" element={<CustomerPage />} />
                   <Route path="/customers/:id" element={<CustomerDetailPage />} />
+                  <Route path="/customer-map" element={<CustomerMapPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               ) : (
@@ -297,20 +302,23 @@ function WebApp() {
                   <Route path="/retasi" element={<RetasiPage />} />
                   <Route path="/delivery" element={<DeliveryPage />} />
                   <Route path="/driver-pos" element={<DriverPosPage />} />
-                  <Route path="/commission-manage" element={<CommissionManagePage />} />
-                  <Route path="/commission-report" element={<CommissionReportPage />} />
+                                    <Route path="/commission-report" element={<CommissionReportPage />} />
                   <Route path="/financial-reports" element={<FinancialReportsPage />} />
                   <Route path="/assets" element={<AssetsPage />} />
                   <Route path="/maintenance" element={<MaintenancePage />} />
                   <Route path="/zakat" element={<ZakatPage />} />
                   <Route path="/branches" element={<BranchManagementPage />} />
                   <Route path="/journal" element={<JournalPage />} />
+                  <Route path="/material-usage-summary" element={<MaterialUsageSummaryPage />} />
+                  <Route path="/web-management" element={<WebManagementPage />} />
+                  <Route path="/customer-map" element={<CustomerMapPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}
             </Routes>
           </Suspense>
         </BrowserRouter>
+          </TimezoneProvider>
         </BranchProvider>
       </AuthProvider>
     </ThemeProvider>

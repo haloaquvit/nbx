@@ -140,7 +140,8 @@ export const useEmployeeSalaries = () => {
 
   const createSalaryConfig = useMutation({
     mutationFn: async (data: SalaryConfigFormData) => {
-      const { data: result, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('employee_salaries')
         .insert({
           employee_id: data.employeeId,
@@ -153,9 +154,11 @@ export const useEmployeeSalaries = () => {
           notes: data.notes,
         })
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
+      if (!result) throw new Error('Failed to create salary config');
       return result;
     },
     onSuccess: () => {
@@ -186,14 +189,17 @@ export const useEmployeeSalaries = () => {
       if (data.effectiveUntil) updateData.effective_until = data.effectiveUntil.toISOString().split('T')[0];
       if (data.notes !== undefined) updateData.notes = data.notes;
 
-      const { data: result, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('employee_salaries')
         .update(updateData)
         .eq('id', id)
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
+      if (!result) throw new Error('Failed to update salary config');
       return result;
     },
     onSuccess: () => {
@@ -361,31 +367,46 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
   });
 
   const createPayrollRecord = useMutation({
-    mutationFn: async (data: PayrollFormData) => {
-      // First, calculate period dates
-      const periodStart = new Date(data.periodYear, data.periodMonth - 1, 1);
-      const periodEnd = new Date(data.periodYear, data.periodMonth, 0);
+    mutationFn: async (data: PayrollFormData & { salaryDeduction?: number }) => {
+      // Calculate period dates as YYYY-MM-DD strings (avoid timezone issues)
+      // periodStart = first day of month
+      const periodStartStr = `${data.periodYear}-${String(data.periodMonth).padStart(2, '0')}-01`;
+      // periodEnd = last day of month
+      const lastDay = new Date(data.periodYear, data.periodMonth, 0).getDate();
+      const periodEndStr = `${data.periodYear}-${String(data.periodMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-      const { data: result, error } = await supabase
+      // Calculate net salary
+      // total_deductions = advance_deduction (potong panjar) + salary_deduction (potongan gaji)
+      const advanceDeduction = data.deductionAmount || 0;
+      const salaryDeduction = data.salaryDeduction || 0;
+      const totalDeductions = advanceDeduction + salaryDeduction;
+
+      const grossSalary = (data.baseSalaryAmount || 0) + (data.commissionAmount || 0) + (data.bonusAmount || 0);
+      const netSalary = grossSalary - totalDeductions;
+
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('payroll_records')
         .insert({
           employee_id: data.employeeId,
-          period_year: data.periodYear,
-          period_month: data.periodMonth,
-          period_start: periodStart.toISOString().split('T')[0],
-          period_end: periodEnd.toISOString().split('T')[0],
-          base_salary_amount: data.baseSalaryAmount || 0,
-          commission_amount: data.commissionAmount || 0,
-          bonus_amount: data.bonusAmount || 0,
-          deduction_amount: data.deductionAmount || 0,
-          payment_account_id: data.paymentAccountId,
+          period_start: periodStartStr,
+          period_end: periodEndStr,
+          base_salary: data.baseSalaryAmount || 0,
+          total_commission: data.commissionAmount || 0,
+          total_bonus: data.bonusAmount || 0,
+          total_deductions: totalDeductions,
+          advance_deduction: advanceDeduction,
+          salary_deduction: salaryDeduction, // Potongan gaji terpisah
+          net_salary: netSalary,
           notes: data.notes,
           branch_id: currentBranch?.id || null,
         })
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
+      if (!result) throw new Error('Failed to create payroll record');
       return result;
     },
     onSuccess: () => {
@@ -408,21 +429,33 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
     mutationFn: async ({ id, data }: { id: string; data: Partial<PayrollFormData> }) => {
       const updateData: any = {};
 
-      if (data.baseSalaryAmount !== undefined) updateData.base_salary_amount = data.baseSalaryAmount;
-      if (data.commissionAmount !== undefined) updateData.commission_amount = data.commissionAmount;
-      if (data.bonusAmount !== undefined) updateData.bonus_amount = data.bonusAmount;
-      if (data.deductionAmount !== undefined) updateData.deduction_amount = data.deductionAmount;
-      if (data.paymentAccountId) updateData.payment_account_id = data.paymentAccountId;
+      if (data.baseSalaryAmount !== undefined) updateData.base_salary = data.baseSalaryAmount;
+      if (data.commissionAmount !== undefined) updateData.total_commission = data.commissionAmount;
+      if (data.bonusAmount !== undefined) updateData.total_bonus = data.bonusAmount;
+      if (data.deductionAmount !== undefined) {
+        updateData.total_deductions = data.deductionAmount;
+        updateData.advance_deduction = data.deductionAmount;
+      }
       if (data.notes !== undefined) updateData.notes = data.notes;
 
-      const { data: result, error } = await supabase
+      // Recalculate net_salary if any amount changed
+      if (data.baseSalaryAmount !== undefined || data.commissionAmount !== undefined ||
+          data.bonusAmount !== undefined || data.deductionAmount !== undefined) {
+        const grossSalary = (data.baseSalaryAmount || 0) + (data.commissionAmount || 0) + (data.bonusAmount || 0);
+        updateData.net_salary = grossSalary - (data.deductionAmount || 0);
+      }
+
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: resultRaw, error } = await supabase
         .from('payroll_records')
         .update(updateData)
         .eq('id', id)
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
+      if (!result) throw new Error('Failed to update payroll record');
       return result;
     },
     onSuccess: () => {
@@ -445,11 +478,34 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payrollRecords'] });
+    onSuccess: async () => {
+      // Invalidate with exact: false to match all query variants (with filters, branch, etc.)
+      await queryClient.invalidateQueries({ queryKey: ['payrollRecords'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['payrollSummary'], exact: false });
+
+      // Force immediate refetch of ALL active payroll queries
+      await queryClient.refetchQueries({
+        queryKey: ['payrollRecords'],
+        exact: false,
+        type: 'active'
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['payrollSummary'],
+        exact: false,
+        type: 'active'
+      });
+
       toast({
-        title: 'Success',
-        description: 'Payroll record approved successfully',
+        title: 'Sukses',
+        description: 'Payroll berhasil disetujui',
+      });
+    },
+    onError: (error: Error) => {
+      console.error('Error approving payroll:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Gagal menyetujui payroll',
       });
     },
   });
@@ -460,107 +516,40 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
       paymentAccountId: string;
       paymentDate: Date;
     }) => {
-      // Get payroll record details
-      const { data: payrollRecord, error: fetchError } = await supabase
+      // Get payroll record details from summary view
+      // Note: payroll_summary view uses 'id' not 'payroll_id'
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: payrollRecordRaw, error: fetchError } = await supabase
         .from('payroll_summary')
         .select('*')
-        .eq('payroll_id', id)
-        .single();
+        .eq('id', id)
+        .limit(1);
 
       if (fetchError) throw fetchError;
+      const payrollRecord = Array.isArray(payrollRecordRaw) ? payrollRecordRaw[0] : payrollRecordRaw;
+      if (!payrollRecord) throw new Error('Payroll record not found');
 
-      // Get current user from context (works with both Supabase and PostgREST)
+      // Get current user from context
       if (!authUser) throw new Error('User not authenticated');
 
-      // Get account name
-      const { data: accountData } = await supabase
+      // Get account name and code for journal entry
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: accountDataRaw } = await supabase
         .from('accounts')
-        .select('name')
+        .select('name, code')
         .eq('id', paymentAccountId)
-        .single();
+        .limit(1);
+      const accountData = Array.isArray(accountDataRaw) ? accountDataRaw[0] : accountDataRaw;
 
-      // Create cash_history record for payroll payment
-      const cashHistoryRecord = {
-        account_id: paymentAccountId,
-        account_name: accountData?.name || 'Cash Account',
-        type: 'gaji_karyawan', // Payroll payment type
-        amount: Math.abs(payrollRecord.net_salary), // POSITIVE amount (database constraint workaround)
-        description: `Pembayaran gaji ${payrollRecord.employee_name} - ${payrollRecord.period_display}`,
-        reference_id: id,
-        reference_name: `Payroll ${payrollRecord.employee_name}`,
-        user_id: authUser.id,
-        user_name: authUser.name || authUser.email || 'Admin',
-        branch_id: currentBranch?.id || null,
-      };
-
-      // Debug logging
-      console.log('💰 Cash History Record:', cashHistoryRecord);
-      console.log('💰 Record validation:');
-      console.log('  - account_id:', typeof cashHistoryRecord.account_id, cashHistoryRecord.account_id);
-      console.log('  - type:', typeof cashHistoryRecord.type, cashHistoryRecord.type);
-      console.log('  - user_id:', typeof cashHistoryRecord.user_id, cashHistoryRecord.user_id);
-      console.log('  - amount:', typeof cashHistoryRecord.amount, cashHistoryRecord.amount);
-
-      // Insert cash history record
-      let { data: cashHistoryData, error: cashHistoryError } = await supabase
-        .from('cash_history')
-        .insert(cashHistoryRecord)
-        .select()
-        .single();
-
-      if (cashHistoryError) {
-        console.error('💥 Cash History Error:', cashHistoryError);
-        console.log('💥 Error details:', {
-          message: cashHistoryError.message,
-          code: cashHistoryError.code,
-          details: cashHistoryError.details,
-          hint: cashHistoryError.hint
-        });
-        console.log('💰 Failed Payload:', cashHistoryRecord);
-
-        // If it's a constraint error for type, try with alternative type
-        if (cashHistoryError.code === '23514' && (cashHistoryError.message.includes('type') || cashHistoryError.message.includes('cash_history_type_check'))) {
-          console.log('🔄 Retrying with alternative payroll type...');
-
-          const alternativeRecord = {
-            ...cashHistoryRecord,
-            type: 'kas_keluar_manual', // Use existing allowed type
-            description: `${cashHistoryRecord.description} (Payroll Payment)`
-          };
-
-          const { data: retryData, error: retryError } = await supabase
-            .from('cash_history')
-            .insert(alternativeRecord)
-            .select()
-            .single();
-
-          if (retryError) {
-            console.error('💥 Retry also failed:', retryError);
-            throw cashHistoryError; // Throw original error
-          }
-
-          console.log('✅ Cash History Success (alternative type):', retryData);
-          cashHistoryData = retryData; // Use retry data
-        } else {
-          throw cashHistoryError; // Stop execution if other error
-        }
-      } else {
-        console.log('✅ Cash History Success:', cashHistoryData);
-        console.log('💰 Saved Cash History ID:', cashHistoryData.id);
-      }
-
-      // Update payroll record with payment info and cash_history link
+      // ============================================================================
+      // UPDATE PAYROLL STATUS TO PAID
+      // ============================================================================
       const updatePayload = {
         status: 'paid',
-        payment_date: paymentDate.toISOString().split('T')[0],
-        // payment_account_id: paymentAccountId, // TEMPORARILY REMOVED - Type mismatch (UUID vs TEXT)
-        cash_history_id: cashHistoryData.id,
+        paid_date: paymentDate.toISOString().split('T')[0],
       };
 
-      console.log('💼 Updating Payroll Record:', {
-        id,
-        payload: updatePayload
-      });
+      console.log('💼 Updating Payroll Record:', { id, payload: updatePayload });
 
       const { error: updateError } = await supabase
         .from('payroll_records')
@@ -569,180 +558,182 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
       if (updateError) {
         console.error('💥 Payroll Update Error:', updateError);
-        console.log('💥 Update Error Details:', {
-          message: updateError.message,
-          code: updateError.code,
-          details: updateError.details,
-          hint: updateError.hint
-        });
         throw updateError;
       }
 
       console.log('✅ Payroll record updated successfully');
 
       // ============================================================================
-      // BALANCE UPDATE LANGSUNG DIHAPUS
-      // Semua saldo sekarang dihitung dari journal_entries
-      // Beban Gaji, Kas, Panjar Karyawan semua di-jurnal via createPayrollJournal
-      // ============================================================================
-
-      // ============================================================================
       // AUTO-GENERATE JOURNAL ENTRY FOR PAYROLL
+      // Semua saldo dihitung dari journal_entries (tidak perlu cash_history)
       // ============================================================================
       // Jurnal otomatis untuk pembayaran gaji:
-      // Dr. Beban Gaji        xxx
-      //   Cr. Kas/Bank             xxx
+      // Dr. Beban Gaji        xxx (gross salary)
+      //   Cr. Kas/Bank             xxx (net salary - akun yang dipilih user)
       //   Cr. Panjar Karyawan      xxx (jika ada potongan panjar)
       // ============================================================================
       if (currentBranch?.id) {
         try {
-          const deductionAmount = payrollRecord.deduction_amount || 0;
+          const deductionAmount = payrollRecord.advance_deduction || payrollRecord.total_deductions || 0;
+          const grossSalary = payrollRecord.gross_salary || (payrollRecord.net_salary + deductionAmount);
+
           const journalResult = await createPayrollJournal({
             payrollId: id,
             payrollDate: paymentDate,
             employeeName: payrollRecord.employee_name,
-            grossSalary: payrollRecord.gross_salary || payrollRecord.net_salary + deductionAmount,
+            grossSalary: grossSalary,
             advanceDeduction: deductionAmount,
             netSalary: payrollRecord.net_salary,
             branchId: currentBranch.id,
+            paymentAccountId: paymentAccountId,
+            paymentAccountName: accountData?.name,
+            paymentAccountCode: accountData?.code,
           });
 
           if (journalResult.success) {
             console.log('✅ Jurnal payroll auto-generated:', journalResult.journalId);
+            console.log('  - Akun pembayaran:', accountData?.name || 'Default Kas');
+            console.log('  - Gross Salary:', grossSalary);
+            console.log('  - Net Salary:', payrollRecord.net_salary);
+            console.log('  - Deduction:', deductionAmount);
           } else {
             console.warn('⚠️ Gagal membuat jurnal payroll otomatis:', journalResult.error);
+            // Don't throw - payment still succeeded, just journal failed
+          }
+
+          // ============================================================================
+          // UPDATE EMPLOYEE_ADVANCES.REMAINING_AMOUNT
+          // Kurangi saldo panjar karyawan yang dipotong dari gaji
+          // ============================================================================
+          if (deductionAmount > 0 && payrollRecord.employee_id) {
+            try {
+              // Get outstanding advances for this employee (oldest first - FIFO)
+              const { data: advances, error: advancesError } = await supabase
+                .from('employee_advances')
+                .select('id, remaining_amount')
+                .eq('employee_id', payrollRecord.employee_id)
+                .gt('remaining_amount', 0)
+                .order('date', { ascending: true });
+
+              if (!advancesError && advances && advances.length > 0) {
+                let remainingDeduction = deductionAmount;
+
+                for (const advance of advances) {
+                  if (remainingDeduction <= 0) break;
+
+                  const amountToDeduct = Math.min(remainingDeduction, advance.remaining_amount);
+                  const newRemaining = advance.remaining_amount - amountToDeduct;
+
+                  const { error: updateError } = await supabase
+                    .from('employee_advances')
+                    .update({ remaining_amount: newRemaining })
+                    .eq('id', advance.id);
+
+                  if (updateError) {
+                    console.error(`Failed to update advance ${advance.id}:`, updateError);
+                  } else {
+                    console.log(`✅ Panjar ${advance.id} dikurangi: ${advance.remaining_amount} → ${newRemaining}`);
+                  }
+
+                  remainingDeduction -= amountToDeduct;
+                }
+              }
+            } catch (advanceError) {
+              console.error('Error updating employee advances:', advanceError);
+              // Don't throw - payment still succeeded
+            }
+          }
+
+          // ============================================================================
+          // UPDATE COMMISSION_ENTRIES STATUS TO 'paid'
+          // Mark all pending commissions for this employee in this period as paid
+          // ============================================================================
+          if (payrollRecord.employee_id) {
+            try {
+              // Get period dates for filtering
+              const periodStart = new Date(payrollRecord.period_start);
+              const periodEnd = new Date(payrollRecord.period_end);
+              periodEnd.setHours(23, 59, 59, 999);
+
+              const { data: updatedCommissions, error: commissionUpdateError } = await supabase
+                .from('commission_entries')
+                .update({ status: 'paid' })
+                .eq('user_id', payrollRecord.employee_id)
+                .eq('status', 'pending')
+                .gte('created_at', periodStart.toISOString())
+                .lte('created_at', periodEnd.toISOString())
+                .select('id');
+
+              if (commissionUpdateError) {
+                console.error('Failed to update commission status:', commissionUpdateError);
+              } else {
+                console.log(`✅ ${updatedCommissions?.length || 0} commission entries marked as paid`);
+              }
+            } catch (commissionError) {
+              console.error('Error updating commission status:', commissionError);
+              // Don't throw - payment still succeeded
+            }
           }
         } catch (journalError) {
           console.error('Error creating payroll journal:', journalError);
+          // Don't throw - payment still succeeded
         }
       }
 
-      // Log advance deduction info for debugging
-      const deductionAmount = payrollRecord.deduction_amount || 0;
-      if (deductionAmount > 0) {
-        console.log('💰 ADVANCE DEDUCTION INFO:');
-        console.log('  - Payroll ID:', id);
-        console.log('  - Employee:', payrollRecord.employee_name);
-        console.log('  - Deduction Amount:', deductionAmount);
-        console.log('  - Status changed to: paid');
-        console.log('  - Database trigger should now process advance repayment automatically');
-        console.log('  - Check database logs for trigger execution: payroll_advance_repayment_trigger');
-
-        // Verify advance repayment was created (check after short delay for trigger to complete)
-        setTimeout(async () => {
-          try {
-            const { data: recentRepayments, error: repaymentError } = await supabase
-              .from('advance_repayments')
-              .select('*')
-              .eq('recorded_by', payrollRecord.created_by)
-              .order('date', { ascending: false })
-              .limit(5);
-
-            if (repaymentError) {
-              console.warn('⚠️ Could not verify advance repayments:', repaymentError);
-            } else {
-              console.log('📋 Recent advance repayments for verification:', recentRepayments);
-
-              // Check if any repayment was created for this payroll period
-              const payrollMonthStr = `${payrollRecord.period_month}`;
-              const relatedRepayments = recentRepayments?.filter(r =>
-                r.notes?.includes(payrollMonthStr) || r.notes?.includes('gaji')
-              );
-
-              if (relatedRepayments && relatedRepayments.length > 0) {
-                console.log('✅ Advance repayment(s) found for this payroll:', relatedRepayments);
-              } else {
-                console.warn('⚠️ No advance repayment found - trigger may not have executed');
-                console.warn('   Please check:');
-                console.warn('   1. Database trigger payroll_advance_repayment_trigger is enabled');
-                console.warn('   2. Account Piutang Karyawan (code 1220) exists');
-                console.warn('   3. Employee has outstanding advances');
-              }
-            }
-          } catch (verifyError) {
-            console.warn('⚠️ Verification check failed:', verifyError);
-          }
-        }, 1000);
-      } else {
-        console.log('ℹ️ No advance deduction for this payroll (deduction_amount = 0)');
-      }
-
-      return { payrollRecord, cashHistoryData };
+      return { payrollRecord };
     },
     onSuccess: async () => {
-      // Invalidate all payroll-related queries (like piutang system)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['payrollRecords'] }),
-        queryClient.invalidateQueries({ queryKey: ['payrollSummary'] }),
-        queryClient.invalidateQueries({ queryKey: ['accounts'] }),
-        queryClient.invalidateQueries({ queryKey: ['cashFlow'] }),
-        queryClient.invalidateQueries({ queryKey: ['cashBalance'] }),
-        queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] }), // For advance deduction updates
-        queryClient.invalidateQueries({ queryKey: ['journalEntries'] }), // For auto-generated journal
-      ]);
+      // Invalidate all payroll-related queries with exact: false
+      await queryClient.invalidateQueries({ queryKey: ['payrollRecords'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['payrollSummary'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['cashFlow'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['cashBalance'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['employeeAdvances'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['journalEntries'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['commissionEntries'], exact: false });
 
-      // Force immediate refetch to update UI without waiting for background refetch
+      // Force immediate refetch to update UI
       await queryClient.refetchQueries({
         queryKey: ['payrollRecords'],
-        type: 'active' // Only refetch currently mounted queries
+        exact: false,
+        type: 'active'
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['payrollSummary'],
+        exact: false,
+        type: 'active'
       });
 
       toast({
-        title: 'Success',
-        description: 'Payment processed successfully',
+        title: 'Sukses',
+        description: 'Pembayaran berhasil diproses',
       });
     },
   });
 
   const deletePayrollRecord = useMutation({
     mutationFn: async (payrollId: string) => {
-      // Get payroll record details first
-      const { data: payrollRecord, error: fetchError } = await supabase
-        .from('payroll_records')
-        .select('*, employee_id, net_salary, status')
-        .eq('id', payrollId)
-        .single();
-
-      if (fetchError) throw fetchError;
+      console.log('🗑️ Deleting payroll record:', payrollId);
 
       // ============================================================================
-      // VOID JURNAL PAYROLL
+      // VOID JURNAL PAYROLL (jika ada)
       // Balance otomatis ter-rollback karena dihitung dari journal_entries
       // ============================================================================
       try {
         const { error: voidError } = await supabase
           .from('journal_entries')
-          .update({ status: 'voided' })
+          .update({ status: 'voided', is_voided: true, void_reason: 'Payroll record deleted' })
           .eq('reference_id', payrollId)
           .eq('reference_type', 'payroll');
 
         if (voidError) {
-          console.error('Failed to void payroll journal:', voidError.message);
+          console.warn('Failed to void payroll journal (may not exist):', voidError.message);
         } else {
           console.log('✅ Payroll journal voided:', payrollId);
         }
       } catch (err) {
-        console.error('Error voiding payroll journal:', err);
-      }
-
-      // If payroll was paid, delete cash_history record (untuk monitoring saja)
-      if (payrollRecord.status === 'paid') {
-        // Delete cash_history record
-        const { error: cashError } = await supabase
-          .from('cash_history')
-          .delete()
-          .eq('reference_id', payrollId)
-          .eq('type', 'gaji_karyawan');
-
-        if (cashError) {
-          console.warn('Failed to delete cash history:', cashError);
-          // Try alternative type
-          await supabase
-            .from('cash_history')
-            .delete()
-            .eq('reference_id', payrollId)
-            .eq('type', 'kas_keluar_manual');
-        }
+        console.warn('Error voiding payroll journal:', err);
       }
 
       // Delete payroll record
@@ -751,25 +742,44 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
         .delete()
         .eq('id', payrollId);
 
-      if (deleteError) throw deleteError;
+      if (deleteError) {
+        console.error('💥 Delete error:', deleteError);
+        throw deleteError;
+      }
 
+      console.log('✅ Payroll record deleted:', payrollId);
       return payrollId;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payrollRecords'] });
-      queryClient.invalidateQueries({ queryKey: ['payrollSummary'] });
-      queryClient.invalidateQueries({ queryKey: ['cashHistory'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+    onSuccess: async () => {
+      // Invalidate all payroll-related queries with exact: false to match all variants
+      await queryClient.invalidateQueries({ queryKey: ['payrollRecords'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['payrollSummary'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['cashHistory'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false });
+      await queryClient.invalidateQueries({ queryKey: ['journalEntries'], exact: false });
+
+      // Force immediate refetch of ALL active payroll queries
+      await queryClient.refetchQueries({
+        queryKey: ['payrollRecords'],
+        exact: false,
+        type: 'active'
+      });
+      await queryClient.refetchQueries({
+        queryKey: ['payrollSummary'],
+        exact: false,
+        type: 'active'
+      });
+
       toast({
-        title: 'Success',
-        description: 'Payroll record deleted successfully',
+        title: 'Sukses',
+        description: 'Catatan gaji berhasil dihapus',
       });
     },
     onError: (error: Error) => {
+      console.error('Error deleting payroll:', error);
       toast({
         title: 'Error',
-        description: `Failed to delete payroll record: ${error.message}`,
+        description: `Gagal menghapus catatan gaji: ${error.message}`,
         variant: 'destructive',
       });
     },

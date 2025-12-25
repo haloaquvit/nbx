@@ -97,13 +97,16 @@ export const useAccountsPayable = () => {
         branchId: currentBranch?.id,
       })
 
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('accounts_payable')
         .insert(dbData)
         .select()
-        .single()
+        .limit(1)
 
       if (error) throw new Error(error.message)
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
+      if (!data) throw new Error('Failed to create accounts payable')
       return fromDb(data)
     },
     onSuccess: () => {
@@ -128,20 +131,24 @@ export const useAccountsPayable = () => {
       const paymentDate = new Date()
 
       // Get current payable data
-      const { data: currentPayable, error: fetchError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: currentPayableRaw, error: fetchError } = await supabase
         .from('accounts_payable')
         .select('*')
         .eq('id', payableId)
-        .single()
+        .limit(1)
 
       if (fetchError) throw fetchError
+      const currentPayable = Array.isArray(currentPayableRaw) ? currentPayableRaw[0] : currentPayableRaw
+      if (!currentPayable) throw new Error('Payable not found')
 
       const currentPaidAmount = currentPayable.paid_amount || 0
       const newPaidAmount = currentPaidAmount + amount
       const isFullyPaid = newPaidAmount >= currentPayable.amount
 
       // Update accounts payable
-      const { data: updatedPayable, error: updateError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: updatedPayableRaw, error: updateError } = await supabase
         .from('accounts_payable')
         .update({
           paid_amount: newPaidAmount,
@@ -152,23 +159,29 @@ export const useAccountsPayable = () => {
         })
         .eq('id', payableId)
         .select()
-        .single()
+        .limit(1)
 
       if (updateError) throw updateError
+      const updatedPayable = Array.isArray(updatedPayableRaw) ? updatedPayableRaw[0] : updatedPayableRaw
+      if (!updatedPayable) throw new Error('Failed to update payable')
 
       // Get payment account info
-      const { data: paymentAccount } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: paymentAccountRaw } = await supabase
         .from('accounts')
         .select('id, name, code')
         .eq('id', paymentAccountId)
-        .single()
+        .limit(1)
+      const paymentAccount = Array.isArray(paymentAccountRaw) ? paymentAccountRaw[0] : paymentAccountRaw
 
       // Get liability account info
-      const { data: liabilityAccount } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: liabilityAccountRaw } = await supabase
         .from('accounts')
         .select('id, name, code')
         .eq('id', liabilityAccountId)
-        .single()
+        .limit(1)
+      const liabilityAccount = Array.isArray(liabilityAccountRaw) ? liabilityAccountRaw[0] : liabilityAccountRaw
 
       console.log('Payment account:', paymentAccount)
       console.log('Liability account:', liabilityAccount)
@@ -195,6 +208,8 @@ export const useAccountsPayable = () => {
             supplierName: currentPayable.supplier_name || 'Supplier',
             invoiceNumber: currentPayable.purchase_order_id || undefined,
             branchId: currentBranch.id,
+            paymentAccountId: paymentAccountId,
+            liabilityAccountId: liabilityAccountId,
           });
 
           if (journalResult.success) {
@@ -207,32 +222,7 @@ export const useAccountsPayable = () => {
         }
       }
 
-      // Record in cash_history for tracking (MONITORING ONLY - tidak update balance)
-      if (user) {
-        const liabilityInfo = liabilityAccount ? `(${liabilityAccount.code || ''} ${liabilityAccount.name})` : ''
-        const cashFlowRecord = {
-          account_id: paymentAccountId,
-          account_name: paymentAccount?.name || 'Unknown Account',
-          type: 'pembayaran_hutang',
-          amount: amount,
-          description: `Pembayaran hutang ${liabilityInfo} - ${currentPayable.description}`,
-          reference_id: payableId,
-          reference_name: `Pembayaran Hutang ${currentPayable.supplier_name}`,
-          user_id: user.id,
-          user_name: user.name || user.email || 'Unknown User',
-          branch_id: currentBranch?.id || null,
-        }
-
-        console.log('Recording payment in cash history:', cashFlowRecord)
-
-        const { error: cashFlowError } = await supabase
-          .from('cash_history')
-          .insert(cashFlowRecord)
-
-        if (cashFlowError) {
-          console.error('Failed to record payment in cash flow:', cashFlowError.message)
-        }
-      }
+      // NOTE: cash_history INSERT DIHAPUS - semua cash flow sekarang dibaca dari journal_entries
 
       const isPurchaseOrderPayment = !!currentPayable.purchase_order_id
 

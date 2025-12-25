@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useBranch } from '@/contexts/BranchContext';
 import { generateSequentialId } from '@/utils/idGenerator';
+import { createDebtJournal } from '@/services/journalService';
 
 interface AddDebtDialogProps {
   onSuccess?: () => void;
@@ -74,6 +75,36 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
       });
 
       if (error) throw error;
+
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR DEBT (KEWAJIBAN)
+      // ============================================================================
+      // Jurnal otomatis untuk penambahan hutang:
+      // Dr. Kas/Bank                xxx (menerima dana)
+      //   Cr. Hutang (2xxx)              xxx (kewajiban bertambah)
+      // ============================================================================
+      if (currentBranch?.id) {
+        try {
+          const journalResult = await createDebtJournal({
+            debtId: id,
+            debtDate: new Date(),
+            amount,
+            creditorName: formData.creditorName,
+            creditorType: formData.creditorType,
+            description: formData.description,
+            branchId: currentBranch.id,
+          });
+
+          if (journalResult.success) {
+            console.log('✅ Jurnal hutang auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Gagal membuat jurnal hutang otomatis:', journalResult.error);
+            toast.warning(`Hutang tersimpan, tapi jurnal gagal dibuat: ${journalResult.error}`);
+          }
+        } catch (journalError) {
+          console.error('Error creating debt journal:', journalError);
+        }
+      }
 
       toast.success('Hutang berhasil ditambahkan');
 

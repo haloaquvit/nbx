@@ -34,6 +34,7 @@ import { Skeleton } from "./ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
 import { supabase } from "@/integrations/supabase/client"
+import { useAccounts } from "@/hooks/useAccounts"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -211,40 +212,31 @@ interface CashHistoryWithBalance extends CashHistory {
 export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { accounts } = useAccounts(); // Get accounts with calculated balances from journal
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [selectedRecord, setSelectedRecord] = React.useState<CashHistory | null>(null);
   const [isTransferDialogOpen, setIsTransferDialogOpen] = React.useState(false);
   const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [filteredData, setFilteredData] = React.useState<CashHistoryWithBalance[]>([]);
-  const [accountBalances, setAccountBalances] = React.useState<Record<string, number>>({});
-  const [accountCodes, setAccountCodes] = React.useState<Record<string, string>>({});
   const [isDetailDialogOpen, setIsDetailDialogOpen] = React.useState(false);
   const [detailRecord, setDetailRecord] = React.useState<CashHistoryWithBalance | null>(null);
 
-  // Fetch current account balances and codes
-  React.useEffect(() => {
-    const fetchAccountBalances = async () => {
-      const { data: accounts, error } = await supabase
-        .from('accounts')
-        .select('id, balance, code');
+  // Get account balances and codes from useAccounts (calculated from journal entries)
+  const accountBalances = React.useMemo(() => {
+    const balances: Record<string, number> = {};
+    (accounts || []).forEach(account => {
+      balances[account.id] = account.balance || 0;
+    });
+    return balances;
+  }, [accounts]);
 
-      if (error) {
-        console.error('Error fetching account balances:', error);
-        return;
-      }
-
-      const balances: Record<string, number> = {};
-      const codes: Record<string, string> = {};
-      accounts?.forEach(account => {
-        balances[account.id] = account.balance || 0;
-        codes[account.id] = account.code || '';
-      });
-      setAccountBalances(balances);
-      setAccountCodes(codes);
-    };
-
-    fetchAccountBalances();
-  }, []);
+  const accountCodes = React.useMemo(() => {
+    const codes: Record<string, string> = {};
+    (accounts || []).forEach(account => {
+      codes[account.id] = account.code || '';
+    });
+    return codes;
+  }, [accounts]);
 
   // Initialize filtered data with calculated balances
   React.useEffect(() => {
@@ -355,63 +347,41 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     if (!selectedRecord) return;
 
     try {
-      // First, determine the impact on account balance
-      const isIncome = isIncomeType(selectedRecord);
-      const isExpense = isExpenseType(selectedRecord);
-      const balanceChange = isIncome ? -selectedRecord.amount : (isExpense ? selectedRecord.amount : 0);
+      // ============================================================================
+      // ARSITEKTUR BARU: Void jurnal entry, bukan hapus cash_history
+      // Balance akan otomatis terupdate karena dihitung dari journal entries
+      // ============================================================================
 
-      // Update account balance to reverse the transaction effect
-      if (selectedRecord.account_id) {
-        // Get current account balance first
-        const { data: account, error: fetchError } = await supabase
-          .from('accounts')
-          .select('balance')
-          .eq('id', selectedRecord.account_id)
-          .single();
+      // selectedRecord.id sekarang adalah journal_entry_line ID
+      // Kita perlu cari journal_entry yang terkait dan void-nya
+      const { data: journalLine, error: lineError } = await supabase
+        .from('journal_entry_lines')
+        .select('journal_entry_id')
+        .eq('id', selectedRecord.id)
+        .single();
 
-        if (fetchError) throw new Error(`Failed to fetch account: ${fetchError.message}`);
-
-        let newBalance;
-        
-        if (selectedRecord.source_type === 'transfer_masuk' || selectedRecord.source_type === 'transfer_keluar') {
-          // For transfers, reverse the direction
-          if (selectedRecord.source_type === 'transfer_masuk') {
-            // This was money coming in, so subtract it back
-            newBalance = (account.balance || 0) - selectedRecord.amount;
-          } else if (selectedRecord.source_type === 'transfer_keluar') {
-            // This was money going out, so add it back
-            newBalance = (account.balance || 0) + selectedRecord.amount;
-          } else {
-            newBalance = account.balance; // No change for other transfer types
-          }
-        } else {
-          // For regular transactions, reverse the effect
-          newBalance = (account.balance || 0) + balanceChange;
-        }
-
-        // Update the account balance
-        const { error: updateError } = await supabase
-          .from('accounts')
-          .update({ balance: newBalance })
-          .eq('id', selectedRecord.account_id);
-
-        if (updateError) throw new Error(`Failed to update account balance: ${updateError.message}`);
+      if (lineError || !journalLine) {
+        throw new Error('Jurnal tidak ditemukan');
       }
 
-      // Now delete the cash history record
-      const { error } = await supabase
-        .from('cash_history')
-        .delete()
-        .eq('id', selectedRecord.id);
+      // Void the journal entry
+      const { error: voidError } = await supabase
+        .from('journal_entries')
+        .update({
+          is_voided: true,
+          void_reason: 'Dibatalkan dari Buku Kas',
+          voided_at: new Date().toISOString(),
+        })
+        .eq('id', journalLine.journal_entry_id);
 
-      if (error) throw error;
+      if (voidError) throw new Error(`Gagal membatalkan jurnal: ${voidError.message}`);
 
       toast({
         title: "Berhasil",
-        description: "Data arus kas berhasil dihapus dan saldo akun diperbarui."
+        description: "Jurnal berhasil dibatalkan. Saldo akan otomatis terupdate."
       });
 
-      // Refresh the page or invalidate query
+      // Refresh the page to reload data
       window.location.reload();
     } catch (error) {
       toast({

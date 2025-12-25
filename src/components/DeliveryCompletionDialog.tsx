@@ -12,11 +12,24 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { CheckCircle, FileDown, Truck, Package, Calendar, User, FileText } from "lucide-react"
-import { format } from "date-fns"
+import { format, isValid } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { Delivery, TransactionDeliveryInfo } from "@/types/delivery"
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { PhotoUploadService } from "@/services/photoUploadService"
+
+// Helper function to safely format date
+function formatDeliveryDate(date: Date | string | null | undefined): string {
+  if (!date) return '-';
+
+  try {
+    const dateObj = date instanceof Date ? date : new Date(date);
+    if (!isValid(dateObj)) return '-';
+    return format(dateObj, "d MMMM yyyy, HH:mm", { locale: id });
+  } catch {
+    return '-';
+  }
+}
 
 interface DeliveryCompletionDialogProps {
   open: boolean
@@ -77,7 +90,7 @@ export function DeliveryCompletionDialog({
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span>{format(delivery.deliveryDate, "d MMMM yyyy, HH:mm", { locale: id })}</span>
+                      <span>{formatDeliveryDate(delivery.deliveryDate)}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <Truck className="h-4 w-4 text-muted-foreground" />

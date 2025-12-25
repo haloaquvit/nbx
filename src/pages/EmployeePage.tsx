@@ -30,6 +30,7 @@ import { PayrollRecordDialog } from "@/components/PayrollRecordDialog"
 import { EditPayrollDialog } from "@/components/EditPayrollDialog"
 import { PaymentConfirmationDialog } from "@/components/PaymentConfirmationDialog"
 import { PayrollHistoryTable } from "@/components/PayrollHistoryTable"
+import { RoleCommissionSetup } from "@/components/RoleCommissionSetup"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
@@ -55,9 +56,11 @@ export default function EmployeePage() {
   const [isPayrollRecordDialogOpen, setIsPayrollRecordDialogOpen] = useState(false)
   const [isEditPayrollDialogOpen, setIsEditPayrollDialogOpen] = useState(false)
   const [isPaymentConfirmDialogOpen, setIsPaymentConfirmDialogOpen] = useState(false)
+  const [isDeletePayrollDialogOpen, setIsDeletePayrollDialogOpen] = useState(false)
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [selectedSalaryConfig, setSelectedSalaryConfig] = useState<EmployeeSalary | null>(null)
   const [selectedPayrollRecord, setSelectedPayrollRecord] = useState<PayrollRecord | null>(null)
+  const [payrollToDelete, setPayrollToDelete] = useState<PayrollRecord | null>(null)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
 
@@ -65,7 +68,7 @@ export default function EmployeePage() {
   const { toast } = useToast()
   const { employees, isLoading, deleteEmployee, isError, error } = useEmployees()
   const { salaryConfigs, isLoading: isLoadingSalaries } = useEmployeeSalaries()
-  const { payrollRecords, approvePayrollRecord, processPayment } = usePayrollRecords({
+  const { payrollRecords, approvePayrollRecord, processPayment, deletePayrollRecord } = usePayrollRecords({
     year: selectedYear,
     month: selectedMonth,
   })
@@ -157,33 +160,24 @@ export default function EmployeePage() {
   }
 
   const handlePayPayroll = (record: PayrollRecord) => {
-    // Validate that payment account is set
-    if (!record.paymentAccountId) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Akun pembayaran belum dipilih. Silakan edit record payroll terlebih dahulu."
-      })
-      return
-    }
-
     // Set selected record and open confirmation dialog
+    // Payment account will be selected in the dialog
     setSelectedPayrollRecord(record)
     setIsPaymentConfirmDialogOpen(true)
   }
 
-  const handleConfirmPayment = async () => {
+  const handleConfirmPayment = async (paymentAccountId: string) => {
     if (!selectedPayrollRecord) return
 
     try {
       await processPayment.mutateAsync({
         id: selectedPayrollRecord.id,
-        paymentAccountId: selectedPayrollRecord.paymentAccountId!,
+        paymentAccountId: paymentAccountId,
         paymentDate: new Date()
       })
       toast({
         title: "Sukses",
-        description: "Pembayaran gaji berhasil diproses"
+        description: "Pembayaran gaji berhasil diproses dan jurnal otomatis dibuat"
       })
 
       // Close dialog after a short delay to allow query invalidation
@@ -203,6 +197,31 @@ export default function EmployeePage() {
   const handleEditPayroll = (record: PayrollRecord) => {
     setSelectedPayrollRecord(record)
     setIsEditPayrollDialogOpen(true)
+  }
+
+  const handleDeletePayrollClick = (record: PayrollRecord) => {
+    setPayrollToDelete(record)
+    setIsDeletePayrollDialogOpen(true)
+  }
+
+  const handleConfirmDeletePayroll = async () => {
+    if (!payrollToDelete) return
+
+    try {
+      await deletePayrollRecord.mutateAsync(payrollToDelete.id)
+      toast({
+        title: "Sukses",
+        description: `Catatan gaji ${payrollToDelete.employeeName} berhasil dihapus`
+      })
+      setIsDeletePayrollDialogOpen(false)
+      setPayrollToDelete(null)
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message || "Gagal menghapus catatan gaji"
+      })
+    }
   }
 
   if (isError) {
@@ -339,7 +358,7 @@ export default function EmployeePage() {
       )}
 
       <Tabs defaultValue="employees" className="w-full">
-        <TabsList className={`grid w-full ${userCanManagePayroll ? 'grid-cols-4' : 'grid-cols-1'}`}>
+        <TabsList className={`grid w-full ${userCanManagePayroll ? 'grid-cols-5' : 'grid-cols-1'}`}>
           <TabsTrigger value="employees" className="gap-2">
             <Users className="h-4 w-4" />
             Data Karyawan
@@ -349,6 +368,10 @@ export default function EmployeePage() {
               <TabsTrigger value="salary-config" className="gap-2">
                 <Settings className="h-4 w-4" />
                 Konfigurasi Gaji
+              </TabsTrigger>
+              <TabsTrigger value="commission-setup" className="gap-2">
+                <DollarSign className="h-4 w-4" />
+                Setup Komisi
               </TabsTrigger>
               <TabsTrigger value="payroll-records" className="gap-2">
                 <Calculator className="h-4 w-4" />
@@ -547,6 +570,13 @@ export default function EmployeePage() {
           </TabsContent>
         )}
 
+        {/* Commission Setup Tab */}
+        {userCanManagePayroll && (
+          <TabsContent value="commission-setup" className="space-y-4">
+            <RoleCommissionSetup />
+          </TabsContent>
+        )}
+
         {/* Payroll Records Tab */}
         {userCanManagePayroll && (
           <TabsContent value="payroll-records" className="space-y-4">
@@ -683,6 +713,17 @@ export default function EmployeePage() {
                                   >
                                     <Edit className="h-3 w-3" />
                                   </Button>
+                                  {userIsOwnerRole && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      title="Hapus"
+                                      onClick={() => handleDeletePayrollClick(record)}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                 </>
                               )}
                               {record.status === 'approved' && (
@@ -702,9 +743,20 @@ export default function EmployeePage() {
                                     title="Bayar"
                                     className="bg-green-600 hover:bg-green-700"
                                   >
-                                  <DollarSign className="h-3 w-3 mr-1" />
-                                  Bayar
-                                </Button>
+                                    <DollarSign className="h-3 w-3 mr-1" />
+                                    Bayar
+                                  </Button>
+                                  {userIsOwnerRole && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      title="Hapus"
+                                      onClick={() => handleDeletePayrollClick(record)}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                 </>
                               )}
                               {record.status === 'paid' && (
@@ -741,6 +793,38 @@ export default function EmployeePage() {
           </TabsContent>
         )}
       </Tabs>
+
+      {/* Delete Payroll Confirmation Dialog */}
+      <AlertDialog open={isDeletePayrollDialogOpen} onOpenChange={setIsDeletePayrollDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Catatan Gaji</AlertDialogTitle>
+            <AlertDialogDescription>
+              {payrollToDelete && (
+                <>
+                  Apakah Anda yakin ingin menghapus catatan gaji untuk{' '}
+                  <span className="font-semibold">{payrollToDelete.employeeName}</span> periode{' '}
+                  <span className="font-semibold">{payrollToDelete.periodDisplay}</span>?
+                  <br /><br />
+                  <span className="text-amber-600 font-medium">
+                    ⚠️ Tindakan ini tidak dapat dibatalkan.
+                  </span>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPayrollToDelete(null)}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeletePayroll}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deletePayrollRecord.isPending}
+            >
+              {deletePayrollRecord.isPending ? "Menghapus..." : "Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

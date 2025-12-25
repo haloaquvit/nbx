@@ -19,8 +19,13 @@ import { useAuth } from '@/hooks/useAuth'
 import { CreatePurchaseOrderDialog } from './CreatePurchaseOrderDialog'
 import { Badge } from './ui/badge'
 import { useToast } from './ui/use-toast'
-import { Trash2, ChevronDown, ChevronUp, Package, Search, X, FileText } from 'lucide-react'
+import { Trash2, ChevronDown, ChevronUp, Package, Search, X, FileText, Printer, FileDown } from 'lucide-react'
 import { canManageEmployees, isOwner } from '@/utils/roleUtils'
+import { useCompanySettings } from '@/hooks/useCompanySettings'
+import { format } from 'date-fns'
+import { id as idLocale } from 'date-fns/locale'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 const materialSchema = z.object({
   name: z.string().min(3, { message: "Nama bahan minimal 3 karakter." }),
@@ -58,6 +63,7 @@ export const MaterialManagement = () => {
   const { materials, isLoading, upsertMaterial, deleteMaterial } = useMaterials()
   const { user } = useAuth()
   const { toast } = useToast()
+  const { settings: companyInfo } = useCompanySettings()
 
   // Permission checks
   const canManageMaterials = canManageEmployees(user) || (user && user.role?.toLowerCase() === 'supervisor')
@@ -157,6 +163,138 @@ export const MaterialManagement = () => {
     })
   }
 
+  // Fungsi cetak PDF Stok Bahan Baku
+  const handlePrintStockPDF = () => {
+    if (!materials || materials.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Tidak ada data",
+        description: "Tidak ada data bahan untuk dicetak.",
+      })
+      return
+    }
+
+    const doc = new jsPDF()
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const margin = 15
+
+    // Header dengan background biru
+    doc.setFillColor(59, 130, 246)
+    doc.rect(0, 0, pageWidth, 40, 'F')
+
+    // Logo dan info perusahaan
+    if (companyInfo?.logo) {
+      try {
+        doc.addImage(companyInfo.logo, 'PNG', margin, 8, 25, 10, undefined, 'FAST')
+      } catch (e) { console.error(e) }
+    }
+
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(16).setFont('helvetica', 'bold')
+    doc.text(companyInfo?.name || 'PERUSAHAAN', margin + 30, 15)
+    doc.setFontSize(9).setFont('helvetica', 'normal')
+    doc.text(companyInfo?.address || '', margin + 30, 21)
+    doc.text(companyInfo?.phone || '', margin + 30, 26)
+
+    // Judul laporan
+    doc.setFontSize(18).setFont('helvetica', 'bold')
+    doc.text('LAPORAN STOK BAHAN BAKU', pageWidth - margin, 18, { align: 'right' })
+    doc.setFontSize(10).setFont('helvetica', 'normal')
+    doc.text(`Tanggal: ${format(new Date(), 'd MMMM yyyy', { locale: idLocale })}`, pageWidth - margin, 26, { align: 'right' })
+
+    // Ringkasan
+    const stockMaterials = filteredMaterials.filter(m => m.type === 'Stock')
+    const lowStockCount = stockMaterials.filter(m => m.stock <= (m.minStock || 0)).length
+    const totalValue = stockMaterials.reduce((sum, m) => sum + (m.stock * m.pricePerUnit), 0)
+
+    let y = 50
+    doc.setTextColor(0, 0, 0)
+    doc.setFillColor(245, 247, 250)
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, 25, 3, 3, 'F')
+
+    doc.setFontSize(10).setFont('helvetica', 'bold')
+    doc.text('RINGKASAN STOK', margin + 5, y + 8)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Total Item: ${filteredMaterials.length}`, margin + 5, y + 16)
+    doc.text(`Item Stok Rendah: ${lowStockCount}`, margin + 70, y + 16)
+    doc.text(`Total Nilai Stok: ${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalValue)}`, margin + 140, y + 16)
+
+    y += 35
+
+    // Tabel data bahan
+    const tableData = filteredMaterials.map((material, index) => {
+      const isLowStock = material.type === 'Stock' && material.stock <= (material.minStock || 0)
+      const stockValue = material.stock * material.pricePerUnit
+      return [
+        (index + 1).toString(),
+        material.name,
+        material.type,
+        `${material.stock.toLocaleString('id-ID')} ${material.unit}`,
+        material.type === 'Stock' ? `${(material.minStock || 0).toLocaleString('id-ID')} ${material.unit}` : '-',
+        new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(material.pricePerUnit),
+        new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(stockValue),
+        isLowStock ? 'RENDAH' : 'OK'
+      ]
+    })
+
+    autoTable(doc, {
+      startY: y,
+      head: [['No', 'Nama Bahan', 'Jenis', 'Stok Saat Ini', 'Stok Minimal', 'Harga/Satuan', 'Nilai Stok', 'Status']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: {
+        fillColor: [59, 130, 246],
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 9,
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 3
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252]
+      },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 10 },
+        1: { halign: 'left', cellWidth: 40 },
+        2: { halign: 'center', cellWidth: 18 },
+        3: { halign: 'right', cellWidth: 25 },
+        4: { halign: 'right', cellWidth: 25 },
+        5: { halign: 'right', cellWidth: 28 },
+        6: { halign: 'right', cellWidth: 28 },
+        7: { halign: 'center', cellWidth: 18 }
+      },
+      margin: { left: margin, right: margin },
+      didParseCell: (data) => {
+        // Warnai status RENDAH dengan merah
+        if (data.column.index === 7 && data.cell.raw === 'RENDAH') {
+          data.cell.styles.textColor = [220, 38, 38]
+          data.cell.styles.fontStyle = 'bold'
+        }
+        // Warnai status OK dengan hijau
+        if (data.column.index === 7 && data.cell.raw === 'OK') {
+          data.cell.styles.textColor = [34, 197, 94]
+        }
+      }
+    })
+
+    // Footer
+    const finalY = (doc as any).lastAutoTable.finalY + 10
+    doc.setFontSize(8).setTextColor(100, 100, 100)
+    doc.text(`Dicetak pada: ${format(new Date(), 'd MMMM yyyy HH:mm', { locale: idLocale })} WIB`, margin, finalY)
+    doc.text(`Total ${filteredMaterials.length} item bahan`, pageWidth - margin, finalY, { align: 'right' })
+
+    // Simpan PDF
+    const filename = `Laporan-Stok-Bahan-${format(new Date(), 'yyyy-MM-dd')}.pdf`
+    doc.save(filename)
+
+    toast({
+      title: "Berhasil!",
+      description: `Laporan stok bahan berhasil diunduh: ${filename}`,
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -332,9 +470,9 @@ export const MaterialManagement = () => {
                       <span className="text-sm text-muted-foreground">
                         Menampilkan {filteredMaterials.length} dari {materials?.length || 0} bahan
                       </span>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={clearAllFilters}
                         className="h-8 px-2"
                       >
@@ -343,6 +481,18 @@ export const MaterialManagement = () => {
                       </Button>
                     </div>
                   )}
+                  {/* Tombol Cetak PDF */}
+                  <div className="ml-auto">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handlePrintStockPDF}
+                      className="flex items-center gap-2"
+                    >
+                      <FileDown className="h-4 w-4" />
+                      Cetak Stok PDF
+                    </Button>
+                  </div>
                 </div>
               </div>
               

@@ -4,6 +4,7 @@ export interface JournalEntry {
   id: string;
   entryNumber: string;
   entryDate: Date;
+  entryTime?: string; // Format: HH:mm:ss atau HH:mm
   description: string;
   referenceType?: 'transaction' | 'expense' | 'payroll' | 'transfer' | 'manual' | 'adjustment' | 'closing' | 'opening';
   referenceId?: string;

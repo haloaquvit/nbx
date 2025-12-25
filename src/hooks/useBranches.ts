@@ -44,7 +44,8 @@ export function useBranches() {
   const createBranch = useMutation({
     mutationFn: async (branch: Omit<Branch, 'id' | 'createdAt' | 'updatedAt'>) => {
       // 1. Create the branch
-      const { data: newBranch, error: branchError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: newBranchRaw, error: branchError } = await supabase
         .from('branches')
         .insert({
           company_id: branch.companyId,
@@ -59,9 +60,11 @@ export function useBranches() {
           settings: branch.settings,
         })
         .select()
-        .single();
+        .limit(1);
 
       if (branchError) throw branchError;
+      const newBranch = Array.isArray(newBranchRaw) ? newBranchRaw[0] : newBranchRaw;
+      if (!newBranch) throw new Error('Failed to create branch');
 
       // 2. Get the headquarters branch (first branch or one named "Pusat"/"Manokwari")
       const { data: allBranches } = await supabase
@@ -139,7 +142,8 @@ export function useBranches() {
       id: string;
       updates: Partial<Branch>;
     }) => {
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('branches')
         .update({
           company_id: updates.companyId,
@@ -155,9 +159,10 @@ export function useBranches() {
         })
         .eq('id', id)
         .select()
-        .single();
+        .limit(1);
 
       if (error) throw error;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       return data;
     },
     onSuccess: () => {

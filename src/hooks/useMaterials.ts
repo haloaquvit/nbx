@@ -40,8 +40,6 @@ export const useMaterials = () => {
   const { data: materials, isLoading } = useQuery<Material[]>({
     queryKey: ['materials', currentBranch?.id],
     queryFn: async () => {
-      console.log('[useMaterials] Fetching materials for branch:', currentBranch?.id, currentBranch?.name);
-
       let query = supabase
         .from('materials')
         .select('*');
@@ -52,13 +50,6 @@ export const useMaterials = () => {
       }
 
       const { data, error } = await query;
-
-      console.log('[useMaterials] Query result:', {
-        count: data?.length || 0,
-        error: error?.message,
-        data: data?.slice(0, 3) // Log first 3 items for debugging
-      });
-
       if (error) throw new Error(error.message);
       return data ? data.map(fromDbToApp) : [];
     },
@@ -91,15 +82,17 @@ export const useMaterials = () => {
       console.log('[addStock] RPC call successful, response:', data);
 
       // Fetch the updated material to verify the update
-      const { data: updatedMaterial, error: fetchError } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: updatedMaterialRaw, error: fetchError } = await supabase
         .from('materials')
         .select('*')
         .eq('id', materialId)
-        .single();
+        .limit(1);
 
+      const updatedMaterial = Array.isArray(updatedMaterialRaw) ? updatedMaterialRaw[0] : updatedMaterialRaw;
       if (fetchError) {
         console.error('[addStock] Error fetching updated material:', fetchError);
-      } else {
+      } else if (updatedMaterial) {
         console.log('[addStock] Updated material stock:', updatedMaterial.stock);
       }
 
@@ -117,12 +110,15 @@ export const useMaterials = () => {
         ...fromAppToDb(material),
         branch_id: currentBranch?.id || null,
       };
-      const { data, error } = await supabase
+      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('materials')
         .upsert(dbData)
         .select()
-        .single();
+        .limit(1);
       if (error) throw new Error(error.message);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+      if (!data) throw new Error('Failed to upsert material');
       return fromDbToApp(data);
     },
     onSuccess: () => {

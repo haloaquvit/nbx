@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { useAccounts } from "@/hooks/useAccounts"
 import { useBranch } from "@/contexts/BranchContext"
+import { STANDARD_COA_TEMPLATE } from "@/utils/chartOfAccountsUtils"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/useAuth"
 import { isOwner, isAdminOrOwner } from "@/utils/roleUtils"
@@ -44,65 +45,36 @@ import {
 import { cn } from "@/lib/utils"
 
 // ============================================================================
-// TEMPLATE COA STANDAR - BERDASARKAN DATA DATABASE AQUVIT
+// TEMPLATE COA STANDAR - DARI chartOfAccountsUtils.ts
 // Template ini digunakan untuk import COA standar ke cabang baru
+// Diambil dari STANDARD_COA_TEMPLATE di chartOfAccountsUtils.ts
 // ============================================================================
-const STANDARD_COA_INDONESIA = [
-  // ========== 1. ASET ==========
-  { code: '1000', name: 'ASET', level: 1, type: 'Aset', isHeader: true },
-  { code: '1100', name: 'Kas dan Setara Kas', level: 2, type: 'Aset', isHeader: true, parentCode: '1000' },
-  { code: '1110', name: 'Bank BCA', level: 3, type: 'Aset', isHeader: false, parentCode: '1100', isPaymentAccount: true },
-  { code: '1120', name: 'Kas Tunai', level: 3, type: 'Aset', isHeader: false, parentCode: '1100', isPaymentAccount: true },
-  { code: '1200', name: 'Piutang', level: 2, type: 'Aset', isHeader: true, parentCode: '1000' },
-  { code: '1210', name: 'Piutang Usaha', level: 3, type: 'Aset', isHeader: false, parentCode: '1200' },
-  { code: '1220', name: 'Piutang Karyawan', level: 3, type: 'Aset', isHeader: false, parentCode: '1200' },
-  { code: '1300', name: 'Persediaan', level: 2, type: 'Aset', isHeader: true, parentCode: '1000' },
-  { code: '1310', name: 'Persediaan Barang Dagang', level: 3, type: 'Aset', isHeader: false, parentCode: '1300' },
-  { code: '1320', name: 'Persediaan Bahan Baku', level: 3, type: 'Aset', isHeader: false, parentCode: '1300' },
-  { code: '1400', name: 'Aset Tetap', level: 2, type: 'Aset', isHeader: true, parentCode: '1000' },
-  { code: '1410', name: 'Kendaraan', level: 3, type: 'Aset', isHeader: false, parentCode: '1400' },
-  { code: '1420', name: 'Peralatan', level: 3, type: 'Aset', isHeader: false, parentCode: '1400' },
-  { code: '1430', name: 'Akumulasi Penyusutan', level: 3, type: 'Aset', isHeader: false, parentCode: '1400' },
 
-  // ========== 2. KEWAJIBAN ==========
-  { code: '2000', name: 'KEWAJIBAN', level: 1, type: 'Kewajiban', isHeader: true },
-  { code: '2100', name: 'Kewajiban Jangka Pendek', level: 2, type: 'Kewajiban', isHeader: true, parentCode: '2000' },
-  { code: '2110', name: 'Hutang Usaha', level: 3, type: 'Kewajiban', isHeader: false, parentCode: '2100' },
-  { code: '2120', name: 'Hutang Gaji', level: 3, type: 'Kewajiban', isHeader: false, parentCode: '2100' },
-  { code: '2130', name: 'Hutang Pajak', level: 3, type: 'Kewajiban', isHeader: false, parentCode: '2100' },
-  { code: '2200', name: 'Kewajiban Jangka Panjang', level: 2, type: 'Kewajiban', isHeader: true, parentCode: '2000' },
-  { code: '2210', name: 'Hutang Bank', level: 3, type: 'Kewajiban', isHeader: false, parentCode: '2200' },
+// Map category to type for UI compatibility
+function mapCategoryToType(category: string): 'Aset' | 'Kewajiban' | 'Modal' | 'Pendapatan' | 'Beban' {
+  switch (category) {
+    case 'ASET': return 'Aset';
+    case 'KEWAJIBAN': return 'Kewajiban';
+    case 'MODAL': return 'Modal';
+    case 'PENDAPATAN': return 'Pendapatan';
+    case 'HPP':
+    case 'BEBAN_OPERASIONAL':
+    case 'BEBAN_NON_OPERASIONAL': return 'Beban';
+    default: return 'Aset';
+  }
+}
 
-  // ========== 3. MODAL ==========
-  { code: '3000', name: 'MODAL', level: 1, type: 'Modal', isHeader: true },
-  { code: '3100', name: 'Modal Disetor', level: 2, type: 'Modal', isHeader: false, parentCode: '3000' },
-  { code: '3200', name: 'Laba Ditahan', level: 2, type: 'Modal', isHeader: false, parentCode: '3000' },
-  { code: '3300', name: 'Laba Tahun Berjalan', level: 2, type: 'Modal', isHeader: false, parentCode: '3000' },
-
-  // ========== 4. PENDAPATAN ==========
-  { code: '4000', name: 'PENDAPATAN', level: 1, type: 'Pendapatan', isHeader: true },
-  { code: '4100', name: 'Pendapatan Usaha', level: 2, type: 'Pendapatan', isHeader: true, parentCode: '4000' },
-  { code: '4110', name: 'Penjualan Produk', level: 3, type: 'Pendapatan', isHeader: false, parentCode: '4100' },
-  { code: '4120', name: 'Penjualan Jasa', level: 3, type: 'Pendapatan', isHeader: false, parentCode: '4100' },
-  { code: '4200', name: 'Pendapatan Lain-lain', level: 2, type: 'Pendapatan', isHeader: true, parentCode: '4000' },
-  { code: '4210', name: 'Pendapatan Bunga', level: 3, type: 'Pendapatan', isHeader: false, parentCode: '4200' },
-  { code: '4220', name: 'Pendapatan Lainnya', level: 3, type: 'Pendapatan', isHeader: false, parentCode: '4200' },
-
-  // ========== 5. HPP ==========
-  { code: '5000', name: 'HARGA POKOK PENJUALAN', level: 1, type: 'Beban', isHeader: true },
-  { code: '5100', name: 'Harga Pokok Produk', level: 2, type: 'Beban', isHeader: false, parentCode: '5000' },
-  { code: '5200', name: 'Biaya Bahan Baku', level: 2, type: 'Beban', isHeader: false, parentCode: '5000' },
-
-  // ========== 6. BEBAN ==========
-  { code: '6000', name: 'BEBAN OPERASIONAL', level: 1, type: 'Beban', isHeader: true },
-  { code: '6100', name: 'Beban Gaji dan Upah', level: 2, type: 'Beban', isHeader: false, parentCode: '6000' },
-  { code: '6200', name: 'Beban Transportasi', level: 2, type: 'Beban', isHeader: false, parentCode: '6000' },
-  { code: '6300', name: 'Beban Listrik dan Air', level: 2, type: 'Beban', isHeader: false, parentCode: '6000' },
-  { code: '6400', name: 'Beban Sewa', level: 2, type: 'Beban', isHeader: false, parentCode: '6000' },
-  { code: '6500', name: 'Beban Penyusutan', level: 2, type: 'Beban', isHeader: false, parentCode: '6000' },
-  { code: '6600', name: 'Beban Administrasi', level: 2, type: 'Beban', isHeader: false, parentCode: '6000' },
-  { code: '6700', name: 'Beban Lain-lain', level: 2, type: 'Beban', isHeader: false, parentCode: '6000' },
-]
+// Convert STANDARD_COA_TEMPLATE to format used in this page
+const STANDARD_COA_INDONESIA = STANDARD_COA_TEMPLATE.map(item => ({
+  code: item.code,
+  name: item.name,
+  level: item.level,
+  type: mapCategoryToType(item.category),
+  isHeader: item.isHeader,
+  parentCode: item.parentCode,
+  // Mark cash/bank accounts as payment accounts (codes 1120-1199)
+  isPaymentAccount: item.code.startsWith('11') && !item.isHeader && item.code !== '1100'
+}))
 
 // ============================================================================
 // INTERFACES

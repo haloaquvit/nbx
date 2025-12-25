@@ -9,6 +9,7 @@ export interface CompanyInfo {
   latitude?: number | null;
   longitude?: number | null;
   attendanceRadius?: number | null;
+  timezone?: string; // e.g., 'Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura'
 }
 
 export const useCompanySettings = () => {
@@ -33,6 +34,7 @@ export const useCompanySettings = () => {
         latitude: settingsObj.company_latitude ? parseFloat(settingsObj.company_latitude) : null,
         longitude: settingsObj.company_longitude ? parseFloat(settingsObj.company_longitude) : null,
         attendanceRadius: settingsObj.company_attendance_radius ? parseInt(settingsObj.company_attendance_radius, 10) : null,
+        timezone: settingsObj.company_timezone || 'Asia/Jakarta', // Default WIB
       };
     },
     staleTime: 60 * 60 * 1000, // 1 hour (settings rarely change)
@@ -51,6 +53,7 @@ export const useCompanySettings = () => {
         { key: 'company_latitude', value: newInfo.latitude?.toString() ?? '' },
         { key: 'company_longitude', value: newInfo.longitude?.toString() ?? '' },
         { key: 'company_attendance_radius', value: newInfo.attendanceRadius?.toString() ?? '' },
+        { key: 'company_timezone', value: newInfo.timezone || 'Asia/Jakarta' },
       ];
       const { error } = await supabase.from('company_settings').upsert(settingsData);
       if (error) throw new Error(error.message);

@@ -1,15 +1,17 @@
 # AQUVIT ERP System
 
+**Dibuat oleh: Mutashim Zakiy | © 2025**
+
 Sistem ERP (Enterprise Resource Planning) komprehensif untuk manajemen **Manufaktur & Distribusi Wholesale** dengan modul akuntansi terintegrasi, dirancang khusus untuk bisnis di Indonesia.
 
 ---
 
 ## Server & Deployment
 
-| Server | IP | Domain | Lokasi |
-|--------|-----|--------|--------|
-| **Primary** | `103.197.190.54` | `app.aquvit.id` | Nabire |
-| **Secondary** | `103.197.190.54` | `erp.aquvit.id` | Manokwari |
+| Server | IP | Domain | Database | Lokasi |
+|--------|-----|--------|----------|--------|
+| **Primary** | `103.197.190.54` | `nbx.aquvit.id` | `aquvit_db` | Nabire |
+| **Secondary** | `103.197.190.54` | `mkw.aquvit.id` | `aquavit_manokwari` | Manokwari |
 
 ---
 
@@ -121,8 +123,8 @@ Sistem ERP (Enterprise Resource Planning) komprehensif untuk manajemen **Manufak
 │                      API GATEWAY LAYER                           │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │                    PostgREST API                          │   │
-│  │         https://app.aquvit.id (Nabire Server)             │   │
-│  │         https://erp.aquvit.id (Manokwari Server)          │   │
+│  │         https://nbx.aquvit.id (Nabire Server)             │   │
+│  │         https://mkw.aquvit.id (Manokwari Server)          │   │
 │  │                  IP: 103.197.190.54                       │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -773,7 +775,7 @@ const userPermissions = {
 ### Base URL
 
 ```
-Production: https://app.aquvit.id/rest/v1
+Production: https://nbx.aquvit.id/rest/v1
 ```
 
 ### Authentication
@@ -885,11 +887,11 @@ npm run build
 
 ```env
 # Database
-VITE_SUPABASE_URL=https://app.aquvit.id
+VITE_SUPABASE_URL=https://nbx.aquvit.id
 VITE_SUPABASE_ANON_KEY=your_anon_key
 
 # Upload Server
-UPLOAD_SERVER_URL=https://app.aquvit.id/uploads
+UPLOAD_SERVER_URL=https://nbx.aquvit.id/uploads
 ```
 
 ### Server Configuration (client.ts)
@@ -897,14 +899,14 @@ UPLOAD_SERVER_URL=https://app.aquvit.id/uploads
 ```typescript
 // Server configurations
 const SERVERS: Record<string, string> = {
-  'nabire': 'https://app.aquvit.id',
-  'manokwari': 'https://erp.aquvit.id',
+  'nabire': 'https://nbx.aquvit.id',
+  'manokwari': 'https://mkw.aquvit.id',
 };
 
 // Selection logic:
 // - Web browser: uses current origin
 // - APK/Capacitor: user selects from localStorage
-// - Development: defaults to app.aquvit.id
+// - Development: defaults to nbx.aquvit.id
 ```
 
 ### Build APK Android
@@ -959,7 +961,7 @@ sudo apt install nginx
 
 # 5. Configure SSL dengan Certbot
 sudo apt install certbot python3-certbot-nginx
-sudo certbot --nginx -d app.aquvit.id
+sudo certbot --nginx -d nbx.aquvit.id
 ```
 
 ### Struktur Direktori Server
@@ -1318,3 +1320,1204 @@ JOIN journal_entries ON ...
 WHERE status = 'posted' AND is_voided = FALSE
 GROUP BY account_id;
 ```
+
+---
+
+## Changelog
+
+### 2024-12-25 - Perbaikan Sistem Komisi & Payroll
+
+#### 🔧 Bug Fixes
+
+1. **Pemotongan Panjar Tidak Update Saldo Panjar Karyawan**
+   - File: `src/hooks/usePayroll.ts`
+   - Sebelumnya: Ketika payroll dibuat dengan pemotongan panjar, `employee_advances.remaining_amount` tidak diupdate
+   - Sesudah: Menggunakan metode FIFO untuk mengurangi saldo panjar dari advance terlama
+   - Logika: Loop melalui semua panjar aktif (remaining_amount > 0) terurut dari tanggal terlama, kurangi hingga total deduction terpenuhi
+
+2. **Komisi Tidak Terhitung saat Hitung Gaji**
+   - File: Database function `calculate_commission_for_period` & `calculate_payroll_with_advances`
+   - Sebelumnya: RPC function mengharuskan `commission_rate > 0` di salary config untuk menghitung komisi
+   - Sesudah: Komisi selalu dihitung dari tabel `commission_entries` untuk tipe gaji 'commission_only' dan 'mixed'
+
+3. **RLS Policy Blocking Commission Tables**
+   - File: `database/fix_commission_rls.sql`
+   - Sebelumnya: Insert ke `commission_rules` diblok oleh RLS policy
+   - Sesudah: Menambahkan policy permissive untuk SELECT, INSERT, UPDATE, DELETE pada `commission_rules` dan `commission_entries`
+
+4. **Commission Entries Tidak Ter-generate dari Delivery**
+   - File: `src/utils/commissionUtils.ts`
+   - Masalah: Delivery yang dibuat sebelum commission rules di-setup tidak memiliki commission entries
+   - Solusi: Menjalankan SQL untuk generate commission entries retroaktif berdasarkan delivery history
+
+#### ✨ Enhancements
+
+5. **Status Komisi Update saat Payroll Dibuat**
+   - File: `src/hooks/usePayroll.ts`
+   - Fitur baru: Ketika payroll record dibuat, semua `commission_entries` untuk karyawan tersebut dalam periode yang sama otomatis diupdate statusnya ke 'paid'
+   - Ini memastikan komisi tidak dihitung ulang di periode berikutnya
+
+6. **Hapus Halaman Commission Manage**
+   - File: `src/App.tsx`, `src/components/layout/Sidebar.tsx`
+   - Dihapus: Route `/commission-manage` dan menu di sidebar
+   - Alasan: Fitur setup komisi sudah dipindahkan ke tab di halaman Employee
+
+#### 📝 Catatan Teknis
+
+**Alur Komisi:**
+1. Admin setup commission rules per produk per role di halaman Employee
+2. Saat delivery selesai, `generateDeliveryCommission()` membuat entries di `commission_entries`
+3. Saat sales transaction, `generateSalesCommission()` membuat entries di `commission_entries`
+4. RPC `calculate_commission_for_period` menghitung total dari `commission_entries` dengan status 'pending'
+5. Saat payroll dibuat, status commission entries diupdate ke 'paid'
+
+**Alur Pemotongan Panjar:**
+1. Karyawan request panjar → `employee_advances` dengan `remaining_amount` = jumlah panjar
+2. Saat payroll, admin input jumlah pemotongan panjar
+3. Sistem update `remaining_amount` menggunakan FIFO dari panjar terlama
+4. Journal entry dicatat: Dr. Beban Gaji, Cr. Kas, Cr. Piutang Karyawan (jika ada potongan panjar)
+
+---
+
+### 2024-12-24 - Perbaikan Laporan Keuangan & Integrasi Jurnal
+
+#### 🔧 Bug Fixes
+
+1. **React Key Warning di JournalEntryTable**
+   - File: `src/components/JournalEntryTable.tsx`
+   - Perbaikan: Mengganti `<>` menjadi `<React.Fragment key={entry.id}>` dalam `.map()` untuk menghilangkan warning "Each child in a list should have a unique key prop"
+
+2. **Dialog Accessibility Warning**
+   - File: `src/components/ui/dialog.tsx`
+   - Perbaikan:
+     - Menambahkan import `@radix-ui/react-visually-hidden`
+     - Menambahkan komponen `VisuallyHidden` untuk accessibility fallback
+     - Menambahkan prop `aria-describedby` pada `DialogContent`
+     - Menambahkan prop `hideCloseButton` untuk opsional menyembunyikan tombol close
+
+#### 📊 Perbaikan Laporan Keuangan
+
+**Masalah:** Laporan keuangan (Balance Sheet, Income Statement, Cash Flow Statement) tidak menampilkan data yang benar karena menggunakan kolom `accounts.balance` yang tidak pernah diupdate.
+
+**Solusi:** Semua laporan keuangan sekarang menghitung saldo akun secara dinamis dari `journal_entry_lines`.
+
+3. **Balance Sheet - Perhitungan Saldo dari Jurnal**
+   - File: `src/utils/financialStatementsUtils.ts`
+   - Menambahkan fungsi `calculateAccountBalancesFromJournal()` yang menghitung saldo akun berdasarkan:
+     - `initial_balance` dari akun
+     - Semua `journal_entry_lines` dengan status 'posted' dan `is_voided = false`
+     - Filter per-branch menggunakan `branchId`
+     - Support tanggal cut-off dengan parameter `asOfDate`
+   - Logika perhitungan saldo berdasarkan tipe akun:
+     - **Aset & Beban**: Debit (+), Credit (-)
+     - **Kewajiban, Modal, Pendapatan**: Credit (+), Debit (-)
+
+4. **Income Statement - Konfirmasi Integrasi Jurnal**
+   - File: `src/utils/financialStatementsUtils.ts`
+   - Income Statement sudah menggunakan `journal_entry_lines` dengan benar
+   - Query filter: `status = 'posted'` dan `is_voided = false`
+   - Pendapatan dihitung dari akun dengan kode awalan '4'
+   - HPP dihitung dari akun dengan kode awalan '5'
+   - Beban Operasional dihitung dari akun dengan kode awalan '6'
+
+5. **Cash Flow Statement - Perbaikan Saldo Kas Akhir**
+   - File: `src/utils/financialStatementsUtils.ts`
+   - Sebelumnya: `endingCash` diambil dari `accounts.balance` (statis)
+   - Sesudah: `endingCash` dihitung dari `calculateAccountBalancesFromJournal()` dengan parameter `periodTo`
+   - Ini memastikan saldo kas akhir periode akurat berdasarkan jurnal yang sudah di-posting
+
+#### 📝 Catatan Teknis
+
+**Mengapa Saldo Tidak Diupdate di COA?**
+
+Sistem ini **tidak** mengupdate kolom `balance` di tabel `accounts` ketika jurnal di-posting. Ini adalah keputusan desain yang disengaja:
+
+1. **Konsistensi Data** - Saldo selalu dihitung dari sumber yang sama (journal entries)
+2. **Fleksibilitas Periode** - Bisa menghitung saldo untuk tanggal apapun (historical reporting)
+3. **Audit Trail** - Semua perubahan saldo bisa di-trace ke jurnal tertentu
+4. **Menghindari Duplikasi** - Tidak perlu sinkronisasi antara dua sumber data
+
+**File yang Menggunakan Perhitungan Dinamis:**
+
+| File | Fungsi |
+|------|--------|
+| `src/hooks/useAccounts.ts` | Menampilkan saldo akun di UI |
+| `src/utils/financialStatementsUtils.ts` | Laporan Keuangan (Balance Sheet, Income Statement, Cash Flow) |
+
+**Logika Perhitungan:**
+
+```typescript
+// Untuk setiap journal_entry_line yang posted & tidak voided:
+const isDebitNormal = ['Aset', 'Beban'].includes(accountType);
+const balanceChange = isDebitNormal
+  ? debitAmount - creditAmount
+  : creditAmount - debitAmount;
+
+// Saldo = initial_balance + Σ(balanceChange dari semua jurnal)
+```
+
+#### ⚠️ Breaking Changes
+
+Tidak ada breaking changes. Semua perubahan bersifat perbaikan internal.
+
+---
+
+### 2024-12-24 (Update 2) - Perbaikan Laporan Arus Kas
+
+#### 🔧 Bug Fixes
+
+6. **Kode Akun Panjar Karyawan Salah**
+   - File: `src/utils/financialStatementsUtils.ts`
+   - Sebelumnya: Filter mencari kode `13xx` untuk panjar karyawan
+   - Sesudah: Filter mencari kode `122x` (sesuai COA: 1220 = Piutang Karyawan)
+   - Ini memperbaiki:
+     - `fromAdvanceRepayment` (pelunasan panjar dari karyawan)
+     - `forEmployeeAdvances` (pemberian panjar ke karyawan)
+
+7. **Filter Pembayaran ke Supplier Diperbaiki**
+   - Sebelumnya: Mencari kode `13xx` yang juga mencakup Piutang Karyawan
+   - Sesudah: Mencari kode `131x`, `132x` (Persediaan) atau `211x` (Hutang Usaha) saja
+   - Filter juga mencakup nama akun: `persediaan`, `bahan`, `hutang usaha`
+
+#### 📊 UI Improvements
+
+8. **Laporan Arus Kas Menampilkan Detail per Akun**
+   - File: `src/pages/FinancialReportsPage.tsx`
+   - Sebelumnya: Hanya menampilkan kategori summary (Pelanggan, Pembayaran piutang, dll)
+   - Sesudah: Menampilkan detail per akun lawan (`byAccount`) dari jurnal
+   - Ini memungkinkan melihat semua transaksi yang mempengaruhi kas secara detail
+
+#### 🔍 Debug Logging
+
+9. **Enhanced Console Logging**
+   - Menambahkan detail logging untuk debugging klasifikasi arus kas:
+     - `receiptsBreakdown`: Detail penerimaan kas per kategori
+     - `paymentsBreakdown`: Detail pembayaran kas per kategori
+     - `operatingReceiptsDetail`: List akun lawan untuk kas masuk
+     - `operatingPaymentsDetail`: List akun lawan untuk kas keluar
+
+**Kode Akun Referensi:**
+
+| Kode | Nama Akun | Kategori |
+|------|-----------|----------|
+| 1120 | Kas Tunai | Kas/Bank |
+| 121x | Piutang Usaha | Piutang |
+| 1220 | Piutang Karyawan (Panjar) | Piutang |
+| 131x | Persediaan Barang Dagang | Persediaan |
+| 132x | Persediaan Bahan Baku | Persediaan |
+| 211x | Hutang Usaha | Kewajiban |
+| 4xxx | Pendapatan | Pendapatan |
+| 5xxx | HPP | HPP |
+| 6xxx | Beban Operasional | Beban |
+
+---
+
+### 2024-12-24 (Update 3) - Perbaikan Laporan Laba Rugi
+
+#### 🔧 Bug Fixes
+
+10. **Income Statement Tidak Menampilkan Pendapatan**
+    - File: `src/utils/financialStatementsUtils.ts`
+    - **Masalah**: Query accounts menggunakan filter `branch_id` padahal COA adalah global
+    - **Akibat**: `accountsData` kosong sehingga `accountTypes` tidak terisi, akun tidak bisa diklasifikasikan
+    - **Perbaikan**: Menghapus filter `branch_id` dari query accounts
+
+    ```typescript
+    // SEBELUM (SALAH):
+    let accountsQuery = supabase
+      .from('accounts')
+      .select('id, code, name, type, is_header')
+      .order('code');
+
+    if (branchId) {
+      accountsQuery = accountsQuery.eq('branch_id', branchId); // ❌ COA tidak punya branch_id
+    }
+
+    // SESUDAH (BENAR):
+    const { data: accountsData } = await supabase
+      .from('accounts')
+      .select('id, code, name, type, is_header')
+      .order('code');
+    // Note: Branch filtering sudah dilakukan di level journal_entries
+    ```
+
+#### 🔍 Enhanced Debug Logging
+
+11. **Console Log Income Statement Diperluas**
+    - Menambahkan info: `accountsLoaded`, `journalLinesRaw`, `journalLinesFiltered`, `accountTotalsCount`
+    - Menambahkan detail per akun (`allAccountTotals`) untuk debugging
+
+---
+
+### 2025-12-24 (Update 4) - Perbaikan Final Income Statement
+
+#### 🔧 Bug Fixes
+
+12. **Income Statement Pendapatan Tetap 0 Meskipun Ada Journal Lines**
+    - File: `src/utils/financialStatementsUtils.ts`
+    - **Masalah**: Akun dibuat per-branch dengan ID berbeda, tapi kode sama. `account_id` di journal_entry_lines tidak cocok dengan ID akun di tabel accounts global.
+    - **Perbaikan**: Menggunakan `account_code` (bukan `account_id`) sebagai primary key untuk aggregasi journal lines
+    - **Fallback**: Jika `accountTypes` lookup gagal, infer tipe akun dari prefix kode:
+      - `1xxx` = Aset
+      - `2xxx` = Kewajiban
+      - `3xxx` = Modal
+      - `4xxx` = Pendapatan
+      - `5xxx`, `6xxx` = Beban (HPP & Operasional)
+      - `7xxx` = Pendapatan Lain-lain
+      - `8xxx` = Beban Lain-lain
+
+    ```typescript
+    // SEBELUM (SALAH) - menggunakan account_id sebagai key:
+    if (!accountTotals[accountId]) {
+      accountTotals[accountId] = { ... };
+    }
+
+    // SESUDAH (BENAR) - menggunakan account_code sebagai key:
+    const accountCode = line.account_code || '';
+    if (!accountTotals[accountCode]) {
+      accountTotals[accountCode] = { ... };
+    }
+    ```
+
+#### 📊 Penjelasan: COA Per-Branch
+
+Sistem AQUVIT menggunakan **COA per-branch**, artinya setiap cabang memiliki akun terpisah dengan ID berbeda tapi kode yang sama:
+
+| Branch | Account ID | Account Code | Account Name |
+|--------|------------|--------------|--------------|
+| Pusat | `acc-001` | `4100` | Pendapatan Usaha |
+| Cabang A | `acc-101` | `4100` | Pendapatan Usaha |
+| Cabang B | `acc-201` | `4100` | Pendapatan Usaha |
+
+Karena itu, penghitungan laporan keuangan menggunakan **kode akun** sebagai identifier, bukan ID akun.
+
+---
+
+### 2025-12-24 (Update 5) - Perbaikan Payroll System
+
+#### 🔧 Bug Fixes
+
+13. **RLS Policies untuk Payroll Tables**
+    - **Masalah**: Tombol "Setujui", "Bayar", dan "Hapus" di halaman payroll tidak berfungsi - error 401 Unauthorized
+    - **Penyebab**: Tabel `payroll_records` dan `employee_salaries` tidak memiliki RLS policies yang tepat
+    - **Perbaikan**: Menambahkan RLS policies di server database:
+
+    ```sql
+    -- EMPLOYEE_SALARIES
+    CREATE POLICY employee_salaries_select ON employee_salaries FOR SELECT TO owner, admin, supervisor, cashier, authenticated USING (true);
+    CREATE POLICY employee_salaries_insert ON employee_salaries FOR INSERT TO owner, admin, authenticated WITH CHECK (true);
+    CREATE POLICY employee_salaries_update ON employee_salaries FOR UPDATE TO owner, admin, authenticated USING (true);
+    CREATE POLICY employee_salaries_delete ON employee_salaries FOR DELETE TO owner, admin USING (true);
+
+    -- PAYROLL_RECORDS
+    CREATE POLICY payroll_records_select ON payroll_records FOR SELECT TO owner, admin, supervisor, cashier, authenticated USING (true);
+    CREATE POLICY payroll_records_insert ON payroll_records FOR INSERT TO owner, admin, authenticated WITH CHECK (true);
+    CREATE POLICY payroll_records_update ON payroll_records FOR UPDATE TO owner, admin, authenticated USING (true);
+    CREATE POLICY payroll_records_delete ON payroll_records FOR DELETE TO owner, admin USING (true);
+    ```
+
+    - File SQL: `database/fix_payroll_rls.sql`
+
+14. **UI Tidak Update Setelah Mutasi Payroll**
+    - File: `src/hooks/usePayroll.ts`
+    - **Masalah**: Setelah approve/delete/pay berhasil di server (HTTP 204), data di UI tidak berubah
+    - **Penyebab**: `invalidateQueries` menggunakan `exact: true` (default) sehingga tidak match dengan query yang memiliki filters dan branch_id
+    - **Perbaikan**: Menambahkan `exact: false` pada semua `invalidateQueries` dan `refetchQueries`:
+
+    ```typescript
+    // SEBELUM (tidak match query dengan filters):
+    await queryClient.invalidateQueries({ queryKey: ['payrollRecords'] });
+
+    // SESUDAH (match semua variant):
+    await queryClient.invalidateQueries({ queryKey: ['payrollRecords'], exact: false });
+    await queryClient.refetchQueries({ queryKey: ['payrollRecords'], exact: false, type: 'active' });
+    ```
+
+15. **PostgREST Service Restart**
+    - **Masalah**: PostgREST service gagal start dengan error "Address in use"
+    - **Penyebab**: Ada orphan process yang masih menggunakan port 3000
+    - **Perbaikan**: Kill orphan process dan restart PostgREST, lalu kirim SIGUSR1 untuk reload schema cache
+
+#### ⚠️ Masalah yang Belum Terselesaikan
+
+- **POST 401 Unauthorized pada payroll_records**: Error ini masih muncul di console meskipun RLS policies sudah diterapkan. Investigasi lebih lanjut diperlukan untuk:
+  - Memastikan JWT token memiliki role claim yang benar
+  - Memverifikasi PostgREST sudah reload schema setelah policy changes
+  - Cek apakah ada caching di nginx/browser yang menyebabkan stale response
+
+#### 📝 Catatan Server
+
+- PostgREST berjalan di port 3000
+- Ada 2 instance PostgREST:
+  - `postgrest.conf` - untuk nbx.aquvit.id (Nabire)
+  - `postgrest-manokwari.conf` - untuk mkw.aquvit.id (Manokwari)
+- Database: `aquvit_db`
+- Untuk reload schema PostgREST: `sudo kill -SIGUSR1 <postgrest_pid>`
+
+#### 📋 File yang Dimodifikasi
+
+| File | Perubahan |
+|------|-----------|
+| `src/hooks/usePayroll.ts` | Perbaikan cache invalidation dengan `exact: false` |
+| `database/fix_all_rls_policies.sql` | Menambahkan RLS policies untuk payroll tables |
+| `database/fix_payroll_rls.sql` | SQL standalone untuk fix RLS payroll |
+
+---
+
+### Known Issues - Payroll System
+
+| Issue | Status | Deskripsi |
+|-------|--------|-----------|
+| POST 401 pada payroll_records | 🔴 Belum Fix | Error saat create payroll record baru. RLS policies sudah ada tapi masih 401. |
+| UI tidak update setelah delete | 🟢 Fixed | Sudah diperbaiki dengan `exact: false` pada invalidateQueries |
+| UI tidak update setelah approve | 🟢 Fixed | Sudah diperbaiki dengan `exact: false` pada invalidateQueries |
+
+---
+
+### 2025-12-25 - Implementasi FIFO Inventory untuk HPP
+
+#### 🆕 Fitur Baru
+
+16. **FIFO Inventory System untuk HPP (Harga Pokok Penjualan)**
+    - **Tujuan**: HPP dihitung berdasarkan harga beli aktual dari PO menggunakan metode FIFO (First In, First Out)
+    - **Database Changes** (Nabire - `aquvit_db`):
+      - Menambahkan kolom `material_id` di tabel `inventory_batches` untuk tracking material
+      - Membuat fungsi `consume_inventory_fifo()` yang mendukung product dan material
+      - Membuat fungsi helper `get_product_fifo_cost()` dan `get_material_fifo_cost()`
+
+    ```sql
+    -- Struktur inventory_batches
+    inventory_batches (
+      id, product_id, material_id, branch_id, batch_date,
+      purchase_order_id, supplier_id,
+      initial_quantity, remaining_quantity, unit_cost,
+      notes, created_at, updated_at
+    )
+
+    -- Fungsi FIFO consumption
+    consume_inventory_fifo(
+      p_product_id uuid,
+      p_branch_id uuid,
+      p_quantity numeric,
+      p_transaction_id text,
+      p_material_id uuid  -- NEW: untuk konsumsi material produksi
+    ) RETURNS (total_hpp numeric, batches_consumed jsonb)
+    ```
+
+17. **Integrasi FIFO dengan Penerimaan PO**
+    - File: `src/hooks/usePurchaseOrders.ts` (baris 610-683)
+    - Saat PO di-receive, sistem otomatis membuat `inventory_batch` dengan:
+      - `unit_cost` = harga beli dari PO item
+      - `material_id` atau `product_id` sesuai jenis item
+      - `purchase_order_id` untuk audit trail
+    - Ini memungkinkan tracking harga beli yang berbeda per supplier/waktu
+
+18. **Integrasi FIFO dengan Penjualan**
+    - File: `src/hooks/useTransactions.ts` (baris 340-397)
+    - Saat transaksi penjualan:
+      1. Sistem memanggil `consume_inventory_fifo()` untuk consume batch tertua
+      2. HPP dihitung dari total cost batch yang dikonsumsi
+      3. Jika tidak ada batch, fallback ke `cost_price` produk
+    - Jurnal HPP dibuat dengan nilai aktual dari FIFO
+
+19. **Integrasi FIFO dengan Produksi**
+    - File: `src/hooks/useProduction.ts` (baris 262-303)
+    - Saat produksi:
+      1. Untuk setiap material BOM, consume dari `inventory_batches` menggunakan FIFO
+      2. Total material cost dihitung dari harga batch yang dikonsumsi
+      3. Jurnal produksi menggunakan cost aktual dari material FIFO
+    - Fallback ke `cost_price` material jika tidak ada batch
+
+#### 📊 Alur FIFO HPP
+
+```
+PO Created → PO Approved → PO Received
+                              ↓
+                    inventory_batch created
+                    (material_id/product_id, unit_cost dari PO)
+                              ↓
+            ┌─────────────────┴─────────────────┐
+            ↓                                   ↓
+    Penjualan Produk                     Produksi
+            ↓                                   ↓
+    consume_inventory_fifo()         consume_inventory_fifo()
+    (untuk product_id)               (untuk material_id)
+            ↓                                   ↓
+    HPP = Σ(batch.unit_cost × qty)   Material Cost = Σ(batch.unit_cost × qty)
+            ↓                                   ↓
+    Jurnal: Dr. HPP (5xxx)           Jurnal: Dr. Persediaan Barang (1310)
+            Cr. Persediaan (1310)            Cr. Persediaan Bahan (1320)
+```
+
+#### 📋 File yang Dimodifikasi
+
+| File | Perubahan |
+|------|-----------|
+| `src/hooks/usePurchaseOrders.ts` | Membuat inventory_batch saat receive PO (material & product) |
+| `src/hooks/useTransactions.ts` | Consume FIFO batch saat penjualan untuk HPP |
+| `src/hooks/useProduction.ts` | Consume FIFO batch untuk material produksi |
+| `database/fifo_inventory.sql` | SQL untuk tabel dan fungsi FIFO |
+
+#### ⚠️ Catatan Penting
+
+1. **Data Historis**: PO yang sudah di-receive sebelum fitur ini aktif tidak memiliki `inventory_batch`, sehingga akan fallback ke `cost_price`
+2. **Migrasi**: Untuk PO lama, bisa manually insert `inventory_batch` jika diperlukan
+3. **Multi-Branch**: FIFO tracking per-branch (batch hanya dikonsumsi dari branch yang sama)
+
+---
+
+### 2025-12-25 (Update 2) - Fix Fungsi FIFO Duplikat
+
+#### 🔧 Bug Fixes
+
+20. **Fungsi FIFO Duplikat Dihapus**
+    - **Masalah**: Ada 2 fungsi `consume_inventory_fifo` di database dengan signature berbeda, menyebabkan error "function is not unique"
+    - **Perbaikan**: Drop fungsi lama yang tidak punya parameter `p_material_id`
+
+#### 📊 Alur Stok (Tidak Berubah)
+
+```
+LAKU KANTOR (isOfficeSale = true):
+  Transaksi Dibuat → Stok ↓
+  Delete Transaction → Stok ↑
+
+BUKAN LAKU KANTOR (isOfficeSale = false):
+  Transaksi Dibuat → (stok belum berubah)
+  Delivery → Stok ↓
+  Delete Delivery → Stok ↑
+```
+
+#### 📋 Penjelasan Alur Stok
+
+| Kondisi | Kapan Stok Berkurang | Kapan Stok Di-restore |
+|---------|---------------------|----------------------|
+| Laku Kantor | Saat transaksi dibuat | Saat delete transaction |
+| Bukan Laku Kantor | Saat delivery | Saat delete delivery |
+
+---
+
+## VPS Server Documentation
+
+### Server Information
+
+| Item | Value |
+|------|-------|
+| **Hostname** | AQUVIT |
+| **IP Address** | `103.197.190.54` |
+| **OS** | Ubuntu 22.04.5 LTS (Jammy Jellyfish) |
+| **SSH User** | `deployer` |
+| **SSH Key** | `Aquvit.pem` |
+
+### Server Specs
+
+| Resource | Value |
+|----------|-------|
+| RAM | 1.9 GB |
+| Storage | 58 GB SSD (8% used) |
+| Swap | None |
+
+### SSH Connection
+
+```bash
+# Connect to VPS
+ssh -i Aquvit.pem deployer@103.197.190.54
+```
+
+---
+
+### Directory Structure
+
+```
+/var/www/
+├── aquvit/                 # Frontend build (nbx.aquvit.id & mkw.aquvit.id)
+│   ├── index.html
+│   ├── assets/             # JS, CSS bundles
+│   ├── favicon.ico
+│   └── robots.txt
+├── aquvit-app/             # Alternate frontend (unused?)
+├── auth-server/            # Custom JWT Auth Server (Express.js)
+│   ├── server.js           # Main auth logic
+│   ├── setup.sql           # DB setup for auth
+│   ├── package.json
+│   └── node_modules/
+└── upload-server/          # File Upload Server (Express.js)
+    ├── server.js           # Upload handling
+    ├── uploads/            # Uploaded files storage
+    │   ├── customers/      # Customer photos
+    │   ├── products/       # Product photos
+    │   └── employees/      # Employee photos
+    ├── package.json
+    └── node_modules/
+
+/home/deployer/
+└── postgrest/
+    ├── postgrest           # PostgREST binary v12.0.2
+    ├── postgrest.conf      # Config for Nabire (port 3000)
+    └── postgrest-manokwari.conf  # Config for Manokwari (port 3003)
+```
+
+---
+
+### Running Services
+
+#### PM2 Managed Processes
+
+| Name | Port | Description |
+|------|------|-------------|
+| `auth-server` | 3002 | JWT Authentication API |
+| `upload-server` | 3001 | File Upload API |
+| `postgrest` | 3000 | PostgREST API for Nabire |
+| `postgrest-manokwari` | 3003 | PostgREST API for Manokwari |
+
+#### System Services
+
+| Service | Status |
+|---------|--------|
+| `nginx` | Active (Running) |
+| `postgresql@14-main` | Active (Running) |
+
+#### Port Mapping
+
+| Port | Service | Description |
+|------|---------|-------------|
+| 22 | SSH | Remote access |
+| 80 | Nginx | HTTP (redirects to HTTPS) |
+| 443 | Nginx | HTTPS frontend |
+| 3000 | PostgREST | Nabire REST API |
+| 3001 | Node.js | Upload server |
+| 3002 | Node.js | Auth server |
+| 3003 | PostgREST | Manokwari REST API |
+| 5432 | PostgreSQL | Database |
+
+---
+
+### Backend Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         NGINX (Port 443/80)                         │
+│         SSL Termination + Reverse Proxy + Static Files              │
+└─────────────────────────────────────────────────────────────────────┘
+                    │                    │                    │
+         ┌──────────┴──────────┐         │         ┌──────────┴──────────┐
+         ▼                     ▼         ▼         ▼                     ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────────┐
+│   Static Files  │  │   /auth/*       │  │          /rest/v1/*             │
+│   /var/www/     │  │   Auth Server   │  │         PostgREST               │
+│   aquvit/       │  │   (Port 3002)   │  │   Nabire:3000 | Manokwari:3003  │
+└─────────────────┘  └─────────────────┘  └─────────────────────────────────┘
+                            │                           │
+                            ▼                           ▼
+                    ┌─────────────────────────────────────────────────┐
+                    │            PostgreSQL 14 (Port 5432)            │
+                    │   aquvit_db (Nabire) | aquvit_manokwari        │
+                    └─────────────────────────────────────────────────┘
+```
+
+**Backend Type: PostgREST + Express.js**
+
+Aplikasi ini menggunakan **arsitektur serverless-like** dengan:
+
+1. **PostgREST** - Auto-generate REST API langsung dari PostgreSQL schema
+   - Tidak perlu menulis endpoint manual
+   - Query langsung ke database via HTTP
+   - RLS (Row Level Security) untuk authorization
+
+2. **Express.js Auth Server** - Custom JWT authentication
+   - Login/logout endpoints
+   - JWT token generation (matching PostgREST secret)
+   - Password hashing dengan bcrypt
+
+3. **Express.js Upload Server** - File handling
+   - Multer for multipart uploads
+   - Category-based file organization
+
+---
+
+### Database Configuration
+
+#### Databases
+
+| Database | Location | Description |
+|----------|----------|-------------|
+| `aquvit_db` | Nabire | Primary database |
+| `aquvit_manokwari` | Manokwari | Secondary database |
+
+#### Connection Details
+
+```
+Host: localhost
+Port: 5432
+User: aquavit
+Password: Aquvit2024!
+```
+
+---
+
+### Nginx Configuration
+
+#### nbx.aquvit.id (Nabire)
+
+```nginx
+server {
+    server_name nbx.aquvit.id;
+    root /var/www/aquvit;
+
+    # Auth API proxy
+    location /auth/ {
+        proxy_pass http://localhost:3002;
+    }
+
+    # PostgREST API proxy
+    location /rest/v1/ {
+        proxy_pass http://localhost:3000/;
+    }
+
+    # SPA routing
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # SSL via Let's Encrypt
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/nbx.aquvit.id/fullchain.pem;
+}
+```
+
+#### mkw.aquvit.id (Manokwari)
+
+```nginx
+server {
+    server_name mkw.aquvit.id;
+    root /var/www/aquvit;  # Same frontend
+
+    # Auth API (shared)
+    location /auth/ {
+        proxy_pass http://127.0.0.1:3002/auth/;
+    }
+
+    # PostgREST API (different port/database)
+    location /rest/v1/ {
+        proxy_pass http://127.0.0.1:3003/;  # Manokwari PostgREST
+    }
+
+    # SSL via Let's Encrypt
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/mkw.aquvit.id/fullchain.pem;
+}
+```
+
+---
+
+### PostgREST Configuration
+
+#### Nabire (postgrest.conf)
+
+```ini
+db-uri = "postgres://aquavit:Aquvit2024!@localhost:5432/aquvit_db"
+db-schemas = "public"
+db-anon-role = "anon"
+server-host = "0.0.0.0"
+server-port = 3000
+jwt-secret = "c7ltcd4PN7uyaZJ/UoBbf71xdnHA3ezq7HYaaIvxizA="
+jwt-secret-is-base64 = true
+jwt-role-claim-key = ".role"
+openapi-server-proxy-uri = "https://nbx.aquvit.id/rest/v1"
+```
+
+#### Manokwari (postgrest-manokwari.conf)
+
+```ini
+db-uri = "postgres://aquavit:Aquvit2024!@localhost:5432/aquavit_manokwari"
+db-schemas = "public"
+db-anon-role = "anon"
+server-host = "0.0.0.0"
+server-port = 3003
+jwt-secret = "c7ltcd4PN7uyaZJ/UoBbf71xdnHA3ezq7HYaaIvxizA="
+jwt-secret-is-base64 = true
+jwt-role-claim-key = ".role"
+openapi-server-proxy-uri = "https://mkw.aquvit.id/rest/v1"
+```
+
+---
+
+### PM2 Commands
+
+```bash
+# List all processes
+pm2 list
+
+# View logs
+pm2 logs auth-server
+pm2 logs upload-server
+pm2 logs postgrest
+
+# Restart services
+pm2 restart auth-server
+pm2 restart postgrest
+pm2 restart postgrest-manokwari
+
+# Reload PostgREST schema (after DB changes)
+pm2 sendSignal SIGUSR1 postgrest
+pm2 sendSignal SIGUSR1 postgrest-manokwari
+```
+
+---
+
+### Common Operations
+
+#### Deploy Frontend Update
+
+```bash
+# 1. Build locally
+npm run build
+
+# 2. Upload to server
+scp -i Aquvit.pem -r dist/* deployer@103.197.190.54:/var/www/aquvit/
+
+# Or use rsync
+rsync -avz -e "ssh -i Aquvit.pem" dist/ deployer@103.197.190.54:/var/www/aquvit/
+```
+
+#### Backup Database
+
+```bash
+# Nabire
+PGPASSWORD='Aquvit2024!' pg_dump -h 103.197.190.54 -U aquavit -d aquvit_db > backup_nabire_$(date +%Y%m%d).sql
+
+# Manokwari
+PGPASSWORD='Aquvit2024!' pg_dump -h 103.197.190.54 -U aquavit -d aquavit_manokwari > backup_manokwari_$(date +%Y%m%d).sql
+```
+
+#### Check Service Status
+
+```bash
+ssh -i Aquvit.pem deployer@103.197.190.54 "pm2 list && systemctl status nginx postgresql"
+```
+
+#### View Logs
+
+```bash
+# Auth server logs
+ssh -i Aquvit.pem deployer@103.197.190.54 "pm2 logs auth-server --lines 50"
+
+# Nginx access logs
+ssh -i Aquvit.pem deployer@103.197.190.54 "tail -50 /var/log/nginx/access.log"
+
+# PostgreSQL logs
+ssh -i Aquvit.pem deployer@103.197.190.54 "sudo tail -50 /var/log/postgresql/postgresql-14-main.log"
+```
+
+---
+
+### Storage Usage
+
+| Directory | Size |
+|-----------|------|
+| `/var/www/aquvit` | 17 MB |
+| `/var/www/aquvit-app` | 4.3 MB |
+| `/var/www/auth-server` | 8 MB |
+| `/var/www/upload-server` | 101 MB |
+
+---
+
+### Security Notes
+
+1. **JWT Secret** - Shared between Auth Server and PostgREST (base64 encoded)
+2. **SSL** - Let's Encrypt certificates (auto-renewal via Certbot)
+3. **RLS** - Row Level Security enabled on all tables
+4. **CORS** - Configured for specific domains only
+5. **Security Headers** - X-Frame-Options, X-Content-Type-Options, X-XSS-Protection
+
+---
+
+### 2025-12-24 (Update 6) - Fitur Cetak Jurnal & Laporan Keuangan
+
+#### ✨ Fitur Baru
+
+16. **Cetak Jurnal dengan Filter Tanggal**
+    - File: `src/components/JournalEntryTable.tsx`
+    - Fitur:
+      - Filter tanggal (dari-sampai) untuk jurnal entries
+      - Export ke Excel dengan semua jurnal terfilter
+      - Export ke PDF dengan semua jurnal terfilter
+      - Tombol cetak per-jurnal individual
+    - Library: `xlsx` untuk Excel, `jspdf` + `jspdf-autotable` untuk PDF
+
+17. **JournalEntryPDF Component**
+    - File: `src/components/JournalEntryPDF.tsx` (NEW)
+    - Fungsi:
+      - `generateSingleJournalPDF()` - PDF untuk 1 jurnal
+      - `generateJournalReportPDF()` - PDF laporan jurnal (range tanggal)
+      - `downloadSingleJournalPDF()` - Download 1 jurnal
+      - `printSingleJournal()` - Print langsung 1 jurnal
+      - `downloadJournalReportPDF()` - Download laporan jurnal
+
+18. **Auto-Generate Jurnal Pembayaran Piutang**
+    - File: `src/services/journalService.ts`
+    - Menambahkan parameter `paymentAccountId` pada `createReceivablePaymentJournal()`
+    - Jurnal otomatis saat pembayaran piutang:
+      ```
+      Dr. Kas/Bank (sesuai akun dipilih)    xxx
+        Cr. Piutang Usaha                       xxx
+      ```
+    - File terkait: `src/hooks/useTransactions.ts`, `src/components/PayReceivableDialog.tsx`
+
+#### 🔧 Bug Fixes
+
+19. **Fix autoTable Error di PDF Generation**
+    - File: `src/components/BalanceSheetPDF.tsx`, `src/components/CashFlowPDF.tsx`, `src/components/IncomeStatementPDF.tsx`
+    - **Masalah**: `doc.autoTable is not a function` error
+    - **Penyebab**: Import `jspdf-autotable` yang salah
+    - **Perbaikan**:
+      ```typescript
+      // SEBELUM (SALAH):
+      import 'jspdf-autotable';
+      doc.autoTable({...});
+
+      // SESUDAH (BENAR):
+      import autoTable from 'jspdf-autotable';
+      autoTable(doc, {...});
+      ```
+
+20. **Signature Section & Printer Info di Laporan Keuangan**
+    - File: `src/components/IncomeStatementPDF.tsx`, `src/components/BalanceSheetPDF.tsx`, `src/components/CashFlowPDF.tsx`
+    - Menambahkan:
+      - `PrinterInfo` interface (`name`, `position`)
+      - Signature section dengan 3 kotak tanda tangan:
+        - "Dibuat oleh" - auto-fill nama user yang mencetak
+        - "Disetujui oleh" - kosong untuk tanda tangan
+        - "Mengetahui" - kosong untuk tanda tangan
+      - Footer: `Dicetak oleh: [nama] | Tanggal cetak: [timestamp]`
+
+21. **Compact Layout 1 Halaman A4**
+    - File: `src/components/IncomeStatementPDF.tsx`, `src/components/BalanceSheetPDF.tsx`, `src/components/CashFlowPDF.tsx`
+    - **Masalah**: Data dan signature section tidak muat dalam 1 lembar A4
+    - **Perbaikan**:
+      - Memperbesar font size untuk readability
+      - Signature section diposisikan di `pageHeight - 55mm`
+      - Footer di `pageHeight - 8mm`
+      - Cell padding dan spacing disesuaikan
+
+22. **Integrasi Printer Info di FinancialReportsPage**
+    - File: `src/pages/FinancialReportsPage.tsx`
+    - Menambahkan `useAuth` hook untuk mendapatkan info user
+    - Passing `printerInfo` ke semua fungsi download PDF:
+      - `downloadBalanceSheetPDF(data, asOfDate, companyName, printerInfo)`
+      - `downloadIncomeStatementPDF(data, companyName, printerInfo)`
+      - `downloadCashFlowPDF(data, companyName, printerInfo)`
+    - Printer info berisi:
+      - `name`: Nama user (`user.name || user.email`)
+      - `position`: Role user (`user.role`)
+
+#### 📋 File yang Dimodifikasi/Dibuat
+
+| File | Status | Deskripsi |
+|------|--------|-----------|
+| `src/components/JournalEntryPDF.tsx` | 🆕 NEW | PDF generator untuk jurnal |
+| `src/components/JournalEntryTable.tsx` | 🔧 MODIFIED | Filter tanggal, export Excel/PDF |
+| `src/services/journalService.ts` | 🔧 MODIFIED | Parameter paymentAccountId |
+| `src/hooks/useTransactions.ts` | 🔧 MODIFIED | Auto-create journal pembayaran piutang |
+| `src/components/PayReceivableDialog.tsx` | 🔧 MODIFIED | Integrasi journalService |
+| `src/components/IncomeStatementPDF.tsx` | 🔧 MODIFIED | Signature section, layout compact |
+| `src/components/BalanceSheetPDF.tsx` | 🔧 MODIFIED | Signature section, layout compact |
+| `src/components/CashFlowPDF.tsx` | 🔧 MODIFIED | Signature section, layout compact |
+| `src/pages/FinancialReportsPage.tsx` | 🔧 MODIFIED | Passing printerInfo ke PDF functions |
+
+#### 📝 Catatan Penggunaan
+
+**Export Jurnal ke Excel:**
+```typescript
+// Di JournalEntryTable.tsx
+import * as XLSX from 'xlsx';
+
+const handleExportExcel = () => {
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Jurnal');
+  XLSX.writeFile(wb, `Jurnal_${dateRange.from}_${dateRange.to}.xlsx`);
+};
+```
+
+**Cetak Single Jurnal:**
+```typescript
+import { printSingleJournal } from '@/components/JournalEntryPDF';
+
+// Dalam komponen
+<Button onClick={() => printSingleJournal(entry, 'PT AQUVIT MANUFACTURE')}>
+  <Printer className="h-4 w-4" />
+</Button>
+```
+
+**Download Laporan Keuangan dengan Printer Info:**
+```typescript
+import { useAuth } from '@/hooks/useAuth';
+import { downloadIncomeStatementPDF, PrinterInfo } from '@/components/IncomeStatementPDF';
+
+const { user } = useAuth();
+
+const handleDownload = () => {
+  const printerInfo: PrinterInfo = {
+    name: user?.name || user?.email || 'Unknown',
+    position: user?.role || undefined
+  };
+  downloadIncomeStatementPDF(data, 'PT AQUVIT', printerInfo);
+};
+```
+
+---
+
+### 2025-12-25 (Update 7) - Fix Hutang Usaha & RLS Permissions Supir
+
+#### 🔧 Bug Fixes
+
+23. **Fix Jurnal Pembelian PO - PPN Tidak Masuk Hutang Usaha**
+    - File: `src/hooks/usePurchaseOrders.ts`
+    - **Masalah**: Jurnal pembelian PO dengan PPN hanya mencatat subtotal (tanpa PPN) ke Hutang Usaha
+    - **Dampak**: Neraca menampilkan Hutang Usaha yang salah, saldo tidak seimbang
+    - **Perbaikan**: Gunakan `total_cost` (termasuk PPN) untuk jurnal Hutang Usaha
+    - **Catatan**: PPN masuk ke HPP/Persediaan, bukan dicatat terpisah
+
+24. **Fix RLS Permissions untuk Role Supir/Driver**
+    - Database: `role_permissions` table
+    - **Masalah**: Supir dengan `pos_driver_access: true` tidak bisa akses POS
+    - **Error**: `403 Forbidden - permission denied for table retasi`
+    - **Permissions yang di-update**: `customers_view`, `products_view`, `accounts_view`, `transactions_view`, `transactions_create`, `transactions_edit`, `branch_access_kantor_pusat` → semua `true`
+
+25. **Fix Data Jurnal Hutang Usaha di Database**
+    - Update jurnal JE-2025-000001: Credit Hutang dari Rp 210.000 → Rp 233.100 (termasuk PPN)
+    - Buat jurnal JE-2025-000009 untuk PO yang tidak tercipta (Rp 3.250.000)
+    - **Hasil**: Saldo Hutang Usaha = Rp 0 (LUNAS) ✓
+
+#### 📋 File yang Dimodifikasi/Dibuat
+
+| File | Status | Deskripsi |
+|------|--------|-----------|
+| `src/hooks/usePurchaseOrders.ts` | 🔧 MODIFIED | Fix perhitungan materialTotal termasuk PPN |
+| `database/fix_driver_rls_policies.sql` | 🆕 NEW | SQL script untuk fix RLS supir |
+| `database/debug_hutang_usaha.sql` | 🆕 NEW | SQL script untuk debug saldo hutang |
+
+---
+
+### 2025-12-25 (Update 8) - Implementasi FIFO Inventory untuk HPP
+
+#### ✨ Fitur Baru
+
+26. **FIFO Inventory System untuk Tracking Harga Beli**
+    - Database: `database/fifo_inventory.sql`
+    - **Tujuan**: Menghitung HPP (Harga Pokok Penjualan) dengan akurat berdasarkan harga beli dari supplier yang berbeda-beda
+    - **Metode**: FIFO (First In, First Out) - Batch tertua dikonsumsi terlebih dahulu
+
+    **Tabel Baru:**
+    - `inventory_batches` - Track setiap batch pembelian dengan harga beli per unit
+    - `inventory_batch_consumptions` - Audit trail konsumsi batch (untuk penjualan/produksi)
+
+    **Fungsi PostgreSQL:**
+    - `consume_inventory_fifo(product_id, branch_id, quantity, transaction_id, material_id)` - Konsumsi inventory dengan FIFO dan return total HPP
+    - `get_product_fifo_cost(product_id, branch_id)` - Get harga dari batch tertua
+    - `get_material_fifo_cost(material_id, branch_id)` - Get harga material dari batch tertua
+    - `get_product_weighted_avg_cost(product_id, branch_id)` - Get weighted average cost
+
+27. **Auto-Insert Inventory Batch saat PO Diterima**
+    - File: `src/hooks/usePurchaseOrders.ts`
+    - **Untuk Produk (Jual Langsung)**:
+      ```typescript
+      await supabase.from('inventory_batches').insert({
+        product_id: item.productId,
+        purchase_order_id: po.id,
+        supplier_id: po.supplierId,
+        initial_quantity: item.quantity,
+        remaining_quantity: item.quantity,
+        unit_cost: item.unitPrice, // Harga beli dari PO
+      });
+      ```
+    - **Untuk Material (Bahan Baku)**:
+      ```typescript
+      await supabase.from('inventory_batches').insert({
+        material_id: item.materialId,
+        purchase_order_id: po.id,
+        supplier_id: po.supplierId,
+        initial_quantity: item.quantity,
+        remaining_quantity: item.quantity,
+        unit_cost: item.unitPrice, // Harga beli bisa berbeda per supplier
+      });
+      ```
+
+28. **FIFO Consumption saat Produksi**
+    - File: `src/hooks/useProduction.ts`
+    - **Sebelumnya**: HPP produksi menggunakan `cost_price` atau `price_per_unit` dari tabel materials
+    - **Sesudah**: HPP produksi dihitung dari batch tertua via `consume_inventory_fifo()`
+    - **Fallback**: Jika tidak ada batch tersedia, gunakan `cost_price` atau `price_per_unit`
+
+    ```typescript
+    // FIFO consumption untuk setiap bahan dalam BOM
+    const { data: fifoResult } = await supabase.rpc('consume_inventory_fifo', {
+      p_product_id: null,
+      p_branch_id: currentBranch?.id,
+      p_quantity: requiredQty,
+      p_transaction_id: ref,
+      p_material_id: bomItem.materialId
+    });
+
+    if (fifoResult?.total_hpp > 0) {
+      totalMaterialCost += fifoResult.total_hpp;
+      console.log(`✅ FIFO consumed for ${bomItem.materialName}`);
+    }
+    ```
+
+29. **FIFO Consumption saat Penjualan**
+    - File: `src/hooks/useTransactions.ts` (sudah ada sebelumnya)
+    - HPP penjualan dihitung dari `consume_inventory_fifo()` untuk produk
+
+30. **Update HPP Produk dari BOM**
+    - Database: SQL update untuk produk yang `cost_price` masih 0
+    - Menghitung HPP dari total harga material dalam Bill of Materials (BOM)
+    - Update `materials.cost_price` dari `price_per_unit` jika belum ada
+
+#### 📊 Cara Kerja FIFO
+
+**Contoh Skenario:**
+```
+Hari 1: Beli 100 unit @ Rp 10.000 dari Supplier A → Batch #1
+Hari 2: Beli 50 unit @ Rp 12.000 dari Supplier B → Batch #2
+Hari 3: Produksi butuh 80 unit material
+
+FIFO Consumption:
+- Batch #1: Konsumsi 80 unit @ Rp 10.000 = Rp 800.000
+- remaining_quantity Batch #1: 100 - 80 = 20 unit
+
+Hari 4: Produksi butuh 40 unit material
+
+FIFO Consumption:
+- Batch #1: Konsumsi 20 unit @ Rp 10.000 = Rp 200.000 (habis)
+- Batch #2: Konsumsi 20 unit @ Rp 12.000 = Rp 240.000
+- Total HPP: Rp 440.000
+
+Hari 5: Produksi butuh 30 unit material
+
+FIFO Consumption:
+- Batch #2: Konsumsi 30 unit @ Rp 12.000 = Rp 360.000
+- remaining_quantity Batch #2: 50 - 20 - 30 = 0 unit (habis)
+```
+
+**Keuntungan FIFO:**
+1. HPP akurat sesuai harga beli aktual
+2. Support multi-supplier dengan harga berbeda
+3. Audit trail lengkap (batch mana yang dikonsumsi)
+4. Sesuai standar akuntansi Indonesia (PSAK)
+
+#### 📋 File yang Dimodifikasi/Dibuat
+
+| File | Status | Deskripsi |
+|------|--------|-----------|
+| `database/fifo_inventory.sql` | 🆕 NEW | SQL untuk tabel dan fungsi FIFO |
+| `src/hooks/usePurchaseOrders.ts` | 🔧 MODIFIED | Insert inventory_batches saat PO diterima |
+| `src/hooks/useProduction.ts` | 🔧 MODIFIED | Consume material FIFO saat produksi |
+| `src/hooks/useTransactions.ts` | 🔧 EXISTING | Consume product FIFO saat penjualan |
+
+#### 📝 Catatan Teknis
+
+**Schema inventory_batches:**
+```sql
+CREATE TABLE inventory_batches (
+    id UUID PRIMARY KEY,
+    product_id UUID REFERENCES products(id),  -- Untuk produk
+    material_id UUID REFERENCES materials(id), -- Untuk bahan baku
+    branch_id UUID REFERENCES branches(id),
+    purchase_order_id TEXT,
+    supplier_id UUID REFERENCES suppliers(id),
+    batch_date TIMESTAMP,
+    initial_quantity NUMERIC(15,2),
+    remaining_quantity NUMERIC(15,2),
+    unit_cost NUMERIC(15,2),  -- Harga beli per unit
+    notes TEXT
+);
+
+-- Constraint: harus ada product_id ATAU material_id
+ALTER TABLE inventory_batches
+ADD CONSTRAINT chk_product_or_material
+CHECK (product_id IS NOT NULL OR material_id IS NOT NULL);
+```
+
+**Fallback Logic:**
+1. Coba panggil `consume_inventory_fifo()`
+2. Jika gagal (tidak ada batch), gunakan `cost_price` dari tabel
+3. Jika `cost_price` null, gunakan `price_per_unit` atau `base_price`
+
+---
+
+### 2025-12-25 (Update 9) - Fitur PPN Include/Exclude & Potongan Gaji
+
+#### 🆕 Fitur Baru
+
+31. **PPN Include/Exclude pada Purchase Order**
+    - File: `src/components/CreatePurchaseOrderDialog.tsx`, `src/hooks/usePurchaseOrders.ts`
+    - **Fitur**: Menambahkan pilihan mode PPN:
+      - **PPN Exclude**: Harga item belum termasuk PPN, PPN 11% ditambahkan di atas subtotal
+      - **PPN Include**: Harga item sudah termasuk PPN 11%, subtotal dihitung dari total
+    - **Akuntansi**: PPN Masukan dicatat ke akun Piutang Pajak (1230)
+
+    **Jurnal PO dengan PPN:**
+    ```
+    Dr. Persediaan Bahan Baku (1320)    xxx (subtotal)
+    Dr. PPN Masukan / Piutang Pajak (1230)  xxx (PPN amount)
+      Cr. Hutang Usaha (2110)                    xxx (total)
+    ```
+
+32. **Kolom DPP dan PPN di Export Transaksi**
+    - File: `src/components/TransactionTable.tsx`
+    - Export PDF dan Excel sekarang menampilkan kolom:
+      - DPP (Dasar Pengenaan Pajak / Subtotal)
+      - PPN (nilai PPN)
+    - PDF diubah ke landscape untuk mengakomodasi kolom tambahan
+
+33. **Potongan Gaji (Salary Deduction) di Payroll**
+    - File: `src/components/PayrollRecordDialog.tsx`, `src/hooks/usePayroll.ts`
+    - **Fitur**: Menambahkan field "Potongan Gaji" yang terpisah dari "Potong Panjar"
+    - **Kegunaan**: Untuk keterlambatan, absensi, atau potongan lainnya
+    - **Field baru**:
+      - `Potongan Gaji`: Nominal potongan
+      - `Alasan Potongan`: Keterangan potongan (opsional)
+    - **Perhitungan**:
+      ```
+      Gaji Bersih = Gaji Kotor - Potong Panjar - Potongan Gaji
+      ```
+
+#### 🔧 Database Migration
+
+**File SQL**: `database/add_salary_deduction_and_ppn_columns.sql`
+
+**Kolom baru yang ditambahkan:**
+
+| Tabel | Kolom | Tipe | Deskripsi |
+|-------|-------|------|-----------|
+| `payroll_records` | `salary_deduction` | NUMERIC(15,2) | Potongan gaji (keterlambatan, absensi, dll) |
+| `purchase_orders` | `subtotal` | NUMERIC(15,2) | Subtotal sebelum PPN (DPP) |
+| `purchase_orders` | `ppn_mode` | TEXT | Mode PPN: 'include' atau 'exclude' |
+
+**View yang diupdate:**
+- `payroll_summary` - Menambahkan kolom `salary_deduction`
+
+**Migration sudah dijalankan di:**
+- ✅ aquvit_db (Nabire)
+- ✅ aquvit_manokwari (Manokwari)
+
+**Jalankan manual (jika perlu):**
+```bash
+ssh -i Aquvit.pem deployer@103.197.190.54
+sudo -u postgres psql -d aquvit_db -f /tmp/add_salary_deduction_and_ppn_columns.sql
+```
+
+#### 📋 File yang Dimodifikasi/Dibuat
+
+| File | Status | Deskripsi |
+|------|--------|-----------|
+| `src/types/purchaseOrder.ts` | 🔧 MODIFIED | Tambah `ppnMode`, `subtotal` |
+| `src/hooks/usePurchaseOrders.ts` | 🔧 MODIFIED | Handle ppnMode, subtotal, jurnal PPN |
+| `src/services/journalService.ts` | 🔧 MODIFIED | Jurnal PPN Masukan ke Piutang Pajak |
+| `src/components/CreatePurchaseOrderDialog.tsx` | 🔧 MODIFIED | UI PPN mode selection |
+| `src/components/TransactionTable.tsx` | 🔧 MODIFIED | Export PDF/Excel dengan DPP & PPN |
+| `src/components/PayrollRecordDialog.tsx` | 🔧 MODIFIED | Field potongan gaji |
+| `src/hooks/usePayroll.ts` | 🔧 MODIFIED | Handle salary_deduction |
+| `database/add_salary_deduction_and_ppn_columns.sql` | 🆕 NEW | SQL migration script |
+
