@@ -41,7 +41,7 @@ jobs:
 
       - name: Deploy to VPS
         run: |
-          rsync -avz --delete dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/erp/
+          rsync -avz --delete dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/aquvit/
 
       - name: Notify deployment
         run: echo "Deployed successfully to erp.aquvit.id"
