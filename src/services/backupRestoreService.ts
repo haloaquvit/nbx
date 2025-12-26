@@ -4,37 +4,45 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 
 // Daftar tabel yang akan di-backup (urutan penting untuk foreign key)
+// Disesuaikan dengan skema database VPS aquvit_new
 export const BACKUP_TABLES = [
   // Master data (tidak punya foreign key ke tabel lain)
   'company_settings',
   'companies',
   'branches',
   'roles',
+  'role_permissions',
+  'user_roles',
   'profiles', // User data
   'accounts',
-  'expense_categories',
   'suppliers',
   'supplier_materials',
   'customers',
+  'customer_pricings',
   'materials',
   'products',
   'product_materials',
+  'bonus_pricings',
+  'stock_pricings',
   'commission_rules',
-  'sales_commission_settings',
   'nishab_reference',
 
   // Data transaksional (punya foreign key)
   'transactions',
-  'transaction_items',
+  'transaction_payments',
   'quotations',
   'purchase_orders',
   'purchase_order_items',
   'accounts_payable',
   'deliveries',
   'delivery_items',
+  'delivery_photos',
   'retasi',
+  'retasi_items',
   'journal_entries',
   'journal_entry_lines',
+  'manual_journal_entries',
+  'manual_journal_entry_lines',
   'payroll_records',
   'employee_salaries',
   'commission_entries',
@@ -43,14 +51,18 @@ export const BACKUP_TABLES = [
   'advance_repayments',
   'attendance',
   'material_stock_movements',
-  'stock_movements',
+  'inventory_batches',
+  'inventory_batch_consumptions',
   'production_records',
+  'production_errors',
+  'balance_adjustments',
   'cash_history',
   'payment_history',
   'assets',
   'asset_maintenance',
   'zakat_records',
   'notifications',
+  'audit_logs',
 ];
 
 // Tabel yang tidak boleh di-restore (sistem atau punya constraint khusus)
