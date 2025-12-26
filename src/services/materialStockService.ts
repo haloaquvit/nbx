@@ -26,17 +26,19 @@ export class MaterialStockService {
         const { materialId, materialType, quantity, materialName, unit } = usage;
 
         // Get current stock
-        const { data: material, error: fetchError } = await supabase
+        // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+        const { data: materialRaw, error: fetchError } = await supabase
           .from('materials')
           .select('stock')
           .eq('id', materialId)
-          .single();
+          .order('id').limit(1);
+        const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
 
         if (fetchError) {
           throw new Error(`Failed to fetch material ${materialName}: ${fetchError.message}`);
         }
 
-        const currentStock = material.stock;
+        const currentStock = material?.stock || 0;
         let newStock: number;
         let movementType: 'IN' | 'OUT';
         let reason: string;

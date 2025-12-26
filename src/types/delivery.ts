@@ -23,6 +23,7 @@ export interface Delivery {
   driverName?: string;
   helperId?: string;
   helperName?: string;
+  branchId?: string;
   items: DeliveryItem[];
   createdAt: Date;
   updatedAt: Date;

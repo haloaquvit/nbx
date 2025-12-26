@@ -299,19 +299,23 @@ export async function createJournalEntry(input: CreateJournalInput): Promise<{ s
 /**
  * Generate journal for POS Transaction (Sales)
  *
- * Penjualan Tunai (dengan HPP):
- * Dr. Kas                     xxx (total penjualan termasuk PPN)
- * Dr. HPP                     xxx (cost of goods sold)
- *   Cr. Pendapatan Penjualan       xxx (penjualan tanpa PPN)
- *   Cr. Hutang Pajak               xxx (PPN jika ada)
- *   Cr. Persediaan                 xxx (cost of goods sold)
- *
- * Penjualan Kredit (dengan HPP):
- * Dr. Piutang Usaha           xxx (total termasuk PPN)
+ * LAKU KANTOR (isOfficeSale = true):
+ * Barang langsung diambil → Persediaan langsung berkurang
+ * Dr. Kas/Piutang             xxx
  * Dr. HPP                     xxx
- *   Cr. Pendapatan Penjualan       xxx (penjualan tanpa PPN)
+ *   Cr. Pendapatan Penjualan       xxx
  *   Cr. Hutang Pajak               xxx (PPN jika ada)
- *   Cr. Persediaan                 xxx
+ *   Cr. Persediaan Barang Dagang   xxx
+ *
+ * NON-OFFICE SALE (isOfficeSale = false):
+ * Barang perlu diantar → Hutang Barang Dagang (kewajiban kirim barang)
+ * Dr. Kas/Piutang             xxx
+ * Dr. HPP                     xxx
+ *   Cr. Pendapatan Penjualan       xxx
+ *   Cr. Hutang Pajak               xxx (PPN jika ada)
+ *   Cr. Hutang Barang Dagang       xxx (kewajiban kirim barang)
+ *
+ * Saat Pengantaran: use createDeliveryJournal()
  */
 export async function createSalesJournal(params: {
   transactionId: string;
@@ -327,8 +331,10 @@ export async function createSalesJournal(params: {
   ppnEnabled?: boolean;
   ppnAmount?: number;
   subtotal?: number; // Amount before PPN
+  // Office Sale flag - determines if stock reduces immediately or on delivery
+  isOfficeSale?: boolean;
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
-  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, ppnEnabled, ppnAmount, subtotal } = params;
+  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale } = params;
 
   // Find accounts - using actual database codes (1120, 1210, etc.)
   console.log('[JournalService] createSalesJournal - Finding accounts for branchId:', branchId);
@@ -349,6 +355,10 @@ export async function createSalesJournal(params: {
   const persediaanAccount = await getAccountByCode('1310', branchId)
     || await findAccountByPattern('barang dagang', 'Aset', branchId)
     || await findAccountByPattern('persediaan', 'Aset', branchId);
+
+  // Hutang Barang Dagang (2140) - untuk non-office sale (kewajiban kirim barang)
+  const hutangBarangDagangAccount = await getAccountByCode('2140', branchId)
+    || await findAccountByPattern('hutang barang dagang', 'Kewajiban', branchId);
 
   // PPN (Sales Tax) account - Hutang Pajak (2130)
   let hutangPajakAccount: { id: string; code: string; name: string } | null = null;
@@ -415,8 +425,8 @@ export async function createSalesJournal(params: {
     });
   }
 
-  // Add HPP & Persediaan entries if HPP data is provided
-  if (hppAmount && hppAmount > 0 && hppAccount && persediaanAccount) {
+  // Add HPP entries if HPP data is provided
+  if (hppAmount && hppAmount > 0 && hppAccount) {
     // Dr. HPP (Cost of Goods Sold)
     lines.push({
       accountId: hppAccount.id,
@@ -426,15 +436,40 @@ export async function createSalesJournal(params: {
       creditAmount: 0,
       description: 'Harga Pokok Penjualan',
     });
-    // Cr. Persediaan
-    lines.push({
-      accountId: persediaanAccount.id,
-      accountCode: persediaanAccount.code,
-      accountName: persediaanAccount.name,
-      debitAmount: 0,
-      creditAmount: hppAmount,
-      description: 'Pengurangan persediaan',
-    });
+
+    // Credit account depends on isOfficeSale flag
+    if (isOfficeSale && persediaanAccount) {
+      // LAKU KANTOR: Barang langsung diambil → Cr. Persediaan Barang Dagang
+      lines.push({
+        accountId: persediaanAccount.id,
+        accountCode: persediaanAccount.code,
+        accountName: persediaanAccount.name,
+        debitAmount: 0,
+        creditAmount: hppAmount,
+        description: 'Pengurangan persediaan (laku kantor)',
+      });
+    } else if (!isOfficeSale && hutangBarangDagangAccount) {
+      // NON-OFFICE SALE: Barang perlu diantar → Cr. Hutang Barang Dagang
+      // Kewajiban menyerahkan barang ke pelanggan
+      lines.push({
+        accountId: hutangBarangDagangAccount.id,
+        accountCode: hutangBarangDagangAccount.code,
+        accountName: hutangBarangDagangAccount.name,
+        debitAmount: 0,
+        creditAmount: hppAmount,
+        description: 'Hutang barang dagang (kewajiban kirim)',
+      });
+    } else if (persediaanAccount) {
+      // Fallback: use Persediaan if Hutang Barang Dagang not found
+      lines.push({
+        accountId: persediaanAccount.id,
+        accountCode: persediaanAccount.code,
+        accountName: persediaanAccount.name,
+        debitAmount: 0,
+        creditAmount: hppAmount,
+        description: 'Pengurangan persediaan',
+      });
+    }
   }
 
   return createJournalEntry({
@@ -1666,6 +1701,100 @@ export async function createDebtJournal(params: {
         debitAmount: 0,
         creditAmount: amount,
         description: `Hutang kepada ${creditorName}`,
+      },
+    ],
+  });
+}
+
+/**
+ * Generate journal for Delivery (Pengantaran Barang)
+ *
+ * Saat barang diantar ke pelanggan:
+ * Dr. Hutang Barang Dagang (2140)     xxx (kewajiban kirim terpenuhi)
+ *   Cr. Persediaan Barang Dagang (1310)    xxx (stok berkurang)
+ *
+ * Jurnal ini dipanggil saat delivery dibuat untuk transaksi non-office sale.
+ * Untuk office sale (laku kantor), persediaan sudah berkurang saat transaksi.
+ *
+ * Edge Cases:
+ * - Immediate delivery: Tetap buat jurnal ini, audit trail tetap jelas
+ * - POS Supir: Seharusnya isOfficeSale=true, jadi tidak perlu jurnal ini
+ */
+export async function createDeliveryJournal(params: {
+  deliveryId: string;
+  deliveryDate: Date;
+  transactionId: string;
+  transactionNumber: string;
+  items: Array<{
+    productId: string;
+    productName: string;
+    quantity: number;
+    hppPerUnit: number; // HPP per unit dari transaksi
+  }>;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { deliveryId, deliveryDate, transactionId, transactionNumber, items, branchId } = params;
+
+  // Calculate total HPP for delivered items
+  const totalHPP = items.reduce((sum, item) => sum + (item.quantity * item.hppPerUnit), 0);
+
+  if (totalHPP <= 0) {
+    console.log('[JournalService] createDeliveryJournal - No HPP to record, skipping journal');
+    return { success: true }; // No journal needed if no HPP
+  }
+
+  // Find Hutang Barang Dagang account (2140)
+  const hutangBarangDagangAccount = await getAccountByCode('2140', branchId)
+    || await findAccountByPattern('hutang barang dagang', 'Kewajiban', branchId);
+
+  if (!hutangBarangDagangAccount) {
+    console.warn('[JournalService] Akun Hutang Barang Dagang (2140) tidak ditemukan');
+    return { success: false, error: 'Akun Hutang Barang Dagang (2140) tidak ditemukan' };
+  }
+
+  // Find Persediaan Barang Dagang account (1310)
+  const persediaanAccount = await getAccountByCode('1310', branchId)
+    || await findAccountByPattern('barang dagang', 'Aset', branchId)
+    || await findAccountByPattern('persediaan', 'Aset', branchId);
+
+  if (!persediaanAccount) {
+    return { success: false, error: 'Akun Persediaan Barang Dagang (1310) tidak ditemukan' };
+  }
+
+  // Build item description
+  const itemDescriptions = items.map(item => `${item.productName} x${item.quantity}`).join(', ');
+  const description = `Pengantaran ${transactionNumber}: ${itemDescriptions}`;
+
+  console.log('[JournalService] createDeliveryJournal:', {
+    deliveryId,
+    transactionNumber,
+    totalHPP,
+    itemCount: items.length
+  });
+
+  return createJournalEntry({
+    entryDate: deliveryDate,
+    description,
+    referenceType: 'adjustment', // Use adjustment as delivery is an adjustment to inventory
+    referenceId: deliveryId,
+    branchId,
+    autoPost: true,
+    lines: [
+      {
+        accountId: hutangBarangDagangAccount.id,
+        accountCode: hutangBarangDagangAccount.code,
+        accountName: hutangBarangDagangAccount.name,
+        debitAmount: totalHPP,
+        creditAmount: 0,
+        description: 'Kewajiban kirim barang terpenuhi',
+      },
+      {
+        accountId: persediaanAccount.id,
+        accountCode: persediaanAccount.code,
+        accountName: persediaanAccount.name,
+        debitAmount: 0,
+        creditAmount: totalHPP,
+        description: 'Pengurangan persediaan barang diantar',
       },
     ],
   });

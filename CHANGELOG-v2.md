@@ -261,3 +261,76 @@ PGPASSWORD='Aquvit2024' psql -U aquavit -d aquvit_db -f /tmp/sync-customer-photo
 ```
 
 Total: 579 foto akan di-match dengan nama pelanggan.
+
+---
+
+## Changelog - 27 Desember 2024 (Update 3)
+
+### 1. HPP (Harga Pokok Penjualan) & FIFO Inventory
+
+#### A. FIFO Inventory Consumption untuk Material
+**File**: `database/consume_inventory_fifo.sql`
+
+- Fungsi `consume_inventory_fifo` sekarang support `material_id` selain `product_id`
+- Material otomatis punya batch tracking seperti produk
+- Batch awal dibuat otomatis dari `price_per_unit` material yang ada stok
+
+#### B. HPP Journal Lines untuk Penjualan
+**Jurnal otomatis saat penjualan:**
+```
+Dr. 5100 - Harga Pokok Produk     xxx
+  Cr. 1310 - Persediaan Barang Dagang    xxx
+```
+
+- HPP dihitung dari `cost_price` produk × quantity
+- Transaksi lama sudah di-update dengan HPP journal lines
+
+### 2. Fix `.single()` → `.order().limit(1)` untuk PostgREST
+
+**Masalah**: Client kita force `Accept: application/json`, tapi `.single()` butuh `application/vnd.pgrst.object+json`
+
+**Solusi**: Ganti semua `.single()` dengan `.order('id').limit(1)` + array extraction
+
+**Files yang diperbaiki (13 files):**
+
+| File | Lokasi |
+|------|--------|
+| `src/utils/syncCashFlow.ts` | getKasKecilAccount |
+| `src/utils/financialIntegration.ts` | getAccountById |
+| `src/utils/simpleCashFlow.ts` | insert cash_history |
+| `src/services/pricingService.ts` | getProductPricing, createStockPricing, createBonusPricing, createCustomerPricing, updateCustomerPricing, getCustomerProductPrice |
+| `src/services/materialStockService.ts` | getMaterialStock |
+| `src/services/materialMovementService.ts` | getTransaction |
+| `src/contexts/AuthContext.tsx` | getProfile |
+| `src/components/BOMManagement.tsx` | addBOMItem |
+| `src/components/CashFlowTable.tsx` | getJournalLine |
+| `src/pages/LoginPage.tsx` | getProfileByUsername |
+| `src/components/PayReceivableDialog.tsx` | insertCashHistory |
+| `src/components/PayrollHistoryTable.tsx` | getPayrollDetail |
+| `src/components/ReceiveGoodsTab.tsx` | getPurchaseOrder |
+| `src/components/UserPermissionTab.tsx` | getUserRole |
+
+### 3. Transfer Antar Kas - Sudah Terintegrasi Jurnal
+
+**File**: `src/services/journalService.ts` - `createTransferJournal()`
+
+Saat transfer antar akun (kas ke kas, kas ke bank, dll):
+```
+Dr. Akun Tujuan     xxx
+  Cr. Akun Asal          xxx
+```
+
+**Reference type**: `'transfer'`
+
+---
+
+### Files Modified
+
+| Category | Files |
+|----------|-------|
+| **Database** | `consume_inventory_fifo.sql` |
+| **Utils** | `syncCashFlow.ts`, `financialIntegration.ts`, `simpleCashFlow.ts` |
+| **Services** | `pricingService.ts`, `materialStockService.ts`, `materialMovementService.ts` |
+| **Contexts** | `AuthContext.tsx` |
+| **Components** | `BOMManagement.tsx`, `CashFlowTable.tsx`, `PayReceivableDialog.tsx`, `PayrollHistoryTable.tsx`, `ReceiveGoodsTab.tsx`, `UserPermissionTab.tsx` |
+| **Pages** | `LoginPage.tsx` |

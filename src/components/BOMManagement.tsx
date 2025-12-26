@@ -84,7 +84,8 @@ export function BOMManagement({ productId, productName }: BOMManagementProps) {
     try {
       setIsLoading(true);
       
-      const { data, error } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('product_materials')
         .insert({
           product_id: productId,
@@ -96,7 +97,8 @@ export function BOMManagement({ productId, productName }: BOMManagementProps) {
           *,
           materials (name, unit)
         `)
-        .single();
+        .order('id', { ascending: false }).limit(1);
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
 
       if (error) throw error;
 

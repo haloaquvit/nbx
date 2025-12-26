@@ -11,6 +11,7 @@ import {
 import { PhotoUploadService } from '@/services/photoUploadService'
 import { useBranch } from '@/contexts/BranchContext'
 import { useAuth } from './useAuth'
+import { createDeliveryJournal } from '@/services/journalService'
 
 // Fetch employees with driver and helper roles from profiles table
 export function useDeliveryEmployees() {
@@ -751,6 +752,7 @@ export function useDeliveries() {
         driverName,
         helperId: deliveryData.helper_id,
         helperName,
+        branchId: deliveryData.branch_id || currentBranch?.id || null, // Untuk commission entry
         items: itemsData.map((item: any) => ({
           id: item.id,
           deliveryId: item.delivery_id,
@@ -779,6 +781,83 @@ export function useDeliveries() {
         await generateDeliveryCommission(result);
       } catch (commissionError) {
         // Don't fail delivery creation if commission generation fails
+      }
+
+      // ============================================================================
+      // CREATE DELIVERY JOURNAL (for non-office sale transactions)
+      // Jurnal: Dr. Hutang Barang Dagang (2140), Cr. Persediaan Barang Dagang (1310)
+      //
+      // Ini menandakan kewajiban kirim barang sudah terpenuhi dan persediaan berkurang.
+      // Untuk "Laku Kantor" (isOfficeSale=true), persediaan sudah berkurang saat transaksi.
+      // ============================================================================
+      try {
+        // Get transaction data untuk cek apakah ini office sale atau bukan
+        // Use .order('id').limit(1) and handle array response
+        const { data: txnRaw } = await supabase
+          .from('transactions')
+          .select('id, is_office_sale, transaction_number, items')
+          .eq('id', request.transactionId)
+          .order('id').limit(1);
+
+        const txnData = Array.isArray(txnRaw) ? txnRaw[0] : txnRaw;
+
+        // Only create delivery journal for non-office sale
+        if (txnData && !txnData.is_office_sale && itemsData.length > 0) {
+          console.log('📒 Creating delivery journal for non-office sale...');
+
+          // Calculate HPP per unit from transaction items
+          const txnItems = txnData.items || [];
+          const deliveryJournalItems = itemsData.map((item: any) => {
+            // Find matching transaction item to get HPP
+            const txnItem = txnItems.find((ti: any) =>
+              ti.product?.id === item.product_id && !ti._isSalesMeta && !ti.isBonus
+            );
+
+            // Calculate HPP per unit (use hppPerUnit from transaction if available)
+            // Otherwise calculate from total HPP / quantity
+            let hppPerUnit = 0;
+            if (txnItem) {
+              if (txnItem.hppPerUnit) {
+                hppPerUnit = txnItem.hppPerUnit;
+              } else if (txnItem.hpp && txnItem.quantity > 0) {
+                hppPerUnit = txnItem.hpp / txnItem.quantity;
+              } else if (txnItem.product?.cost_price) {
+                hppPerUnit = txnItem.product.cost_price;
+              }
+            }
+
+            return {
+              productId: item.product_id,
+              productName: item.product_name,
+              quantity: item.quantity_delivered,
+              hppPerUnit
+            };
+          }).filter((item: any) => item.hppPerUnit > 0); // Only include items with valid HPP
+
+          if (deliveryJournalItems.length > 0) {
+            const journalResult = await createDeliveryJournal({
+              deliveryId: deliveryData.id,
+              deliveryDate: new Date(deliveryData.delivery_date),
+              transactionId: request.transactionId,
+              transactionNumber: txnData.transaction_number || `TXN-${request.transactionId}`,
+              items: deliveryJournalItems,
+              branchId: currentBranch?.id || deliveryData.branch_id || ''
+            });
+
+            if (journalResult.success) {
+              console.log('✅ Delivery journal created:', journalResult.journalId);
+            } else {
+              console.warn('⚠️ Failed to create delivery journal:', journalResult.error);
+            }
+          } else {
+            console.log('ℹ️ No items with valid HPP for delivery journal');
+          }
+        } else if (txnData?.is_office_sale) {
+          console.log('ℹ️ Skipping delivery journal for office sale (laku kantor)');
+        }
+      } catch (journalError) {
+        console.error('❌ Error creating delivery journal:', journalError);
+        // Don't fail delivery creation if journal creation fails
       }
 
       // ============================================================================
@@ -990,6 +1069,31 @@ export function useDeliveries() {
 
       // Note: Bonus accounting rollback is now handled in useTransactions.ts when transaction is deleted
       // This ensures consistent accounting - bonus is recorded at transaction level, not delivery level
+
+      // Void delivery journal (Hutang Barang Dagang reversal)
+      // Jurnal asli: Dr. Hutang Barang Dagang, Cr. Persediaan
+      // Saat void: jurnal di-void/delete, saldo kembali
+      try {
+        console.log('🔄 Voiding delivery journal for:', deliveryId)
+        const { error: voidError } = await supabase
+          .from('journal_entries')
+          .update({
+            is_voided: true,
+            voided_at: new Date().toISOString(),
+            voided_reason: 'Pengantaran dihapus'
+          })
+          .eq('reference_id', deliveryId)
+          .eq('reference_type', 'adjustment')
+
+        if (voidError) {
+          console.error('❌ Failed to void delivery journal:', voidError)
+        } else {
+          console.log('✅ Delivery journal voided for:', deliveryId)
+        }
+      } catch (voidJournalError) {
+        console.error('❌ Error voiding delivery journal:', voidJournalError)
+        // Don't throw - journal void is not critical for deletion
+      }
 
       // Delete delivery items first
       const { error: itemsError } = await supabase

@@ -361,10 +361,14 @@ export const useProduction = () => {
               const unitCost = materialData?.cost_price || materialData?.price_per_unit || 0;
               const materialCost = unitCost * requiredQty;
               totalMaterialCost += materialCost;
-              materialDetails.push(`${bomItem.materialName} x${requiredQty}`);
+              materialDetails.push(`${bomItem.materialName} x${requiredQty} @ Rp${Math.round(unitCost).toLocaleString()}`);
+              console.log(`📦 Fallback HPP for ${bomItem.materialName}: cost_price=${materialData?.cost_price}, price_per_unit=${materialData?.price_per_unit}, using=${unitCost}, total=${materialCost}`);
             }
           }
 
+          console.log(`📊 Total material cost calculated: Rp${Math.round(totalMaterialCost).toLocaleString()} for ${input.quantity} units`);
+
+          // Create journal if cost > 0
           if (totalMaterialCost > 0 && currentBranch?.id) {
             const journalResult = await createProductionOutputJournal({
               productionId: productionRecord.id,
@@ -398,6 +402,39 @@ export const useProduction = () => {
                 });
             } catch (historyError) {
               console.warn('cash_history recording failed (non-critical):', historyError);
+            }
+          }
+
+          // ============================================================================
+          // CREATE INVENTORY BATCH FOR FINISHED PRODUCT (FOR FIFO HPP)
+          // This batch will be consumed by consume_inventory_fifo when product is sold
+          // unit_cost = totalMaterialCost / quantity produced
+          // ALWAYS create batch even if cost = 0 (for stock tracking)
+          // ============================================================================
+          if (currentBranch?.id) {
+            try {
+              const unitCost = totalMaterialCost > 0 ? (totalMaterialCost / input.quantity) : 0;
+              const { error: batchError } = await supabase
+                .from('inventory_batches')
+                .insert({
+                  product_id: input.productId,
+                  branch_id: currentBranch.id,
+                  initial_quantity: input.quantity,
+                  remaining_quantity: input.quantity,
+                  unit_cost: unitCost,
+                  batch_date: new Date().toISOString(),
+                  notes: `Produksi ${ref}`,
+                  production_id: productionRecord.id,
+                });
+
+              if (batchError) {
+                console.error('❌ Error creating inventory batch:', batchError);
+              } else {
+                console.log(`✅ Inventory batch created for ${product.name}: ${input.quantity} units @ Rp${Math.round(unitCost)}/unit (HPP per unit)`);
+              }
+            } catch (batchError) {
+              console.error('Error creating inventory batch:', batchError);
+              // Don't fail production if batch creation fails
             }
           }
         } catch (productionAccountingError) {
@@ -823,6 +860,29 @@ export const useProduction = () => {
           }
         } catch (errorRollbackError) {
           console.error('Error reversing bahan rusak material movement:', errorRollbackError);
+        }
+      }
+
+      // ============================================================================
+      // DELETE INVENTORY BATCH FOR THIS PRODUCTION
+      // This removes the product batch created during production
+      // Uses notes field to match "Produksi {ref}" pattern
+      // ============================================================================
+      if (isNormalProduction && record.ref) {
+        try {
+          const { error: batchDeleteError } = await supabase
+            .from('inventory_batches')
+            .delete()
+            .eq('product_id', record.product_id)
+            .eq('notes', `Produksi ${record.ref}`);
+
+          if (batchDeleteError) {
+            console.warn('⚠️ Failed to delete inventory batch:', batchDeleteError);
+          } else {
+            console.log('✅ Inventory batch deleted for production:', record.ref);
+          }
+        } catch (batchError) {
+          console.error('Error deleting inventory batch:', batchError);
         }
       }
 

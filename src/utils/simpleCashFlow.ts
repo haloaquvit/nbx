@@ -36,11 +36,13 @@ export async function insertSimpleCashFlow(transactionData: any) {
       created_by_name: transactionData.cashier_name,
     };
 
-    const { data, error } = await supabase
+    // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+    const { data: dataRaw, error } = await supabase
       .from('cash_history')
       .insert([record])
       .select()
-      .single();
+      .order('id', { ascending: false }).limit(1);
+    const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
 
     if (error) {
       throw new Error(`Insert failed: ${error.message}`);

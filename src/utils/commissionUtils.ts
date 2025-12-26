@@ -52,7 +52,8 @@ export async function generateSalesCommission(transaction: Transaction) {
           transaction_id: transaction.id,
           ref: `TXN-${transaction.id}`,
           status: 'pending' as const,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          branch_id: transaction.branchId || null
         };
 
         commissionEntries.push(commissionEntry);
@@ -148,7 +149,8 @@ export async function generateDeliveryCommission(delivery: Delivery) {
           delivery_id: delivery.id,
           ref: `DEL-${delivery.id}`,
           status: 'pending' as const,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          branch_id: delivery.branchId || null
         };
 
         commissionEntries.push(commissionEntry);
@@ -169,7 +171,8 @@ export async function generateDeliveryCommission(delivery: Delivery) {
           delivery_id: delivery.id,
           ref: `DEL-${delivery.id}`,
           status: 'pending' as const,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          branch_id: delivery.branchId || null
         };
 
         commissionEntries.push(commissionEntry);

@@ -5,9 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, Printer, FileDown, Calendar, User, Package, CreditCard, Truck, FileText } from "lucide-react"
+import { ArrowLeft, Printer, FileDown, Calendar, User, Package, CreditCard, Truck, FileText, MapPin, Phone } from "lucide-react"
 import { useTransactions } from "@/hooks/useTransactions"
 import { useTransactionDeliveryInfo } from "@/hooks/useDeliveries"
+import { useCustomers } from "@/hooks/useCustomers"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { DeliveryManagement } from "@/components/DeliveryManagement"
@@ -24,6 +25,7 @@ export default function TransactionDetailPage() {
   const { id: transactionId } = useParams<{ id: string }>()
   const { transactions, isLoading } = useTransactions()
   const { data: deliveryInfo, isLoading: isLoadingDelivery } = useTransactionDeliveryInfo(transactionId || '')
+  const { customers } = useCustomers()
   const { toast } = useToast()
   const { settings: companyInfo } = useCompanySettings()
   const navigate = useNavigate()
@@ -41,6 +43,7 @@ export default function TransactionDetailPage() {
   }
 
   const transaction = transactions?.find(t => t.id === transactionId)
+  const customer = customers?.find(c => c.id === transaction?.customerId)
 
   if (!transactionId) {
     return (
@@ -1187,6 +1190,47 @@ export default function TransactionDetailPage() {
                   </span>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Customer Address Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Alamat Pelanggan</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-start gap-2">
+                <User className="h-4 w-4 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium">{transaction.customerName}</p>
+                </div>
+              </div>
+
+              {customer?.phone && (
+                <div className="flex items-start gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">{customer.phone}</p>
+                  </div>
+                </div>
+              )}
+
+              {(customer?.full_address || customer?.address) && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      {customer.full_address || customer.address}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!customer && (
+                <p className="text-sm text-muted-foreground italic">
+                  Data pelanggan tidak ditemukan
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

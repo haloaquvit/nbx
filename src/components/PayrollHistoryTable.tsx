@@ -303,11 +303,13 @@ export const PayrollHistoryTable = () => {
 
   const handlePrintSingle = async (payment: PayrollPayment) => {
     // Fetch full payroll details from database
-    const { data: payrollDetail, error } = await supabase
+    // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+    const { data: payrollDetailRaw, error } = await supabase
       .from('payroll_records')
       .select('*')
       .eq('id', payment.reference_id)
-      .single()
+      .order('id').limit(1)
+    const payrollDetail = Array.isArray(payrollDetailRaw) ? payrollDetailRaw[0] : payrollDetailRaw
 
     if (error) {
       console.error('Error fetching payroll details:', error)

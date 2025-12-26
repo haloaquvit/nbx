@@ -143,11 +143,13 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
       console.log('Attempting to insert cash_history record:', paymentRecord);
 
       // Insert payment record to cash_history table
-      const { data: insertedRecord, error: paymentRecordError } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: insertedRecordRaw, error: paymentRecordError } = await supabase
         .from('cash_history')
         .insert(paymentRecord)
         .select()
-        .single();
+        .order('id', { ascending: false }).limit(1);
+      const insertedRecord = Array.isArray(insertedRecordRaw) ? insertedRecordRaw[0] : insertedRecordRaw;
 
       if (paymentRecordError) {
         console.error('Failed to insert cash_history record:', {

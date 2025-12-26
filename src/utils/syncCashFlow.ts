@@ -34,11 +34,13 @@ export async function syncTodayCashFlow() {
     console.log('Today cash history (pos_direct):', cashHistory?.length);
 
     // Get Kas Kecil account ID
-    const { data: kasKecilAccount } = await supabase
+    // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+    const { data: kasKecilAccountRaw } = await supabase
       .from('accounts')
       .select('id, name')
       .ilike('name', '%kas kecil%')
-      .single();
+      .order('id').limit(1);
+    const kasKecilAccount = Array.isArray(kasKecilAccountRaw) ? kasKecilAccountRaw[0] : kasKecilAccountRaw;
 
     console.log('Kas Kecil Account:', kasKecilAccount);
 

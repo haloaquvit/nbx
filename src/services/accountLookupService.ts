@@ -128,7 +128,7 @@ const LOOKUP_PATTERNS: Record<AccountLookupType, LookupPattern> = {
   },
   HUTANG_LAIN: {
     type: ['Kewajiban', 'Liabilitas', 'Liability'],
-    namePatterns: ['hutang lain', 'utang lain', 'kewajiban lain', 'other payable'],
+    namePatterns: ['hutang lain', 'utang lain', 'kewajiban lain', 'other payable', 'hutang barang dagang', 'utang barang dagang'],
     excludePatterns: ['hutang usaha', 'hutang bank', 'hutang gaji', 'hutang pajak', 'kartu kredit'],
   },
   HUTANG_GAJI: {

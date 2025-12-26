@@ -12,25 +12,28 @@ export async function createCommissionExpense(commission: CommissionEntry) {
     let accountName = 'Beban Komisi Karyawan';
     
     // Check if the preferred account exists, if not use a fallback
-    const { data: accountExists } = await supabase
+    // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+    const { data: accountExistsRaw } = await supabase
       .from('accounts')
       .select('id, name')
       .eq('id', accountId)
-      .single();
+      .order('id').limit(1);
+    const accountExists = Array.isArray(accountExistsRaw) ? accountExistsRaw[0] : accountExistsRaw;
 
     if (!accountExists) {
-      
+
       // Try alternative account IDs
       const fallbackAccounts = ['expense-commission', 'beban-operasional', 'beban-lain-lain'];
       let foundAccount = null;
-      
+
       for (const fallbackId of fallbackAccounts) {
-        const { data: fallback } = await supabase
+        const { data: fallbackRaw } = await supabase
           .from('accounts')
           .select('id, name')
           .eq('id', fallbackId)
-          .single();
-          
+          .order('id').limit(1);
+        const fallback = Array.isArray(fallbackRaw) ? fallbackRaw[0] : fallbackRaw;
+
         if (fallback) {
           foundAccount = fallback;
           break;

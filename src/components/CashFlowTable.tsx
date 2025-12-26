@@ -354,11 +354,13 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
 
       // selectedRecord.id sekarang adalah journal_entry_line ID
       // Kita perlu cari journal_entry yang terkait dan void-nya
-      const { data: journalLine, error: lineError } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: journalLineRaw, error: lineError } = await supabase
         .from('journal_entry_lines')
         .select('journal_entry_id')
         .eq('id', selectedRecord.id)
-        .single();
+        .order('id').limit(1);
+      const journalLine = Array.isArray(journalLineRaw) ? journalLineRaw[0] : journalLineRaw;
 
       if (lineError || !journalLine) {
         throw new Error('Jurnal tidak ditemukan');

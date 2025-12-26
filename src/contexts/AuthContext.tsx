@@ -67,16 +67,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       // Single fast database query with very short timeout
-      const { data, error } = await Promise.race([
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: dataRaw, error } = await Promise.race([
         supabase
           .from('profiles')
           .select('id, full_name, email, role, phone, address, status')
           .eq('id', supabaseUser.id)
-          .single(),
+          .order('id').limit(1),
         new Promise((_, reject) => {
           setTimeout(() => reject(new Error('Quick timeout')), 2000); // Only 2 seconds
         })
       ]) as any;
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
 
       if (data && !error) {
         // Success - use database profile

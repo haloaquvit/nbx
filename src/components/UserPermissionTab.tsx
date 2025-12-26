@@ -74,11 +74,13 @@ export const UserPermissionTab = () => {
   const loadUserPermissions = async (userId: string) => {
     try {
       // Get user's current role and permissions
-      const { data: userRole } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: userRoleRaw } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', userId)
-        .single();
+        .order('id').limit(1);
+      const userRole = Array.isArray(userRoleRaw) ? userRoleRaw[0] : userRoleRaw;
 
       if (userRole) {
         // Get role's default permissions

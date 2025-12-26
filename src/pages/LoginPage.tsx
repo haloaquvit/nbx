@@ -53,11 +53,13 @@ export default function LoginPage() {
 
       if (!isEmail) {
         // It's a username, so we need to get the email from the profiles table
-        const { data: profile, error: profileError } = await supabase
+        // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+        const { data: profileRaw, error: profileError } = await supabase
           .from('profiles')
           .select('email')
           .eq('username', formData.identifier)
-          .single();
+          .order('id').limit(1);
+        const profile = Array.isArray(profileRaw) ? profileRaw[0] : profileRaw;
 
         if (profileError || !profile) {
           setLoginError('Username tidak ditemukan.');

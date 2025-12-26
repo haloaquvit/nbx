@@ -142,13 +142,14 @@ export class MaterialMovementService {
         let transactionData = null;
         
         if (movement.reference_type === 'transaction' && movement.reference_id) {
-          const { data: transaction } = await supabase
+          // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+          const { data: transactionRaw } = await supabase
             .from('transactions')
             .select('id, customer_name, order_date, status')
             .eq('id', movement.reference_id)
-            .single();
-          
-          transactionData = transaction;
+            .order('id').limit(1);
+
+          transactionData = Array.isArray(transactionRaw) ? transactionRaw[0] : transactionRaw;
         }
 
         return {

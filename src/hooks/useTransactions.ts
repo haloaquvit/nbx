@@ -415,14 +415,59 @@ export const useTransactions = (filters?: {
                     totalHPP += costPrice * quantity;
                     console.log('Fallback HPP calculated:', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
                   } else if (fifoResult && fifoResult.length > 0) {
-                    // FIFO success - use the calculated HPP
-                    totalHPP += Number(fifoResult[0].total_hpp) || 0;
-                    console.log('FIFO HPP calculated:', {
-                      productId,
-                      quantity,
-                      hpp: fifoResult[0].total_hpp,
-                      batches: fifoResult[0].batches_consumed,
-                    });
+                    // FIFO returned result - check if it consumed enough quantity
+                    const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
+
+                    // Parse batches_consumed to get total consumed quantity
+                    let consumedQty = 0;
+                    try {
+                      const batchesConsumed = typeof fifoResult[0].batches_consumed === 'string'
+                        ? JSON.parse(fifoResult[0].batches_consumed)
+                        : fifoResult[0].batches_consumed;
+                      consumedQty = Array.isArray(batchesConsumed)
+                        ? batchesConsumed.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0)
+                        : 0;
+                    } catch (parseErr) {
+                      console.warn('Could not parse batches_consumed:', parseErr);
+                    }
+
+                    if (fifoHpp > 0 && consumedQty >= quantity) {
+                      // FIFO berhasil consume semua qty
+                      totalHPP += fifoHpp;
+                      console.log('FIFO HPP calculated (full):', {
+                        productId,
+                        quantity,
+                        hpp: fifoHpp,
+                        batches: fifoResult[0].batches_consumed,
+                      });
+                    } else {
+                      // FIFO tidak cukup - hitung fallback untuk sisa qty
+                      const remainingQty = quantity - consumedQty;
+
+                      // Get product cost_price for fallback
+                      const { data: productDataRaw3 } = await supabase
+                        .from('products')
+                        .select('cost_price, base_price')
+                        .eq('id', productId)
+                        .order('id').limit(1);
+                      const productData3 = Array.isArray(productDataRaw3) ? productDataRaw3[0] : productDataRaw3;
+                      const costPrice = productData3?.cost_price || productData3?.base_price || 0;
+
+                      // HPP = FIFO portion + Fallback portion
+                      const fallbackHpp = costPrice * remainingQty;
+                      totalHPP += fifoHpp + fallbackHpp;
+
+                      console.log('HPP calculated (FIFO + Fallback):', {
+                        productId,
+                        requestedQty: quantity,
+                        fifoConsumedQty: consumedQty,
+                        fifoHpp,
+                        remainingQty,
+                        fallbackCostPrice: costPrice,
+                        fallbackHpp,
+                        totalItemHPP: fifoHpp + fallbackHpp
+                      });
+                    }
                   }
                 } catch (err) {
                   console.error('Error calling FIFO:', err);
@@ -456,6 +501,10 @@ export const useTransactions = (filters?: {
             ppnEnabled: newTransaction.ppnEnabled,
             ppnAmount: newTransaction.ppnAmount,
             subtotal: newTransaction.subtotal,
+            // Office Sale flag - determines HPP credit account:
+            // - isOfficeSale=true: Cr. Persediaan (stok langsung berkurang)
+            // - isOfficeSale=false: Cr. Hutang Barang Dagang (kewajiban kirim)
+            isOfficeSale: newTransaction.isOfficeSale || false,
           });
 
           if (journalResult.success) {
@@ -1100,6 +1149,30 @@ export const useTransactions = (filters?: {
               } catch (stockError) {
                 console.error(`Error restoring stock for delivery ${delivery.id}:`, stockError);
               }
+            }
+          }
+
+          // Void delivery journals (Hutang Barang Dagang) for each delivery
+          for (const delivery of deliveries) {
+            try {
+              const { error: voidDeliveryJournalError } = await supabase
+                .from('journal_entries')
+                .update({
+                  status: 'voided',
+                  is_voided: true,
+                  voided_at: new Date().toISOString(),
+                  voided_reason: 'Transaksi induk dihapus'
+                })
+                .eq('reference_id', delivery.id)
+                .eq('reference_type', 'adjustment');
+
+              if (voidDeliveryJournalError) {
+                console.error(`Failed to void delivery journal for ${delivery.id}:`, voidDeliveryJournalError);
+              } else {
+                console.log(`✅ Voided delivery journal for ${delivery.id}`);
+              }
+            } catch (voidError) {
+              console.error(`Error voiding delivery journal for ${delivery.id}:`, voidError);
             }
           }
 

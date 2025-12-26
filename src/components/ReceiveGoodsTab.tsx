@@ -95,11 +95,13 @@ export function ReceiveGoodsTab() {
           let ppnAmount = 0
 
           if (movement.reference_id && movement.reference_type === 'purchase_order') {
-            const { data: poData } = await supabase
+            // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+            const { data: poDataRaw } = await supabase
               .from('purchase_orders')
               .select('supplier_name, include_ppn, ppn_amount')
               .eq('id', movement.reference_id)
-              .single()
+              .order('id').limit(1)
+            const poData = Array.isArray(poDataRaw) ? poDataRaw[0] : poDataRaw
 
             supplierName = poData?.supplier_name
             includePpn = poData?.include_ppn || false

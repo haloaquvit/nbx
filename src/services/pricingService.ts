@@ -121,11 +121,13 @@ export class PricingService {
   static async getProductPricing(productId: string): Promise<ProductPricing | null> {
     try {
       // Get product details
-      const { data: productData, error: productError } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: productDataRaw, error: productError } = await supabase
         .from('products')
         .select('id, name, base_price, current_stock')
         .eq('id', productId)
-        .single()
+        .order('id').limit(1)
+      const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw
 
       if (productError || !productData) {
         console.error('Failed to fetch product:', productError)
@@ -211,7 +213,8 @@ export class PricingService {
    */
   static async createStockPricing(request: CreateStockPricingRequest): Promise<StockPricing | null> {
     try {
-      const { data, error } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('stock_pricings')
         .insert({
           product_id: request.productId,
@@ -221,7 +224,8 @@ export class PricingService {
           is_active: true
         })
         .select()
-        .single()
+        .order('id', { ascending: false }).limit(1)
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
 
       if (error) {
         console.error('Failed to create stock pricing:', error)
@@ -249,7 +253,8 @@ export class PricingService {
    */
   static async createBonusPricing(request: CreateBonusPricingRequest): Promise<BonusPricing | null> {
     try {
-      const { data, error } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('bonus_pricings')
         .insert({
           product_id: request.productId,
@@ -262,7 +267,8 @@ export class PricingService {
           is_active: true
         })
         .select()
-        .single()
+        .order('id', { ascending: false }).limit(1)
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
 
       if (error) {
         console.error('Failed to create bonus pricing:', error)
@@ -478,7 +484,8 @@ export class PricingService {
       // Determine priority: customer-specific = 100, classification = 50
       const priority = request.priority ?? (request.customerId ? 100 : 50)
 
-      const { data, error } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('customer_pricings')
         .insert({
           product_id: request.productId,
@@ -495,7 +502,8 @@ export class PricingService {
           *,
           customers:customer_id (name)
         `)
-        .single()
+        .order('id', { ascending: false }).limit(1)
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
 
       if (error) {
         console.error('Failed to create customer pricing:', error)
@@ -537,7 +545,8 @@ export class PricingService {
       if (updates.priority !== undefined) updateData.priority = updates.priority
       if (updates.description !== undefined) updateData.description = updates.description
 
-      const { data, error } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: dataRaw, error } = await supabase
         .from('customer_pricings')
         .update(updateData)
         .eq('id', id)
@@ -545,7 +554,8 @@ export class PricingService {
           *,
           customers:customer_id (name)
         `)
-        .single()
+        .order('id').limit(1)
+      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
 
       if (error) {
         console.error('Failed to update customer pricing:', error)
@@ -600,11 +610,13 @@ export class PricingService {
   ): Promise<CustomerPriceCalculationResult | null> {
     try {
       // Get product base price
-      const { data: product, error: productError } = await supabase
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      const { data: productRaw, error: productError } = await supabase
         .from('products')
         .select('base_price')
         .eq('id', productId)
-        .single()
+        .order('id').limit(1)
+      const product = Array.isArray(productRaw) ? productRaw[0] : productRaw
 
       if (productError || !product) {
         console.error('Failed to fetch product:', productError)
