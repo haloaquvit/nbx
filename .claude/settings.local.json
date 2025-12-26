@@ -152,7 +152,8 @@
       "Bash(dir \"C:\\Users\\Asus\")",
       "Bash(cd \"D:\"\" && gzip -dk \"aquavit_db_full_2025-12-25T13-20-05-298Z.sql.gz\" 2>/dev/null || 7z x -y \"aquavit_db_full_2025-12-25T13-20-05-298Z.sql.gz\" 2>/dev/null || gunzip -k \"aquavit_db_full_2025-12-25T13-20-05-298Z.sql.gz \")",
       "Bash(ssh -i \"d:\\App\\Aquvit Fix - Copy\\Aquvit.pem\" -o StrictHostKeyChecking=no deployer@103.197.190.54 \"psql -U deployer -d aquvit_db -c \"\"\n-- Tambah RLS policy untuk SELECT pada deliveries (untuk return data setelah INSERT)\nDROP POLICY IF EXISTS deliveries_select_returning ON deliveries;\nCREATE POLICY deliveries_select_returning ON deliveries FOR SELECT TO authenticated USING (true);\n\n-- Cek policy yang ada\nSELECT tablename, policyname, cmd FROM pg_policies WHERE tablename = ''deliveries'';\n\"\"\")",
-      "Bash(git remote:*)"
+      "Bash(git remote:*)",
+      "Bash(ssh-keygen:*)"
     ],
     "deny": [],
     "ask": [],
