@@ -11,6 +11,7 @@ import { useMaterials } from '@/hooks/useMaterials';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { BOMItem } from '@/types/production';
+import { updateProductCostFromBOM } from '@/hooks/useProducts';
 
 interface BOMManagementProps {
   productId: string;
@@ -112,7 +113,10 @@ export function BOMManagement({ productId, productName }: BOMManagementProps) {
       setSelectedMaterialId('');
       setQuantity(1);
       setNotes('');
-      
+
+      // Auto-update product cost_price from BOM
+      await updateProductCostFromBOM(productId);
+
       toast({
         title: "Success",
         description: "Material added to BOM successfully"
@@ -141,7 +145,10 @@ export function BOMManagement({ productId, productName }: BOMManagementProps) {
       if (error) throw error;
 
       setBom(bom.filter(item => item.id !== bomItemId));
-      
+
+      // Auto-update product cost_price from BOM
+      await updateProductCostFromBOM(productId);
+
       toast({
         title: "Success",
         description: "Material removed from BOM successfully"

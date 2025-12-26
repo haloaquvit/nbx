@@ -363,7 +363,7 @@ export const PosForm = () => {
     }
 
     if (paidAmount > 0 && !paymentAccountId) {
-      toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap pilih Metode Pembayaran jika ada jumlah yang dibayar." });
+      toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap pilih Kas/Bank untuk menerima pembayaran." });
       return;
     }
 
@@ -1047,30 +1047,76 @@ export const PosForm = () => {
               </div>
 
               <div className="space-y-4">
+                {/* Payment Status Selection */}
+                <div className="border border-amber-200 bg-amber-50 p-4 rounded-lg">
+                  <h3 className="text-sm font-medium text-gray-900 mb-3">Status Pembayaran</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        paidAmount >= totalTagihan
+                          ? 'border-green-500 bg-green-100 text-green-800'
+                          : 'border-gray-300 bg-white text-gray-600 hover:border-green-400'
+                      }`}
+                      onClick={() => setPaidAmount(totalTagihan)}
+                      disabled={retasiBlocked}
+                    >
+                      <div className="font-semibold">💰 Lunas</div>
+                      <div className="text-xs mt-1">Bayar penuh</div>
+                    </button>
+                    <button
+                      type="button"
+                      className={`p-3 rounded-lg border-2 transition-all ${
+                        paidAmount < totalTagihan && paidAmount > 0
+                          ? 'border-orange-500 bg-orange-100 text-orange-800'
+                          : paidAmount === 0
+                          ? 'border-red-500 bg-red-100 text-red-800'
+                          : 'border-gray-300 bg-white text-gray-600 hover:border-orange-400'
+                      }`}
+                      onClick={() => setPaidAmount(0)}
+                      disabled={retasiBlocked}
+                    >
+                      <div className="font-semibold">📝 Belum Lunas</div>
+                      <div className="text-xs mt-1">Kredit/sebagian</div>
+                    </button>
+                  </div>
+                  <div className="mt-3 text-xs text-amber-700">
+                    <strong>Status:</strong> {sisaTagihan <= 0 ? '✅ Lunas' : paidAmount > 0 ? '⏳ Bayar Sebagian' : '❌ Belum Bayar'}
+                  </div>
+                </div>
+
                 {/* Payment Method */}
                 <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Metode Pembayaran</h3>
-                  <Select value={paymentAccountId} onValueChange={setPaymentAccountId} disabled={retasiBlocked}>
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Metode Pembayaran (Kas/Bank)</h3>
+                  <Select value={paymentAccountId} onValueChange={setPaymentAccountId} disabled={retasiBlocked || paidAmount === 0}>
                     <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Pilih Pembayaran..." />
+                      <SelectValue placeholder={paidAmount === 0 ? "Tidak perlu (belum bayar)" : "Pilih Kas/Bank..."} />
                     </SelectTrigger>
                     <SelectContent>
                       {accounts?.filter(a => a.isPaymentAccount).map(acc => (
                         <SelectItem key={acc.id} value={acc.id}>
                           <Wallet className="inline-block mr-2 h-4 w-4" />
-                          {acc.name}
+                          {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                          <span className="text-xs text-gray-500 ml-2">
+                            (Saldo: {new Intl.NumberFormat("id-ID").format(acc.balance || 0)})
+                          </span>
                         </SelectItem>
                       ))}
                       {(!accounts || accounts.filter(a => a.isPaymentAccount).length === 0) && (
                         <SelectItem value="no-accounts" disabled>
-                          Tidak ada akun pembayaran tersedia
+                          ⚠️ Tidak ada akun pembayaran. Import COA Standar dulu!
                         </SelectItem>
                       )}
                     </SelectContent>
                   </Select>
-                  {accounts && (
+                  {accounts && accounts.filter(a => a.isPaymentAccount).length === 0 && (
+                    <p className="text-xs text-red-500 mt-1">
+                      ⚠️ Belum ada akun Kas/Bank. <Link to="/chart-of-accounts" className="underline text-blue-600">Import COA Standar</Link> atau centang "Akun Pembayaran" pada akun Kas.
+                    </p>
+                  )}
+                  {paidAmount === 0 && (
                     <p className="text-xs text-gray-500 mt-1">
-                      Total akun: {accounts.length}, Akun pembayaran: {accounts.filter(a => a.isPaymentAccount).length}
+                      Metode pembayaran tidak diperlukan untuk transaksi kredit murni.
                     </p>
                   )}
                 </div>

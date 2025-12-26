@@ -28,6 +28,7 @@ export default function ProductPage() {
     name: "",
     type: "Produksi" as ProductType,
     basePrice: 0,
+    costPrice: 0,
     unit: "pcs",
     initialStock: 0,
     minStock: 0,
@@ -193,6 +194,7 @@ export default function ProductPage() {
         name: "",
         type: "Produksi" as ProductType,
         basePrice: 0,
+        costPrice: 0,
         unit: "pcs",
         initialStock: 0,
         minStock: 0,
@@ -303,19 +305,46 @@ export default function ProductPage() {
                     />
                   </div>
 
-                  <div>
-                    <Label htmlFor="basePrice" className="text-sm">
-                      Harga Jual
-                    </Label>
-                    <NumberInput
-                      id="basePrice"
-                      placeholder="Harga Jual"
-                      value={form.basePrice}
-                      onChange={(value) => setForm({ ...form, basePrice: value || 0 })}
-                      min={0}
-                      decimalPlaces={2}
-                      className="text-sm mt-1"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="basePrice" className="text-sm">
+                        Harga Jual
+                      </Label>
+                      <NumberInput
+                        id="basePrice"
+                        placeholder="Harga Jual"
+                        value={form.basePrice}
+                        onChange={(value) => setForm({ ...form, basePrice: value || 0 })}
+                        min={0}
+                        decimalPlaces={2}
+                        className="text-sm mt-1"
+                      />
+                    </div>
+                    {form.type === 'Jual Langsung' ? (
+                      <div>
+                        <Label htmlFor="costPrice" className="text-sm">
+                          Harga Pokok (HPP)
+                        </Label>
+                        <NumberInput
+                          id="costPrice"
+                          placeholder="Harga Modal"
+                          value={form.costPrice}
+                          onChange={(value) => setForm({ ...form, costPrice: value || 0 })}
+                          min={0}
+                          decimalPlaces={2}
+                          className="text-sm mt-1"
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <Label className="text-sm text-gray-500">
+                          Harga Pokok (HPP)
+                        </Label>
+                        <div className="p-2 bg-gray-100 rounded text-sm mt-1 text-gray-600">
+                          Otomatis dari BOM
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
@@ -410,6 +439,7 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
     name: product.name,
     type: product.type,
     basePrice: product.basePrice,
+    costPrice: product.costPrice || 0,
     unit: product.unit,
     initialStock: product.initialStock || 0,
     minStock: product.minStock,
@@ -512,19 +542,47 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
             />
           </div>
 
-          <div>
-            <Label htmlFor="edit-basePrice" className="text-sm">
-              Harga Jual
-            </Label>
-            <NumberInput
-              id="edit-basePrice"
-              placeholder="Harga Jual"
-              value={form.basePrice}
-              onChange={(value) => setForm({ ...form, basePrice: value || 0 })}
-              min={0}
-              decimalPlaces={2}
-              className="text-sm mt-1"
-            />
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label htmlFor="edit-basePrice" className="text-sm">
+                Harga Jual
+              </Label>
+              <NumberInput
+                id="edit-basePrice"
+                placeholder="Harga Jual"
+                value={form.basePrice}
+                onChange={(value) => setForm({ ...form, basePrice: value || 0 })}
+                min={0}
+                decimalPlaces={2}
+                className="text-sm mt-1"
+              />
+            </div>
+            {form.type === 'Jual Langsung' ? (
+              <div>
+                <Label htmlFor="edit-costPrice" className="text-sm">
+                  Harga Pokok (HPP)
+                </Label>
+                <NumberInput
+                  id="edit-costPrice"
+                  placeholder="Harga Modal"
+                  value={form.costPrice}
+                  onChange={(value) => setForm({ ...form, costPrice: value || 0 })}
+                  min={0}
+                  decimalPlaces={2}
+                  className="text-sm mt-1"
+                />
+              </div>
+            ) : (
+              <div>
+                <Label className="text-sm text-gray-500">
+                  Harga Pokok (HPP)
+                </Label>
+                <div className="p-2 bg-gray-100 rounded text-sm mt-1 text-gray-600">
+                  {form.costPrice ? new Intl.NumberFormat('id-ID').format(form.costPrice) : 0}
+                  <span className="text-xs ml-1">(dari BOM)</span>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2">

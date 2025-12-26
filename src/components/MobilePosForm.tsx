@@ -263,7 +263,7 @@ export const MobilePosForm = () => {
     }
 
     if (paidAmount > 0 && !paymentAccountId) {
-      toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap pilih Metode Pembayaran jika ada jumlah yang dibayar." });
+      toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap pilih Kas/Bank untuk menerima pembayaran." });
       return;
     }
 
@@ -744,24 +744,31 @@ export const MobilePosForm = () => {
           {/* Metode Pembayaran - Quick Select Buttons */}
           <div>
             <Label className="text-sm text-muted-foreground mb-2 block">Bayar dengan:</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {accounts?.filter(a => a.isPaymentAccount).slice(0, 4).map(acc => (
-                <Button
-                  key={acc.id}
-                  type="button"
-                  variant={paymentAccountId === acc.id ? "default" : "outline"}
-                  size="sm"
-                  className={cn(
-                    "h-10",
-                    paymentAccountId === acc.id && "bg-green-600 hover:bg-green-700"
-                  )}
-                  onClick={() => setPaymentAccountId(acc.id)}
-                >
-                  <Wallet className="mr-1 h-4 w-4" />
-                  {acc.name}
-                </Button>
-              ))}
-            </div>
+            {accounts?.filter(a => a.isPaymentAccount).length === 0 ? (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-center">
+                <p className="text-sm text-red-600 font-medium">⚠️ Tidak ada akun pembayaran</p>
+                <p className="text-xs text-red-500 mt-1">Buka Chart of Accounts → Import COA Standar</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {accounts?.filter(a => a.isPaymentAccount).slice(0, 4).map(acc => (
+                  <Button
+                    key={acc.id}
+                    type="button"
+                    variant={paymentAccountId === acc.id ? "default" : "outline"}
+                    size="sm"
+                    className={cn(
+                      "h-10",
+                      paymentAccountId === acc.id && "bg-green-600 hover:bg-green-700"
+                    )}
+                    onClick={() => setPaymentAccountId(acc.id)}
+                  >
+                    <Wallet className="mr-1 h-4 w-4" />
+                    {acc.name}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Bayar Penuh / Sebagian Toggle */}

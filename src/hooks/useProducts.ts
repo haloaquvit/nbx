@@ -5,15 +5,45 @@ import { supabase } from '@/integrations/supabase/client'
 import { logError, logDebug } from '@/utils/debugUtils'
 import { useBranch } from '@/contexts/BranchContext'
 
+// Calculate BOM cost for a product (HPP dari materials)
+export const calculateBOMCost = async (productId: string): Promise<number> => {
+  const { data: bomItems, error } = await supabase
+    .from('product_materials')
+    .select(`
+      quantity,
+      materials (price_per_unit)
+    `)
+    .eq('product_id', productId);
+
+  if (error || !bomItems || bomItems.length === 0) return 0;
+
+  return bomItems.reduce((total, item: any) => {
+    const unitPrice = item.materials?.price_per_unit || 0;
+    return total + (unitPrice * item.quantity);
+  }, 0);
+};
+
+// Update product cost_price from BOM calculation
+export const updateProductCostFromBOM = async (productId: string): Promise<number> => {
+  const totalCost = await calculateBOMCost(productId);
+
+  await supabase
+    .from('products')
+    .update({ cost_price: totalCost })
+    .eq('id', productId);
+
+  return totalCost;
+};
+
 // DB to App mapping
 const fromDb = (dbProduct: any): Product => ({
   id: dbProduct.id,
   name: dbProduct.name,
-  type: dbProduct.type || 'Produksi', // Use type from database or default
+  type: dbProduct.type || 'Produksi',
   basePrice: Number(dbProduct.base_price) || 0,
-  costPrice: dbProduct.cost_price ? Number(dbProduct.cost_price) : undefined, // Harga pokok untuk Jual Langsung
+  costPrice: dbProduct.cost_price ? Number(dbProduct.cost_price) : undefined,
   unit: dbProduct.unit || 'pcs',
-  initialStock: Number(dbProduct.initial_stock || 0), // Stock awal untuk balancing
+  initialStock: Number(dbProduct.initial_stock || 0),
   currentStock: Number(dbProduct.current_stock || 0),
   minStock: Number(dbProduct.min_stock || 0),
   minOrder: Number(dbProduct.min_order) || 1,
@@ -24,7 +54,7 @@ const fromDb = (dbProduct: any): Product => ({
   updatedAt: new Date(dbProduct.updated_at),
 });
 
-// App to DB mapping - only include columns that exist in the database
+// App to DB mapping
 const toDb = (appProduct: Partial<Product>) => {
   const { id, createdAt, updatedAt, basePrice, costPrice, minOrder, initialStock, currentStock, minStock, ...rest } = appProduct;
   const dbData: any = { ...rest };
@@ -34,14 +64,9 @@ const toDb = (appProduct: Partial<Product>) => {
   if (initialStock !== undefined) dbData.initial_stock = initialStock;
   if (currentStock !== undefined) dbData.current_stock = currentStock;
   if (minStock !== undefined) dbData.min_stock = minStock;
-
-  // Don't send category since it's not used in the system
-  // Remove category from the data to avoid constraint issues
   delete dbData.category;
-
   return dbData;
 };
-
 
 export const useProducts = () => {
   const queryClient = useQueryClient();
@@ -50,69 +75,47 @@ export const useProducts = () => {
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ['products', currentBranch?.id],
     queryFn: async () => {
-      let query = supabase
-        .from('products')
-        .select('*')
-        .order('name', { ascending: true });
-
-      // Apply branch filter - ALWAYS filter by selected branch
-      if (currentBranch?.id) {
-        query = query.eq('branch_id', currentBranch.id);
-      }
-
+      let query = supabase.from('products').select('*').order('name', { ascending: true });
+      if (currentBranch?.id) query = query.eq('branch_id', currentBranch.id);
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data ? data.map(fromDb) : [];
     },
-    enabled: !!currentBranch, // Only run when branch is loaded
-    // Optimized for high-frequency POS usage
-    staleTime: 10 * 60 * 1000, // 10 minutes - products don't change frequently
-    gcTime: 15 * 60 * 1000, // 15 minutes cache
-    refetchOnWindowFocus: false, // Critical: don't refetch on POS window focus
-    refetchOnReconnect: false, // Don't refetch on reconnect
-    retry: 1, // Only retry once
+    enabled: !!currentBranch,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
     retryDelay: 1000,
   })
 
   const upsertProduct = useMutation({
     mutationFn: async (product: Partial<Product>): Promise<Product> => {
       const dbData = toDb(product);
-      
       logDebug('Product Upsert', { originalProduct: product, dbData });
-      
-      // Handle insert vs update
+
       if (product.id) {
-        // Update existing product
         logDebug('Product Update', { id: product.id, updateData: dbData });
 
-        // Fetch current product to check if we need to sync initial_stock to current_stock
         const { data: currentProduct } = await supabase
           .from('products')
-          .select('current_stock, initial_stock')
+          .select('current_stock, initial_stock, cost_price')
           .eq('id', product.id)
           .order('id')
           .limit(1);
 
         const existing = Array.isArray(currentProduct) ? currentProduct[0] : currentProduct;
+        const oldInitialStock = existing?.initial_stock || 0;
+        const oldCurrentStock = existing?.current_stock || 0;
 
-        // Jika initial_stock diubah dan current_stock masih 0 atau sama dengan initial_stock lama,
-        // maka sync current_stock dengan initial_stock baru
         if (dbData.initial_stock !== undefined && existing) {
-          const oldInitialStock = existing.initial_stock || 0;
-          const oldCurrentStock = existing.current_stock || 0;
-
-          // Sync jika: current_stock == 0 ATAU current_stock == initial_stock lama (belum ada transaksi)
           if (oldCurrentStock === 0 || oldCurrentStock === oldInitialStock) {
             dbData.current_stock = dbData.initial_stock;
-            logDebug('Syncing current_stock with initial_stock', {
-              oldInitialStock,
-              oldCurrentStock,
-              newInitialStock: dbData.initial_stock
-            });
+            logDebug('Syncing current_stock with initial_stock', { oldInitialStock, oldCurrentStock, newInitialStock: dbData.initial_stock });
           }
         }
 
-        // Use .order().limit(1) - PostgREST requires explicit order when using limit
         const { data: dataRaw, error } = await supabase
           .from('products')
           .update(dbData)
@@ -129,19 +132,54 @@ export const useProducts = () => {
         const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
         if (!data) throw new Error('Failed to update product');
         logDebug('Product Update Success', data);
+
+        // Create/update inventory batch for FIFO HPP calculation
+        const newInitialStock = dbData.initial_stock || 0;
+        const newCostPrice = dbData.cost_price || 0;
+
+        if (newInitialStock > 0 && newCostPrice > 0) {
+          const { data: existingBatch } = await supabase
+            .from('inventory_batches')
+            .select('id, initial_quantity, remaining_quantity')
+            .eq('product_id', product.id)
+            .eq('notes', 'Stok Awal')
+            .order('batch_date')
+            .limit(1);
+
+          const batch = Array.isArray(existingBatch) ? existingBatch[0] : existingBatch;
+
+          if (batch) {
+            const qtyDiff = newInitialStock - oldInitialStock;
+            const newRemaining = Math.max(0, (batch.remaining_quantity || 0) + qtyDiff);
+            await supabase.from('inventory_batches').update({
+              initial_quantity: newInitialStock,
+              remaining_quantity: newRemaining,
+              unit_cost: newCostPrice,
+              updated_at: new Date().toISOString()
+            }).eq('id', batch.id);
+            logDebug('Updated inventory batch for HPP', { batchId: batch.id, newInitialStock, newRemaining, newCostPrice });
+          } else {
+            await supabase.from('inventory_batches').insert({
+              product_id: product.id,
+              branch_id: currentBranch?.id || null,
+              initial_quantity: newInitialStock,
+              remaining_quantity: newInitialStock,
+              unit_cost: newCostPrice,
+              notes: 'Stok Awal'
+            });
+            logDebug('Created inventory batch for HPP', { productId: product.id, initialStock: newInitialStock, costPrice: newCostPrice });
+          }
+        }
+
         return fromDb(data);
       } else {
-        // Insert new product - let database generate UUID automatically
-        // Jika currentStock tidak di-set, gunakan initialStock sebagai nilai awal
         const insertData = {
           ...dbData,
           branch_id: currentBranch?.id || null,
           current_stock: dbData.current_stock || dbData.initial_stock || 0,
         };
-
         logDebug('Product Insert', { insertData });
 
-        // Use .order().limit(1) - PostgREST requires explicit order when using limit
         const { data: dataRaw, error } = await supabase
           .from('products')
           .insert(insertData)
@@ -157,6 +195,23 @@ export const useProducts = () => {
         const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
         if (!data) throw new Error('Failed to insert product');
         logDebug('Product Insert Success', data);
+
+        // Create inventory batch for new product
+        const initialStock = dbData.initial_stock || 0;
+        const costPrice = dbData.cost_price || 0;
+
+        if (initialStock > 0 && costPrice > 0) {
+          await supabase.from('inventory_batches').insert({
+            product_id: data.id,
+            branch_id: currentBranch?.id || null,
+            initial_quantity: initialStock,
+            remaining_quantity: initialStock,
+            unit_cost: costPrice,
+            notes: 'Stok Awal'
+          });
+          logDebug('Created inventory batch for new product HPP', { productId: data.id, initialStock, costPrice });
+        }
+
         return fromDb(data);
       }
     },
@@ -167,7 +222,6 @@ export const useProducts = () => {
 
   const updateStock = useMutation({
     mutationFn: async ({ productId, newStock }: { productId: string, newStock: number }): Promise<Product> => {
-      // Use .order().limit(1) - PostgREST requires explicit order when using limit
       const { data: dataRaw, error } = await supabase
         .from('products')
         .update({ current_stock: newStock })
@@ -187,10 +241,7 @@ export const useProducts = () => {
 
   const deleteProduct = useMutation({
     mutationFn: async (productId: string): Promise<void> => {
-      const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', productId);
+      const { error } = await supabase.from('products').delete().eq('id', productId);
       if (error) throw new Error(error.message);
     },
     onSuccess: () => {
@@ -198,24 +249,14 @@ export const useProducts = () => {
     }
   });
 
-  // Listen for production completion events to refresh products
   useEffect(() => {
     const handleProductionComplete = () => {
       console.log('Production completed, refreshing products...');
       queryClient.invalidateQueries({ queryKey: ['products'] });
     };
-
     window.addEventListener('production-completed', handleProductionComplete);
-    return () => {
-      window.removeEventListener('production-completed', handleProductionComplete);
-    };
+    return () => window.removeEventListener('production-completed', handleProductionComplete);
   }, [queryClient]);
 
-  return {
-    products,
-    isLoading,
-    upsertProduct,
-    updateStock,
-    deleteProduct,
-  }
+  return { products, isLoading, upsertProduct, updateStock, deleteProduct }
 }

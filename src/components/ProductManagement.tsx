@@ -298,9 +298,16 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
             </div>
           )}
 
-          {/* Stok untuk Produksi */}
+          {/* Cost Price dan Stok untuk Produksi */}
           {formData.type === 'Produksi' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="space-y-2">
+                <Label htmlFor="costPrice" className="flex items-center gap-2">
+                  Harga Pokok / Modal (Rp)
+                  <span className="text-xs text-blue-600 font-normal">(Untuk HPP)</span>
+                </Label>
+                <NumberInput id="costPrice" value={formData.costPrice || 0} onChange={(value) => setFormData({...formData, costPrice: value || 0})} min={0} decimalPlaces={2} required />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="initialStock" className="flex items-center gap-2">
                   Stok Awal
@@ -310,7 +317,7 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
               </div>
               <div className="lg:col-span-2 flex items-end">
                 <p className="text-sm text-blue-700">
-                  Stok saat ini dihitung otomatis dari stok awal + produksi - penjualan.
+                  Harga pokok untuk HPP. Stok saat ini dihitung otomatis dari stok awal + produksi - penjualan.
                 </p>
               </div>
             </div>
