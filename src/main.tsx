@@ -9,21 +9,31 @@ import AppErrorBoundary from "@/components/AppErrorBoundary";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Reduce retries to minimize network calls
-      retry: 1,
-      retryDelay: 1000,
+      // Retry on auth errors (token not ready yet on refresh)
+      retry: (failureCount, error) => {
+        // Max 2 retries
+        if (failureCount >= 2) return false;
+        // Retry on 401/403 (auth not ready) or network errors
+        const message = (error as Error)?.message || '';
+        if (message.includes('401') || message.includes('403') || message.includes('fetch')) {
+          return true;
+        }
+        return false;
+      },
+      retryDelay: (attemptIndex) => Math.min(500 * (attemptIndex + 1), 2000),
       // Aggressive caching - data stays fresh longer
-      staleTime: 10 * 60 * 1000, // 10 minutes (increased from 5)
-      gcTime: 30 * 60 * 1000, // 30 minutes (increased from 10)
+      staleTime: 10 * 60 * 1000, // 10 minutes
+      gcTime: 30 * 60 * 1000, // 30 minutes
       // Disable automatic refetching to reduce calls
       refetchOnWindowFocus: false,
       refetchOnMount: false,
       refetchOnReconnect: false,
-      // Only refetch when explicitly triggered
       refetchInterval: false,
+      // Prevent error flash on initial load
+      throwOnError: false,
     },
     mutations: {
-      retry: 0, // No retries for mutations
+      retry: 0,
     },
   },
 });

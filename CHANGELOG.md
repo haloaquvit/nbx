@@ -62,6 +62,95 @@ sudo tail -f /var/log/nginx/error.log
 
 ---
 
+## [v3] 2025-12-27 - Dashboard Enhancement & Retasi Improvement
+
+### New Features
+
+42. **Dashboard - Informasi Pelanggan Aktif & Tidak Aktif**
+    - **File**: `src/components/Dashboard.tsx`
+    - Mengganti section "Transaksi Terbaru" dengan 2 section baru:
+    - **Pelanggan Aktif**: Tabel dengan pagination, menampilkan:
+      - Nama pelanggan
+      - Jumlah transaksi (badge hijau)
+      - Total belanja
+      - Tanggal transaksi terakhir
+      - Diurutkan berdasarkan jumlah transaksi (terbanyak dulu)
+    - **Pelanggan Tidak Aktif**: Card grid dengan pagination, menampilkan:
+      - Pelanggan yang 30+ hari tidak transaksi
+      - Pelanggan yang belum pernah transaksi
+      - Hari sejak transaksi terakhir
+      - Total transaksi dan nominal
+    - Maksimal 5 data per halaman dengan tombol navigasi slide
+
+43. **Form Retur Retasi - Input Per Produk**
+    - **Files**:
+      - `src/components/ReturnRetasiDialog.tsx` - UI form baru
+      - `src/types/retasi.ts` - Type dengan `item_returns`
+      - `src/hooks/useRetasi.ts` - Save per-item data
+      - `src/pages/RetasiPage.tsx` - Fetch items saat dialog buka
+    - Sebelumnya: Input total barang kembali/error/laku secara agregat
+    - Sesudah: Tabel per produk yang dibawa dengan kolom:
+      | Produk | Dibawa | Kembali | Laku | Error | Selisih |
+    - Validasi: Total input tidak boleh melebihi jumlah dibawa
+    - Summary: Total dibawa, kembali, laku, error, dan selisih
+    - Data tersimpan per produk ke tabel `retasi_items`
+
+44. **Perbaikan Perhitungan ROE dan DER di Dashboard**
+    - **File**: `src/components/Dashboard.tsx`
+    - **Masalah**: ROE dan DER selalu 0 karena akun Modal tidak memiliki jurnal entries
+    - **Perbaikan**: Jika akun Modal kosong, gunakan persamaan akuntansi:
+      - `Modal = Total Aset - Total Kewajiban`
+    - Ini menghitung retained earnings (laba ditahan) secara otomatis
+
+45. **Perubahan Idle Timeout Login Session**
+    - **File**: `src/contexts/AuthContext.tsx`
+    - Sebelumnya: 5 menit timeout (terlalu cepat)
+    - Sesudah: 1 jam timeout dengan warning di menit ke-55
+    - Note: JWT token di auth-server tetap 7 hari (tidak diubah)
+
+### VPS Information
+
+```
+IP: 103.197.190.54
+SSH: ssh -i Aquvit.pem deployer@103.197.190.54
+
+Services:
+- PostgREST Nabire: port 3000
+- PostgREST Manokwari: port 3001
+- Auth Server: port 3002
+- PostgreSQL: port 5432
+
+Database: aquvit_new (nama baru dari aquvit_db)
+
+Useful Commands:
+# Restart PostgREST
+sudo systemctl restart postgrest
+pm2 restart postgrest
+
+# Reload schema tanpa restart
+sudo kill -SIGUSR1 $(pgrep postgrest)
+
+# Check logs
+sudo tail -f /var/log/nginx/error.log
+pm2 logs auth-server
+
+# Backup database
+pg_dump -U aquvit_user -h localhost aquvit_new > backup.sql
+```
+
+### Files Modified
+
+| File | Perubahan |
+|------|-----------|
+| `src/components/Dashboard.tsx` | Pelanggan aktif/tidak aktif, fix ROE/DER |
+| `src/components/ReturnRetasiDialog.tsx` | Form retur per produk |
+| `src/types/retasi.ts` | Type `item_returns` untuk detail per produk |
+| `src/hooks/useRetasi.ts` | Save per-item data saat return |
+| `src/pages/RetasiPage.tsx` | Fetch items saat buka dialog return |
+| `src/contexts/AuthContext.tsx` | Idle timeout 5 menit → 1 jam |
+
+---
+
 ## 2025-12-25 21:45 WIT (Update 11) - Fix Date Error
 
 ### Bug Fixes

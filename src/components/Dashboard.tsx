@@ -554,7 +554,7 @@ export function Dashboard() {
             {customerActivity.inactiveCustomers
               .slice(inactiveCustomerPage * ITEMS_PER_PAGE, (inactiveCustomerPage + 1) * ITEMS_PER_PAGE)
               .map(customer => (
-                <Card key={customer.id} className="p-3 border-red-200 bg-red-50/50">
+                <Card key={customer.id} className="p-3 border-orange-200 bg-orange-50/50">
                   <div className="font-medium text-sm truncate">{customer.name}</div>
                   <div className="text-xs text-muted-foreground mt-1">
                     {customer.totalTransactions > 0 ? (
