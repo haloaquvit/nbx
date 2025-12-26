@@ -61,7 +61,7 @@ async function getAccountByCode(code: string, branchId: string): Promise<{ id: s
     return accountCache.get(cacheKey)!;
   }
 
-  // Use .limit(1) instead of .single() because our client forces Accept: application/json
+  // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
   // which makes PostgREST return array instead of object
   const { data, error } = await supabase
     .from('accounts')
@@ -69,7 +69,7 @@ async function getAccountByCode(code: string, branchId: string): Promise<{ id: s
     .eq('code', code)
     .eq('branch_id', branchId)
     .eq('is_active', true)
-    .limit(1);
+    .order('id').limit(1);
 
   if (error) {
     console.warn(`[getAccountByCode] Error fetching account ${code}:`, error.message);
@@ -114,7 +114,7 @@ async function findAccountByPattern(pattern: string, type: string, branchId: str
   // Build OR condition for types
   const typeFilter = typesToSearch.map(t => `type.eq.${t}`).join(',');
 
-  // Use .limit(1) instead of .single() because our client forces Accept: application/json
+  // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
   const { data, error } = await supabase
     .from('accounts')
     .select('id, code, name')
@@ -123,7 +123,7 @@ async function findAccountByPattern(pattern: string, type: string, branchId: str
     .eq('is_active', true)
     .eq('is_header', false)
     .or(`code.ilike.%${pattern}%,name.ilike.%${pattern}%`)
-    .limit(1);
+    .order('id').limit(1);
 
   if (error) {
     return null;

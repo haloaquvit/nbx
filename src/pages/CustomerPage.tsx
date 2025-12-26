@@ -2,7 +2,8 @@
 import { useState, useRef, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, FileDown, Upload } from "lucide-react";
+import { PlusCircle, FileDown, Upload, ImageIcon, RefreshCw } from "lucide-react";
+import { PhotoUploadService } from "@/services/photoUploadService";
 import { CustomerTable } from "@/components/CustomerTable";
 import { AddCustomerDialog } from "@/components/AddCustomerDialog";
 import { EditCustomerDialog } from "@/components/EditCustomerDialog";
@@ -20,6 +21,7 @@ export default function CustomerPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isSyncingPhotos, setIsSyncingPhotos] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const { customers } = useCustomers();
   const { toast } = useToast();
@@ -42,6 +44,114 @@ export default function CustomerPage() {
   const handleEditCustomer = (customer: Customer) => {
     setSelectedCustomer(customer);
     setIsEditDialogOpen(true);
+  };
+
+  // Sync foto pelanggan dari server upload
+  const handleSyncPhotos = async () => {
+    setIsSyncingPhotos(true);
+    try {
+      // 1. Ambil daftar file dari server upload
+      const config = PhotoUploadService.getCurrentConfig();
+      const response = await fetch(`${config.filesUrl}/customers/`);
+
+      if (!response.ok) {
+        throw new Error('Gagal mengambil daftar foto dari server');
+      }
+
+      const data = await response.json();
+      const serverFiles = data.files || [];
+
+      if (serverFiles.length === 0) {
+        toast({
+          title: "Tidak Ada Foto",
+          description: "Tidak ada foto pelanggan di server upload.",
+        });
+        return;
+      }
+
+      // 2. Ambil semua pelanggan yang belum punya foto
+      const customersWithoutPhoto = (customers || []).filter(c => !c.store_photo_url);
+
+      if (customersWithoutPhoto.length === 0) {
+        toast({
+          title: "Semua Sudah Punya Foto",
+          description: "Semua pelanggan sudah memiliki foto.",
+        });
+        return;
+      }
+
+      // 3. Cocokkan nama pelanggan dengan filename foto
+      // Format filename: {uuid}{NamaPelanggan}.Foto Lokasi.{timestamp}.jpg
+      let matchCount = 0;
+      const updates: { id: string; name: string; filename: string }[] = [];
+
+      for (const customer of customersWithoutPhoto) {
+        // Cari file yang mengandung nama pelanggan (case insensitive)
+        const customerNameLower = customer.name.toLowerCase().replace(/[^a-z0-9]/gi, '');
+
+        const matchedFile = serverFiles.find((file: { filename: string }) => {
+          // Extract nama dari filename (setelah UUID, sebelum ".Foto Lokasi")
+          const filename = file.filename;
+          // Format: {8char-uuid}{NamaPelanggan}.Foto Lokasi.{timestamp}.jpg
+          const match = filename.match(/^[a-f0-9]{8}(.+?)\.(?:Foto Lokasi|KTP)/i);
+          if (match) {
+            const fileNamePart = match[1].toLowerCase().replace(/[^a-z0-9]/gi, '');
+            return fileNamePart === customerNameLower ||
+                   fileNamePart.includes(customerNameLower) ||
+                   customerNameLower.includes(fileNamePart);
+          }
+          return false;
+        });
+
+        if (matchedFile) {
+          updates.push({
+            id: customer.id,
+            name: customer.name,
+            filename: matchedFile.filename
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        toast({
+          title: "Tidak Ada Kecocokan",
+          description: `Tidak ditemukan foto yang cocok untuk ${customersWithoutPhoto.length} pelanggan tanpa foto.`,
+        });
+        return;
+      }
+
+      // 4. Update database
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('customers')
+          .update({ store_photo_url: update.filename })
+          .eq('id', update.id);
+
+        if (!error) {
+          matchCount++;
+        } else {
+          console.error(`Failed to update ${update.name}:`, error);
+        }
+      }
+
+      // 5. Refresh data
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+
+      toast({
+        title: "Sync Foto Berhasil",
+        description: `${matchCount} pelanggan berhasil dicocokkan dengan foto dari server.`,
+      });
+
+    } catch (error: any) {
+      console.error('Sync photos error:', error);
+      toast({
+        variant: "destructive",
+        title: "Gagal Sync Foto",
+        description: error.message || "Terjadi kesalahan saat sync foto.",
+      });
+    } finally {
+      setIsSyncingPhotos(false);
+    }
   };
 
   const handleExportExcel = () => {
@@ -304,13 +414,26 @@ export default function CustomerPage() {
                 <Upload className="mr-2 h-4 w-4" />
                 {isImporting ? 'Mengimpor...' : 'Impor Excel'}
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={handleExportExcel}
                 className="flex-1 sm:flex-initial hover-glow"
               >
                 <FileDown className="mr-2 h-4 w-4" />
                 Ekspor Excel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleSyncPhotos}
+                disabled={isSyncingPhotos}
+                className="flex-1 sm:flex-initial hover-glow"
+              >
+                {isSyncingPhotos ? (
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <ImageIcon className="mr-2 h-4 w-4" />
+                )}
+                {isSyncingPhotos ? 'Syncing...' : 'Sync Foto'}
               </Button>
             </div>
           </CardContent>

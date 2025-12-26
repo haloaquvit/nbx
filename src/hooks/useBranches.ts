@@ -44,7 +44,7 @@ export function useBranches() {
   const createBranch = useMutation({
     mutationFn: async (branch: Omit<Branch, 'id' | 'createdAt' | 'updatedAt'>) => {
       // 1. Create the branch
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: newBranchRaw, error: branchError } = await supabase
         .from('branches')
         .insert({
@@ -60,7 +60,7 @@ export function useBranches() {
           settings: branch.settings,
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (branchError) throw branchError;
       const newBranch = Array.isArray(newBranchRaw) ? newBranchRaw[0] : newBranchRaw;
@@ -142,7 +142,7 @@ export function useBranches() {
       id: string;
       updates: Partial<Branch>;
     }) => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('branches')
         .update({
@@ -159,7 +159,7 @@ export function useBranches() {
         })
         .eq('id', id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
@@ -211,7 +211,7 @@ export function useBranches() {
         .from('accounts')
         .select('id')
         .eq('branch_id', targetBranchId)
-        .limit(1);
+        .order('id').limit(1);
 
       if (existingAccounts && existingAccounts.length > 0) {
         throw new Error('Branch sudah memiliki akun COA');

@@ -85,12 +85,13 @@ export const useProducts = () => {
         // Update existing product
         logDebug('Product Update', { id: product.id, updateData: dbData });
         
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order().limit(1) - PostgREST requires explicit order when using limit
         const { data: dataRaw, error } = await supabase
           .from('products')
           .update(dbData)
           .eq('id', product.id)
           .select()
+          .order('id')
           .limit(1);
 
         if (error) {
@@ -113,11 +114,12 @@ export const useProducts = () => {
 
         logDebug('Product Insert', { insertData });
 
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order().limit(1) - PostgREST requires explicit order when using limit
         const { data: dataRaw, error } = await supabase
           .from('products')
           .insert(insertData)
           .select()
+          .order('id')
           .limit(1);
 
         if (error) {
@@ -138,12 +140,13 @@ export const useProducts = () => {
 
   const updateStock = useMutation({
     mutationFn: async ({ productId, newStock }: { productId: string, newStock: number }): Promise<Product> => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order().limit(1) - PostgREST requires explicit order when using limit
       const { data: dataRaw, error } = await supabase
         .from('products')
         .update({ current_stock: newStock })
         .eq('id', productId)
         .select()
+        .order('id')
         .limit(1);
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;

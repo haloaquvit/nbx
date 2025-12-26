@@ -85,12 +85,12 @@ export const useMaterialMovements = () => {
         // Override branch_id with current branch if not provided
         branch_id: movementData.branchId || currentBranch?.id || null,
       };
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('material_stock_movements')
         .insert(dbData)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) {
         console.error('Error creating material movement:', error);

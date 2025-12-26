@@ -136,7 +136,7 @@ export const useEmployeeAdvances = () => {
       };
       const dbData = fromAppToDb(advanceToInsert);
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('employee_advances')
         .insert({
@@ -145,7 +145,7 @@ export const useEmployeeAdvances = () => {
           branch_id: currentBranch?.id || null, // Add branch_id for branch categorization
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
@@ -303,12 +303,12 @@ export const useEmployeeAdvances = () => {
       if (accountId && user) {
         try {
           // Get advance details for the description
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: advanceRaw } = await supabase
             .from('employee_advances')
             .select('employee_name')
             .eq('id', advanceId)
-            .limit(1);
+            .order('id').limit(1);
           const advance = Array.isArray(advanceRaw) ? advanceRaw[0] : advanceRaw;
 
           const description = `Pelunasan panjar dari ${advance?.employee_name || 'karyawan'} - ${advanceId}`;
@@ -384,12 +384,12 @@ export const useEmployeeAdvances = () => {
       if (currentBranch?.id) {
         try {
           // Get advance details for the description
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: advanceRaw2 } = await supabase
             .from('employee_advances')
             .select('employee_name')
             .eq('id', advanceId)
-            .limit(1);
+            .order('id').limit(1);
           const advance = Array.isArray(advanceRaw2) ? advanceRaw2[0] : advanceRaw2;
 
           const journalResult = await createAdvanceJournal({

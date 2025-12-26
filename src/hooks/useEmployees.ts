@@ -192,14 +192,14 @@ export const useEmployees = () => {
       let error = null;
       
       // Approach 1: Standard update
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       try {
         const result = await supabase
           .from('profiles')
           .update(updateData)
           .eq('id', id)
           .select()
-          .limit(1);
+          .order('id').limit(1);
 
         const resultData = Array.isArray(result.data) ? result.data[0] : result.data;
         data = resultData;
@@ -270,12 +270,12 @@ export const useEmployees = () => {
       } else {
         // Supabase mode - use email reset flow
         // Get user email first
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
         const { data: profileRaw, error: profileError } = await supabase
           .from('profiles')
           .select('email')
           .eq('id', userId)
-          .limit(1);
+          .order('id').limit(1);
 
         const profile = Array.isArray(profileRaw) ? profileRaw[0] : profileRaw;
         if (profileError || !profile?.email) {

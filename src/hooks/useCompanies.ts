@@ -42,7 +42,7 @@ export function useCompanies() {
   // Create company
   const createCompany = useMutation({
     mutationFn: async (company: Omit<Company, 'id' | 'createdAt' | 'updatedAt'>) => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('companies')
         .insert({
@@ -57,7 +57,7 @@ export function useCompanies() {
           is_active: company.isActive,
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
@@ -88,7 +88,7 @@ export function useCompanies() {
       id: string;
       updates: Partial<Company>;
     }) => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('companies')
         .update({
@@ -104,7 +104,7 @@ export function useCompanies() {
         })
         .eq('id', id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;

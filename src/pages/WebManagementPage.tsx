@@ -290,7 +290,7 @@ function HealthyTab() {
       const { data, error } = await supabase
         .from('profiles')
         .select('id')
-        .limit(1)
+        .order('id').limit(1)
 
       if (error) {
         dbStatus = 'error'
@@ -890,16 +890,7 @@ function BackupRestoreTab() {
 
   // Get auth token for API calls
   const getAuthToken = () => {
-    try {
-      const stored = localStorage.getItem('postgrest_auth_session')
-      if (stored) {
-        const session = JSON.parse(stored)
-        return session.access_token || ''
-      }
-    } catch (e) {
-      console.error('Error getting auth token:', e)
-    }
-    return ''
+    return postgrestAuth.getAccessToken() || ''
   }
 
   // Get auth URL from tenant config (works for localhost dev and production)

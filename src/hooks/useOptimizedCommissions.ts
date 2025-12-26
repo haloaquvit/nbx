@@ -48,7 +48,7 @@ export function useOptimizedCommissionEntries(
       const { data: testData, error: testError } = await supabase
         .from('commission_entries')
         .select('id')
-        .limit(1)
+        .order('id').limit(1)
 
       if (testError && testError.code === 'PGRST116') {
         console.log('❌ Commission entries table does not exist yet')
@@ -142,12 +142,12 @@ export function useDeleteCommissionEntry() {
       console.log('🗑️ Deleting commission entry:', entryId)
       
       // Get commission entry details to check if we need to delete expense
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: commissionEntryRaw } = await supabase
         .from('commission_entries')
         .select('role, delivery_id')
         .eq('id', entryId)
-        .limit(1)
+        .order('id').limit(1)
       const commissionEntry = Array.isArray(commissionEntryRaw) ? commissionEntryRaw[0] : commissionEntryRaw
 
       // Only delete expense entry for sales commission (not delivery commission)

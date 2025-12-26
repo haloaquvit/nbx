@@ -19,7 +19,7 @@ export function useCommissionRules() {
       const { data, error } = await supabase
         .from('commission_rules')
         .select('*')
-        .limit(1)
+        .order('id').limit(1)
 
       if (error && (error.code === 'PGRST116' || error.message.includes('does not exist'))) {
         console.log('Commission rules table does not exist yet')
@@ -85,19 +85,19 @@ export function useCommissionRules() {
       const { data: tableCheck, error: tableError } = await supabase
         .from('commission_rules')
         .select('id')
-        .limit(1)
+        .order('id').limit(1)
 
       if (tableError && (tableError.code === 'PGRST116' || tableError.message.includes('does not exist'))) {
         throw new Error('Tabel commission_rules belum tersedia. Silakan hubungi administrator.')
       }
 
       // Get product information first
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: productRaw, error: productError } = await supabase
         .from('products')
         .select('name')
         .eq('id', productId)
-        .limit(1)
+        .order('id').limit(1)
 
       if (productError) {
         console.error('Error fetching product:', productError)
@@ -210,7 +210,7 @@ export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: st
       const { data, error } = await supabase
         .from('commission_entries')
         .select('*')
-        .limit(1)
+        .order('id').limit(1)
 
       if (error && error.code === 'PGRST116') {
         // Table doesn't exist, return empty data
@@ -321,12 +321,12 @@ export function useCommissionEntries(startDate?: Date, endDate?: Date, role?: st
       console.log('🗑️ Deleting commission entry:', entryId);
       
       // Get commission entry details to check if we need to delete expense
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: commissionEntryRaw } = await supabase
         .from('commission_entries')
         .select('role, delivery_id')
         .eq('id', entryId)
-        .limit(1)
+        .order('id').limit(1)
       const commissionEntry = Array.isArray(commissionEntryRaw) ? commissionEntryRaw[0] : commissionEntryRaw
 
       // Only delete expense entry for sales commission (not delivery commission)

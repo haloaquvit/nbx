@@ -182,12 +182,12 @@ export const usePurchaseOrders = () => {
 
         console.log('[addPurchaseOrder] Inserting PO header:', poHeader);
 
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
         const { data: poDataRaw, error: poError } = await supabase
           .from('purchase_orders')
           .insert(poHeader)
           .select()
-          .limit(1);
+          .order('id').limit(1);
 
         if (poError) {
           console.error('[addPurchaseOrder] PO header insert error:', poError);
@@ -231,8 +231,8 @@ export const usePurchaseOrders = () => {
 
         console.log('[addPurchaseOrder] DB data to insert (legacy):', dbData);
 
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
-        const { data: dataRaw, error } = await supabase.from('purchase_orders').insert(dbData).select().limit(1);
+        // Use .order().limit(1) - PostgREST requires explicit order when using limit
+        const { data: dataRaw, error } = await supabase.from('purchase_orders').insert(dbData).select().order('id').limit(1);
 
         if (error) {
           console.error('[addPurchaseOrder] Database error:', error);
@@ -254,8 +254,8 @@ export const usePurchaseOrders = () => {
     mutationFn: async ({ poId, status, updateData }: { poId: string, status: PurchaseOrderStatus, updateData?: any }): Promise<PurchaseOrder> => {
       const dbUpdateData = { status, ...updateData };
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase.from('purchase_orders').update(dbUpdateData).eq('id', poId).select().limit(1);
+      // Use .order().limit(1) - PostgREST requires explicit order when using limit
+      const { data: dataRaw, error } = await supabase.from('purchase_orders').update(dbUpdateData).eq('id', poId).select().order('id').limit(1);
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       if (!data) throw new Error('Failed to update purchase order status');
@@ -266,12 +266,12 @@ export const usePurchaseOrders = () => {
 
         // Calculate due date based on supplier's payment terms
         if (data.supplier_id) {
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: supplierDataRaw } = await supabase
             .from('suppliers')
             .select('payment_terms')
             .eq('id', data.supplier_id)
-            .limit(1);
+            .order('id').limit(1);
           const supplierData = Array.isArray(supplierDataRaw) ? supplierDataRaw[0] : supplierDataRaw;
 
           if (supplierData?.payment_terms) {
@@ -426,26 +426,26 @@ export const usePurchaseOrders = () => {
       const paymentDate = new Date();
       
       // Update PO status to Dibayar
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: updatedPoRaw, error } = await supabase.from('purchase_orders').update({
         status: 'Dibayar',
         total_cost: totalCost,
         payment_account_id: paymentAccountId,
         payment_date: paymentDate,
-      }).eq('id', poId).select().limit(1);
+      }).eq('id', poId).select().order('id').limit(1);
 
       if (error) throw error;
       const updatedPo = Array.isArray(updatedPoRaw) ? updatedPoRaw[0] : updatedPoRaw;
       if (!updatedPo) throw new Error('Failed to update payment status');
 
       // Find corresponding accounts payable and pay it
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: payableDataRaw, error: payableError } = await supabase
         .from('accounts_payable')
         .select('*')
         .eq('purchase_order_id', poId)
         .eq('status', 'Outstanding')
-        .limit(1);
+        .order('id').limit(1);
 
       const payableData = Array.isArray(payableDataRaw) ? payableDataRaw[0] : payableDataRaw;
       if (payableError && payableError.code !== 'PGRST116') { // PGRST116 = no rows returned
@@ -480,12 +480,12 @@ export const usePurchaseOrders = () => {
       if (paymentAccountId && user) {
         try {
           // Get account name for the payment account
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: accountRaw } = await supabase
             .from('accounts')
             .select('name')
             .eq('id', paymentAccountId)
-            .limit(1);
+            .order('id').limit(1);
           const account = Array.isArray(accountRaw) ? accountRaw[0] : accountRaw;
 
           const cashFlowRecord = {
@@ -577,12 +577,12 @@ export const usePurchaseOrders = () => {
         }));
       } else if (po.materialId) {
         // Legacy single-item PO (material only)
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
         const { data: materialRaw } = await supabase
           .from('materials')
           .select('name, type')
           .eq('id', po.materialId)
-          .limit(1);
+          .order('id').limit(1);
         const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
 
         itemsToProcess = [{
@@ -601,12 +601,12 @@ export const usePurchaseOrders = () => {
       for (const item of itemsToProcess) {
         if (item.itemType === 'material' && item.materialId) {
           // Process MATERIAL
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: materialRaw2 } = await supabase
             .from('materials')
             .select('stock')
             .eq('id', item.materialId)
-            .limit(1);
+            .order('id').limit(1);
           const material = Array.isArray(materialRaw2) ? materialRaw2[0] : materialRaw2;
 
           const previousStock = Number(material?.stock) || 0;
@@ -675,12 +675,12 @@ export const usePurchaseOrders = () => {
 
         } else if (item.itemType === 'product' && item.productId) {
           // Process PRODUCT (Jual Langsung)
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: productRaw } = await supabase
             .from('products')
             .select('current_stock')
             .eq('id', item.productId)
-            .limit(1);
+            .order('id').limit(1);
           const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
 
           const previousStock = Number(product?.current_stock) || 0;
@@ -731,7 +731,7 @@ export const usePurchaseOrders = () => {
       }
 
       // Update PO status to Diterima with received_date
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('purchase_orders')
         .update({
@@ -740,7 +740,7 @@ export const usePurchaseOrders = () => {
         })
         .eq('id', po.id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;

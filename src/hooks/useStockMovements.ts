@@ -83,12 +83,12 @@ export const useStockMovements = () => {
   const createStockMovement = useMutation({
     mutationFn: async (movementData: CreateStockMovementData): Promise<StockMovement> => {
       const dbData = fromAppToDb(movementData);
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('material_stock_movements')
         .insert(dbData)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) {
         console.error('Error creating stock movement:', error);

@@ -6,7 +6,7 @@ export async function checkCashHistoryTable() {
     const { data, error } = await supabase
       .from('cash_history')
       .select('*')
-      .limit(1);
+      .order('id').limit(1);
 
     if (error) {
       console.log('Cash history table error:', error);

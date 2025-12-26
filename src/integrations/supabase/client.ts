@@ -11,7 +11,7 @@ interface TenantConfig {
   isPostgREST: boolean;
 }
 
-const STORAGE_KEY = 'postgrest_auth_session';
+const SESSION_STORAGE_KEY = 'postgrest_auth_session';
 const SERVER_STORAGE_KEY = 'aquvit_selected_server';
 
 // Server configurations
@@ -20,35 +20,49 @@ const SERVERS: Record<string, string> = {
   'manokwari': 'https://mkw.aquvit.id',
 };
 
-// Helper to get JWT token from localStorage
+// In-memory session reference for token access
+// This mirrors postgrestAuth.ts to avoid circular dependency
+let cachedSession: { access_token: string; exp: number } | null = null;
+
+// Helper to get JWT token from memory/sessionStorage
+// Uses same storage as postgrestAuth.ts but avoids circular import
 function getPostgRESTToken(): string | null {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    // 1. Check cached session in memory
+    if (cachedSession) {
+      if (cachedSession.exp * 1000 > Date.now()) {
+        return cachedSession.access_token;
+      }
+      // Expired, clear cache
+      cachedSession = null;
+    }
+
+    // 2. Try to recover from sessionStorage
+    const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!stored) {
-      // Token tidak ada di localStorage - kemungkinan belum login atau race condition
       return null;
     }
 
     const session = JSON.parse(stored);
     if (!session.access_token) {
-      console.warn('[Client] Session exists but no access_token');
       return null;
     }
 
     // Check if token is expired
     const tokenParts = session.access_token.split('.');
     if (tokenParts.length !== 3) {
-      console.warn('[Client] Invalid JWT format');
       return null;
     }
 
     const payload = JSON.parse(atob(tokenParts[1]));
     const isExpired = payload.exp * 1000 <= Date.now();
     if (isExpired) {
-      console.warn('[Client] Token expired, will use anon');
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
       return null;
     }
 
+    // Cache for future calls
+    cachedSession = { access_token: session.access_token, exp: payload.exp };
     return session.access_token;
   } catch (e) {
     console.error('[Client] Error getting token:', e);
@@ -205,18 +219,10 @@ function createSupabaseClient(): SupabaseClient {
             // URL parsing failed, continue with original URL
           }
 
-          // Merge headers with Authorization - ALWAYS use user token if available
-          // This overrides the ANON_JWT that Supabase client adds by default
+          // Merge headers with Authorization if we have a token
           const headers = new Headers(options?.headers);
-          if (token) {
-            // Always replace with user token (override Supabase's default anon token)
+          if (token && !headers.has('Authorization')) {
             headers.set('Authorization', `Bearer ${token}`);
-          } else {
-            // DEBUG: Log when using anon (no user token available)
-            const urlPath = new URL(finalUrl).pathname;
-            if (!urlPath.includes('/auth/')) {
-              console.warn(`[Client] ⚠️ No user token for: ${urlPath} - using anon role`);
-            }
           }
 
           // Force Accept header for PostgREST compatibility

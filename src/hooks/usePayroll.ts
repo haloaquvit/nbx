@@ -140,7 +140,7 @@ export const useEmployeeSalaries = () => {
 
   const createSalaryConfig = useMutation({
     mutationFn: async (data: SalaryConfigFormData) => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: resultRaw, error } = await supabase
         .from('employee_salaries')
         .insert({
@@ -154,7 +154,7 @@ export const useEmployeeSalaries = () => {
           notes: data.notes,
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
@@ -189,13 +189,13 @@ export const useEmployeeSalaries = () => {
       if (data.effectiveUntil) updateData.effective_until = data.effectiveUntil.toISOString().split('T')[0];
       if (data.notes !== undefined) updateData.notes = data.notes;
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: resultRaw, error } = await supabase
         .from('employee_salaries')
         .update(updateData)
         .eq('id', id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
@@ -384,7 +384,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
       const grossSalary = (data.baseSalaryAmount || 0) + (data.commissionAmount || 0) + (data.bonusAmount || 0);
       const netSalary = grossSalary - totalDeductions;
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: resultRaw, error } = await supabase
         .from('payroll_records')
         .insert({
@@ -402,7 +402,7 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
           branch_id: currentBranch?.id || null,
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
@@ -445,13 +445,13 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
         updateData.net_salary = grossSalary - (data.deductionAmount || 0);
       }
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: resultRaw, error } = await supabase
         .from('payroll_records')
         .update(updateData)
         .eq('id', id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
@@ -518,12 +518,12 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
     }) => {
       // Get payroll record details from summary view
       // Note: payroll_summary view uses 'id' not 'payroll_id'
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: payrollRecordRaw, error: fetchError } = await supabase
         .from('payroll_summary')
         .select('*')
         .eq('id', id)
-        .limit(1);
+        .order('id').limit(1);
 
       if (fetchError) throw fetchError;
       const payrollRecord = Array.isArray(payrollRecordRaw) ? payrollRecordRaw[0] : payrollRecordRaw;
@@ -533,12 +533,12 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
       if (!authUser) throw new Error('User not authenticated');
 
       // Get account name and code for journal entry
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: accountDataRaw } = await supabase
         .from('accounts')
         .select('name, code')
         .eq('id', paymentAccountId)
-        .limit(1);
+        .order('id').limit(1);
       const accountData = Array.isArray(accountDataRaw) ? accountDataRaw[0] : accountDataRaw;
 
       // ============================================================================

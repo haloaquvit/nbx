@@ -97,12 +97,12 @@ export const useAccountsPayable = () => {
         branchId: currentBranch?.id,
       })
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('accounts_payable')
         .insert(dbData)
         .select()
-        .limit(1)
+        .order('id').limit(1)
 
       if (error) throw new Error(error.message)
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
@@ -131,12 +131,12 @@ export const useAccountsPayable = () => {
       const paymentDate = new Date()
 
       // Get current payable data
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: currentPayableRaw, error: fetchError } = await supabase
         .from('accounts_payable')
         .select('*')
         .eq('id', payableId)
-        .limit(1)
+        .order('id').limit(1)
 
       if (fetchError) throw fetchError
       const currentPayable = Array.isArray(currentPayableRaw) ? currentPayableRaw[0] : currentPayableRaw
@@ -147,7 +147,7 @@ export const useAccountsPayable = () => {
       const isFullyPaid = newPaidAmount >= currentPayable.amount
 
       // Update accounts payable
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: updatedPayableRaw, error: updateError } = await supabase
         .from('accounts_payable')
         .update({
@@ -159,28 +159,28 @@ export const useAccountsPayable = () => {
         })
         .eq('id', payableId)
         .select()
-        .limit(1)
+        .order('id').limit(1)
 
       if (updateError) throw updateError
       const updatedPayable = Array.isArray(updatedPayableRaw) ? updatedPayableRaw[0] : updatedPayableRaw
       if (!updatedPayable) throw new Error('Failed to update payable')
 
       // Get payment account info
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: paymentAccountRaw } = await supabase
         .from('accounts')
         .select('id, name, code')
         .eq('id', paymentAccountId)
-        .limit(1)
+        .order('id').limit(1)
       const paymentAccount = Array.isArray(paymentAccountRaw) ? paymentAccountRaw[0] : paymentAccountRaw
 
       // Get liability account info
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: liabilityAccountRaw } = await supabase
         .from('accounts')
         .select('id, name, code')
         .eq('id', liabilityAccountId)
-        .limit(1)
+        .order('id').limit(1)
       const liabilityAccount = Array.isArray(liabilityAccountRaw) ? liabilityAccountRaw[0] : liabilityAccountRaw
 
       console.log('Payment account:', paymentAccount)

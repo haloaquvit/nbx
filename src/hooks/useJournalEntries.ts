@@ -142,12 +142,12 @@ export const useJournalEntries = () => {
       return null;
     }
 
-    // Use .limit(1) and handle array response because our client forces Accept: application/json
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
     const { data: entryRaw, error } = await supabase
       .from('journal_entries')
       .select('*')
       .eq('id', id)
-      .limit(1);
+      .order('id').limit(1);
 
     const entry = Array.isArray(entryRaw) ? entryRaw[0] : entryRaw;
     if (error || !entry) return null;
@@ -180,7 +180,7 @@ export const useJournalEntries = () => {
       const entryNumber = await generateJournalNumber();
 
       // Insert header
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: entryRaw, error: headerError } = await supabase
         .from('journal_entries')
         .insert({
@@ -197,7 +197,7 @@ export const useJournalEntries = () => {
           branch_id: currentBranch?.id
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (headerError) throw headerError;
       const entry = Array.isArray(entryRaw) ? entryRaw[0] : entryRaw;
@@ -247,7 +247,7 @@ export const useJournalEntries = () => {
         throw new Error('Journal entry ID is required for posting');
       }
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('journal_entries')
         .update({
@@ -259,7 +259,7 @@ export const useJournalEntries = () => {
         .eq('id', id)
         .eq('status', 'draft')
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
@@ -291,7 +291,7 @@ export const useJournalEntries = () => {
         throw new Error('Journal entry ID is required for voiding');
       }
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('journal_entries')
         .update({
@@ -303,7 +303,7 @@ export const useJournalEntries = () => {
         })
         .eq('id', id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;

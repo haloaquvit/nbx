@@ -131,12 +131,12 @@ export const useExpenses = () => {
       };
       console.log('Inserting expense:', insertData);
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('expenses')
         .insert(insertData)
         .select()
-        .limit(1);
+        .order('id').limit(1);
       if (error) {
         console.error('Expense insert error:', error);
         throw new Error(error.message);
@@ -259,13 +259,13 @@ export const useExpenses = () => {
         // Continue anyway, don't throw
       }
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: deletedExpenseRaw, error: deleteError } = await supabase
         .from('expenses')
         .delete()
         .eq('id', expenseId)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (deleteError) throw new Error(deleteError.message);
       const deletedExpense = Array.isArray(deletedExpenseRaw) ? deletedExpenseRaw[0] : deletedExpenseRaw;

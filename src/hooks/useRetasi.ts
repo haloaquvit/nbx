@@ -66,7 +66,7 @@ export const useDriverHasRetasi = (driverName?: string) => {
         .from('retasi')
         .select('id')
         .eq('driver_name', driverName)
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) {
         console.error('[useDriverHasRetasi] Error checking driver retasi:', error);
@@ -322,12 +322,12 @@ export const useRetasi = (filters?: {
       console.log('[useRetasi] Inserting retasi with data:', insertData);
       
       // Insert main retasi record
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: retasiRaw, error: retasiError } = await supabase
         .from('retasi')
         .insert(insertData)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       const retasi = Array.isArray(retasiRaw) ? retasiRaw[0] : retasiRaw;
       console.log('[useRetasi] Insert result:', { retasi, retasiError });
@@ -379,13 +379,13 @@ export const useRetasi = (filters?: {
   // Update retasi
   const updateRetasi = useMutation({
     mutationFn: async ({ id, ...updateData }: UpdateRetasiData & { id: string }): Promise<Retasi> => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('retasi')
         .update(toDb(updateData))
         .eq('id', id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;

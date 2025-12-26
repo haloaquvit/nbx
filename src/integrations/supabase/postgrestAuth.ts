@@ -30,23 +30,55 @@ interface AuthResponse {
   error: Error | null;
 }
 
-const STORAGE_KEY = 'postgrest_auth_session';
+const SESSION_STORAGE_KEY = 'postgrest_auth_session';
+
+// In-memory session store - more secure than localStorage
+// Token lives only as long as the page is loaded
+let currentSession: AuthSession | null = null;
 
 // Helper to get stored session
+// Priority: Memory -> sessionStorage (for page refresh recovery)
 function getStoredSession(): AuthSession | null {
+  // 1. Return from memory if available
+  if (currentSession) {
+    // Validate expiration
+    try {
+      const tokenParts = currentSession.access_token.split('.');
+      if (tokenParts.length === 3) {
+        const payload = JSON.parse(atob(tokenParts[1]));
+        if (payload.exp * 1000 < Date.now()) {
+          // Token expired, clear everything
+          currentSession = null;
+          sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          return null;
+        }
+      }
+    } catch (e) {
+      // Invalid token format
+      currentSession = null;
+      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      return null;
+    }
+    return currentSession;
+  }
+
+  // 2. Try to recover from sessionStorage (page refresh scenario)
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (stored) {
       const session = JSON.parse(stored);
-      // Check if token is expired (simple check)
+      // Validate token expiration
       const tokenParts = session.access_token.split('.');
       if (tokenParts.length === 3) {
         const payload = JSON.parse(atob(tokenParts[1]));
         if (payload.exp * 1000 < Date.now()) {
-          localStorage.removeItem(STORAGE_KEY);
+          // Token expired, clear
+          sessionStorage.removeItem(SESSION_STORAGE_KEY);
           return null;
         }
       }
+      // Valid session recovered, cache in memory
+      currentSession = session;
       return session;
     }
   } catch (e) {
@@ -56,11 +88,15 @@ function getStoredSession(): AuthSession | null {
 }
 
 // Helper to store session
+// Stores in both memory (primary) and sessionStorage (for page refresh)
 function storeSession(session: AuthSession | null) {
+  // Always update memory first
+  currentSession = session;
+
   if (session) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   } else {
-    localStorage.removeItem(STORAGE_KEY);
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
   }
 }
 

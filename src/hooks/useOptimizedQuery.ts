@@ -282,11 +282,11 @@ export function useOptimizedDashboardSummary() {
     logPerformance: true,
     queryFn: async () => {
       try {
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
         const { data: dataRaw, error } = await supabase
           .from('dashboard_summary')
           .select('*')
-          .limit(1)
+          .order('id').limit(1)
 
         if (error) {
           // If view doesn't exist, fallback to direct calculation

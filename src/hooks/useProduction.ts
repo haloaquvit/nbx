@@ -115,12 +115,12 @@ export const useProduction = () => {
       const ref = `PRD-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
 
       // Get product details
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: productRaw, error: productError } = await supabase
         .from('products')
         .select('*')
         .eq('id', input.productId)
-        .limit(1);
+        .order('id').limit(1);
 
       const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
       if (productError) throw productError;
@@ -141,12 +141,12 @@ export const useProduction = () => {
           const requiredQty = bomItem.quantity * input.quantity;
 
           // Get current material stock
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: materialRaw, error: materialError } = await supabase
             .from('materials')
             .select('stock, name')
             .eq('id', bomItem.materialId)
-            .limit(1);
+            .order('id').limit(1);
           const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
 
           if (materialError || !material) {
@@ -189,7 +189,7 @@ export const useProduction = () => {
       }
 
       // Start transaction
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: productionRecordRaw, error: productionError } = await supabase
         .from('production_records')
         .insert({
@@ -205,7 +205,7 @@ export const useProduction = () => {
           branch_id: currentBranch?.id || null
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       const productionRecord = Array.isArray(productionRecordRaw) ? productionRecordRaw[0] : productionRecordRaw;
       if (productionError) throw productionError;
@@ -241,12 +241,12 @@ export const useProduction = () => {
           console.log(`Processing BOM item: ${bomItem.materialName}, required qty: ${requiredQty}`);
           
           // Get current material stock
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: materialRaw2, error: materialError } = await supabase
             .from('materials')
             .select('stock')
             .eq('id', bomItem.materialId)
-            .limit(1);
+            .order('id').limit(1);
           const material = Array.isArray(materialRaw2) ? materialRaw2[0] : materialRaw2;
 
           if (materialError || !material) {
@@ -325,7 +325,7 @@ export const useProduction = () => {
             const requiredQty = bomItem.quantity * input.quantity;
 
             // Try FIFO consumption first - this will use actual purchase prices
-            // Use .limit(1) and handle array response because our client forces Accept: application/json
+            // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
             const { data: fifoResultRaw, error: fifoError } = await supabase
               .rpc('consume_inventory_fifo', {
                 p_product_id: null,
@@ -334,7 +334,7 @@ export const useProduction = () => {
                 p_transaction_id: ref,
                 p_material_id: bomItem.materialId
               })
-              .limit(1);
+              .order('id').limit(1);
             const fifoResult = Array.isArray(fifoResultRaw) ? fifoResultRaw[0] : fifoResultRaw;
 
             if (!fifoError && fifoResult && fifoResult.total_hpp > 0) {
@@ -347,12 +347,12 @@ export const useProduction = () => {
               // Fallback: Get material cost price from materials table
               console.log(`⚠️ FIFO fallback for ${bomItem.materialName}:`, fifoError?.message || 'No batches available');
 
-              // Use .limit(1) and handle array response because our client forces Accept: application/json
+              // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
               const { data: materialDataRaw } = await supabase
                 .from('materials')
                 .select('cost_price, price_per_unit, name')
                 .eq('id', bomItem.materialId)
-                .limit(1);
+                .order('id').limit(1);
               const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
 
               // Use cost_price if available, otherwise fallback to price_per_unit
@@ -441,12 +441,12 @@ export const useProduction = () => {
       const ref = `ERR-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
 
       // Get material details
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: materialRaw, error: materialError } = await supabase
         .from('materials')
         .select('*')
         .eq('id', input.materialId)
-        .limit(1);
+        .order('id').limit(1);
       const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
 
       if (materialError) throw materialError;
@@ -459,7 +459,7 @@ export const useProduction = () => {
       const operations = [];
 
       // 1. Record error entry directly in production_records table
-      // Use .limit(1) instead of .single() because our client forces Accept: application/json
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
       operations.push(
         supabase
           .from('production_records')
@@ -475,7 +475,7 @@ export const useProduction = () => {
             branch_id: currentBranch?.id || null
           })
           .select('id')
-          .limit(1)
+          .order('id').limit(1)
       );
 
       // 2. Reduce material stock
@@ -641,12 +641,12 @@ export const useProduction = () => {
     try {
       setIsLoading(true);
 
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: recordRaw, error: fetchError } = await supabase
         .from('production_records')
         .select('*')
         .eq('id', recordId)
-        .limit(1);
+        .order('id').limit(1);
       const record = Array.isArray(recordRaw) ? recordRaw[0] : recordRaw;
 
       if (fetchError) throw fetchError;
@@ -659,12 +659,12 @@ export const useProduction = () => {
         for (const bomItem of bom) {
           const requiredQty = bomItem.quantity * record.quantity;
 
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: materialRaw3, error: materialError } = await supabase
             .from('materials')
             .select('stock')
             .eq('id', bomItem.materialId)
-            .limit(1);
+            .order('id').limit(1);
           const material = Array.isArray(materialRaw3) ? materialRaw3[0] : materialRaw3;
 
           if (!materialError && material) {
@@ -711,12 +711,12 @@ export const useProduction = () => {
           }
         }
 
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
         const { data: productRaw2, error: productError } = await supabase
           .from('products')
           .select('current_stock')
           .eq('id', record.product_id)
-          .limit(1);
+          .order('id').limit(1);
         const product = Array.isArray(productRaw2) ? productRaw2[0] : productRaw2;
 
         if (!productError && product) {
@@ -738,14 +738,14 @@ export const useProduction = () => {
       if (record.consume_bom && record.quantity > 0 && record.product_id) {
         try {
           // Find journal entry for this production
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: journalEntryRaw } = await supabase
             .from('journal_entries')
             .select('id')
             .eq('reference_id', record.id)
             .eq('reference_type', 'adjustment')
             .eq('is_voided', false)
-            .limit(1);
+            .order('id').limit(1);
           const journalEntry = Array.isArray(journalEntryRaw) ? journalEntryRaw[0] : journalEntryRaw;
 
           if (journalEntry) {

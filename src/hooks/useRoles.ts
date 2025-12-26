@@ -65,12 +65,12 @@ export const useRoles = () => {
   const createRole = useMutation({
     mutationFn: async (roleData: CreateRoleData): Promise<Role> => {
       const dbData = toDb(roleData);
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('roles')
         .insert(dbData)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
@@ -85,13 +85,13 @@ export const useRoles = () => {
   const updateRole = useMutation({
     mutationFn: async ({ id, ...updateData }: UpdateRoleData & { id: string }): Promise<Role> => {
       const dbData = toDb(updateData);
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('roles')
         .update(dbData)
         .eq('id', id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
@@ -106,12 +106,12 @@ export const useRoles = () => {
   const deleteRole = useMutation({
     mutationFn: async (roleId: string): Promise<void> => {
       // Check if it's a system role
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: roleRaw } = await supabase
         .from('roles')
         .select('is_system_role')
         .eq('id', roleId)
-        .limit(1);
+        .order('id').limit(1);
       const role = Array.isArray(roleRaw) ? roleRaw[0] : roleRaw;
 
       if (role?.is_system_role) {
@@ -132,13 +132,13 @@ export const useRoles = () => {
   });
 
   const getRoleByName = async (name: string): Promise<Role | null> => {
-    // Use .limit(1) and handle array response because our client forces Accept: application/json
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
     const { data: dataRaw, error } = await supabase
       .from('roles')
       .select('*')
       .eq('name', name)
       .eq('is_active', true)
-      .limit(1);
+      .order('id').limit(1);
 
     if (error) {
       if (error.code === 'PGRST116') return null; // Not found

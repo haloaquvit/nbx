@@ -113,7 +113,7 @@ export class StockService {
     const { error: tableError } = await supabase
       .from('material_stock_movements')
       .select('id')
-      .limit(1);
+      .order('id').limit(1);
       
     if (tableError) {
       console.error('Table check error:', tableError);

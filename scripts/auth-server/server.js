@@ -460,7 +460,7 @@ app.post('/auth/v1/admin/users', async (req, res) => {
     );
     const defaultBranchId = branchResult.rows.length > 0 ? branchResult.rows[0].id : null;
 
-    // Insert user directly (audit trigger removed - not needed for this operation)
+    // Insert user directly (no audit trigger in aquvit_new database)
     const result = await pool.query(
       `INSERT INTO profiles (id, email, password_hash, full_name, role, branch_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
@@ -725,8 +725,130 @@ function formatBytes(bytes, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Auth server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
+/**
+ * Initialize default data if tables are empty
+ * Called once when server starts
+ */
+async function initializeDefaults() {
+  const crypto = require('crypto');
+
+  try {
+    console.log('[Init] Checking for default data...');
+
+    // 1. Check and create default branch
+    const branchCount = await pool.query('SELECT COUNT(*) FROM branches');
+    if (parseInt(branchCount.rows[0].count) === 0) {
+      const branchId = crypto.randomUUID();
+      await pool.query(
+        `INSERT INTO branches (id, name, address, phone, is_main, created_at, updated_at)
+         VALUES ($1, 'Kantor Pusat', 'Alamat Kantor Pusat', '-', true, NOW(), NOW())`,
+        [branchId]
+      );
+      console.log('[Init] ✓ Created default branch: Kantor Pusat');
+    }
+
+    // 2. Check and create default roles (7 system roles)
+    const roleCount = await pool.query('SELECT COUNT(*) FROM roles');
+    if (parseInt(roleCount.rows[0].count) === 0) {
+      const defaultRoles = [
+        { name: 'owner', display_name: 'Owner', description: 'Pemilik perusahaan dengan akses penuh', permissions: { all: true } },
+        { name: 'admin', display_name: 'Administrator', description: 'Administrator sistem dengan akses luas', permissions: { manage_users: true, manage_products: true, manage_transactions: true, manage_customers: true, manage_materials: true, manage_finances: true, view_reports: true, manage_settings: true } },
+        { name: 'supervisor', display_name: 'Supervisor', description: 'Supervisor operasional', permissions: { view_products: true, manage_products: true, view_transactions: true, manage_transactions: true, view_customers: true, view_materials: true, view_production: true, update_production: true } },
+        { name: 'cashier', display_name: 'Kasir', description: 'Kasir untuk transaksi penjualan', permissions: { pos_access: true, view_products: true, manage_transactions: true, create_transactions: true, view_customers: true, create_customers: true } },
+        { name: 'designer', display_name: 'Desainer', description: 'Desainer produk dan quotation', permissions: { view_products: true, edit_products: true, view_materials: true, create_quotations: true, edit_quotations: true, view_production: true } },
+        { name: 'operator', display_name: 'Operator', description: 'Operator produksi', permissions: { view_products: true, view_materials: true, view_production: true, update_production: true, attendance_access: true } },
+        { name: 'supir', display_name: 'Supir', description: 'Supir pengantaran', permissions: { delivery_view: true, delivery_create: true, delivery_edit: true, retasi_view: true, retasi_create: true, attendance_access: true, pos_driver_access: true } }
+      ];
+
+      for (const role of defaultRoles) {
+        const roleId = crypto.randomUUID();
+        await pool.query(
+          `INSERT INTO roles (id, name, display_name, description, permissions, is_system_role, is_active, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, true, true, NOW(), NOW())`,
+          [roleId, role.name, role.display_name, role.description, JSON.stringify(role.permissions)]
+        );
+      }
+      console.log('[Init] ✓ Created 7 system roles');
+    }
+
+    // 3. Check and create role_permissions (granular permissions per role)
+    const rolePermCount = await pool.query('SELECT COUNT(*) FROM role_permissions');
+    if (parseInt(rolePermCount.rows[0].count) === 0) {
+      const rolePermissions = [
+        { role_id: 'owner', permissions: { all: true } },
+        { role_id: 'admin', permissions: { manage_users: true, create_users: true, edit_users: true, delete_users: true, view_users: true, manage_products: true, create_products: true, edit_products: true, delete_products: true, view_products: true, manage_transactions: true, create_transactions: true, edit_transactions: true, delete_transactions: true, view_transactions: true, manage_customers: true, create_customers: true, edit_customers: true, delete_customers: true, view_customers: true, manage_materials: true, view_materials: true, manage_finances: true, view_reports: true, manage_settings: true, pos_access: true } },
+        { role_id: 'supervisor', permissions: { view_products: true, manage_products: true, view_transactions: true, manage_transactions: true, view_customers: true, manage_customers: true, view_materials: true, view_production: true, update_production: true, view_reports: true, pos_access: true, attendance_access: true, attendance_view: true } },
+        { role_id: 'cashier', permissions: { pos_access: true, view_products: true, manage_transactions: true, create_transactions: true, edit_transactions: true, view_transactions: true, view_customers: true, create_customers: true, edit_customers: true, attendance_access: true, attendance_view: true, attendance_create: true } },
+        { role_id: 'designer', permissions: { view_products: true, edit_products: true, create_products: true, view_materials: true, create_quotations: true, edit_quotations: true, view_quotations: true, view_production: true, attendance_access: true, attendance_view: true, attendance_create: true } },
+        { role_id: 'operator', permissions: { view_products: true, view_materials: true, view_production: true, update_production: true, attendance_access: true, attendance_view: true, attendance_create: true } },
+        { role_id: 'supir', permissions: { delivery_view: true, delivery_create: true, delivery_edit: true, retasi_view: true, retasi_create: true, retasi_edit: true, attendance_access: true, attendance_view: true, attendance_create: true, pos_driver_access: true } }
+      ];
+
+      for (const rp of rolePermissions) {
+        const rpId = crypto.randomUUID();
+        await pool.query(
+          `INSERT INTO role_permissions (id, role_id, permissions, created_at, updated_at)
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [rpId, rp.role_id, JSON.stringify(rp.permissions)]
+        );
+      }
+      console.log('[Init] ✓ Created role permissions for 7 roles');
+    }
+
+    // 4. Check and create company_settings
+    const settingsCount = await pool.query('SELECT COUNT(*) FROM company_settings');
+    if (parseInt(settingsCount.rows[0].count) === 0) {
+      const defaultSettings = [
+        { key: 'company_name', value: 'PT. Aquvit' },
+        { key: 'company_address', value: '-' },
+        { key: 'company_phone', value: '-' },
+        { key: 'company_logo', value: '' },
+        { key: 'company_latitude', value: '-0.87143' },
+        { key: 'company_longitude', value: '134.04606' },
+        { key: 'company_attendance_radius', value: '50' },
+        { key: 'company_timezone', value: 'Asia/Jayapura' }
+      ];
+
+      for (const setting of defaultSettings) {
+        const settingId = crypto.randomUUID();
+        await pool.query(
+          `INSERT INTO company_settings (id, key, value, created_at, updated_at)
+           VALUES ($1, $2, $3, NOW(), NOW())`,
+          [settingId, setting.key, setting.value]
+        );
+      }
+      console.log('[Init] ✓ Created 8 company settings');
+    }
+
+    // 5. Check and create default admin profile
+    const profileCount = await pool.query('SELECT COUNT(*) FROM profiles');
+    if (parseInt(profileCount.rows[0].count) === 0) {
+      const adminId = crypto.randomUUID();
+      const passwordHash = await bcrypt.hash('admin', 10);
+
+      // Get default branch
+      const branch = await pool.query("SELECT id FROM branches WHERE name = 'Kantor Pusat' LIMIT 1");
+      const branchId = branch.rows.length > 0 ? branch.rows[0].id : null;
+
+      await pool.query(
+        `INSERT INTO profiles (id, email, password_hash, full_name, role, branch_id, created_at, updated_at)
+         VALUES ($1, 'admin', $2, 'Administrator', 'owner', $3, NOW(), NOW())`,
+        [adminId, passwordHash, branchId]
+      );
+      console.log('[Init] ✓ Created default admin (email: admin, password: admin, role: owner)');
+    }
+
+    console.log('[Init] ✅ Default data initialization complete');
+  } catch (error) {
+    console.error('[Init] Error initializing defaults:', error.message);
+    // Don't crash server if init fails - just log and continue
+  }
+}
+
+// Initialize defaults then start server
+initializeDefaults().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Auth server running on port ${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
+  });
 });

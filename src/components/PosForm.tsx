@@ -449,9 +449,28 @@ export const PosForm = () => {
   }, [customers, customerSearch]);
 
   const addToCart = async (product: Product) => {
+    // Validasi stok untuk produk Produksi
+    if (product.type === 'Produksi' && (product.currentStock || 0) <= 0) {
+      toast({
+        variant: "destructive",
+        title: "Stok Habis",
+        description: `${product.name} tidak tersedia. Stok saat ini: 0`,
+      });
+      return;
+    }
+
     const existing = items.find(item => item.product?.id === product.id && !item.isBonus);
     if (existing) {
+      // Cek apakah qty baru melebihi stok
       const newQty = existing.qty + 1;
+      if (product.type === 'Produksi' && newQty > (product.currentStock || 0)) {
+        toast({
+          variant: "destructive",
+          title: "Stok Tidak Cukup",
+          description: `${product.name} hanya tersedia ${product.currentStock} unit.`,
+        });
+        return;
+      }
       await updateItemWithBonuses(existing, newQty);
     } else {
       await addNewItemWithBonuses(product, 1);
@@ -795,48 +814,62 @@ export const PosForm = () => {
                       />
                     </div>
                     <div className="max-h-80 md:max-h-96 overflow-y-auto">
-                      {filteredProducts.map((product) => (
-                        <div
-                          key={product.id}
-                          className="p-4 hover:bg-gray-50 border-b last:border-b-0 transition-colors cursor-pointer"
-                          onClick={() => addToCart(product)}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-semibold text-base text-gray-900">
-                                  {product.name}
-                                </span>
+                      {filteredProducts.map((product) => {
+                        // Cek apakah stok habis untuk produk Produksi
+                        const isOutOfStock = product.type === 'Produksi' && (product.currentStock || 0) <= 0;
+
+                        return (
+                          <div
+                            key={product.id}
+                            className={`p-4 border-b last:border-b-0 transition-colors ${
+                              isOutOfStock
+                                ? 'bg-gray-100 opacity-60 cursor-not-allowed'
+                                : 'hover:bg-gray-50 cursor-pointer'
+                            }`}
+                            onClick={() => !isOutOfStock && addToCart(product)}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`font-semibold text-base ${isOutOfStock ? 'text-gray-500' : 'text-gray-900'}`}>
+                                    {product.name}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className={`shrink-0 font-medium ${isOutOfStock ? 'text-gray-400' : 'text-green-600'}`}>
+                                <Plus className="h-5 w-5" />
                               </div>
                             </div>
-                            <div className="shrink-0 text-green-600 font-medium">
-                              <Plus className="h-5 w-5" />
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`inline-flex px-2 py-0.5 rounded text-xs ${
+                                product.type === 'Produksi'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {product.type}
+                              </span>
+                              {product.type === 'Jual Langsung' && (
+                                <span className="text-xs text-gray-500">(Tidak mengurangi stok)</span>
+                              )}
+                              {isOutOfStock && (
+                                <span className="text-xs text-red-600 font-medium">⚠️ Stok Habis</span>
+                              )}
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`inline-flex px-2 py-0.5 rounded text-xs ${
-                              product.type === 'Produksi' 
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-blue-100 text-blue-700'
-                            }`}>
-                              {product.type}
-                            </span>
-                            {product.type === 'Jual Langsung' && (
-                              <span className="text-xs text-gray-500">(Tidak mengurangi stok)</span>
+                            <div className={`text-base font-bold mb-1 ${isOutOfStock ? 'text-gray-400' : 'text-green-600'}`}>
+                              {new Intl.NumberFormat("id-ID", {
+                                style: "currency",
+                                currency: "IDR",
+                                maximumFractionDigits: 0,
+                              }).format(product.basePrice || 0)}
+                            </div>
+                            {product.type === 'Produksi' && (
+                              <div className={`text-sm ${isOutOfStock ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
+                                Stok: {product.currentStock || 0}
+                              </div>
                             )}
                           </div>
-                          <div className="text-base font-bold text-green-600 mb-1">
-                            {new Intl.NumberFormat("id-ID", {
-                              style: "currency",
-                              currency: "IDR",
-                              maximumFractionDigits: 0,
-                            }).format(product.basePrice || 0)}
-                          </div>
-                          {product.type === 'Produksi' && (
-                            <div className="text-sm text-gray-600">Stok: {product.currentStock || 0}</div>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

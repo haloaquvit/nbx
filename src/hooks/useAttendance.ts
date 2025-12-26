@@ -36,7 +36,7 @@ export const useAttendance = () => {
   const checkIn = useMutation({
     mutationFn: async ({ location }: { location: string }) => {
       if (!user) throw new Error("User not found");
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('attendance')
         .insert({
@@ -47,7 +47,7 @@ export const useAttendance = () => {
           branch_id: currentBranch?.id || null,
         })
         .select()
-        .limit(1);
+        .order('id').limit(1);
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       return data;
@@ -59,7 +59,7 @@ export const useAttendance = () => {
 
   const checkOut = useMutation({
     mutationFn: async ({ attendanceId, location }: { attendanceId: string, location: string }) => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('attendance')
         .update({
@@ -69,7 +69,7 @@ export const useAttendance = () => {
         })
         .eq('id', attendanceId)
         .select()
-        .limit(1);
+        .order('id').limit(1);
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       return data;

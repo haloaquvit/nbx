@@ -233,12 +233,12 @@ export const useTransactions = (filters?: {
       };
 
       // Insert transaction - sales info is now embedded in notes field
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: initialTransactionRaw, error } = await supabase
         .from('transactions')
         .insert([dbData])
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw new Error(error.message);
 
@@ -253,12 +253,12 @@ export const useTransactions = (filters?: {
         // The ID should be in dbData since we generate it client-side
         const transactionId = dbData.id;
         if (transactionId) {
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: fetchedTransactionRaw, error: fetchError } = await supabase
             .from('transactions')
             .select('*')
             .eq('id', transactionId)
-            .limit(1);
+            .order('id').limit(1);
 
           const fetchedTransaction = Array.isArray(fetchedTransactionRaw) ? fetchedTransactionRaw[0] : fetchedTransactionRaw;
           if (fetchError || !fetchedTransaction) {
@@ -317,12 +317,12 @@ export const useTransactions = (filters?: {
       if (newTransaction.paidAmount > 0 && newTransaction.paymentAccountId) {
         try {
           // First, fetch the account name
-          // Use .limit(1) and handle array response because our client forces Accept: application/json
+          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: accountDataRaw, error: accountError } = await supabase
             .from('accounts')
             .select('name')
             .eq('id', newTransaction.paymentAccountId)
-            .limit(1);
+            .order('id').limit(1);
 
           const accountData = Array.isArray(accountDataRaw) ? accountDataRaw[0] : accountDataRaw;
           if (accountError) {
@@ -403,12 +403,12 @@ export const useTransactions = (filters?: {
                   if (fifoError) {
                     console.warn('FIFO consumption failed, using fallback:', fifoError.message);
                     // Fallback: Use product's cost_price or base_price directly
-                    // Use .limit(1) and handle array response because our client forces Accept: application/json
+                    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
                     const { data: productDataRaw } = await supabase
                       .from('products')
                       .select('cost_price, base_price')
                       .eq('id', productId)
-                      .limit(1);
+                      .order('id').limit(1);
                     const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
                     // Use cost_price if available, otherwise use base_price (selling price as approximation)
                     const costPrice = productData?.cost_price || productData?.base_price || 0;
@@ -427,12 +427,12 @@ export const useTransactions = (filters?: {
                 } catch (err) {
                   console.error('Error calling FIFO:', err);
                   // Fallback to direct cost_price or base_price
-                  // Use .limit(1) and handle array response because our client forces Accept: application/json
+                  // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
                   const { data: productDataRaw2 } = await supabase
                     .from('products')
                     .select('cost_price, base_price')
                     .eq('id', productId)
-                    .limit(1);
+                    .order('id').limit(1);
                   const productData = Array.isArray(productDataRaw2) ? productDataRaw2[0] : productDataRaw2;
                   const costPrice = productData?.cost_price || productData?.base_price || 0;
                   totalHPP += costPrice * quantity;
@@ -494,13 +494,13 @@ export const useTransactions = (filters?: {
   const updateTransaction = useMutation({
     mutationFn: async (updatedTransaction: Transaction): Promise<Transaction> => {
       const dbData = toDb(updatedTransaction);
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: savedTransactionRaw, error } = await supabase
         .from('transactions')
         .update(dbData)
         .eq('id', updatedTransaction.id)
         .select()
-        .limit(1);
+        .order('id').limit(1);
 
       if (error) throw new Error(error.message);
 
@@ -538,12 +538,12 @@ export const useTransactions = (filters?: {
       recordedByName?: string;
     }): Promise<void> => {
       // Get transaction data for customer name
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: transactionDataRaw, error: fetchError } = await supabase
         .from('transactions')
         .select('customer_name, id')
         .eq('id', transactionId)
-        .limit(1);
+        .order('id').limit(1);
 
       const transactionData = Array.isArray(transactionDataRaw) ? transactionDataRaw[0] : transactionDataRaw;
       if (fetchError) {
@@ -622,12 +622,12 @@ export const useTransactions = (filters?: {
   const updateTransactionStatus = useMutation({
     mutationFn: async ({ transactionId, status, userId, userName }: { transactionId: string, status: string, userId?: string, userName?: string }) => {
       // Get transaction data before updating status
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: transactionRaw, error: fetchError } = await supabase
         .from('transactions')
         .select('*')
         .eq('id', transactionId)
-        .limit(1);
+        .order('id').limit(1);
 
       const transaction = Array.isArray(transactionRaw) ? transactionRaw[0] : transactionRaw;
       if (fetchError) throw new Error(fetchError.message);
@@ -653,12 +653,12 @@ export const useTransactions = (filters?: {
   const deleteTransaction = useMutation({
     mutationFn: async (transactionId: string) => {
       // Step 1: Get transaction data before deletion
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: transactionRaw, error: fetchError } = await supabase
         .from('transactions')
         .select('*')
         .eq('id', transactionId)
-        .limit(1);
+        .order('id').limit(1);
 
       if (fetchError) throw new Error(`Failed to fetch transaction: ${fetchError.message}`);
 
@@ -688,12 +688,12 @@ export const useTransactions = (filters?: {
             console.log(`Processing item: productId=${productId}, productName=${productName}, quantity=${quantity}`);
 
             if (productId && quantity > 0) {
-              // Get current stock - use .limit(1) and handle array response
+              // Get current stock - use .order('id').limit(1) and handle array response
               const { data: productRaw } = await supabase
                 .from('products')
                 .select('current_stock, name')
                 .eq('id', productId)
-                .limit(1);
+                .order('id').limit(1);
 
               const productData = Array.isArray(productRaw) ? productRaw[0] : productRaw;
               if (productData) {
@@ -895,7 +895,7 @@ export const useTransactions = (filters?: {
         const { error: commissionTableCheckError } = await supabase
           .from('commission_entries')
           .select('id')
-          .limit(1);
+          .order('id').limit(1);
           
         if (commissionTableCheckError && (commissionTableCheckError.code === 'PGRST205' || commissionTableCheckError.message.includes('does not exist'))) {
           console.warn('commission_entries table does not exist, skipping commission entries deletion');
@@ -925,7 +925,7 @@ export const useTransactions = (filters?: {
         const { error: tableCheckError } = await supabase
           .from('payment_history')
           .select('id')
-          .limit(1);
+          .order('id').limit(1);
           
         if (tableCheckError && (tableCheckError.code === 'PGRST205' || tableCheckError.message.includes('does not exist'))) {
           console.warn('payment_history table does not exist, skipping payment history deletion');
@@ -1055,7 +1055,7 @@ export const useTransactions = (filters?: {
                     items:delivery_items(*)
                   `)
                   .eq('id', delivery.id)
-                  .limit(1);
+                  .order('id').limit(1);
 
                 if (deliveryError) {
                   console.error(`Failed to get delivery ${delivery.id}:`, deliveryError);
@@ -1203,7 +1203,7 @@ export const useTransactionById = (id: string) => {
         .from('transactions')
         .select('*')
         .eq('id', id)
-        .limit(1);
+        .order('id').limit(1);
       if (error) {
         console.error(error.message);
         return undefined;

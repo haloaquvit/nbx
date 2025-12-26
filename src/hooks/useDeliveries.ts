@@ -190,13 +190,13 @@ export function useTransactionDeliveryInfo(transactionId: string) {
     queryKey: ['transaction-delivery-info', transactionId],
     queryFn: async (): Promise<TransactionDeliveryInfo | null> => {
       // Get transaction details
-      // Use .limit(1) instead of .single() because our client forces Accept: application/json
+      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
       // which causes .single() to return an array instead of an object
       const { data: transactionRawData, error: transactionError } = await supabase
         .from('transactions')
         .select('*')
         .eq('id', transactionId)
-        .limit(1)
+        .order('id').limit(1)
 
       if (transactionError) throw transactionError
 
@@ -351,12 +351,12 @@ export function useDeliveries() {
       }
 
       // Get customer name and address from transaction
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: transactionRawData, error: transactionError } = await supabase
         .from('transactions')
         .select('customer_name, customer_id, customers(address, phone)')
         .eq('id', request.transactionId)
-        .limit(1)
+        .order('id').limit(1)
 
       if (transactionError) {
         console.error('[useDeliveries] Transaction fetch error:', transactionError)
@@ -593,12 +593,12 @@ export function useDeliveries() {
       // Update transaction status automatically based on delivery completion
       try {
         // Get transaction details to check if all items are delivered
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
         const { data: updatedTransactionRaw, error: transactionError } = await supabase
           .from('transactions')
           .select('*')
           .eq('id', request.transactionId)
-          .limit(1)
+          .order('id').limit(1)
 
         // Handle array response from PostgREST
         const updatedTransaction = Array.isArray(updatedTransactionRaw) ? updatedTransactionRaw[0] : updatedTransactionRaw
@@ -685,7 +685,7 @@ export function useDeliveries() {
             .from('profiles')
             .select('full_name')
             .eq('id', deliveryData.driver_id)
-            .limit(1);
+            .order('id').limit(1);
 
           console.log('[useDeliveries] Driver fetch result:', {
             driverData,
@@ -714,7 +714,7 @@ export function useDeliveries() {
             .from('profiles')
             .select('full_name')
             .eq('id', deliveryData.helper_id)
-            .limit(1);
+            .order('id').limit(1);
 
           console.log('[useDeliveries] Helper fetch result:', {
             helperData,
@@ -793,12 +793,12 @@ export function useDeliveries() {
           for (const item of itemsData) {
             if (item.product_id && item.quantity_delivered > 0) {
               // Get current stock
-              // Use .limit(1) and handle array response because our client forces Accept: application/json
+              // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
               const { data: productRawData } = await supabase
                 .from('products')
                 .select('current_stock, name')
                 .eq('id', item.product_id)
-                .limit(1);
+                .order('id').limit(1);
 
               // Handle array response from PostgREST
               const productData = Array.isArray(productRawData) ? productRawData[0] : productRawData;
@@ -858,7 +858,7 @@ export function useDeliveries() {
       }
 
       // Get delivery details including items
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: deliveryRawData, error: deliveryError } = await supabase
         .from('deliveries')
         .select(`
@@ -866,7 +866,7 @@ export function useDeliveries() {
           items:delivery_items(*)
         `)
         .eq('id', deliveryId)
-        .limit(1)
+        .order('id').limit(1)
 
       if (deliveryError) {
         throw new Error(`Gagal mengambil data pengantaran: ${deliveryError.message}`)
@@ -894,12 +894,12 @@ export function useDeliveries() {
           for (const item of deliveryData.items) {
             try {
               // Get current product data
-              // Use .limit(1) and handle array response because our client forces Accept: application/json
+              // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
               const { data: productRawData, error: productError } = await supabase
                 .from('products')
                 .select('id, name, type, current_stock')
                 .eq('id', item.product_id)
-                .limit(1)
+                .order('id').limit(1)
 
               if (productError) {
                 console.error(`❌ Error getting product data for ${item.product_name}:`, productError)
@@ -1025,12 +1025,12 @@ export function useDeliveries() {
           .eq('transaction_id', transactionId)
 
         // Get transaction details
-        // Use .limit(1) and handle array response because our client forces Accept: application/json
+        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
         const { data: transactionRawData } = await supabase
           .from('transactions')
           .select('*')
           .eq('id', transactionId)
-          .limit(1)
+          .order('id').limit(1)
 
         // Handle array response from PostgREST
         const transactionData = Array.isArray(transactionRawData) ? transactionRawData[0] : transactionRawData

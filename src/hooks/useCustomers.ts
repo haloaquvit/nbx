@@ -81,11 +81,12 @@ export const useCustomers = () => {
         branch_id: currentBranch?.id || null,
       };
       
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order().limit(1) - PostgREST requires explicit order when using limit
       const { data: dataRaw, error } = await supabase
         .from('customers')
         .insert([customerToInsert])
         .select()
+        .order('id')
         .limit(1);
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
@@ -112,12 +113,13 @@ export const useCustomers = () => {
         jumlah_galon_titip: updateData.jumlah_galon_titip,
       };
       
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order().limit(1) - PostgREST requires explicit order when using limit
       const { data: dataRaw, error } = await supabase
         .from('customers')
         .update(customerToUpdate)
         .eq('id', id)
         .select()
+        .order('id')
         .limit(1);
 
       if (error) throw new Error(error.message);
@@ -162,11 +164,12 @@ export const useCustomerById = (id: string) => {
   const { data: customer, isLoading } = useQuery<Customer | undefined>({
     queryKey: ['customer', id],
     queryFn: async () => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order().limit(1) - PostgREST requires explicit order when using limit
       const { data: dataRaw, error } = await supabase
         .from('customers')
         .select('*')
         .eq('id', id)
+        .order('id')
         .limit(1);
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;

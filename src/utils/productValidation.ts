@@ -10,7 +10,7 @@ export const checkProductHasBOM = async (productId: string): Promise<boolean> =>
       .from('product_materials')
       .select('id')
       .eq('product_id', productId)
-      .limit(1);
+      .order('id').limit(1);
 
     if (error) {
       console.error('Error checking BOM:', error);

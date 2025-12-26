@@ -53,7 +53,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
         .from('profiles')
         .select('branch_id')
         .eq('id', user.id)
-        .limit(1);
+        .order('id').limit(1);
 
       // Handle both array and object response (PostgREST compatibility)
       const profile = Array.isArray(profileData) ? profileData[0] : profileData;
@@ -64,7 +64,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
           .from('branches')
           .select('*')
           .eq('is_active', true)
-          .limit(1);
+          .order('id').limit(1);
 
         if (fallbackBranches && fallbackBranches.length > 0) {
           const fallbackBranch = fallbackBranches[0];
@@ -108,7 +108,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
         .from('branches')
         .select('*')
         .eq('id', profile.branch_id)
-        .limit(1);
+        .order('id').limit(1);
 
       // Handle both array and object response
       const branch = Array.isArray(branchData) ? branchData[0] : branchData;
@@ -124,7 +124,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
             .from('branches')
             .select('*')
             .eq('id', savedBranchId)
-            .limit(1);
+            .order('id').limit(1);
 
           const savedBranch = Array.isArray(savedBranchData) ? savedBranchData[0] : savedBranchData;
 
@@ -187,7 +187,7 @@ export function BranchProvider({ children }: { children: ReactNode }) {
             .from('companies')
             .select('*')
             .eq('id', branch.company_id)
-            .limit(1);
+            .order('id').limit(1);
 
           const company = Array.isArray(companyData) ? companyData[0] : companyData;
 

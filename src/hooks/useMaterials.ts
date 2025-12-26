@@ -82,12 +82,12 @@ export const useMaterials = () => {
       console.log('[addStock] RPC call successful, response:', data);
 
       // Fetch the updated material to verify the update
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: updatedMaterialRaw, error: fetchError } = await supabase
         .from('materials')
         .select('*')
         .eq('id', materialId)
-        .limit(1);
+        .order('id').limit(1);
 
       const updatedMaterial = Array.isArray(updatedMaterialRaw) ? updatedMaterialRaw[0] : updatedMaterialRaw;
       if (fetchError) {
@@ -110,12 +110,12 @@ export const useMaterials = () => {
         ...fromAppToDb(material),
         branch_id: currentBranch?.id || null,
       };
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('materials')
         .upsert(dbData)
         .select()
-        .limit(1);
+        .order('id').limit(1);
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       if (!data) throw new Error('Failed to upsert material');

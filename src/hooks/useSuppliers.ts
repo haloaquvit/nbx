@@ -123,12 +123,12 @@ export const useSuppliers = () => {
         ...toDbSupplier(data),
         branch_id: currentBranch?.id || null,
       }
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: resultRaw, error } = await supabase
         .from('suppliers')
         .insert(dbData)
         .select()
-        .limit(1)
+        .order('id').limit(1)
 
       if (error) throw new Error(error.message)
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
@@ -144,13 +144,13 @@ export const useSuppliers = () => {
   const updateSupplier = useMutation({
     mutationFn: async ({ id, data }: { id: string, data: UpdateSupplierData }): Promise<Supplier> => {
       const dbData = toDbSupplier(data)
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: resultRaw, error } = await supabase
         .from('suppliers')
         .update(dbData)
         .eq('id', id)
         .select()
-        .limit(1)
+        .order('id').limit(1)
 
       if (error) throw new Error(error.message)
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
@@ -258,7 +258,7 @@ export const useSupplierMaterials = () => {
   // Create supplier material
   const createSupplierMaterial = useMutation({
     mutationFn: async (data: CreateSupplierMaterialData) => {
-      // Use .limit(1) and handle array response because our client forces Accept: application/json
+      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: resultRaw, error } = await supabase
         .from('supplier_materials')
         .insert({
@@ -271,7 +271,7 @@ export const useSupplierMaterials = () => {
           notes: data.notes
         })
         .select()
-        .limit(1)
+        .order('id').limit(1)
 
       if (error) throw new Error(error.message)
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
