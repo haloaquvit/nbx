@@ -472,11 +472,13 @@ export async function createExpenseJournal(params: {
 
   if (accountId) {
     // Use specific account if provided
-    const { data } = await supabase
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+    const { data: dataRaw } = await supabase
       .from('accounts')
       .select('id, code, name')
       .eq('id', accountId)
-      .single();
+      .order('id').limit(1);
+    const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
     if (data) {
       bebanAccount = { id: data.id, code: data.code, name: data.name };
     }
@@ -718,11 +720,13 @@ export async function createReceivablePaymentJournal(params: {
   // Find payment account (Kas/Bank) - use provided ID or fallback to default
   let kasAccount: { id: string; code: string; name: string } | null = null;
   if (paymentAccountId) {
-    const { data: paymentAcc } = await supabase
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+    const { data: paymentAccRaw } = await supabase
       .from('accounts')
       .select('id, code, name')
       .eq('id', paymentAccountId)
-      .single();
+      .order('id').limit(1);
+    const paymentAcc = Array.isArray(paymentAccRaw) ? paymentAccRaw[0] : paymentAccRaw;
     if (paymentAcc) {
       kasAccount = paymentAcc;
     }
@@ -791,11 +795,13 @@ export async function createPayablePaymentJournal(params: {
   // Find payment account (Kas/Bank) - use provided ID or fallback to default
   let kasAccount: { id: string; code: string; name: string } | null = null;
   if (paymentAccountId) {
-    const { data: paymentAcc } = await supabase
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+    const { data: paymentAccRaw } = await supabase
       .from('accounts')
       .select('id, code, name')
       .eq('id', paymentAccountId)
-      .single();
+      .order('id').limit(1);
+    const paymentAcc = Array.isArray(paymentAccRaw) ? paymentAccRaw[0] : paymentAccRaw;
     if (paymentAcc) {
       kasAccount = paymentAcc;
     }
@@ -807,11 +813,13 @@ export async function createPayablePaymentJournal(params: {
   // Find liability account (Hutang Usaha) - use provided ID or fallback to default
   let hutangAccount: { id: string; code: string; name: string } | null = null;
   if (liabilityAccountId) {
-    const { data: liabilityAcc } = await supabase
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+    const { data: liabilityAccRaw } = await supabase
       .from('accounts')
       .select('id, code, name')
       .eq('id', liabilityAccountId)
-      .single();
+      .order('id').limit(1);
+    const liabilityAcc = Array.isArray(liabilityAccRaw) ? liabilityAccRaw[0] : liabilityAccRaw;
     if (liabilityAcc) {
       hutangAccount = liabilityAcc;
     }
@@ -928,12 +936,14 @@ export async function voidJournalEntry(journalId: string, reason: string): Promi
     }
 
     // Get journal entry
-    const { data: journal, error: fetchError } = await supabase
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+    const { data: journalRaw, error: fetchError } = await supabase
       .from('journal_entries')
       .select('id, status, is_voided')
       .eq('id', journalId)
-      .single();
+      .order('id').limit(1);
 
+    const journal = Array.isArray(journalRaw) ? journalRaw[0] : journalRaw;
     if (fetchError || !journal) {
       return { success: false, error: 'Jurnal tidak ditemukan' };
     }
@@ -1568,11 +1578,13 @@ export async function createDebtJournal(params: {
   // Find cash/bank account for receiving funds
   let kasAccount: { id: string; code: string; name: string } | null = null;
   if (cashAccountId) {
-    const { data: cashAcc } = await supabase
+    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+    const { data: cashAccRaw } = await supabase
       .from('accounts')
       .select('id, code, name')
       .eq('id', cashAccountId)
-      .single();
+      .order('id').limit(1);
+    const cashAcc = Array.isArray(cashAccRaw) ? cashAccRaw[0] : cashAccRaw;
     if (cashAcc) {
       kasAccount = cashAcc;
     }

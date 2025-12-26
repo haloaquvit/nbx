@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { ProductionRecord, ProductionInput, BOMItem, ErrorInput } from '@/types/production';
 import { Product } from '@/types/product';
@@ -22,6 +23,7 @@ import { createProductionOutputJournal, createSpoilageJournal, voidJournalEntry 
 export const useProduction = () => {
   const [productions, setProductions] = useState<ProductionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user } = useAuth();
   const { currentBranch } = useBranch();
@@ -733,11 +735,17 @@ export const useProduction = () => {
 
       // ============================================================================
       // ROLLBACK PRODUCTION ACCOUNTING VIA VOID JOURNAL
-      // Find and void the journal entry created for this production
+      // Find and void the journal entry created for this production/error
+      // Handles both:
+      // 1. Normal production (consume_bom && quantity > 0 && product_id)
+      // 2. Bahan rusak/error input (quantity < 0 && !product_id)
       // ============================================================================
-      if (record.consume_bom && record.quantity > 0 && record.product_id) {
+      const isNormalProduction = record.consume_bom && record.quantity > 0 && record.product_id;
+      const isErrorInput = record.quantity < 0 && !record.product_id;
+
+      if (isNormalProduction || isErrorInput) {
         try {
-          // Find journal entry for this production
+          // Find journal entry for this production/error
           // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
           const { data: journalEntryRaw } = await supabase
             .from('journal_entries')
@@ -749,23 +757,72 @@ export const useProduction = () => {
           const journalEntry = Array.isArray(journalEntryRaw) ? journalEntryRaw[0] : journalEntryRaw;
 
           if (journalEntry) {
-            const voidResult = await voidJournalEntry(journalEntry.id, 'Production record deleted');
+            const voidReason = isErrorInput ? 'Bahan rusak record deleted' : 'Production record deleted';
+            const voidResult = await voidJournalEntry(journalEntry.id, voidReason);
             if (voidResult.success) {
-              console.log('✅ Production output journal voided:', journalEntry.id);
+              console.log(`✅ ${isErrorInput ? 'Spoilage' : 'Production output'} journal voided:`, journalEntry.id);
             } else {
-              console.warn('⚠️ Failed to void production output journal:', voidResult.error);
+              console.warn(`⚠️ Failed to void ${isErrorInput ? 'spoilage' : 'production output'} journal:`, voidResult.error);
             }
           }
 
-          // Delete cash_history record for this production
+          // Delete cash_history record for this production/error
           await supabase
             .from('cash_history')
             .delete()
             .eq('reference_id', record.id);
 
-          console.log('✅ Production accounting reversed');
+          console.log('✅ Production/error accounting reversed');
         } catch (productionRollbackError) {
-          console.error('Error reversing production accounting:', productionRollbackError);
+          console.error('Error reversing production/error accounting:', productionRollbackError);
+        }
+      }
+
+      // ============================================================================
+      // ROLLBACK MATERIAL MOVEMENT FOR BAHAN RUSAK
+      // Delete the OUT movement and restore material stock
+      // ============================================================================
+      if (isErrorInput) {
+        try {
+          // Parse notes to get material_id (note format: "BAHAN RUSAK: {materialName} - {notes}")
+          // We need to find the movement by reference_id
+          const { data: movements } = await supabase
+            .from('material_stock_movements')
+            .select('material_id, quantity')
+            .eq('reference_id', record.id)
+            .eq('reference_type', 'production')
+            .eq('type', 'OUT');
+
+          if (movements && movements.length > 0) {
+            for (const movement of movements) {
+              // Restore material stock
+              const { data: materialRaw } = await supabase
+                .from('materials')
+                .select('stock')
+                .eq('id', movement.material_id)
+                .order('id').limit(1);
+              const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
+
+              if (material) {
+                const restoredStock = (material.stock || 0) + movement.quantity;
+                await supabase
+                  .from('materials')
+                  .update({ stock: restoredStock, updated_at: new Date().toISOString() })
+                  .eq('id', movement.material_id);
+                console.log(`✅ Material stock restored: +${movement.quantity}`);
+              }
+
+              // Delete the movement record
+              await supabase
+                .from('material_stock_movements')
+                .delete()
+                .eq('reference_id', record.id)
+                .eq('material_id', movement.material_id);
+              console.log('✅ Material movement record deleted');
+            }
+          }
+        } catch (errorRollbackError) {
+          console.error('Error reversing bahan rusak material movement:', errorRollbackError);
         }
       }
 
@@ -781,6 +838,12 @@ export const useProduction = () => {
         description: "Data produksi dihapus, stock dikembalikan, dan HPP disesuaikan"
       });
 
+      // Invalidate related queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ['materialMovements'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+
       fetchProductions();
 
       return true;
@@ -795,7 +858,7 @@ export const useProduction = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [user, getBOM, toast, fetchProductions]);
+  }, [user, getBOM, toast, fetchProductions, queryClient, currentBranch]);
 
   useEffect(() => {
     fetchProductions();
