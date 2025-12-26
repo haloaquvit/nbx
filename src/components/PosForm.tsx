@@ -1040,236 +1040,142 @@ export const PosForm = () => {
             </div>
 
             {/* Right Panel - Payment & Submit (Sticky on Desktop) */}
-            <div className="lg:w-1/3 lg:min-w-[320px] lg:max-w-[400px] lg:sticky lg:top-4 lg:self-start space-y-4 bg-gray-50 lg:bg-white lg:border lg:rounded-lg lg:p-4 lg:shadow-sm">
+            <div className="lg:w-1/3 lg:min-w-[320px] lg:max-w-[400px] lg:sticky lg:top-4 lg:self-start space-y-3 bg-gray-50 lg:bg-white lg:border lg:rounded-lg lg:p-4 lg:shadow-sm">
               {/* Payment Summary Header */}
-              <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-3 rounded-lg -m-4 mb-2 lg:m-0 lg:mb-2 lg:-mt-4 lg:-mx-4 lg:rounded-t-lg lg:rounded-b-none">
-                <h3 className="font-semibold text-center">Ringkasan Pembayaran</h3>
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-2 rounded-lg -m-4 mb-2 lg:m-0 lg:mb-2 lg:-mt-4 lg:-mx-4 lg:rounded-t-lg lg:rounded-b-none">
+                <h3 className="font-semibold text-center text-sm">Pembayaran</h3>
               </div>
 
-              <div className="space-y-4">
-                {/* Payment Status Selection */}
-                <div className="border border-amber-200 bg-amber-50 p-4 rounded-lg">
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">Status Pembayaran</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        paidAmount >= totalTagihan
-                          ? 'border-green-500 bg-green-100 text-green-800'
-                          : 'border-gray-300 bg-white text-gray-600 hover:border-green-400'
-                      }`}
-                      onClick={() => setPaidAmount(totalTagihan)}
-                      disabled={retasiBlocked}
-                    >
-                      <div className="font-semibold">💰 Lunas</div>
-                      <div className="text-xs mt-1">Bayar penuh</div>
-                    </button>
-                    <button
-                      type="button"
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        paidAmount < totalTagihan && paidAmount > 0
-                          ? 'border-orange-500 bg-orange-100 text-orange-800'
-                          : paidAmount === 0
-                          ? 'border-red-500 bg-red-100 text-red-800'
-                          : 'border-gray-300 bg-white text-gray-600 hover:border-orange-400'
-                      }`}
-                      onClick={() => setPaidAmount(0)}
-                      disabled={retasiBlocked}
-                    >
-                      <div className="font-semibold">📝 Belum Lunas</div>
-                      <div className="text-xs mt-1">Kredit/sebagian</div>
-                    </button>
+              <div className="space-y-3">
+                {/* Total & Payment Amount - Compact */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-gray-100 p-2 rounded-lg">
+                    <label className="text-xs text-gray-500">Total Tagihan</label>
+                    <div className="text-lg font-bold text-gray-900">
+                      {new Intl.NumberFormat("id-ID").format(totalTagihan)}
+                    </div>
                   </div>
-                  <div className="mt-3 text-xs text-amber-700">
-                    <strong>Status:</strong> {sisaTagihan <= 0 ? '✅ Lunas' : paidAmount > 0 ? '⏳ Bayar Sebagian' : '❌ Belum Bayar'}
+                  <div className="bg-emerald-50 p-2 rounded-lg border border-emerald-200">
+                    <label className="text-xs text-emerald-700">Jumlah Bayar</label>
+                    <NumberInput
+                      value={paidAmount}
+                      onChange={(value) => setPaidAmount(value || 0)}
+                      min={0}
+                      decimalPlaces={2}
+                      className="text-right font-bold text-emerald-700 text-lg w-full bg-transparent border-0 p-0 h-auto"
+                      disabled={retasiBlocked}
+                    />
                   </div>
                 </div>
 
-                {/* Payment Method */}
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Metode Pembayaran (Kas/Bank)</h3>
-                  <Select value={paymentAccountId} onValueChange={setPaymentAccountId} disabled={retasiBlocked || paidAmount === 0}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={paidAmount === 0 ? "Tidak perlu (belum bayar)" : "Pilih Kas/Bank..."} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accounts?.filter(a => a.isPaymentAccount).map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          <Wallet className="inline-block mr-2 h-4 w-4" />
-                          {acc.code ? `${acc.code} - ` : ''}{acc.name}
-                          <span className="text-xs text-gray-500 ml-2">
-                            (Saldo: {new Intl.NumberFormat("id-ID").format(acc.balance || 0)})
-                          </span>
-                        </SelectItem>
-                      ))}
-                      {(!accounts || accounts.filter(a => a.isPaymentAccount).length === 0) && (
-                        <SelectItem value="no-accounts" disabled>
-                          ⚠️ Tidak ada akun pembayaran. Import COA Standar dulu!
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {accounts && accounts.filter(a => a.isPaymentAccount).length === 0 && (
-                    <p className="text-xs text-red-500 mt-1">
-                      ⚠️ Belum ada akun Kas/Bank. <Link to="/chart-of-accounts" className="underline text-blue-600">Import COA Standar</Link> atau centang "Akun Pembayaran" pada akun Kas.
-                    </p>
-                  )}
-                  {paidAmount === 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Metode pembayaran tidak diperlukan untuk transaksi kredit murni.
-                    </p>
+                {/* Quick Payment Buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={paidAmount >= totalTagihan ? "default" : "outline"}
+                    size="sm"
+                    className={`flex-1 text-xs ${paidAmount >= totalTagihan ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                    onClick={() => setPaidAmount(totalTagihan)}
+                    disabled={retasiBlocked}
+                  >
+                    💰 Lunas
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={paidAmount === 0 ? "default" : "outline"}
+                    size="sm"
+                    className={`flex-1 text-xs ${paidAmount === 0 ? 'bg-orange-600 hover:bg-orange-700' : ''}`}
+                    onClick={() => setPaidAmount(0)}
+                    disabled={retasiBlocked}
+                  >
+                    📝 Kredit
+                  </Button>
+                </div>
+
+                {/* Status & Sisa/Kembali - Compact */}
+                <div className="flex justify-between text-xs bg-gray-50 p-2 rounded">
+                  <span className={sisaTagihan <= 0 ? 'text-green-600 font-medium' : sisaTagihan < totalTagihan ? 'text-orange-600' : 'text-gray-600'}>
+                    {sisaTagihan <= 0 ? '✅ Lunas' : sisaTagihan < totalTagihan ? `⏳ Sisa: ${new Intl.NumberFormat("id-ID").format(sisaTagihan)}` : '❌ Belum Bayar'}
+                  </span>
+                  {paidAmount > totalTagihan && (
+                    <span className="text-green-600 font-medium">
+                      Kembali: {new Intl.NumberFormat("id-ID").format(paidAmount - totalTagihan)}
+                    </span>
                   )}
                 </div>
 
-                {/* Tax Settings - Always Visible */}
-                <div className="border border-blue-200 bg-blue-50 p-4 rounded-lg">
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">Pengaturan Pajak</h3>
-                  <div className="space-y-3">
-                    <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
-                      <input
-                        type="radio"
-                        name="taxMode"
-                        value="include"
-                        checked={ppnEnabled && ppnMode === 'include'}
-                        onChange={(e) => {
-                          setPpnEnabled(true);
-                          setPpnMode('include');
-                        }}
-                        className="mr-3 w-4 h-4 text-blue-600"
-                        disabled={retasiBlocked}
-                      />
-                      <div>
-                        <div className="font-medium text-gray-900">PPN Include</div>
-                        <div className="text-xs text-gray-600">Harga sudah termasuk pajak {ppnPercentage}%</div>
-                      </div>
-                    </label>
-                    <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
-                      <input
-                        type="radio"
-                        name="taxMode"
-                        value="exclude"
-                        checked={ppnEnabled && ppnMode === 'exclude'}
-                        onChange={(e) => {
-                          setPpnEnabled(true);
-                          setPpnMode('exclude');
-                        }}
-                        className="mr-3 w-4 h-4 text-blue-600"
-                        disabled={retasiBlocked}
-                      />
-                      <div>
-                        <div className="font-medium text-gray-900">PPN Exclude</div>
-                        <div className="text-xs text-gray-600">Pajak {ppnPercentage}% ditambahkan ke total</div>
-                      </div>
-                    </label>
-                    <label className="flex items-center text-sm cursor-pointer hover:bg-blue-100 p-2 rounded transition-colors">
-                      <input
-                        type="radio"
-                        name="taxMode"
-                        value="none"
-                        checked={!ppnEnabled}
-                        onChange={(e) => setPpnEnabled(false)}
-                        className="mr-3 w-4 h-4 text-blue-600"
-                        disabled={retasiBlocked}
-                      />
-                      <div>
-                        <div className="font-medium text-gray-900">Non Pajak</div>
-                        <div className="text-xs text-gray-600">Tidak menggunakan pajak</div>
-                      </div>
-                    </label>
-                    {ppnEnabled && (
-                      <div className="mt-3 pt-3 border-t border-blue-200">
-                        <div className="text-xs text-blue-700">
-                          <strong>Mode Aktif:</strong> {ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude'} ({ppnPercentage}%)
-                        </div>
-                      </div>
-                    )}
+                {/* Payment Method - Only show if paidAmount > 0 */}
+                {paidAmount > 0 && (
+                  <div className="border border-emerald-200 bg-emerald-50/50 p-3 rounded-lg">
+                    <h3 className="text-xs font-medium text-gray-700 mb-2">Metode Pembayaran</h3>
+                    <Select value={paymentAccountId} onValueChange={setPaymentAccountId} disabled={retasiBlocked}>
+                      <SelectTrigger className="w-full text-sm">
+                        <SelectValue placeholder="Pilih Kas/Bank..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {accounts?.filter(a => a.isPaymentAccount).map(acc => (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            <Wallet className="inline-block mr-2 h-4 w-4" />
+                            {acc.code ? `${acc.code} - ` : ''}{acc.name}
+                            <span className="text-xs text-gray-500 ml-2">
+                              ({new Intl.NumberFormat("id-ID").format(acc.balance || 0)})
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {(!accounts || accounts.filter(a => a.isPaymentAccount).length === 0) && (
+                          <SelectItem value="no-accounts" disabled>
+                            ⚠️ Tidak ada akun pembayaran
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
+                )}
+
+                {/* Diskon - Compact inline */}
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600 whitespace-nowrap">Diskon:</label>
+                  <NumberInput
+                    value={diskon}
+                    onChange={(value) => setDiskon(value || 0)}
+                    min={0}
+                    decimalPlaces={2}
+                    className="text-right text-sm flex-1"
+                    disabled={retasiBlocked}
+                  />
                 </div>
 
-                {/* Payment Details - Collapsible */}
-                <div>
+                {/* Tax Settings - Collapsed by default */}
+                <div className="border rounded-lg">
                   <button
                     type="button"
-                    className="flex items-center justify-between w-full text-sm font-medium text-gray-700 mb-2 md:mb-3"
-                    onClick={() => setShowPaymentDetails(!showPaymentDetails)}
+                    className="flex items-center justify-between w-full text-xs font-medium text-gray-600 p-2 hover:bg-gray-50"
+                    onClick={() => setShowTaxSettings(!showTaxSettings)}
                   >
-                    <span>Detail Pembayaran</span>
-                    <ChevronDown
-                      className={`w-4 h-4 transition-transform md:hidden ${showPaymentDetails ? "rotate-180" : ""}`}
-                    />
+                    <span>⚙️ Pajak: {ppnEnabled ? `PPN ${ppnMode === 'include' ? 'Include' : 'Exclude'} ${ppnPercentage}%` : 'Non Pajak'}</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${showTaxSettings ? "rotate-180" : ""}`} />
                   </button>
-                  <div className={`space-y-3 md:space-y-4 ${showPaymentDetails ? "block" : "hidden md:block"}`}>
-
-                    <div className="grid grid-cols-2 gap-2 md:gap-4">
-                      <div>
-                        <label className="text-xs md:text-sm text-gray-600">Sub Total</label>
-                        <div className="text-sm md:text-lg font-medium">
-                          {new Intl.NumberFormat("id-ID").format(subTotal)}
+                  {showTaxSettings && (
+                    <div className="p-2 pt-0 space-y-1 border-t">
+                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50">
+                        <input type="radio" name="taxMode" checked={ppnEnabled && ppnMode === 'include'} onChange={() => { setPpnEnabled(true); setPpnMode('include'); }} className="mr-2 w-3 h-3" disabled={retasiBlocked} />
+                        PPN Include ({ppnPercentage}%)
+                      </label>
+                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50">
+                        <input type="radio" name="taxMode" checked={ppnEnabled && ppnMode === 'exclude'} onChange={() => { setPpnEnabled(true); setPpnMode('exclude'); }} className="mr-2 w-3 h-3" disabled={retasiBlocked} />
+                        PPN Exclude ({ppnPercentage}%)
+                      </label>
+                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50">
+                        <input type="radio" name="taxMode" checked={!ppnEnabled} onChange={() => setPpnEnabled(false)} className="mr-2 w-3 h-3" disabled={retasiBlocked} />
+                        Non Pajak
+                      </label>
+                      {ppnEnabled && (
+                        <div className="text-xs text-blue-600 pt-1 border-t">
+                          PPN: {new Intl.NumberFormat("id-ID").format(ppnCalculation.ppnAmount)}
                         </div>
-                      </div>
-                      <div>
-                        <label className="text-xs md:text-sm text-gray-600">Diskon</label>
-                        <NumberInput
-                          value={diskon}
-                          onChange={(value) => setDiskon(value || 0)}
-                          min={0}
-                          decimalPlaces={2}
-                          className="text-right text-sm"
-                          disabled={retasiBlocked}
-                        />
-                      </div>
+                      )}
                     </div>
-
-                    {ppnEnabled && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-4">
-                        <div>
-                          <label className="text-xs md:text-sm text-gray-600">
-                            PPN {ppnPercentage}%
-                          </label>
-                          <div className="text-sm md:text-lg font-medium text-blue-600">
-                            {new Intl.NumberFormat("id-ID").format(ppnCalculation.ppnAmount)}
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs md:text-sm text-gray-600">
-                            Subtotal Setelah Diskon
-                          </label>
-                          <div className="text-sm md:text-lg font-medium">
-                            {new Intl.NumberFormat("id-ID").format(subtotalAfterDiskon)}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-2 md:gap-4">
-                      <div>
-                        <label className="text-xs md:text-sm text-gray-600">Total Tagihan</label>
-                        <div className="text-sm md:text-lg font-bold">{new Intl.NumberFormat("id-ID").format(totalTagihan)}</div>
-                      </div>
-                      <div>
-                        <label className="text-xs md:text-sm text-gray-600">Jumlah Bayar</label>
-                        <NumberInput
-                          value={paidAmount}
-                          onChange={(value) => setPaidAmount(value || 0)}
-                          min={0}
-                          decimalPlaces={2}
-                          className="text-right font-medium text-sm w-full"
-                          disabled={retasiBlocked}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 md:gap-4 text-xs md:text-sm">
-                      <div>
-                        <label className="text-gray-600">Sisa</label>
-                        <div className="font-medium text-red-600">{new Intl.NumberFormat("id-ID").format(sisaTagihan)}</div>
-                      </div>
-                      <div>
-                        <label className="text-gray-600">Kembali</label>
-                        <div className="font-medium text-green-600">{new Intl.NumberFormat("id-ID").format(Math.max(0, paidAmount - totalTagihan))}</div>
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 <Button

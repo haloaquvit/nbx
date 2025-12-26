@@ -48,11 +48,12 @@ export function Dashboard() {
     return totalCost;
   };
 
-  const today = new Date()
-  const [chartDateRange, setChartDateRange] = useState<DateRange | undefined>({
-    from: subDays(today, 6),
-    to: today,
-  });
+  // Memoize today to prevent unnecessary re-calculations
+  const today = useMemo(() => new Date(), [])
+  const [chartDateRange, setChartDateRange] = useState<DateRange | undefined>(() => ({
+    from: subDays(new Date(), 6),
+    to: new Date(),
+  }));
 
   // Pagination state for customer lists
   const [activeCustomerPage, setActiveCustomerPage] = useState(0);
@@ -108,15 +109,6 @@ export function Dashboard() {
         const itemCost = calculateProductionCost(item.product, item.quantity, materials);
         const itemProfit = itemTotal - itemCost;
         
-        // Debug logging for first few items
-        if (Object.keys(acc).length < 3) {
-          console.log(`Product: ${productName}`);
-          console.log(`Quantity: ${item.quantity}, Price: ${item.price}`);
-          console.log(`Revenue: ${itemTotal}, Cost: ${itemCost}, Profit: ${itemProfit}`);
-          console.log(`Product materials:`, item.product.materials);
-          console.log('---');
-        }
-        
         acc[productId].totalQuantity += item.quantity;
         acc[productId].totalRevenue += itemTotal;
         acc[productId].totalProfit += itemProfit;
@@ -133,22 +125,16 @@ export function Dashboard() {
     }>);
 
     const productStatsArray = Object.values(productStats);
-    
-    // Debug logging
-    console.log('Product Stats Array:', productStatsArray);
-    
+
     // Top selling product (by quantity) - create copy to avoid mutating original
     const topSellingProduct = productStatsArray.length > 0 
       ? [...productStatsArray].sort((a, b) => b.totalQuantity - a.totalQuantity)[0]
       : null;
     
     // Most profitable product (by profit amount) - create copy to avoid mutating original
-    const mostProfitableProduct = productStatsArray.length > 0 
+    const mostProfitableProduct = productStatsArray.length > 0
       ? [...productStatsArray].sort((a, b) => b.totalProfit - a.totalProfit)[0]
       : null;
-    
-    console.log('Top Selling Product:', topSellingProduct);
-    console.log('Most Profitable Product:', mostProfitableProduct);
 
     return {
       todayIncome,
@@ -218,20 +204,6 @@ export function Dashboard() {
     const roa = totalAssets > 0 ? (netProfit / totalAssets) * 100 : 0;
     const roe = totalEquity > 0 ? (netProfit / totalEquity) * 100 : 0;
     const der = totalEquity > 0 ? totalLiabilities / totalEquity : 0;
-
-    console.log('Financial Ratios:', {
-      totalAssets,
-      totalLiabilities,
-      totalModalAkun,
-      totalEquity,
-      equitySource: totalModalAkun > 0 ? 'Akun Modal' : 'Calculated (Aset - Kewajiban)',
-      totalPendapatan,
-      totalBeban,
-      netProfit,
-      roa: roa.toFixed(2) + '%',
-      roe: roe.toFixed(2) + '%',
-      der: der.toFixed(2)
-    });
 
     return {
       totalAssets,

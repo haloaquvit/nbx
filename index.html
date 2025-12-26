@@ -1,14 +1,64 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="js-loading">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data:; object-src 'self'; connect-src 'self' http://localhost:* https://nbx.aquvit.id https://mkw.aquvit.id https://upload.aquvit.id https://www.googleapis.com https://oauth2.googleapis.com https://*.supabase.co wss://*.supabase.co; img-src 'self' data: blob: https://nbx.aquvit.id https://mkw.aquvit.id https://upload.aquvit.id https://*; frame-src 'self';">
     <title>Buatan.pro app</title>
+    <style>
+      /* Prevent ALL visual flashes during page load */
+      .js-loading *:focus,
+      .js-loading *:focus-visible {
+        outline: none !important;
+        box-shadow: none !important;
+      }
+      /* Force hide any destructive/error/red styling during load */
+      .js-loading [class*="destructive"],
+      .js-loading [class*="border-red"],
+      .js-loading [class*="ring-red"],
+      .js-loading [class*="bg-red"],
+      .js-loading [data-state] {
+        border-color: transparent !important;
+        box-shadow: none !important;
+        outline: none !important;
+      }
+      /* Hide root content during initial load, then fade in */
+      .js-loading #root {
+        opacity: 0;
+        visibility: hidden;
+      }
+      #root {
+        opacity: 1;
+        visibility: visible;
+        transition: opacity 0.2s ease-in, visibility 0.2s ease-in;
+      }
+    </style>
   </head>
 
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Remove js-loading class after app is fully ready
+      // Use longer delay to ensure all React components have mounted
+      window.addEventListener('load', function() {
+        setTimeout(function() {
+          document.documentElement.classList.remove('js-loading');
+        }, 300);
+      });
+      // Also listen for React mount completion
+      document.addEventListener('DOMContentLoaded', function() {
+        // Observe for React root mounting
+        var observer = new MutationObserver(function(mutations) {
+          if (document.querySelector('#root > *')) {
+            setTimeout(function() {
+              document.documentElement.classList.remove('js-loading');
+            }, 200);
+            observer.disconnect();
+          }
+        });
+        observer.observe(document.getElementById('root'), { childList: true });
+      });
+    </script>
   </body>
 </html>

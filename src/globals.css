@@ -102,6 +102,20 @@
     border-color: hsl(var(--border));
   }
 
+  /* Prevent focus ring flash on page load/refresh */
+  /* Uses :focus-visible instead of :focus to only show ring on keyboard navigation */
+  *:focus:not(:focus-visible) {
+    outline: none !important;
+    box-shadow: none !important;
+    ring: none !important;
+  }
+
+  /* Hide all focus rings during initial page load */
+  .js-loading *:focus {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
   body {
     @apply bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 text-foreground min-h-screen;
     font-size: 1.125rem; /* 18px - increased from default 16px */

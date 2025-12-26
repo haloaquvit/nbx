@@ -6,7 +6,8 @@ import L from 'leaflet'
 import { Customer } from '@/types/customer'
 import { calculateDistance, formatDistance } from '@/utils/geoUtils'
 import { Button } from '@/components/ui/button'
-import { Phone, Navigation, Store, Home } from 'lucide-react'
+import { Phone, Navigation, Store, Home, ShoppingCart } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 // Fix Leaflet default marker icon issue
 import icon from 'leaflet/dist/images/marker-icon.png'

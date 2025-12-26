@@ -8,7 +8,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Phone, Navigation, Store, Home, MapPin, AlertCircle } from 'lucide-react'
+import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 interface NearbyCustomerListProps {
   customers: Customer[]
@@ -34,6 +35,7 @@ export function NearbyCustomerList({
   onRadiusChange,
   onCustomerSelect
 }: NearbyCustomerListProps) {
+  const navigate = useNavigate()
   // Sort and filter customers by distance
   const nearbyCustomers = useMemo(() => {
     if (!userLocation) return []
@@ -64,6 +66,10 @@ export function NearbyCustomerList({
 
   const handleCall = (phone: string) => {
     window.location.href = `tel:${phone}`
+  }
+
+  const handleOpenDriverPos = (customer: Customer) => {
+    navigate(`/driver-pos?customerId=${customer.id}`)
   }
 
   if (!userLocation) {
@@ -188,6 +194,17 @@ export function NearbyCustomerList({
                         <div className="flex gap-2 mt-2">
                           <Button
                             size="sm"
+                            className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
+                            onClick={e => {
+                              e.stopPropagation()
+                              handleOpenDriverPos(customer as Customer)
+                            }}
+                          >
+                            <ShoppingCart className="h-3 w-3 mr-1" />
+                            POS
+                          </Button>
+                          <Button
+                            size="sm"
                             variant="outline"
                             className="h-7 px-2 text-xs"
                             onClick={e => {
@@ -195,19 +212,18 @@ export function NearbyCustomerList({
                               handleCall(customer.phone)
                             }}
                           >
-                            <Phone className="h-3 w-3 mr-1" />
-                            {customer.phone}
+                            <Phone className="h-3 w-3" />
                           </Button>
                           <Button
                             size="sm"
-                            className="h-7 px-2 text-xs bg-blue-600 hover:bg-blue-700"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
                             onClick={e => {
                               e.stopPropagation()
                               handleOpenMaps(customer as Customer)
                             }}
                           >
-                            <Navigation className="h-3 w-3 mr-1" />
-                            Rute
+                            <Navigation className="h-3 w-3" />
                           </Button>
                         </div>
                       </div>

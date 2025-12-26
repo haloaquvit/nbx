@@ -140,11 +140,14 @@ async function findAccountByPattern(pattern: string, type: string, branchId: str
 }
 
 /**
- * Generate journal entry number
+ * Generate journal entry number with timestamp suffix to prevent race condition duplicates
  */
 async function generateJournalNumber(branchId: string): Promise<string> {
-  const year = new Date().getFullYear();
-  const prefix = `JE-${year}-`;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const day = now.getDate().toString().padStart(2, '0');
+  const prefix = `JE-${year}${month}${day}-`;
 
   const { data } = await supabase
     .from('journal_entries')
@@ -163,13 +166,17 @@ async function generateJournalNumber(branchId: string): Promise<string> {
     }
   }
 
-  return `${prefix}${nextNumber.toString().padStart(6, '0')}`;
+  // Add milliseconds suffix to prevent race condition duplicates
+  const msSuffix = now.getMilliseconds().toString().padStart(3, '0');
+  return `${prefix}${nextNumber.toString().padStart(4, '0')}${msSuffix}`;
 }
 
 /**
- * Create journal entry with lines
+ * Create journal entry with lines (with retry logic for duplicate key conflicts)
  */
-export async function createJournalEntry(input: CreateJournalInput): Promise<{ success: boolean; journalId?: string; error?: string }> {
+export async function createJournalEntry(input: CreateJournalInput, retryCount = 0): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const MAX_RETRIES = 3;
+
   try {
     // Validate balance
     const totalDebit = input.lines.reduce((sum, line) => sum + (line.debitAmount || 0), 0);
@@ -190,7 +197,7 @@ export async function createJournalEntry(input: CreateJournalInput): Promise<{ s
 
     // Create journal entry using RPC function (SECURITY DEFINER)
     // This bypasses RLS SELECT restrictions and guarantees RETURNING works
-    console.log('[JournalService] Inserting journal entry via RPC...');
+    console.log('[JournalService] Inserting journal entry via RPC...', { entryNumber, retryCount });
 
     const { data: rpcResult, error: journalError } = await supabase
       .rpc('insert_journal_entry', {
@@ -211,6 +218,13 @@ export async function createJournalEntry(input: CreateJournalInput): Promise<{ s
     console.log('[JournalService] RPC insert_journal_entry result:', { rpcResult, journalError });
 
     if (journalError) {
+      // Check if it's a duplicate key error - retry with new number
+      if (journalError.message?.includes('duplicate key') && retryCount < MAX_RETRIES) {
+        console.warn(`[JournalService] Duplicate key conflict, retrying (${retryCount + 1}/${MAX_RETRIES})...`);
+        // Small delay before retry
+        await new Promise(resolve => setTimeout(resolve, 50 + Math.random() * 100));
+        return createJournalEntry(input, retryCount + 1);
+      }
       console.error('[JournalService] Error creating journal entry:', journalError);
       return { success: false, error: journalError?.message || 'Gagal membuat jurnal' };
     }

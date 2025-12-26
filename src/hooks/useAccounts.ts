@@ -187,8 +187,6 @@ export const useAccounts = () => {
         balance: accountBalanceMap.get(acc.id) ?? 0
       }));
 
-      console.log('📊 Accounts loaded from journal_entries for branch:', currentBranch?.name, 'Count:', accountsWithBranchBalance.length);
-
       return accountsWithBranchBalance;
     },
     // Enable when branch is selected
