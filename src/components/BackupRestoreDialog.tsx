@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Download, Upload, Database, AlertTriangle, CheckCircle2, XCircle, FileJson, Clock, Server } from 'lucide-react'
-import { backupRestoreService, BackupData, BackupProgress, RestoreProgress } from '@/services/backupRestoreService'
+import { backupRestoreService, BackupData, BackupProgress, RestoreProgress, BACKUP_TABLES, SKIP_RESTORE_TABLES } from '@/services/backupRestoreService'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { useToast } from '@/components/ui/use-toast'
@@ -38,6 +38,8 @@ export function BackupRestoreDialog() {
   // Restore options
   const [clearExisting, setClearExisting] = useState(false)
   const [skipUsers, setSkipUsers] = useState(true)
+  const [selectedTables, setSelectedTables] = useState<string[]>([])
+  const [selectAll, setSelectAll] = useState(true)
 
   // Handle backup
   const handleBackup = async () => {
@@ -73,6 +75,8 @@ export function BackupRestoreDialog() {
     setParsedBackup(null)
     setParseError(null)
     setRestoreDetails([])
+    setSelectedTables([])
+    setSelectAll(true)
 
     try {
       const data = await backupRestoreService.parseBackupFile(file)
@@ -84,8 +88,40 @@ export function BackupRestoreDialog() {
       }
 
       setParsedBackup(data)
+
+      // Set default: pilih semua tabel yang ada di backup
+      const availableTables = getAvailableTables(data)
+      setSelectedTables(availableTables)
     } catch (err: any) {
       setParseError(err.message)
+    }
+  }
+
+  // Get available tables from backup (excluding skip tables)
+  const getAvailableTables = (data: BackupData): string[] => {
+    return BACKUP_TABLES.filter(t => {
+      if (SKIP_RESTORE_TABLES.includes(t)) return false
+      return data.tables[t] && data.tables[t].length > 0
+    })
+  }
+
+  // Handle select all toggle
+  const handleSelectAll = (checked: boolean) => {
+    setSelectAll(checked)
+    if (checked && parsedBackup) {
+      setSelectedTables(getAvailableTables(parsedBackup))
+    } else {
+      setSelectedTables([])
+    }
+  }
+
+  // Handle individual table toggle
+  const handleTableToggle = (tableName: string, checked: boolean) => {
+    if (checked) {
+      setSelectedTables(prev => [...prev, tableName])
+    } else {
+      setSelectedTables(prev => prev.filter(t => t !== tableName))
+      setSelectAll(false)
     }
   }
 
@@ -93,10 +129,16 @@ export function BackupRestoreDialog() {
   const handleRestore = async () => {
     if (!parsedBackup) return
 
+    if (selectedTables.length === 0) {
+      alert("Pilih minimal satu tabel untuk di-restore")
+      return
+    }
+
+    const tableCount = selectedTables.length
     const confirmed = window.confirm(
       clearExisting
-        ? "PERINGATAN: Semua data existing akan DIHAPUS dan diganti dengan data dari backup. Lanjutkan?"
-        : "Data dari backup akan di-merge dengan data existing (duplikat akan di-update). Lanjutkan?"
+        ? `PERINGATAN: Data pada ${tableCount} tabel yang dipilih akan DIHAPUS dan diganti dengan data dari backup. Lanjutkan?`
+        : `Data dari ${tableCount} tabel yang dipilih akan di-merge dengan data existing (duplikat akan di-update). Lanjutkan?`
     )
 
     if (!confirmed) return
@@ -108,7 +150,7 @@ export function BackupRestoreDialog() {
     try {
       const result = await backupRestoreService.restoreFromBackup(
         parsedBackup,
-        { clearExisting, skipUsers },
+        { clearExisting, skipUsers, selectedTables },
         (progress) => {
           setRestoreProgress(progress)
         }
@@ -146,6 +188,8 @@ export function BackupRestoreDialog() {
     setParseError(null)
     setRestoreDetails([])
     setRestoreProgress(null)
+    setSelectedTables([])
+    setSelectAll(true)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -334,6 +378,54 @@ export function BackupRestoreDialog() {
                       )}
                     </div>
 
+                    {/* Table Selection */}
+                    <div className="space-y-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-medium text-blue-800">Pilih Tabel yang Akan Di-restore</Label>
+                        <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                          {selectedTables.length} dari {getAvailableTables(parsedBackup).length} tabel
+                        </Badge>
+                      </div>
+
+                      {/* Select All */}
+                      <div className="flex items-center space-x-2 pb-2 border-b border-blue-200">
+                        <Checkbox
+                          id="select-all"
+                          checked={selectAll}
+                          onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
+                        />
+                        <Label htmlFor="select-all" className="text-sm font-medium text-blue-700 cursor-pointer">
+                          Pilih Semua
+                        </Label>
+                      </div>
+
+                      {/* Table List */}
+                      <ScrollArea className="h-48 rounded-md border border-blue-200 bg-white">
+                        <div className="p-3 space-y-2">
+                          {getAvailableTables(parsedBackup).map(tableName => {
+                            const recordCount = parsedBackup.tables[tableName]?.length || 0
+                            return (
+                              <div key={tableName} className="flex items-center justify-between py-1.5 px-2 hover:bg-gray-50 rounded">
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    id={`table-${tableName}`}
+                                    checked={selectedTables.includes(tableName)}
+                                    onCheckedChange={(checked) => handleTableToggle(tableName, checked as boolean)}
+                                  />
+                                  <Label htmlFor={`table-${tableName}`} className="text-sm cursor-pointer">
+                                    {tableName}
+                                  </Label>
+                                </div>
+                                <Badge variant="secondary" className="text-xs">
+                                  {recordCount} record
+                                </Badge>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </ScrollArea>
+                    </div>
+
                     {/* Progress */}
                     {restoreProgress && (
                       <div className="space-y-2">
@@ -366,7 +458,7 @@ export function BackupRestoreDialog() {
                     {/* Restore Button */}
                     <Button
                       onClick={handleRestore}
-                      disabled={isRestoring}
+                      disabled={isRestoring || selectedTables.length === 0}
                       variant={clearExisting ? "destructive" : "default"}
                       className="w-full"
                     >
@@ -378,7 +470,9 @@ export function BackupRestoreDialog() {
                       ) : (
                         <>
                           <Upload className="mr-2 h-4 w-4" />
-                          {clearExisting ? 'Restore (Hapus & Ganti)' : 'Restore (Merge)'}
+                          {clearExisting
+                            ? `Restore ${selectedTables.length} Tabel (Hapus & Ganti)`
+                            : `Restore ${selectedTables.length} Tabel (Merge)`}
                         </>
                       )}
                     </Button>

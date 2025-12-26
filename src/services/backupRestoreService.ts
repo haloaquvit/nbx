@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 
 // Daftar tabel yang akan di-backup (urutan penting untuk foreign key)
-const BACKUP_TABLES = [
+export const BACKUP_TABLES = [
   // Master data (tidak punya foreign key ke tabel lain)
   'company_settings',
   'companies',
@@ -54,7 +54,7 @@ const BACKUP_TABLES = [
 ];
 
 // Tabel yang tidak boleh di-restore (sistem atau punya constraint khusus)
-const SKIP_RESTORE_TABLES = ['roles', 'company_settings', 'branches', 'profiles'];
+export const SKIP_RESTORE_TABLES = ['roles', 'company_settings', 'branches', 'profiles'];
 
 // Tabel yang memiliki kolom branch_id yang perlu di-remap ke branch aktif
 const TABLES_WITH_BRANCH_ID = [
@@ -226,10 +226,11 @@ class BackupRestoreService {
       clearExisting?: boolean; // Hapus data existing sebelum restore
       skipUsers?: boolean; // Jangan restore users (berbahaya)
       activeBranchId?: string; // Branch ID aktif untuk remap semua data
+      selectedTables?: string[]; // Tabel spesifik yang akan di-restore (jika kosong = semua)
     } = {},
     onProgress?: (progress: RestoreProgress) => void
   ): Promise<{ success: boolean; message: string; details: string[] }> {
-    const { clearExisting = false, skipUsers = true, activeBranchId } = options;
+    const { clearExisting = false, skipUsers = true, activeBranchId, selectedTables } = options;
     const details: string[] = [];
     let insertedCount = 0;
     let skippedCount = 0;
@@ -254,6 +255,8 @@ class BackupRestoreService {
     const tablesToRestore = BACKUP_TABLES.filter(t => {
       if (SKIP_RESTORE_TABLES.includes(t)) return false;
       if (skipUsers && t === 'users') return false;
+      // Jika ada selectedTables, hanya restore tabel yang dipilih
+      if (selectedTables && selectedTables.length > 0 && !selectedTables.includes(t)) return false;
       return backupData.tables[t] && backupData.tables[t].length > 0;
     });
 
