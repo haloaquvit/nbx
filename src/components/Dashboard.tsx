@@ -12,11 +12,12 @@ import { useTransactions } from "@/hooks/useTransactions"
 import { useExpenses } from "@/hooks/useExpenses"
 import { useCustomers } from "@/hooks/useCustomers"
 import { useMaterials } from "@/hooks/useMaterials"
+import { useAccounts } from "@/hooks/useAccounts"
 import { Material } from "@/types/material"
 import { format, subDays, startOfDay, endOfDay, startOfMonth, isWithinInterval, eachDayOfInterval } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { Users, AlertTriangle, DollarSign, TrendingDown, Scale, Award, ShoppingCart, TrendingUp } from "lucide-react"
+import { Users, AlertTriangle, DollarSign, TrendingDown, Scale, Award, ShoppingCart, TrendingUp, Activity, PieChart, BarChart3 } from "lucide-react"
 
 export function Dashboard() {
   const { user } = useAuthContext()
@@ -24,6 +25,7 @@ export function Dashboard() {
   const { expenses, isLoading: expensesLoading } = useExpenses()
   const { customers, isLoading: customersLoading } = useCustomers()
   const { materials, isLoading: materialsLoading } = useMaterials()
+  const { accounts, isLoading: accountsLoading } = useAccounts()
 
   // Helper function to calculate production cost based on BOM and material prices
   const calculateProductionCost = (product: any, quantity: number, materials: Material[] | undefined): number => {
@@ -155,6 +157,78 @@ export function Dashboard() {
     }
   }, [transactions, expenses, customers, materials, today])
 
+  // ============================================================================
+  // RASIO KEUANGAN (Financial Ratios)
+  // ============================================================================
+  // ROA = Net Profit / Total Assets (kemampuan menghasilkan laba dari aset)
+  // ROE = Net Profit / Total Equity (kemampuan menghasilkan laba dari modal)
+  // DER = Total Liabilities / Total Equity (tingkat leverage/hutang)
+  // ============================================================================
+  const financialRatios = useMemo(() => {
+    if (!accounts || accounts.length === 0) {
+      return {
+        totalAssets: 0,
+        totalLiabilities: 0,
+        totalEquity: 0,
+        netProfit: 0,
+        roa: 0,
+        roe: 0,
+        der: 0,
+      };
+    }
+
+    // Calculate totals by account type
+    const totalAssets = accounts
+      .filter(acc => acc.type === 'Aset')
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    const totalLiabilities = accounts
+      .filter(acc => acc.type === 'Kewajiban')
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    const totalEquity = accounts
+      .filter(acc => acc.type === 'Modal')
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    // Net Profit = Pendapatan - Beban
+    const totalPendapatan = accounts
+      .filter(acc => acc.type === 'Pendapatan')
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    const totalBeban = accounts
+      .filter(acc => acc.type === 'Beban')
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    const netProfit = totalPendapatan - totalBeban;
+
+    // Calculate ratios (handle division by zero)
+    const roa = totalAssets > 0 ? (netProfit / totalAssets) * 100 : 0;
+    const roe = totalEquity > 0 ? (netProfit / totalEquity) * 100 : 0;
+    const der = totalEquity > 0 ? totalLiabilities / totalEquity : 0;
+
+    console.log('Financial Ratios:', {
+      totalAssets,
+      totalLiabilities,
+      totalEquity,
+      totalPendapatan,
+      totalBeban,
+      netProfit,
+      roa: roa.toFixed(2) + '%',
+      roe: roe.toFixed(2) + '%',
+      der: der.toFixed(2)
+    });
+
+    return {
+      totalAssets,
+      totalLiabilities,
+      totalEquity,
+      netProfit,
+      roa,
+      roe,
+      der,
+    };
+  }, [accounts]);
+
   const chartData = useMemo(() => {
     const daysInChartRange = chartDateRange?.from && chartDateRange?.to
       ? eachDayOfInterval({ start: chartDateRange.from, end: chartDateRange.to })
@@ -170,7 +244,7 @@ export function Dashboard() {
   }, [transactions, chartDateRange])
 
   const recentTransactions = transactions?.slice(0, 5) || []
-  const isLoading = transactionsLoading || customersLoading || materialsLoading || expensesLoading
+  const isLoading = transactionsLoading || customersLoading || materialsLoading || expensesLoading || accountsLoading
 
   if (isLoading) {
     return (
@@ -202,6 +276,92 @@ export function Dashboard() {
         <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Stok Kritis</CardTitle><AlertTriangle className="h-4 w-4 text-muted-foreground" /></CardHeader><CardContent><div className="text-2xl font-bold">{summaryData.criticalStockItems} item</div><p className="text-xs text-muted-foreground">Perlu segera dipesan ulang</p></CardContent></Card>
       </div>
 
+      {/* Rasio Keuangan (Financial Health) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Kesehatan Keuangan
+          </CardTitle>
+          <CardDescription>Indikator rasio keuangan perusahaan</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            {/* ROA - Return on Assets */}
+            <div className="flex flex-col gap-2 p-4 border rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">ROA</span>
+                <PieChart className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className={`text-2xl font-bold ${financialRatios.roa >= 5 ? 'text-green-600' : financialRatios.roa >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                {financialRatios.roa.toFixed(2)}%
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Return on Assets
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {financialRatios.roa >= 5 ? 'Baik (>5%)' : financialRatios.roa >= 0 ? 'Cukup (0-5%)' : 'Kurang (<0%)'}
+              </p>
+            </div>
+
+            {/* ROE - Return on Equity */}
+            <div className="flex flex-col gap-2 p-4 border rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">ROE</span>
+                <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className={`text-2xl font-bold ${financialRatios.roe >= 15 ? 'text-green-600' : financialRatios.roe >= 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                {financialRatios.roe.toFixed(2)}%
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Return on Equity
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {financialRatios.roe >= 15 ? 'Baik (>15%)' : financialRatios.roe >= 0 ? 'Cukup (0-15%)' : 'Kurang (<0%)'}
+              </p>
+            </div>
+
+            {/* DER - Debt to Equity Ratio */}
+            <div className="flex flex-col gap-2 p-4 border rounded-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">DER</span>
+                <Scale className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className={`text-2xl font-bold ${financialRatios.der <= 1 ? 'text-green-600' : financialRatios.der <= 2 ? 'text-yellow-600' : 'text-red-600'}`}>
+                {financialRatios.der.toFixed(2)}x
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Debt to Equity Ratio
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {financialRatios.der <= 1 ? 'Sehat (<=1x)' : financialRatios.der <= 2 ? 'Moderat (1-2x)' : 'Tinggi (>2x)'}
+              </p>
+            </div>
+          </div>
+
+          {/* Summary Totals */}
+          <div className="mt-4 pt-4 border-t grid gap-4 md:grid-cols-4 text-sm">
+            <div>
+              <p className="text-muted-foreground">Total Aset</p>
+              <p className="font-medium">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(financialRatios.totalAssets)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Total Kewajiban</p>
+              <p className="font-medium">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(financialRatios.totalLiabilities)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Total Modal</p>
+              <p className="font-medium">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(financialRatios.totalEquity)}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Laba Bersih</p>
+              <p className={`font-medium ${financialRatios.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(financialRatios.netProfit)}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         <Card className="col-span-4">

@@ -25,13 +25,16 @@ export interface UpdateRoleData {
 }
 
 export const DEFAULT_PERMISSIONS = {
+  // Dashboard
+  view_dashboard: false,
+
   // User Management
   manage_users: false,
   create_users: false,
   edit_users: false,
   delete_users: false,
   view_users: false,
-  
+
   // Product Management
   manage_products: false,
   create_products: false,

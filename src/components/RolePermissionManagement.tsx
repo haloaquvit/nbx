@@ -27,6 +27,12 @@ const ROLE_COLORS: Record<string, string> = {
 // Define all features and their permissions
 const FEATURES = [
   {
+    category: 'Dashboard',
+    items: [
+      { id: 'dashboard_view', name: 'Lihat Dashboard', icon: Eye },
+    ]
+  },
+  {
     category: 'Produk & Inventory',
     items: [
       { id: 'products_view', name: 'Lihat Produk', icon: Eye },
