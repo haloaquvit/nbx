@@ -84,7 +84,34 @@ export const useProducts = () => {
       if (product.id) {
         // Update existing product
         logDebug('Product Update', { id: product.id, updateData: dbData });
-        
+
+        // Fetch current product to check if we need to sync initial_stock to current_stock
+        const { data: currentProduct } = await supabase
+          .from('products')
+          .select('current_stock, initial_stock')
+          .eq('id', product.id)
+          .order('id')
+          .limit(1);
+
+        const existing = Array.isArray(currentProduct) ? currentProduct[0] : currentProduct;
+
+        // Jika initial_stock diubah dan current_stock masih 0 atau sama dengan initial_stock lama,
+        // maka sync current_stock dengan initial_stock baru
+        if (dbData.initial_stock !== undefined && existing) {
+          const oldInitialStock = existing.initial_stock || 0;
+          const oldCurrentStock = existing.current_stock || 0;
+
+          // Sync jika: current_stock == 0 ATAU current_stock == initial_stock lama (belum ada transaksi)
+          if (oldCurrentStock === 0 || oldCurrentStock === oldInitialStock) {
+            dbData.current_stock = dbData.initial_stock;
+            logDebug('Syncing current_stock with initial_stock', {
+              oldInitialStock,
+              oldCurrentStock,
+              newInitialStock: dbData.initial_stock
+            });
+          }
+        }
+
         // Use .order().limit(1) - PostgREST requires explicit order when using limit
         const { data: dataRaw, error } = await supabase
           .from('products')
