@@ -17,7 +17,8 @@ import { Material } from "@/types/material"
 import { format, subDays, startOfDay, endOfDay, startOfMonth, isWithinInterval, eachDayOfInterval } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { Users, AlertTriangle, DollarSign, TrendingDown, Scale, Award, ShoppingCart, TrendingUp, Activity, PieChart, BarChart3 } from "lucide-react"
+import { Users, AlertTriangle, DollarSign, TrendingDown, Scale, Award, ShoppingCart, TrendingUp, Activity, PieChart, BarChart3, ChevronLeft, ChevronRight, UserCheck, UserX } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 export function Dashboard() {
   const { user } = useAuthContext()
@@ -52,6 +53,11 @@ export function Dashboard() {
     from: subDays(today, 6),
     to: today,
   });
+
+  // Pagination state for customer lists
+  const [activeCustomerPage, setActiveCustomerPage] = useState(0);
+  const [inactiveCustomerPage, setInactiveCustomerPage] = useState(0);
+  const ITEMS_PER_PAGE = 5;
 
   const summaryData = useMemo(() => {
     const startOfToday = startOfDay(today)
@@ -186,9 +192,16 @@ export function Dashboard() {
       .filter(acc => acc.type === 'Kewajiban')
       .reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
-    const totalEquity = accounts
+    // Modal dari akun langsung
+    const totalModalAkun = accounts
       .filter(acc => acc.type === 'Modal')
       .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    // Jika akun Modal kosong, gunakan persamaan akuntansi: Modal = Aset - Kewajiban
+    // Ini adalah retained earnings (laba ditahan) yang belum dicatat ke akun Modal
+    const totalEquity = totalModalAkun > 0
+      ? totalModalAkun
+      : (totalAssets - totalLiabilities);
 
     // Net Profit = Pendapatan - Beban
     const totalPendapatan = accounts
@@ -209,7 +222,9 @@ export function Dashboard() {
     console.log('Financial Ratios:', {
       totalAssets,
       totalLiabilities,
+      totalModalAkun,
       totalEquity,
+      equitySource: totalModalAkun > 0 ? 'Akun Modal' : 'Calculated (Aset - Kewajiban)',
       totalPendapatan,
       totalBeban,
       netProfit,
@@ -243,7 +258,46 @@ export function Dashboard() {
     })
   }, [transactions, chartDateRange])
 
-  const recentTransactions = transactions?.slice(0, 5) || []
+  // Pelanggan paling aktif dan tidak aktif berdasarkan transaksi
+  const customerActivity = useMemo(() => {
+    if (!customers || !transactions) return { activeCustomers: [], inactiveCustomers: [] };
+
+    // Hitung statistik transaksi per pelanggan
+    const customerStats = customers.map(customer => {
+      const customerTransactions = transactions.filter(t => t.customerId === customer.id);
+      const totalTransactions = customerTransactions.length;
+      const totalAmount = customerTransactions.reduce((sum, t) => sum + t.total, 0);
+      const lastTransaction = customerTransactions.length > 0
+        ? customerTransactions.sort((a, b) => new Date(b.orderDate).getTime() - new Date(a.orderDate).getTime())[0]
+        : null;
+
+      return {
+        id: customer.id,
+        name: customer.name,
+        phone: customer.phone || '-',
+        totalTransactions,
+        totalAmount,
+        lastTransactionDate: lastTransaction ? new Date(lastTransaction.orderDate) : null,
+        daysSinceLastTransaction: lastTransaction
+          ? Math.floor((today.getTime() - new Date(lastTransaction.orderDate).getTime()) / (1000 * 60 * 60 * 24))
+          : Infinity,
+      };
+    });
+
+    // Pelanggan aktif: diurutkan berdasarkan jumlah transaksi (terbanyak dulu)
+    const activeCustomers = customerStats
+      .filter(c => c.totalTransactions > 0)
+      .sort((a, b) => b.totalTransactions - a.totalTransactions);
+
+    // Pelanggan tidak aktif: sudah lama tidak transaksi atau belum pernah transaksi
+    // Diurutkan berdasarkan hari sejak transaksi terakhir (terlama dulu)
+    const inactiveCustomers = customerStats
+      .filter(c => c.daysSinceLastTransaction >= 30 || c.totalTransactions === 0) // 30 hari tidak aktif
+      .sort((a, b) => b.daysSinceLastTransaction - a.daysSinceLastTransaction);
+
+    return { activeCustomers, inactiveCustomers };
+  }, [customers, transactions, today]);
+
   const isLoading = transactionsLoading || customersLoading || materialsLoading || expensesLoading || accountsLoading
 
   if (isLoading) {
@@ -382,27 +436,153 @@ export function Dashboard() {
             </ResponsiveContainer>
           </CardContent>
         </Card>
+        {/* Pelanggan Paling Aktif */}
         <Card className="col-span-3">
-          <CardHeader><CardTitle>Transaksi Terbaru</CardTitle><CardDescription>5 transaksi terakhir yang tercatat.</CardDescription></CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <UserCheck className="h-5 w-5 text-green-600" />
+                Pelanggan Aktif
+              </CardTitle>
+              <CardDescription>Pelanggan dengan transaksi terbanyak</CardDescription>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setActiveCustomerPage(p => Math.max(0, p - 1))}
+                disabled={activeCustomerPage === 0}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground px-2">
+                {activeCustomerPage + 1}/{Math.max(1, Math.ceil(customerActivity.activeCustomers.length / ITEMS_PER_PAGE))}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => setActiveCustomerPage(p => Math.min(Math.ceil(customerActivity.activeCustomers.length / ITEMS_PER_PAGE) - 1, p + 1))}
+                disabled={activeCustomerPage >= Math.ceil(customerActivity.activeCustomers.length / ITEMS_PER_PAGE) - 1}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
           <CardContent>
             <Table>
-              <TableHeader><TableRow><TableHead>Pelanggan</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pelanggan</TableHead>
+                  <TableHead className="text-center">Transaksi</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
-                {recentTransactions.map(t => (
-                  <TableRow key={t.id} component={Link} to={`/transactions/${t.id}`} className="cursor-pointer hover:bg-muted/50">
-                    <TableCell>
-                      <div className="font-medium">{t.customerName}</div>
-                      <div className="hidden text-sm text-muted-foreground md:inline">{t.id}</div>
+                {customerActivity.activeCustomers
+                  .slice(activeCustomerPage * ITEMS_PER_PAGE, (activeCustomerPage + 1) * ITEMS_PER_PAGE)
+                  .map((customer, idx) => (
+                    <TableRow key={customer.id} className="hover:bg-muted/50">
+                      <TableCell>
+                        <div className="font-medium">{customer.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {customer.lastTransactionDate
+                            ? `Terakhir: ${format(customer.lastTransactionDate, 'd MMM yyyy', { locale: id })}`
+                            : 'Belum ada transaksi'}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant="default" className="bg-green-600">
+                          {customer.totalTransactions}x
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(customer.totalAmount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                {customerActivity.activeCustomers.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-center text-muted-foreground py-6">
+                      Belum ada pelanggan aktif
                     </TableCell>
-                    <TableCell><Badge variant={t.paymentStatus === 'Lunas' ? 'default' : 'destructive'}>{t.paymentStatus}</Badge></TableCell>
-                    <TableCell className="text-right">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(t.total)}</TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
       </div>
+
+      {/* Pelanggan Tidak Aktif */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <UserX className="h-5 w-5 text-red-600" />
+              Pelanggan Tidak Aktif
+            </CardTitle>
+            <CardDescription>Pelanggan yang sudah lama tidak transaksi (30+ hari) atau belum pernah transaksi</CardDescription>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setInactiveCustomerPage(p => Math.max(0, p - 1))}
+              disabled={inactiveCustomerPage === 0}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-muted-foreground px-2">
+              {inactiveCustomerPage + 1}/{Math.max(1, Math.ceil(customerActivity.inactiveCustomers.length / ITEMS_PER_PAGE))}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setInactiveCustomerPage(p => Math.min(Math.ceil(customerActivity.inactiveCustomers.length / ITEMS_PER_PAGE) - 1, p + 1))}
+              disabled={inactiveCustomerPage >= Math.ceil(customerActivity.inactiveCustomers.length / ITEMS_PER_PAGE) - 1}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-5">
+            {customerActivity.inactiveCustomers
+              .slice(inactiveCustomerPage * ITEMS_PER_PAGE, (inactiveCustomerPage + 1) * ITEMS_PER_PAGE)
+              .map(customer => (
+                <Card key={customer.id} className="p-3 border-red-200 bg-red-50/50">
+                  <div className="font-medium text-sm truncate">{customer.name}</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {customer.totalTransactions > 0 ? (
+                      <>
+                        <span className="text-red-600 font-medium">
+                          {customer.daysSinceLastTransaction === Infinity
+                            ? 'Tidak ada data'
+                            : `${customer.daysSinceLastTransaction} hari lalu`}
+                        </span>
+                        <br />
+                        <span>{customer.totalTransactions} transaksi</span>
+                        <br />
+                        <span>{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(customer.totalAmount)}</span>
+                      </>
+                    ) : (
+                      <span className="text-orange-600 font-medium">Belum pernah transaksi</span>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            {customerActivity.inactiveCustomers.length === 0 && (
+              <div className="col-span-5 text-center text-muted-foreground py-6">
+                Tidak ada pelanggan tidak aktif
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

@@ -79,4 +79,14 @@ export interface ReturnItemsData {
   error_items_count: number;
   barang_laku: number;
   return_notes?: string;
+  // Detail per produk
+  item_returns?: {
+    item_id: string;
+    product_id: string;
+    product_name: string;
+    quantity: number; // Jumlah dibawa
+    returned_quantity: number;
+    sold_quantity: number;
+    error_quantity: number;
+  }[];
 }

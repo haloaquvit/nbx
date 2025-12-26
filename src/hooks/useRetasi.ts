@@ -398,28 +398,50 @@ export const useRetasi = (filters?: {
     }
   });
 
-  // Mark retasi as returned - simple table update
+  // Mark retasi as returned - update retasi and items
   const markRetasiReturned = useMutation({
     mutationFn: async ({ retasiId, ...returnData }: ReturnItemsData & { retasiId: string }): Promise<void> => {
-      const { error } = await supabase
+      // Update main retasi record
+      const { error: retasiError } = await supabase
         .from('retasi')
         .update({
           is_returned: true,
           returned_items_count: returnData.returned_items_count || 0,
           error_items_count: returnData.error_items_count || 0,
+          barang_laku: returnData.barang_laku || 0,
           return_notes: returnData.return_notes || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', retasiId);
 
-      if (error) {
-        console.error('Error updating retasi:', error);
-        throw new Error(error.message);
+      if (retasiError) {
+        console.error('Error updating retasi:', retasiError);
+        throw new Error(retasiError.message);
+      }
+
+      // Update individual item returns if provided
+      if (returnData.item_returns && returnData.item_returns.length > 0) {
+        for (const itemReturn of returnData.item_returns) {
+          const { error: itemError } = await supabase
+            .from('retasi_items')
+            .update({
+              returned_quantity: itemReturn.returned_quantity || 0,
+              sold_quantity: itemReturn.sold_quantity || 0,
+              error_quantity: itemReturn.error_quantity || 0,
+            })
+            .eq('id', itemReturn.item_id);
+
+          if (itemError) {
+            console.error('Error updating retasi item:', itemError);
+            // Continue with other items even if one fails
+          }
+        }
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retasi'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['retasi-items'] });
     }
   });
 

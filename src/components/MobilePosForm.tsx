@@ -29,6 +29,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { User } from '@/types/user'
 import { useCustomers } from '@/hooks/useCustomers'
 import { useSalesEmployees } from '@/hooks/useSalesCommission'
+import { PricingService } from '@/services/pricingService'
 
 interface FormTransactionItem {
   id: number;
@@ -38,6 +39,8 @@ interface FormTransactionItem {
   harga: number;
   unit: string;
   designFileName?: string;
+  isBonus?: boolean;
+  bonusDescription?: string;
 }
 
 export const MobilePosForm = () => {
@@ -172,7 +175,16 @@ export const MobilePosForm = () => {
   };
 
   const handleRemoveItem = (index: number) => {
-    setItems(items.filter((_, i) => i !== index));
+    const itemToRemove = items[index];
+    if (itemToRemove.isBonus) {
+      // Remove only the bonus item
+      setItems(items.filter((_, i) => i !== index));
+    } else {
+      // Remove main item and all its bonus items
+      setItems(items.filter(item =>
+        !(item.id === itemToRemove.id || (item.isBonus && item.product?.id === itemToRemove.product?.id))
+      ));
+    }
   };
 
   // Reset form after successful transaction
@@ -217,38 +229,124 @@ export const MobilePosForm = () => {
     resetForm();
   };
 
+  // Update item dengan bonus calculation
+  const updateItemWithBonuses = async (existingItem: FormTransactionItem, newQty: number) => {
+    if (!existingItem.product) return;
+
+    const calculation = await PricingService.calculatePrice(existingItem.product.id, newQty);
+
+    // Update main item
+    let newItems = items.map(item =>
+      item.id === existingItem.id
+        ? { ...item, qty: newQty, harga: calculation?.unitPrice || item.harga }
+        : item
+    );
+
+    // Remove existing bonus items for this product
+    newItems = newItems.filter(item =>
+      !(item.isBonus && item.product?.id === existingItem.product?.id)
+    );
+
+    // Add bonus items if any
+    if (calculation?.bonuses && calculation.bonuses.length > 0) {
+      for (const bonus of calculation.bonuses) {
+        if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+          const bonusItem: FormTransactionItem = {
+            id: Date.now() + Math.random(),
+            product: existingItem.product,
+            keterangan: bonus.description || `Bonus - ${bonus.type}`,
+            qty: bonus.bonusQuantity,
+            harga: 0,
+            unit: existingItem.product.unit || 'pcs',
+            isBonus: true,
+            bonusDescription: bonus.description,
+          };
+          newItems.push(bonusItem);
+        }
+      }
+    }
+
+    setItems(newItems);
+  };
+
+  // Add new item with bonus calculation
+  const addNewItemWithBonuses = async (product: Product, quantity: number) => {
+    const calculation = await PricingService.calculatePrice(product.id, quantity);
+
+    const newItems: FormTransactionItem[] = [...items];
+
+    // Add main item
+    const mainItem: FormTransactionItem = {
+      id: Date.now(),
+      product: product,
+      keterangan: '',
+      qty: quantity,
+      harga: calculation?.unitPrice || product.basePrice || 0,
+      unit: product.unit || 'pcs',
+      isBonus: false,
+    };
+    newItems.push(mainItem);
+
+    // Add bonus items if any
+    if (calculation?.bonuses && calculation.bonuses.length > 0) {
+      for (const bonus of calculation.bonuses) {
+        if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+          const bonusItem: FormTransactionItem = {
+            id: Date.now() + Math.random(),
+            product: product,
+            keterangan: bonus.description || `Bonus - ${bonus.type}`,
+            qty: bonus.bonusQuantity,
+            harga: 0,
+            unit: product.unit || 'pcs',
+            isBonus: true,
+            bonusDescription: bonus.description,
+          };
+          newItems.push(bonusItem);
+        }
+      }
+    }
+
+    setItems(newItems);
+  };
+
   // Tambah produk ke cart dengan cepat
-  const addProductToCart = (product: Product) => {
-    const existingIndex = items.findIndex(item => item.product?.id === product.id);
-    if (existingIndex >= 0) {
-      // Jika sudah ada, tambah qty
-      const newItems = [...items];
-      newItems[existingIndex].qty += 1;
-      setItems(newItems);
+  const addProductToCart = async (product: Product) => {
+    const existing = items.find(item => item.product?.id === product.id && !item.isBonus);
+    if (existing) {
+      // Jika sudah ada, tambah qty dan update bonus
+      const newQty = existing.qty + 1;
+      await updateItemWithBonuses(existing, newQty);
     } else {
-      // Jika belum ada, tambah item baru
-      const newItem: FormTransactionItem = {
-        id: Date.now(),
-        product: product,
-        keterangan: '',
-        qty: 1,
-        harga: product.basePrice || 0,
-        unit: product.unit || 'pcs'
-      };
-      setItems([...items, newItem]);
+      // Jika belum ada, tambah item baru dengan bonus
+      await addNewItemWithBonuses(product, 1);
     }
   };
 
-  // Update qty item
-  const updateItemQty = (index: number, delta: number) => {
-    const newItems = [...items];
-    const newQty = newItems[index].qty + delta;
+  // Update qty item (with bonus recalculation)
+  const updateItemQty = async (index: number, delta: number) => {
+    const item = items[index];
+    const newQty = item.qty + delta;
+
+    if (item.isBonus) {
+      // Allow manual bonus quantity adjustment
+      if (newQty <= 0) {
+        setItems(items.filter((_, i) => i !== index));
+      } else {
+        const newItems = [...items];
+        newItems[index].qty = newQty;
+        setItems(newItems);
+      }
+      return;
+    }
+
     if (newQty <= 0) {
-      // Hapus item jika qty 0
-      setItems(items.filter((_, i) => i !== index));
+      // Remove main item and all its bonus items
+      setItems(items.filter(i =>
+        !(i.id === item.id || (i.isBonus && i.product?.id === item.product?.id))
+      ));
     } else {
-      newItems[index].qty = newQty;
-      setItems(newItems);
+      // Update with bonus recalculation
+      await updateItemWithBonuses(item, newQty);
     }
   };
 
@@ -272,8 +370,14 @@ export const MobilePosForm = () => {
       quantity: item.qty,
       price: item.harga,
       unit: item.unit,
-      width: 0, height: 0, notes: item.keterangan,
+      width: 0,
+      height: 0,
+      notes: item.isBonus
+        ? `${item.keterangan}${item.keterangan ? ' - ' : ''}BONUS: ${item.bonusDescription || 'Bonus Item'}`
+        : item.keterangan,
       designFileName: item.designFileName,
+      isBonus: item.isBonus || false,
+      name: item.isBonus ? `${item.product!.name} (Bonus)` : item.product!.name
     }));
 
     const paymentStatus: PaymentStatus = sisaTagihan <= 0 ? 'Lunas' : 'Belum Lunas';
@@ -580,11 +684,20 @@ export const MobilePosForm = () => {
                   </SheetHeader>
                   <div className="space-y-4 mt-6">
                     {items.map((item, index) => (
-                      <Card key={item.id} className="p-4">
+                      <Card key={item.id} className={cn(
+                        "p-4",
+                        item.isBonus && "bg-green-50 border-green-300"
+                      )}>
                         <div className="space-y-3">
                           {/* Product Name */}
                           <div className="flex items-center justify-between">
-                            <p className="font-semibold">{item.product?.name || 'Produk'}</p>
+                            {item.isBonus ? (
+                              <p className="font-semibold text-green-700">
+                                🎁 {item.product?.name} (Bonus)
+                              </p>
+                            ) : (
+                              <p className="font-semibold">{item.product?.name || 'Produk'}</p>
+                            )}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -594,6 +707,11 @@ export const MobilePosForm = () => {
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
+
+                          {/* Bonus Description */}
+                          {item.isBonus && item.bonusDescription && (
+                            <p className="text-sm text-green-600 -mt-2">{item.bonusDescription}</p>
+                          )}
 
                           {/* Quantity and Price */}
                           <div className="grid grid-cols-2 gap-3">
@@ -613,11 +731,13 @@ export const MobilePosForm = () => {
                               <Label className="text-sm">Harga</Label>
                               <Input
                                 type="number"
-                                value={item.harga || ''}
+                                value={item.isBonus ? 0 : (item.harga || '')}
                                 onChange={(e) => handleNumberInputChange(index, 'harga', e)}
                                 onFocus={(e) => e.target.select()}
                                 placeholder="0"
                                 min="0"
+                                disabled={item.isBonus}
+                                className={item.isBonus ? "bg-green-100" : ""}
                               />
                             </div>
                           </div>
@@ -635,9 +755,13 @@ export const MobilePosForm = () => {
                           {/* Total */}
                           <div className="flex justify-between pt-2 border-t">
                             <span className="text-sm text-muted-foreground">Total:</span>
-                            <span className="font-bold text-green-600">
-                              {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
-                            </span>
+                            {item.isBonus ? (
+                              <span className="font-bold text-green-600">GRATIS</span>
+                            ) : (
+                              <span className="font-bold text-green-600">
+                                {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </Card>
@@ -660,7 +784,10 @@ export const MobilePosForm = () => {
           {items.length > 0 ? (
             <div className="space-y-2">
               {items.map((item, index) => (
-                <div key={item.id} className="flex items-center gap-2 p-2 bg-muted rounded">
+                <div key={item.id} className={cn(
+                  "flex items-center gap-2 p-2 rounded",
+                  item.isBonus ? "bg-green-100 border border-green-300" : "bg-muted"
+                )}>
                   {/* Qty Controls */}
                   <div className="flex items-center gap-1">
                     <Button
@@ -700,15 +827,32 @@ export const MobilePosForm = () => {
                   </div>
                   {/* Product Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{item.product?.name || 'Produk'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      @ {new Intl.NumberFormat("id-ID").format(item.harga)}
-                    </p>
+                    {item.isBonus ? (
+                      <>
+                        <p className="font-medium text-sm truncate text-green-700">
+                          🎁 {item.product?.name} (Bonus)
+                        </p>
+                        {item.bonusDescription && (
+                          <p className="text-xs text-green-600">{item.bonusDescription}</p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium text-sm truncate">{item.product?.name || 'Produk'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          @ {new Intl.NumberFormat("id-ID").format(item.harga)}
+                        </p>
+                      </>
+                    )}
                   </div>
                   {/* Total */}
-                  <p className="font-bold text-green-600">
-                    {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
-                  </p>
+                  {item.isBonus ? (
+                    <span className="text-sm font-medium text-green-600">GRATIS</span>
+                  ) : (
+                    <p className="font-bold text-green-600">
+                      {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

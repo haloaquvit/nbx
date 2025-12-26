@@ -13,8 +13,8 @@ import { Employee } from '@/types/employee';
 import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 
 // Idle timeout configuration (in milliseconds)
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const IDLE_WARNING_MS = 4 * 60 * 1000; // Warning at 4 minutes (1 minute before logout)
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+const IDLE_WARNING_MS = 55 * 60 * 1000; // Warning at 55 minutes (5 minutes before logout)
 
 interface AuthContextType {
   session: Session | null;
@@ -156,7 +156,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     // Set logout timer
     idleTimerRef.current = setTimeout(() => {
-      console.log('🔒 Auto logout karena idle 5 menit');
+      console.log('🔒 Auto logout karena idle 1 jam');
       signOut();
     }, IDLE_TIMEOUT_MS);
   }, [session, signOut]);

@@ -52,6 +52,7 @@ export default function RetasiPage() {
   const [driverFilter, setDriverFilter] = useState("all");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedRetasi, setSelectedRetasi] = useState<any>(null);
+  const [selectedRetasiItems, setSelectedRetasiItems] = useState<any[]>([]);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailRetasi, setDetailRetasi] = useState<any>(null);
 
@@ -65,7 +66,7 @@ export default function RetasiPage() {
     date_to: dateTo || undefined,
   };
 
-  const { retasiList, stats, isLoading, markRetasiReturned } = useRetasi(filters);
+  const { retasiList, stats, isLoading, markRetasiReturned, getRetasiItems } = useRetasi(filters);
   const { drivers } = useDrivers();
 
   const filteredRetasi = retasiList || [];
@@ -81,8 +82,16 @@ export default function RetasiPage() {
     return { bawa, kembali, error, laku, selisih };
   }, [filteredRetasi]);
 
-  const handleReturnRetasi = (retasi: any) => {
+  const handleReturnRetasi = async (retasi: any) => {
     setSelectedRetasi(retasi);
+    // Fetch items for this retasi
+    try {
+      const items = await getRetasiItems(retasi.id);
+      setSelectedRetasiItems(items);
+    } catch (error) {
+      console.error('Failed to fetch retasi items:', error);
+      setSelectedRetasiItems([]);
+    }
     setReturnDialogOpen(true);
   };
 
@@ -400,10 +409,12 @@ export default function RetasiPage() {
         onClose={() => {
           setReturnDialogOpen(false);
           setSelectedRetasi(null);
+          setSelectedRetasiItems([]);
         }}
         onConfirm={handleConfirmReturn}
         retasiNumber={selectedRetasi?.retasi_number || ''}
         totalItems={selectedRetasi?.total_items || 0}
+        items={selectedRetasiItems}
         isLoading={markRetasiReturned.isPending}
       />
 

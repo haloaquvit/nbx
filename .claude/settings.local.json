@@ -164,7 +164,8 @@
       "Bash(dir C:Usersuser.ssh)",
       "Bash(cmd /c \"dir %USERPROFILE%\\.ssh\")",
       "Bash(tasklist:*)",
-      "Bash(move \"D:\\App\\Aquvit Fix - Copy\\fix-useProducts.js\" \"D:\\App\\Aquvit Fix - Copy\\fix-useProducts.cjs\")"
+      "Bash(move \"D:\\App\\Aquvit Fix - Copy\\fix-useProducts.js\" \"D:\\App\\Aquvit Fix - Copy\\fix-useProducts.cjs\")",
+      "Bash(dir \"D:\\App\\APP\\VPS NBX\"\" /s /b | findstr /i \"Customers_Images \")"
     ],
     "deny": [],
     "ask": [],
