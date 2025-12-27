@@ -360,6 +360,63 @@ export const useJournalEntries = () => {
     },
   });
 
+  // Fetch all journal entry lines (for separate tab view)
+  const {
+    data: allJournalLines,
+    isLoading: isLoadingLines,
+    refetch: refetchLines
+  } = useQuery({
+    queryKey: ['journalEntryLines', currentBranch?.id],
+    queryFn: async () => {
+      // Fetch all lines with their journal entry info
+      const { data, error } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          *,
+          journal_entries!inner (
+            id,
+            entry_number,
+            entry_date,
+            description,
+            status,
+            is_voided,
+            reference_type,
+            branch_id
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Filter by branch and map to app format
+      const filteredData = (data || []).filter((line: any) => {
+        if (!currentBranch?.id) return true;
+        return line.journal_entries?.branch_id === currentBranch.id;
+      });
+
+      return filteredData.map((line: any) => ({
+        id: line.id,
+        journalEntryId: line.journal_entry_id,
+        entryNumber: line.journal_entries?.entry_number || '',
+        entryDate: line.journal_entries?.entry_date ? new Date(line.journal_entries.entry_date) : null,
+        journalDescription: line.journal_entries?.description || '',
+        journalStatus: line.journal_entries?.status || '',
+        isVoided: line.journal_entries?.is_voided || false,
+        referenceType: line.journal_entries?.reference_type || '',
+        lineNumber: line.line_number,
+        accountId: line.account_id,
+        accountCode: line.account_code,
+        accountName: line.account_name,
+        debitAmount: Number(line.debit_amount) || 0,
+        creditAmount: Number(line.credit_amount) || 0,
+        description: line.description,
+        createdAt: new Date(line.created_at)
+      }));
+    },
+    enabled: !!currentBranch,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+
   return {
     journalEntries,
     isLoading,
@@ -374,5 +431,9 @@ export const useJournalEntries = () => {
     isVoiding: voidMutation.isPending,
     deleteJournalEntry: deleteMutation.mutate,
     isDeleting: deleteMutation.isPending,
+    // New: all journal lines
+    allJournalLines,
+    isLoadingLines,
+    refetchLines,
   };
 };

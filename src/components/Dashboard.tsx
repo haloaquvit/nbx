@@ -13,6 +13,7 @@ import { useExpenses } from "@/hooks/useExpenses"
 import { useCustomers } from "@/hooks/useCustomers"
 import { useMaterials } from "@/hooks/useMaterials"
 import { useAccounts } from "@/hooks/useAccounts"
+import { useProducts } from "@/hooks/useProducts"
 import { Material } from "@/types/material"
 import { format, subDays, startOfDay, endOfDay, startOfMonth, isWithinInterval, eachDayOfInterval } from "date-fns"
 import { id } from "date-fns/locale/id"
@@ -27,6 +28,7 @@ export function Dashboard() {
   const { customers, isLoading: customersLoading } = useCustomers()
   const { materials, isLoading: materialsLoading } = useMaterials()
   const { accounts, isLoading: accountsLoading } = useAccounts()
+  const { products, isLoading: productsLoading } = useProducts()
 
   // Helper function to calculate production cost based on BOM and material prices
   const calculateProductionCost = (product: any, quantity: number, materials: Material[] | undefined): number => {
@@ -152,9 +154,14 @@ export function Dashboard() {
   // ============================================================================
   // RASIO KEUANGAN (Financial Ratios)
   // ============================================================================
-  // ROA = Net Profit / Total Assets (kemampuan menghasilkan laba dari aset)
-  // ROE = Net Profit / Total Equity (kemampuan menghasilkan laba dari modal)
-  // DER = Total Liabilities / Total Equity (tingkat leverage/hutang)
+  // Perhitungan konsisten dengan Laporan Neraca (financialStatementsUtils.ts)
+  // - Total Aset = Kas/Bank + Piutang + Persediaan (dari stock × harga) + Aset Tetap
+  // - Total Kewajiban = Hutang dari akun COA
+  // - Total Modal = Modal dari akun COA + Laba Ditahan
+  // - Laba Bersih = Pendapatan - Beban (dari akun COA)
+  // ROA = Net Profit / Total Assets
+  // ROE = Net Profit / Total Equity
+  // DER = Total Liabilities / Total Equity
   // ============================================================================
   const financialRatios = useMemo(() => {
     if (!accounts || accounts.length === 0) {
@@ -169,27 +176,79 @@ export function Dashboard() {
       };
     }
 
-    // Calculate totals by account type
-    const totalAssets = accounts
-      .filter(acc => acc.type === 'Aset')
+    // ============================================================================
+    // ASET LANCAR
+    // ============================================================================
+
+    // 1. Kas & Bank (kode 11xx atau nama mengandung "kas"/"bank")
+    const kasBank = accounts
+      .filter(acc => {
+        const code = acc.code || '';
+        const name = acc.name?.toLowerCase() || '';
+        return acc.type === 'Aset' && (
+          code.startsWith('11') || code.startsWith('1-1') ||
+          name.includes('kas') || name.includes('bank')
+        );
+      })
       .reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
+    // 2. Piutang (kode 12xx)
+    const piutang = accounts
+      .filter(acc => {
+        const code = acc.code || '';
+        return acc.type === 'Aset' && (
+          code.startsWith('12') || code.startsWith('1-2')
+        );
+      })
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    // 3. Persediaan - dihitung dari STOCK × HARGA (konsisten dengan laporan neraca)
+    // Persediaan Barang Dagang = products × cost_price
+    const persediaanBarang = products?.reduce((sum, product) => {
+      const costPrice = product.costPrice || product.basePrice || 0;
+      return sum + ((product.currentStock || 0) * costPrice);
+    }, 0) || 0;
+
+    // Persediaan Bahan Baku = materials × price_per_unit
+    const persediaanBahan = materials?.reduce((sum, material) => {
+      return sum + ((material.stock || 0) * (material.pricePerUnit || 0));
+    }, 0) || 0;
+
+    const totalPersediaan = persediaanBarang + persediaanBahan;
+
+    // ============================================================================
+    // ASET TETAP (kode 14xx, 15xx, 16xx)
+    // ============================================================================
+    const asetTetap = accounts
+      .filter(acc => {
+        const code = acc.code || '';
+        return acc.type === 'Aset' && (
+          code.startsWith('14') || code.startsWith('15') || code.startsWith('16') ||
+          code.startsWith('1-4') || code.startsWith('1-5') || code.startsWith('1-6')
+        );
+      })
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+
+    // Total Aset = Kas/Bank + Piutang + Persediaan + Aset Tetap
+    const totalAssets = kasBank + piutang + totalPersediaan + asetTetap;
+
+    // ============================================================================
+    // KEWAJIBAN (type === 'Kewajiban')
+    // ============================================================================
     const totalLiabilities = accounts
       .filter(acc => acc.type === 'Kewajiban')
-      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
+      .reduce((sum, acc) => sum + Math.abs(acc.balance || 0), 0);
 
-    // Modal dari akun langsung
+    // ============================================================================
+    // MODAL (type === 'Modal')
+    // ============================================================================
     const totalModalAkun = accounts
       .filter(acc => acc.type === 'Modal')
       .reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
-    // Jika akun Modal kosong, gunakan persamaan akuntansi: Modal = Aset - Kewajiban
-    // Ini adalah retained earnings (laba ditahan) yang belum dicatat ke akun Modal
-    const totalEquity = totalModalAkun > 0
-      ? totalModalAkun
-      : (totalAssets - totalLiabilities);
-
-    // Net Profit = Pendapatan - Beban
+    // ============================================================================
+    // LABA BERSIH = Pendapatan - Beban
+    // ============================================================================
     const totalPendapatan = accounts
       .filter(acc => acc.type === 'Pendapatan')
       .reduce((sum, acc) => sum + (acc.balance || 0), 0);
@@ -200,7 +259,18 @@ export function Dashboard() {
 
     const netProfit = totalPendapatan - totalBeban;
 
-    // Calculate ratios (handle division by zero)
+    // ============================================================================
+    // TOTAL EKUITAS = Total Aset - Total Kewajiban
+    // ============================================================================
+    // Menggunakan persamaan akuntansi dasar agar konsisten dengan Laporan Neraca
+    // Ekuitas = Modal Disetor + Laba Rugi Ditahan
+    // Karena neraca harus balance: Aset = Kewajiban + Ekuitas
+    // ============================================================================
+    const totalEquity = totalAssets - totalLiabilities;
+
+    // ============================================================================
+    // RASIO KEUANGAN
+    // ============================================================================
     const roa = totalAssets > 0 ? (netProfit / totalAssets) * 100 : 0;
     const roe = totalEquity > 0 ? (netProfit / totalEquity) * 100 : 0;
     const der = totalEquity > 0 ? totalLiabilities / totalEquity : 0;
@@ -214,7 +284,7 @@ export function Dashboard() {
       roe,
       der,
     };
-  }, [accounts]);
+  }, [accounts, products, materials]);
 
   const chartData = useMemo(() => {
     const daysInChartRange = chartDateRange?.from && chartDateRange?.to

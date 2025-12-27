@@ -530,7 +530,7 @@ export default function TransactionDetailPage() {
             ${transaction.items.map((item, idx) => `
               <tr>
                 <td style="padding: 1.5mm 1mm; font-size: 11.5pt; border-bottom: 0.5px dotted #999;">${item.product.name}${item.notes ? `<br/><small style="font-size: 10.5pt;">${item.notes}</small>` : ''}</td>
-                <td style="text-align: center; padding: 1.5mm 1mm; font-size: 11.5pt; border-bottom: 0.5px dotted #999;">${item.quantity} ${item.unit}</td>
+                <td style="text-align: center; padding: 1.5mm 1mm; font-size: 11.5pt; border-bottom: 0.5px dotted #999; white-space: nowrap;">${item.quantity} ${item.unit}</td>
                 <td style="text-align: right; padding: 1.5mm 1mm; font-size: 11.5pt; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price)}</td>
                 <td style="text-align: right; padding: 1.5mm 1mm; font-size: 11.5pt; font-weight: bold; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
               </tr>
@@ -583,7 +583,7 @@ export default function TransactionDetailPage() {
         </table>
 
         <!-- Footer - 3 Box Tanda Tangan -->
-        <div style="margin-top: 10mm; padding-top: 3mm;">
+        <div style="margin-top: 5mm; padding-top: 2mm;">
           <table style="width: 100%;">
             <tr>
               <td style="width: 33%; text-align: center; vertical-align: top; padding: 0 5mm;">

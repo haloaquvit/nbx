@@ -269,28 +269,45 @@ export async function createJournalEntry(input: CreateJournalInput, retryCount =
       return { success: false, error: linesError.message };
     }
 
-    // Validate that lines were actually inserted
-    // If .select() didn't return data (PostgREST issue), try fetching by journal_entry_id
-    let actualInsertedLines = insertedLines;
-    if (!insertedLines || insertedLines.length === 0) {
-      console.warn('[JournalService] Insert may have succeeded but no data returned - fetching by journal_entry_id');
-      const { data: fetchedLines, error: fetchLinesError } = await supabase
-        .from('journal_entry_lines')
-        .select('id')
-        .eq('journal_entry_id', journalId);
+    // Validate that ALL lines were actually inserted
+    // Always verify by fetching from database to ensure data integrity
+    const { data: fetchedLines, error: fetchLinesError } = await supabase
+      .from('journal_entry_lines')
+      .select('id, line_number, debit_amount, credit_amount')
+      .eq('journal_entry_id', journalId);
 
-      console.log('[JournalService] Fetch lines result:', { fetchedLines, fetchLinesError });
+    console.log('[JournalService] Verify lines result:', {
+      expected: input.lines.length,
+      actual: fetchedLines?.length,
+      fetchLinesError
+    });
 
-      if (fetchLinesError || !fetchedLines || fetchedLines.length === 0) {
-        console.error('[JournalService] No journal lines found after insert - rollback');
-        // Rollback: delete the journal entry
-        await supabase.from('journal_entries').delete().eq('id', journalId);
-        return { success: false, error: 'Gagal membuat baris jurnal - insert tidak berhasil' };
-      }
-      actualInsertedLines = fetchedLines;
+    // CRITICAL: Validate that ALL expected lines were inserted
+    if (fetchLinesError || !fetchedLines || fetchedLines.length !== input.lines.length) {
+      console.error('[JournalService] Journal lines count mismatch! Expected:', input.lines.length, 'Got:', fetchedLines?.length);
+      // Rollback: delete the journal entry (will cascade delete any partial lines)
+      await supabase.from('journal_entries').delete().eq('id', journalId);
+      return {
+        success: false,
+        error: `Gagal membuat baris jurnal - hanya ${fetchedLines?.length || 0} dari ${input.lines.length} baris ter-insert`
+      };
     }
 
-    console.log('[JournalService] Journal lines created successfully:', actualInsertedLines?.length, 'lines');
+    // Validate balance of inserted lines
+    const insertedDebit = fetchedLines.reduce((sum, line) => sum + Number(line.debit_amount || 0), 0);
+    const insertedCredit = fetchedLines.reduce((sum, line) => sum + Number(line.credit_amount || 0), 0);
+
+    if (Math.abs(insertedDebit - insertedCredit) > 0.01) {
+      console.error('[JournalService] Inserted journal is unbalanced! Debit:', insertedDebit, 'Credit:', insertedCredit);
+      // Rollback
+      await supabase.from('journal_entries').delete().eq('id', journalId);
+      return {
+        success: false,
+        error: `Jurnal tidak seimbang setelah insert: Debit ${insertedDebit}, Credit ${insertedCredit}`
+      };
+    }
+
+    console.log('[JournalService] Journal lines created and verified successfully:', fetchedLines.length, 'lines, balanced:', insertedDebit);
 
     // ============================================================================
     // BALANCE TIDAK DIUPDATE LANGSUNG DI SINI
