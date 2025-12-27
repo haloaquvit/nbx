@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useBranch } from '@/contexts/BranchContext';
 
 export interface Driver {
   id: string;
@@ -10,17 +11,26 @@ export interface Driver {
 }
 
 export const useDrivers = () => {
+  const { currentBranch, canAccessAllBranches } = useBranch();
+
   const { data: drivers, isLoading } = useQuery<Driver[]>({
-    queryKey: ['drivers'],
+    queryKey: ['drivers', currentBranch?.id, canAccessAllBranches],
     queryFn: async () => {
-      // Get drivers from profiles table with 'supir' role
+      // Get drivers from profiles table with 'supir' or 'helper' role
       try {
-        const { data: profilesData, error: profilesError } = await supabase
+        let query = supabase
           .from('profiles')
-          .select('id, full_name, phone, role, status')
-          .eq('role', 'supir')
+          .select('id, full_name, phone, role, status, branch_id')
+          .in('role', ['supir', 'helper'])
           .eq('status', 'Aktif')
           .order('full_name', { ascending: true });
+
+        // Apply branch filter if user cannot access all branches
+        if (currentBranch?.id && !canAccessAllBranches) {
+          query = query.eq('branch_id', currentBranch.id);
+        }
+
+        const { data: profilesData, error: profilesError } = await query;
 
         if (!profilesError && profilesData && profilesData.length > 0) {
           return profilesData.map(profile => ({
@@ -35,14 +45,21 @@ export const useDrivers = () => {
         console.warn('Error fetching drivers from profiles table:', error);
       }
 
-      // Fallback to other driver-related roles if no 'supir' found
+      // Fallback to other driver-related roles if no 'supir'/'helper' found
       try {
-        const { data: fallbackData, error: fallbackError } = await supabase
+        let fallbackQuery = supabase
           .from('profiles')
-          .select('id, full_name, phone, role, status')
+          .select('id, full_name, phone, role, status, branch_id')
           .in('role', ['driver', 'operator'])
           .eq('status', 'Aktif')
           .order('full_name', { ascending: true });
+
+        // Apply branch filter if user cannot access all branches
+        if (currentBranch?.id && !canAccessAllBranches) {
+          fallbackQuery = fallbackQuery.eq('branch_id', currentBranch.id);
+        }
+
+        const { data: fallbackData, error: fallbackError } = await fallbackQuery;
 
         if (!fallbackError && fallbackData && fallbackData.length > 0) {
           return fallbackData.map(profile => ({
@@ -59,7 +76,8 @@ export const useDrivers = () => {
 
       // Return empty array if no drivers found
       return [];
-    }
+    },
+    enabled: !!currentBranch, // Only run when branch is loaded
   });
 
   return {

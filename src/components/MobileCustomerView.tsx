@@ -5,13 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { 
-  PlusCircle, 
-  Search, 
-  Phone, 
-  MapPin, 
-  Edit, 
-  Trash2, 
+import {
+  PlusCircle,
+  Search,
+  Phone,
+  MapPin,
+  Edit,
+  Trash2,
   ExternalLink,
   Camera,
   Upload,
@@ -21,6 +21,7 @@ import { useCustomers } from "@/hooks/useCustomers"
 import { Customer } from "@/types/customer"
 import { cn } from "@/lib/utils"
 import { PhotoUploadService } from "@/services/photoUploadService"
+import { useGranularPermission } from "@/hooks/useGranularPermission"
 
 interface MobileCustomerViewProps {
   onEditCustomer: (customer: Customer) => void
@@ -30,7 +31,13 @@ interface MobileCustomerViewProps {
 export function MobileCustomerView({ onEditCustomer, onAddCustomer }: MobileCustomerViewProps) {
   const { customers, deleteCustomer, isLoading } = useCustomers()
   const [searchTerm, setSearchTerm] = useState("")
-  
+  const { hasGranularPermission } = useGranularPermission()
+
+  // Check permissions
+  const canCreate = hasGranularPermission('customers_create')
+  const canEdit = hasGranularPermission('customers_edit')
+  const canDelete = hasGranularPermission('customers_delete')
+
   const filteredCustomers = customers?.filter(customer =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.phone.includes(searchTerm) ||
@@ -98,16 +105,21 @@ export function MobileCustomerView({ onEditCustomer, onAddCustomer }: MobileCust
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 gap-3 mb-6">
-          <Button 
-            onClick={onAddCustomer}
-            className="h-12 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg"
-          >
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Tambah Pelanggan
-          </Button>
-          <Button 
+          {canCreate && (
+            <Button
+              onClick={onAddCustomer}
+              className="h-12 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg"
+            >
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Tambah Pelanggan
+            </Button>
+          )}
+          <Button
             variant="outline"
-            className="h-12 bg-white/80 backdrop-blur-sm border-white/20 shadow-lg hover:bg-white/90"
+            className={cn(
+              "h-12 bg-white/80 backdrop-blur-sm border-white/20 shadow-lg hover:bg-white/90",
+              !canCreate && "col-span-2"
+            )}
           >
             <FileDown className="mr-2 h-4 w-4" />
             Export Data
@@ -129,8 +141,8 @@ export function MobileCustomerView({ onEditCustomer, onAddCustomer }: MobileCust
               <p className="text-gray-600 mb-4">
                 {searchTerm ? "Tidak ada pelanggan yang sesuai pencarian" : "Mulai tambahkan pelanggan pertama Anda"}
               </p>
-              {!searchTerm && (
-                <Button 
+              {!searchTerm && canCreate && (
+                <Button
                   onClick={onAddCustomer}
                   className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                 >
@@ -238,25 +250,37 @@ export function MobileCustomerView({ onEditCustomer, onAddCustomer }: MobileCust
                   )}
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2 pt-3 border-t border-gray-100">
-                    <Button
-                      size="sm"
-                      onClick={() => onEditCustomer(customer)}
-                      className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white"
-                    >
-                      <Edit className="h-3 w-3 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => handleDelete(customer)}
-                      className="flex-1 bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" />
-                      Hapus
-                    </Button>
-                  </div>
+                  {(canEdit || canDelete) && (
+                    <div className="flex gap-2 pt-3 border-t border-gray-100">
+                      {canEdit && (
+                        <Button
+                          size="sm"
+                          onClick={() => onEditCustomer(customer)}
+                          className={cn(
+                            "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white",
+                            canDelete ? "flex-1" : "w-full"
+                          )}
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleDelete(customer)}
+                          className={cn(
+                            "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700",
+                            canEdit ? "flex-1" : "w-full"
+                          )}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          Hapus
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -265,13 +289,15 @@ export function MobileCustomerView({ onEditCustomer, onAddCustomer }: MobileCust
       </div>
 
       {/* Floating Add Button */}
-      <Button
-        onClick={onAddCustomer}
-        className="fixed bottom-28 right-6 h-14 w-14 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-2xl hover:shadow-3xl transition-all duration-200 z-40"
-        size="icon"
-      >
-        <PlusCircle className="h-6 w-6 text-white" />
-      </Button>
+      {canCreate && (
+        <Button
+          onClick={onAddCustomer}
+          className="fixed bottom-28 right-6 h-14 w-14 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-2xl hover:shadow-3xl transition-all duration-200 z-40"
+          size="icon"
+        >
+          <PlusCircle className="h-6 w-6 text-white" />
+        </Button>
+      )}
     </div>
   )
 }

@@ -66,6 +66,7 @@ export const useEmployees = () => {
       phone?: string;
       address?: string;
       status?: string;
+      branch_id?: string;
     }) => {
       console.log('[useEmployees] Creating employee:', employeeData);
 
@@ -103,7 +104,7 @@ export const useEmployees = () => {
             phone: employeeData.phone || '',
             address: employeeData.address || '',
             status: employeeData.status || 'Aktif',
-            branch_id: currentBranch?.id || null,
+            branch_id: employeeData.branch_id || currentBranch?.id || null,
           })
           .eq('id', userId);
 
@@ -150,7 +151,7 @@ export const useEmployees = () => {
             phone: employeeData.phone || '',
             address: employeeData.address || '',
             status: employeeData.status || 'Aktif',
-            branch_id: currentBranch?.id || null,
+            branch_id: employeeData.branch_id || currentBranch?.id || null,
           })
           .eq('id', userId);
 

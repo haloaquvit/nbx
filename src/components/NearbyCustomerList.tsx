@@ -19,6 +19,8 @@ import {
   cleanExpiredVisits,
   getTodayVisitCount
 } from '@/utils/customerVisitUtils'
+import { PhotoUploadService } from '@/services/photoUploadService'
+import { useGranularPermission } from '@/hooks/useGranularPermission'
 
 interface NearbyCustomerListProps {
   customers: Customer[]
@@ -46,6 +48,10 @@ export function NearbyCustomerList({
 }: NearbyCustomerListProps) {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { hasGranularPermission } = useGranularPermission()
+
+  // Check permissions
+  const canAccessDriverPos = hasGranularPermission('pos_driver_access')
 
   // State untuk hide visited customers
   const [hideVisited, setHideVisited] = useState(true)
@@ -206,7 +212,7 @@ export function NearbyCustomerList({
                       <div className="flex-shrink-0">
                         {customer.store_photo_url ? (
                           <img
-                            src={customer.store_photo_url}
+                            src={PhotoUploadService.getPhotoUrl(customer.store_photo_url, 'Customers_Images')}
                             alt={customer.name}
                             className="w-16 h-16 object-cover rounded-lg"
                           />
@@ -258,17 +264,19 @@ export function NearbyCustomerList({
 
                         {/* Actions */}
                         <div className="flex gap-1 mt-2">
-                          <Button
-                            size="sm"
-                            className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
-                            onClick={e => {
-                              e.stopPropagation()
-                              handleOpenDriverPos(customer as Customer)
-                            }}
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            POS
-                          </Button>
+                          {canAccessDriverPos && (
+                            <Button
+                              size="sm"
+                              className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
+                              onClick={e => {
+                                e.stopPropagation()
+                                handleOpenDriverPos(customer as Customer)
+                              }}
+                            >
+                              <ShoppingCart className="h-3 w-3 mr-1" />
+                              POS
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="outline"

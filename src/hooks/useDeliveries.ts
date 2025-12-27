@@ -15,22 +15,31 @@ import { createDeliveryJournal } from '@/services/journalService'
 
 // Fetch employees with driver and helper roles from profiles table
 export function useDeliveryEmployees() {
+  const { currentBranch, canAccessAllBranches } = useBranch();
+
   return useQuery({
-    queryKey: ['delivery-employees'],
+    queryKey: ['delivery-employees', currentBranch?.id, canAccessAllBranches],
     queryFn: async (): Promise<DeliveryEmployee[]> => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('profiles')
-        .select('id, full_name, role')
+        .select('id, full_name, role, branch_id')
         .in('role', ['supir', 'helper'])
         .neq('status', 'Nonaktif')
         .order('role')
-        .order('full_name')
-      
+        .order('full_name');
+
+      // Apply branch filter if user cannot access all branches
+      if (currentBranch?.id && !canAccessAllBranches) {
+        query = query.eq('branch_id', currentBranch.id);
+      }
+
+      const { data, error } = await query;
+
       if (error) {
         console.warn('[useDeliveryEmployees] Failed to fetch delivery employees:', error)
         return []
       }
-      
+
       return (data || []).map(emp => ({
         id: emp.id,
         name: emp.full_name || 'Unknown',
@@ -38,6 +47,7 @@ export function useDeliveryEmployees() {
         role: emp.role as 'supir' | 'helper'
       }))
     },
+    enabled: !!currentBranch, // Only run when branch is loaded
   })
 }
 

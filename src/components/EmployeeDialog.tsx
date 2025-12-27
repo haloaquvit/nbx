@@ -15,6 +15,7 @@ import { useEmployees } from "@/hooks/useEmployees"
 import { useRoles } from "@/hooks/useRoles"
 import { PasswordInput } from "./PasswordInput"
 import { supabase } from "@/integrations/supabase/client"
+import { useBranch } from "@/contexts/BranchContext"
 
 const baseSchema = {
   name: z.string().min(3, "Nama minimal 3 karakter.").transform(val => val.trim()),
@@ -24,6 +25,7 @@ const baseSchema = {
   address: z.string().min(5, "Alamat minimal 5 karakter.").transform(val => val.trim()),
   role: z.string().min(1, "Role harus dipilih"),
   status: z.enum(['Aktif', 'Tidak Aktif']),
+  branchId: z.string().min(1, "Cabang harus dipilih"),
 };
 
 const createEmployeeSchema = z.object({
@@ -51,6 +53,7 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
   const { createEmployee, updateEmployee } = useEmployees()
   const isEditing = !!employee;
   const { roles, isLoading: rolesLoading } = useRoles();
+  const { currentBranch, availableBranches, canAccessAllBranches } = useBranch();
 
   const form = useForm<CreateEmployeeFormData | UpdateEmployeeFormData>({
     resolver: zodResolver(isEditing ? updateEmployeeSchema : createEmployeeSchema),
@@ -71,16 +74,18 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
           address: employee.address,
           role: employee.role,
           status: employee.status,
+          branchId: (employee as any).branchId || currentBranch?.id || '',
         })
       } else {
         // Set default role to first available role when creating new employee
         const defaultRole = roles && roles.length > 0 ? roles[0].name : '';
         form.reset({
-          name: '', username: '', email: '', phone: '', address: '', role: defaultRole, status: 'Aktif', password: ''
+          name: '', username: '', email: '', phone: '', address: '', role: defaultRole, status: 'Aktif', password: '',
+          branchId: currentBranch?.id || '',
         })
       }
     }
-  }, [employee, open, form, roles])
+  }, [employee, open, form, roles, currentBranch])
 
   const onSubmit = async (data: CreateEmployeeFormData | UpdateEmployeeFormData) => {
     console.log('[EmployeeDialog] Form submitted:', { isEditing, data });
@@ -129,6 +134,7 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
         phone: createData.phone,
         address: createData.address,
         status: createData.status,
+        branch_id: createData.branchId,
       }, {
         onSuccess: (result) => {
           console.log('[EmployeeDialog] Create successful:', result);
@@ -236,6 +242,33 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>{statuses.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="branchId">Cabang *</Label>
+              {canAccessAllBranches && availableBranches.length > 1 ? (
+                <Select
+                  onValueChange={(value) => form.setValue("branchId", value)}
+                  defaultValue={currentBranch?.id || ''}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih cabang..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableBranches.map(branch => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={currentBranch?.name || 'N/A'}
+                  disabled
+                  className="bg-gray-100"
+                />
+              )}
+              {form.formState.errors.branchId && <p className="text-sm text-destructive">{(form.formState.errors as any).branchId.message}</p>}
             </div>
           </div>
           <DialogFooter>

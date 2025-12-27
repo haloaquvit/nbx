@@ -66,16 +66,14 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
     items: [
       { href: "/", label: "Dashboard", icon: Home },
       { href: "/pos", label: "Kasir (POS)", icon: ShoppingCart, permission: PERMISSIONS.TRANSACTIONS },
-      { href: "/driver-pos", label: "POS Supir", icon: Truck, permission: PERMISSIONS.DELIVERIES, roles: ['supir', 'helper', 'admin', 'owner'] },
+      // POS Supir removed from web sidebar - only available in mobile view
       { href: "/transactions", label: "Data Transaksi", icon: List, permission: PERMISSIONS.TRANSACTIONS },
       { href: "/delivery", label: "Pengantaran", icon: Truck, permission: PERMISSIONS.DELIVERIES },
       { href: "/retasi", label: "Retasi", icon: Package, permission: PERMISSIONS.DELIVERIES },
       { href: "/attendance", label: "Absensi", icon: Fingerprint, permission: PERMISSIONS.ATTENDANCE },
     ].filter(item => {
-      // Check permission first
+      // Check permission
       if (item.permission && !hasPermission(item.permission)) return false;
-      // Check role if specified
-      if (item.roles && userRole && !item.roles.includes(userRole)) return false;
       return true;
     }),
   },
@@ -86,7 +84,7 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/materials", label: "Bahan & Stok", icon: Box, permission: PERMISSIONS.MATERIALS },
       { href: "/production", label: "Produksi", icon: Factory, permission: PERMISSIONS.PRODUCTS },
       { href: "/customers", label: "Pelanggan", icon: Users, permission: PERMISSIONS.CUSTOMERS },
-      { href: "/customer-map", label: "Peta Pelanggan", icon: MapPin, permission: PERMISSIONS.CUSTOMERS },
+      { href: "/customer-map", label: "Pelanggan Terdekat", icon: MapPin, permission: PERMISSIONS.CUSTOMERS },
       { href: "/employees", label: "Karyawan", icon: IdCard, permission: PERMISSIONS.EMPLOYEES },
       { href: "/suppliers", label: "Supplier", icon: Building, permission: PERMISSIONS.MATERIALS },
       { href: "/purchase-orders", label: "Purchase Orders", icon: ClipboardList, permission: PERMISSIONS.MATERIALS },

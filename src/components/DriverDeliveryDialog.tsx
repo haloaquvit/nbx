@@ -238,7 +238,13 @@ export function DriverDeliveryDialog({
 
   return (
     <Dialog open={open} onOpenChange={() => {}}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-md max-h-[90vh] overflow-y-auto"
+        hideCloseButton
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Truck className="h-5 w-5" />
@@ -473,21 +479,14 @@ export function DriverDeliveryDialog({
           </div>
         </div>
 
-        <DialogFooter className="gap-2">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isSubmitting}
-          >
-            Batal
-          </Button>
+        <DialogFooter>
           <Button
             onClick={handleSubmit}
             disabled={isSubmitting || !driverId || !deliveryPhoto}
-            className="bg-green-600 hover:bg-green-700"
+            className="w-full h-14 text-lg font-bold bg-green-600 hover:bg-green-700"
           >
-            <Check className="h-4 w-4 mr-2" />
-            {isSubmitting ? "Memproses..." : "Buat Pengantaran"}
+            <Check className="h-5 w-5 mr-2" />
+            {isSubmitting ? "Memproses..." : "Simpan Pengantaran"}
           </Button>
         </DialogFooter>
       </DialogContent>

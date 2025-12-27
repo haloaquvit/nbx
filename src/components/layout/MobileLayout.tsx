@@ -3,12 +3,17 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, MapPin } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale/id'
+import { useTheme } from 'next-themes'
+import { useBranch } from '@/contexts/BranchContext'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useGranularPermission } from '@/hooks/useGranularPermission'
 
 const MobileLayout = () => {
   const { user, signOut } = useAuth()
@@ -16,6 +21,19 @@ const MobileLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const { theme, setTheme } = useTheme()
+  const { currentBranch, availableBranches, canAccessAllBranches, switchBranch } = useBranch()
+  const { hasGranularPermission } = useGranularPermission()
+
+  const toggleTheme = () => {
+    setTheme(theme === 'dark' ? 'light' : 'dark')
+  }
+
+  // Check if user is owner
+  const isOwner = user?.role?.toLowerCase() === 'owner'
+
+  // Permission checks
+  const canAccessProduction = hasGranularPermission('production_view') || hasGranularPermission('production_create')
 
   // Filter menu based on user role
   const allowedRoles = ['supir', 'helper', 'admin', 'owner']
@@ -54,6 +72,22 @@ const MobileLayout = () => {
       color: 'bg-cyan-500 hover:bg-cyan-600',
       textColor: 'text-white'
     },
+    {
+      title: 'Pelanggan Terdekat',
+      icon: MapPin,
+      path: '/customer-map',
+      description: 'Lihat pelanggan di sekitar Anda',
+      color: 'bg-rose-500 hover:bg-rose-600',
+      textColor: 'text-white'
+    },
+    ...(canAccessProduction ? [{
+      title: 'Input Produksi',
+      icon: Factory,
+      path: '/production',
+      description: 'Catat hasil produksi',
+      color: 'bg-amber-500 hover:bg-amber-600',
+      textColor: 'text-white'
+    }] : []),
     {
       title: 'Absensi',
       icon: Clock,
@@ -96,6 +130,8 @@ const MobileLayout = () => {
         return 'Data Transaksi'
       case '/customers':
         return 'Data Pelanggan'
+      case '/production':
+        return 'Input Produksi'
       case '/attendance':
         return 'Absensi'
       default:
@@ -142,7 +178,14 @@ const MobileLayout = () => {
               {currentPath === '/' ? (settings?.name || 'ERP System') : getPageTitle(currentPath)}
             </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {format(new Date(), "eeee, d MMM yyyy", { locale: id })}
+              {isOwner && currentBranch ? (
+                <span className="flex items-center justify-center gap-1">
+                  <Building2 className="h-3 w-3" />
+                  {currentBranch.name}
+                </span>
+              ) : (
+                format(new Date(), "eeee, d MMM yyyy", { locale: id })
+              )}
             </p>
           </div>
           
@@ -298,9 +341,62 @@ const MobileLayout = () => {
           })}
         </nav>
 
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-          <Button 
-            variant="ghost" 
+        {/* Settings Section */}
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+          {/* Branch Selector - Owner Only */}
+          {isOwner && canAccessAllBranches && availableBranches.length > 1 && (
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
+                <Building2 className="h-3 w-3" />
+                Pindah Cabang
+              </label>
+              <Select
+                value={currentBranch?.id || ''}
+                onValueChange={(value) => switchBranch(value)}
+              >
+                <SelectTrigger className="w-full h-10">
+                  <SelectValue placeholder="Pilih cabang...">
+                    {currentBranch?.name || 'Pilih cabang...'}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {availableBranches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{branch.name}</span>
+                        <span className="text-xs text-muted-foreground">{branch.code}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Theme Toggle */}
+          <Button
+            variant="outline"
+            className="w-full justify-between h-10"
+            onClick={toggleTheme}
+          >
+            <span className="flex items-center gap-2">
+              {theme === 'dark' ? (
+                <Moon className="h-4 w-4" />
+              ) : (
+                <Sun className="h-4 w-4" />
+              )}
+              <span className="text-sm">
+                {theme === 'dark' ? 'Mode Gelap' : 'Mode Terang'}
+              </span>
+            </span>
+            <Badge variant="secondary" className="text-xs">
+              {theme === 'dark' ? 'Aktif' : 'Aktif'}
+            </Badge>
+          </Button>
+
+          {/* Logout Button */}
+          <Button
+            variant="ghost"
             className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
             onClick={handleLogout}
           >

@@ -366,24 +366,27 @@ export default function DriverPosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-2 pb-32">
-      {/* Header - Compact */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 rounded-lg mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Truck className="h-5 w-5" />
-          <span className="font-bold">POS Supir</span>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-3 pb-44">
+      {/* Header - Larger */}
+      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-xl mb-4 flex items-center justify-between shadow-lg">
+        <div className="flex items-center gap-3">
+          <Truck className="h-7 w-7" />
+          <span className="font-bold text-xl">POS Supir</span>
         </div>
         {activeRetasi && isDriver && (
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary" className="text-sm px-3 py-1">
             {activeRetasi.retasi_number}
           </Badge>
         )}
       </div>
 
-      {/* Customer Input - Compact */}
-      <div className="bg-white rounded-lg p-3 mb-3 shadow-sm">
+      {/* Customer Input - Larger & Easier */}
+      <div className="bg-white rounded-xl p-4 mb-4 shadow-md">
+        <Label className="text-base font-semibold text-gray-700 mb-2 block">
+          <User className="inline h-5 w-5 mr-2 text-blue-600" />
+          Pelanggan
+        </Label>
         <div className="relative">
-          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
             placeholder="Ketik nama pelanggan..."
@@ -394,155 +397,169 @@ export default function DriverPosPage() {
               if (!e.target.value) setSelectedCustomer('')
             }}
             onFocus={() => setShowCustomerDropdown(true)}
-            onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
-            className="w-full h-10 pl-9 pr-4 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
+            className="w-full h-14 px-4 text-lg border-2 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
           {showCustomerDropdown && filteredCustomers.length > 0 && (
-            <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-auto">
+            <div className="absolute z-20 w-full mt-1 bg-white border-2 rounded-xl shadow-xl max-h-60 overflow-auto">
               {filteredCustomers.map((customer) => (
                 <div
                   key={customer.id}
-                  className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                  className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
                   onClick={() => {
                     setSelectedCustomer(customer.id)
                     setCustomerSearch(customer.name)
                     setShowCustomerDropdown(false)
                   }}
                 >
-                  <div className="font-medium">{customer.name}</div>
-                  {customer.address && <div className="text-xs text-gray-500 truncate">{customer.address}</div>}
+                  <div className="font-semibold text-base">{customer.name}</div>
+                  {customer.address && <div className="text-sm text-gray-500 truncate">{customer.address}</div>}
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Customer quick actions */}
+        {/* Customer quick actions - Larger buttons */}
         {selectedCustomerData && (
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 mt-3 flex-wrap">
             {selectedCustomerData.phone && (
-              <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => window.location.href = `tel:${selectedCustomerData.phone}`}>
-                <Phone className="h-3 w-3 mr-1" /> Telepon
+              <Button variant="outline" size="lg" className="text-base h-11 px-4" onClick={() => window.location.href = `tel:${selectedCustomerData.phone}`}>
+                <Phone className="h-5 w-5 mr-2" /> Telepon
               </Button>
             )}
             {selectedCustomerData.latitude && (
-              <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => window.open(`https://www.google.com/maps/dir//${selectedCustomerData.latitude},${selectedCustomerData.longitude}`, '_blank')}>
-                <MapPin className="h-3 w-3 mr-1" /> GPS
+              <Button variant="outline" size="lg" className="text-base h-11 px-4" onClick={() => window.open(`https://www.google.com/maps/dir//${selectedCustomerData.latitude},${selectedCustomerData.longitude}`, '_blank')}>
+                <MapPin className="h-5 w-5 mr-2" /> Navigasi
               </Button>
             )}
             {selectedCustomerData.jumlah_galon_titip > 0 && (
-              <Badge variant="secondary" className="text-xs">🥤 {selectedCustomerData.jumlah_galon_titip} galon</Badge>
+              <Badge variant="secondary" className="text-base px-3 py-2">🥤 {selectedCustomerData.jumlah_galon_titip} galon titip</Badge>
             )}
           </div>
         )}
       </div>
 
-      {/* Product Grid - Tap to Add */}
-      <div className="bg-white rounded-lg p-3 mb-3 shadow-sm">
-        <div className="flex items-center gap-2 mb-2">
-          <Package className="h-4 w-4 text-gray-600" />
-          <span className="text-sm font-medium">Produk (tap untuk tambah)</span>
+      {/* Product Grid - Only show when customer is selected */}
+      {selectedCustomer ? (
+        <div className="bg-white rounded-xl p-4 mb-4 shadow-md">
+          <div className="flex items-center gap-2 mb-3">
+            <Package className="h-6 w-6 text-blue-600" />
+            <span className="text-lg font-semibold">Produk</span>
+            <span className="text-sm text-gray-500">(tap untuk tambah)</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {availableProducts.slice(0, 8).map((product) => {
+              const inCart = items.find(i => i.product.id === product.id && !i.isBonus)
+              return (
+                <button
+                  key={product.id}
+                  onClick={() => quickAddProduct(product)}
+                  className={`p-4 rounded-xl border-2 text-left transition-all active:scale-95 ${
+                    inCart
+                      ? 'bg-blue-50 border-blue-400 shadow-md'
+                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="font-bold text-base truncate">{product.name}</div>
+                  <div className="flex justify-between items-center mt-2">
+                    <span className="text-base text-green-600 font-bold">
+                      {new Intl.NumberFormat("id-ID").format(product.basePrice || 0)}
+                    </span>
+                    <span className="text-sm text-gray-500 font-medium">
+                      {product.currentStock} {product.unit}
+                    </span>
+                  </div>
+                  {inCart && (
+                    <Badge className="mt-2 text-sm px-2 py-1" variant="default">
+                      {inCart.quantity} di keranjang
+                    </Badge>
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {availableProducts.slice(0, 8).map((product) => {
-            const inCart = items.find(i => i.product.id === product.id)
-            return (
-              <button
-                key={product.id}
-                onClick={() => quickAddProduct(product)}
-                className={`p-2 rounded-lg border text-left transition-all ${
-                  inCart
-                    ? 'bg-blue-50 border-blue-300'
-                    : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                }`}
-              >
-                <div className="font-medium text-sm truncate">{product.name}</div>
-                <div className="flex justify-between items-center mt-1">
-                  <span className="text-xs text-green-600 font-medium">
-                    {new Intl.NumberFormat("id-ID").format(product.basePrice || 0)}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {product.currentStock} {product.unit}
-                  </span>
-                </div>
-                {inCart && (
-                  <Badge className="mt-1 text-xs" variant="default">
-                    {inCart.quantity} di keranjang
-                  </Badge>
-                )}
-              </button>
-            )
-          })}
+      ) : (
+        <div className="bg-yellow-50 rounded-xl p-6 mb-4 shadow-md border-2 border-yellow-200">
+          <div className="flex items-center gap-3 text-yellow-800">
+            <AlertCircle className="h-6 w-6" />
+            <span className="text-lg font-semibold">Pilih pelanggan terlebih dahulu</span>
+          </div>
+          <p className="text-yellow-700 mt-2 ml-9">
+            Ketik nama pelanggan di kolom di atas untuk melanjutkan
+          </p>
         </div>
-      </div>
+      )}
 
-      {/* Cart - Compact List */}
+      {/* Cart - Larger & Easier */}
       {items.length > 0 && (
-        <div className="bg-white rounded-lg p-3 mb-3 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
+        <div className="bg-white rounded-xl p-4 mb-4 shadow-md">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4 text-gray-600" />
-              <span className="text-sm font-medium">Keranjang ({items.filter(i => !i.isBonus).length})</span>
+              <ShoppingCart className="h-6 w-6 text-blue-600" />
+              <span className="text-lg font-semibold">Keranjang ({items.filter(i => !i.isBonus).length})</span>
               {totalBonusQty > 0 && (
-                <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">
-                  <Gift className="h-3 w-3 mr-1" />+{totalBonusQty} bonus
+                <Badge variant="secondary" className="text-sm bg-green-100 text-green-700 px-2 py-1">
+                  <Gift className="h-4 w-4 mr-1" />+{totalBonusQty} bonus
                 </Badge>
               )}
             </div>
-            <span className="font-bold text-green-600">
+            <span className="font-bold text-xl text-green-600">
               {new Intl.NumberFormat("id-ID").format(total)}
             </span>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-3">
             {items.map((item, index) => (
               <div
                 key={index}
-                className={`flex items-center justify-between rounded p-2 ${
-                  item.isBonus ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
+                className={`flex items-center justify-between rounded-xl p-3 ${
+                  item.isBonus ? 'bg-green-50 border-2 border-green-300' : 'bg-gray-50 border border-gray-200'
                 }`}
               >
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1">
-                    {item.isBonus && <Gift className="h-3 w-3 text-green-600" />}
-                    <span className={`text-sm font-medium truncate ${item.isBonus ? 'text-green-700' : ''}`}>
+                  <div className="flex items-center gap-2">
+                    {item.isBonus && <Gift className="h-5 w-5 text-green-600" />}
+                    <span className={`text-base font-semibold truncate ${item.isBonus ? 'text-green-700' : ''}`}>
                       {item.product.name}
                     </span>
                     {item.isBonus && (
-                      <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-300">
+                      <Badge variant="outline" className="text-sm bg-green-100 text-green-700 border-green-300">
                         BONUS
                       </Badge>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-sm text-gray-500 mt-1">
                     {item.isBonus ? (
-                      <span className="text-green-600">{item.bonusDescription || 'Gratis'}</span>
+                      <span className="text-green-600 font-medium">{item.bonusDescription || 'Gratis'}</span>
                     ) : (
-                      <>{new Intl.NumberFormat("id-ID").format(item.price)} × {item.quantity}</>
+                      <span className="font-medium">{new Intl.NumberFormat("id-ID").format(item.price)} × {item.quantity}</span>
                     )}
                   </div>
                 </div>
                 {item.isBonus ? (
-                  <div className="text-sm font-medium text-green-600">{item.quantity} {item.unit}</div>
+                  <div className="text-base font-bold text-green-600">{item.quantity} {item.unit}</div>
                 ) : (
-                  <div className="flex items-center gap-1">
-                    <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => updateQuantity(index, -1)}>
-                      <Minus className="h-3 w-3" />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="lg" className="h-12 w-12 p-0 text-xl font-bold" onClick={() => updateQuantity(index, -1)}>
+                      <Minus className="h-5 w-5" />
                     </Button>
                     <Input
                       type="number"
                       inputMode="numeric"
+                      pattern="[0-9]*"
                       value={item.quantity}
                       onChange={(e) => setQuantityDirect(index, parseInt(e.target.value) || 0)}
                       onFocus={(e) => e.target.select()}
-                      className="w-12 h-7 text-center text-sm p-0"
+                      className="w-16 h-12 text-center text-xl font-bold p-0"
                       min={1}
                       max={item.product.currentStock || 999}
                     />
-                    <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => updateQuantity(index, 1)}>
-                      <Plus className="h-3 w-3" />
+                    <Button variant="outline" size="lg" className="h-12 w-12 p-0 text-xl font-bold" onClick={() => updateQuantity(index, 1)}>
+                      <Plus className="h-5 w-5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500" onClick={() => removeItem(index)}>
-                      <Trash2 className="h-3 w-3" />
+                    <Button variant="ghost" size="lg" className="h-12 w-12 p-0 text-red-500" onClick={() => removeItem(index)}>
+                      <Trash2 className="h-5 w-5" />
                     </Button>
                   </div>
                 )}
@@ -552,59 +569,59 @@ export default function DriverPosPage() {
         </div>
       )}
 
-      {/* Payment - Compact */}
+      {/* Payment - Input First Flow */}
       {items.length > 0 && (
-        <div className="bg-white rounded-lg p-3 shadow-sm">
-          <div className="flex items-center gap-2 mb-3">
-            <CreditCard className="h-4 w-4 text-gray-600" />
-            <span className="text-sm font-medium">Pembayaran</span>
+        <div className="bg-white rounded-xl p-4 shadow-md mb-28">
+          <div className="flex items-center gap-2 mb-4">
+            <CreditCard className="h-6 w-6 text-blue-600" />
+            <span className="text-lg font-semibold">Pembayaran</span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-3">
-            <div>
-              <label className="text-xs text-gray-500">Jumlah Bayar</label>
-              <Input
-                type="number"
-                inputMode="numeric"
-                value={paidAmount || ''}
-                onChange={(e) => {
-                  const val = parseInt(e.target.value) || 0
-                  setPaidAmount(Math.min(val, total))
-                  if (val === 0) setPaymentAccount('')
-                }}
-                className="h-9 text-sm"
-              />
-            </div>
-            <div className="flex gap-1">
-              <Button
-                variant={paidAmount >= total ? "default" : "outline"}
-                size="sm"
-                className="flex-1 h-9 text-xs"
-                onClick={() => setPaidAmount(total)}
-              >
-                Lunas
-              </Button>
-              <Button
-                variant={paidAmount === 0 ? "default" : "outline"}
-                size="sm"
-                className="flex-1 h-9 text-xs"
-                onClick={() => { setPaidAmount(0); setPaymentAccount(''); }}
-              >
-                Kredit
-              </Button>
+          {/* Total Display */}
+          <div className="bg-blue-50 rounded-xl p-4 mb-4">
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-medium text-gray-700">Total Belanja:</span>
+              <span className="text-2xl font-bold text-blue-600">
+                {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(total)}
+              </span>
             </div>
           </div>
 
+          {/* Payment Amount Input - Primary */}
+          <div className="mb-4">
+            <Label className="text-base font-semibold text-gray-700 mb-2 block">Jumlah Bayar</Label>
+            <Input
+              type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={paidAmount || ''}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 0
+                setPaidAmount(Math.min(val, total))
+                // Auto-select payment account when entering amount
+                if (val > 0 && !paymentAccount) {
+                  const firstAccount = accounts?.find(a => a.isPaymentAccount)
+                  if (firstAccount) setPaymentAccount(firstAccount.id)
+                }
+                if (val === 0) setPaymentAccount('')
+              }}
+              onFocus={(e) => e.target.select()}
+              placeholder="Masukkan jumlah pembayaran..."
+              className="h-16 text-2xl font-bold text-center"
+            />
+          </div>
+
+          {/* Payment Account - Highlighted */}
           {paidAmount > 0 && (
-            <div className="mb-3">
-              <label className="text-xs text-gray-500">Akun Pembayaran</label>
+            <div className="mb-4 p-4 bg-blue-50 rounded-xl border-2 border-blue-400 ring-2 ring-blue-300 ring-offset-2">
+              <Label className="text-base font-semibold text-blue-800 mb-2 block">Metode Pembayaran</Label>
               <Select value={paymentAccount} onValueChange={setPaymentAccount}>
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger className="h-14 text-lg bg-white border-2 border-blue-400">
                   <SelectValue placeholder="Pilih Kas/Bank" />
                 </SelectTrigger>
                 <SelectContent>
                   {accounts?.filter(a => a.isPaymentAccount).map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id}>
+                    <SelectItem key={acc.id} value={acc.id} className="text-base py-3">
                       {acc.name}
                     </SelectItem>
                   ))}
@@ -613,15 +630,16 @@ export default function DriverPosPage() {
             </div>
           )}
 
+          {/* Due Date - Show when there's credit (paidAmount < total) */}
           {paidAmount < total && (
-            <Card className="mb-3 bg-orange-50 border-orange-200">
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Calendar className="h-4 w-4 text-orange-600" />
-                  <span className="text-sm font-medium text-orange-800">Jatuh Tempo Piutang</span>
+            <Card className="bg-orange-50 border-2 border-orange-300">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Calendar className="h-5 w-5 text-orange-600" />
+                  <span className="text-base font-semibold text-orange-800">Jatuh Tempo Piutang</span>
                 </div>
                 {/* Quick select buttons */}
-                <div className="flex gap-1 mb-2">
+                <div className="grid grid-cols-4 gap-2 mb-3">
                   {[7, 14, 21, 30].map((days) => {
                     const targetDate = new Date()
                     targetDate.setDate(targetDate.getDate() + days)
@@ -632,11 +650,10 @@ export default function DriverPosPage() {
                         key={days}
                         type="button"
                         variant={isActive ? "default" : "outline"}
-                        size="sm"
-                        className={`flex-1 h-8 text-xs ${isActive ? 'bg-orange-600 hover:bg-orange-700' : ''}`}
+                        className={`h-12 text-base font-bold ${isActive ? 'bg-orange-600 hover:bg-orange-700' : ''}`}
                         onClick={() => setDueDate(targetDateStr)}
                       >
-                        {days} hari
+                        {days}hr
                       </Button>
                     )
                   })}
@@ -645,45 +662,24 @@ export default function DriverPosPage() {
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="h-9 text-sm bg-white"
+                  className="h-12 text-base bg-white"
                 />
-                <p className="text-xs text-orange-600 mt-1">
-                  Sisa piutang: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(total - paidAmount)}
-                </p>
               </CardContent>
             </Card>
           )}
-
-          {/* Summary */}
-          <div className="bg-gray-50 rounded p-2 text-sm">
-            <div className="flex justify-between">
-              <span>Total:</span>
-              <span className="font-bold">{new Intl.NumberFormat("id-ID").format(total)}</span>
-            </div>
-            <div className="flex justify-between text-gray-600">
-              <span>Bayar:</span>
-              <span>{new Intl.NumberFormat("id-ID").format(paidAmount)}</span>
-            </div>
-            {total - paidAmount > 0 && (
-              <div className="flex justify-between text-red-600">
-                <span>Sisa:</span>
-                <span>{new Intl.NumberFormat("id-ID").format(total - paidAmount)}</span>
-              </div>
-            )}
-          </div>
         </div>
       )}
 
-      {/* Fixed Submit Button */}
+      {/* Fixed Submit Button - Raised above bottom menu */}
       {items.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 p-3 bg-white border-t shadow-lg">
+        <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t-2 shadow-2xl z-40">
           <Button
             onClick={handleSubmit}
-            className="w-full h-12 text-base font-bold bg-gradient-to-r from-green-500 to-green-600"
+            className="w-full h-16 text-xl font-bold bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 shadow-lg active:scale-95"
             disabled={isSubmitting || (!selectedCustomer && !customerSearch.trim())}
           >
-            <Truck className="h-5 w-5 mr-2" />
-            {isSubmitting ? "Memproses..." : `Simpan & Antar (${new Intl.NumberFormat("id-ID").format(total)})`}
+            <Truck className="h-7 w-7 mr-3" />
+            {isSubmitting ? "Memproses..." : `SIMPAN & ANTAR (${new Intl.NumberFormat("id-ID").format(total)})`}
           </Button>
         </div>
       )}
