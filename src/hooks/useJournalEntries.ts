@@ -101,8 +101,7 @@ export const useJournalEntries = () => {
       let query = supabase
         .from('journal_entries')
         .select('*')
-        .order('entry_date', { ascending: false })
-        .order('entry_number', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (currentBranch?.id) {
         query = query.eq('branch_id', currentBranch.id);
