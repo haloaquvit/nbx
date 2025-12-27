@@ -28,6 +28,19 @@ const MobileLayout = () => {
   // Ref for active menu item to scroll into view
   const activeMenuRef = useRef<HTMLButtonElement>(null)
   const navRef = useRef<HTMLElement>(null)
+  const autoCloseTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Auto-close sidebar after inactivity (for touch devices)
+  const resetAutoCloseTimer = () => {
+    if (autoCloseTimeoutRef.current) {
+      clearTimeout(autoCloseTimeoutRef.current)
+    }
+    if (isSidebarOpen) {
+      autoCloseTimeoutRef.current = setTimeout(() => {
+        setIsSidebarOpen(false)
+      }, 5000) // Auto-close after 5 seconds of inactivity
+    }
+  }
 
   // Scroll to active menu when sidebar opens
   useEffect(() => {
@@ -39,6 +52,14 @@ const MobileLayout = () => {
           block: 'center'
         })
       }, 150)
+      // Start auto-close timer
+      resetAutoCloseTimer()
+    }
+
+    return () => {
+      if (autoCloseTimeoutRef.current) {
+        clearTimeout(autoCloseTimeoutRef.current)
+      }
     }
   }, [isSidebarOpen])
 
@@ -232,11 +253,15 @@ const MobileLayout = () => {
       )}
 
       {/* Sidebar */}
-      <div className={cn(
-        "fixed left-0 top-0 z-50 h-screen w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out",
-        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}
-      style={{ display: 'flex', flexDirection: 'column' }}
+      <div
+        className={cn(
+          "fixed left-0 top-0 z-50 h-screen w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out",
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+        style={{ display: 'flex', flexDirection: 'column' }}
+        onMouseLeave={() => setIsSidebarOpen(false)}
+        onTouchStart={resetAutoCloseTimer}
+        onScroll={resetAutoCloseTimer}
       >
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="flex items-center space-x-3">
