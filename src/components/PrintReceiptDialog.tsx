@@ -221,7 +221,31 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
                   </span>
                 </div>
               </div>
-              {transaction.paymentStatus !== 'Lunas' && transaction.dueDate && (
+              {/* Payment Status Section - SELALU TAMPIL */}
+              <div className={`rounded-lg p-4 mt-4 border-2 ${transaction.paymentStatus === 'Lunas' ? 'bg-green-50 border-green-400' : 'bg-yellow-50 border-yellow-400'}`}>
+                <div className="text-center font-bold text-lg mb-2">
+                  <span className={transaction.paymentStatus === 'Lunas' ? 'text-green-800' : 'text-yellow-800'}>
+                    STATUS: {transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="text-center p-2 bg-white rounded border">
+                    <div className="text-gray-600">Dibayar</div>
+                    <div className="font-bold text-gray-900">
+                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.paidAmount || 0)}
+                    </div>
+                  </div>
+                  <div className="text-center p-2 bg-white rounded border">
+                    <div className="text-gray-600">Sisa Bayar</div>
+                    <div className={`font-bold ${(transaction.total - (transaction.paidAmount || 0)) > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Due Date */}
+              {transaction.dueDate && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-4">
                   <div className="flex justify-between items-center">
                     <span className="text-red-800 font-semibold">JATUH TEMPO:</span>
@@ -396,18 +420,46 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total), pageWidth - margin - 5, summaryY + 8, { align: 'right' });
     summaryY += 15;
     
+    // Payment status section
+    summaryY += 8;
+    const isLunas = transaction.paymentStatus === 'Lunas';
+    doc.setFillColor(isLunas ? 209 : 254, isLunas ? 250 : 249, isLunas ? 229 : 195); // green or yellow
+    doc.roundedRect(summaryX, summaryY, summaryWidth, 10, 3, 3, 'F');
+    doc.setFontSize(10).setFont("helvetica", "bold");
+    doc.setTextColor(isLunas ? 22 : 133, isLunas ? 101 : 77, isLunas ? 52 : 14);
+    doc.text("STATUS:", summaryX + 5, summaryY + 6);
+    doc.text(isLunas ? "LUNAS" : "BELUM LUNAS", pageWidth - margin - 5, summaryY + 6, { align: 'right' });
+    summaryY += 12;
+
+    // Paid amount and remaining (if not lunas)
+    if (!isLunas) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(10).setFont("helvetica", "normal");
+      doc.text("Sudah Dibayar:", summaryX + 5, summaryY + 3);
+      doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.paidAmount || 0), pageWidth - margin - 5, summaryY + 3, { align: 'right' });
+      summaryY += 7;
+
+      // Remaining amount with red highlight
+      doc.setFillColor(254, 226, 226);
+      doc.roundedRect(summaryX, summaryY, summaryWidth, 10, 3, 3, 'F');
+      doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(185, 28, 28);
+      doc.text("SISA BAYAR:", summaryX + 5, summaryY + 6);
+      doc.text(new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0)), pageWidth - margin - 5, summaryY + 6, { align: 'right' });
+      summaryY += 12;
+    }
+
     // Due date with red background if payment is not complete
     if (transaction.paymentStatus !== 'Lunas' && transaction.dueDate) {
-      summaryY += 5;
       doc.setFillColor(254, 226, 226);
       doc.roundedRect(summaryX, summaryY, summaryWidth, 10, 3, 3, 'F');
       doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(185, 28, 28);
       doc.text("JATUH TEMPO:", summaryX + 5, summaryY + 6);
       doc.text(safeFormatDate(transaction.dueDate, "d MMMM yyyy"), pageWidth - margin - 5, summaryY + 6, { align: 'right' });
       summaryY += 12;
-      doc.setTextColor(0); // Reset color to black
     }
-    
+
+    doc.setTextColor(0); // Reset color to black
+
     // Professional footer with signature
     let footerY = summaryY + 25;
 
@@ -691,29 +743,33 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
                   <td style="padding: 2mm; text-align: left; font-size: 12.5pt; font-weight: bold;">TOTAL:</td>
                   <td style="padding: 2mm; text-align: right; font-size: 12.5pt; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}</td>
                 </tr>
-                <tr>
-                  <td style="padding: 1mm 2mm; text-align: left;">Dibayar:</td>
-                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 1mm 2mm; text-align: left; font-weight: bold;">Sisa:</td>
-                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</td>
-                </tr>
               </table>
             </td>
           </tr>
         </table>
 
-        <!-- Status Bayar Section -->
-        <table style="width: 100%; margin-top: 4mm; border: 0.5px solid #000;">
+        <!-- Status Bayar Section - SELALU TAMPIL -->
+        <table style="width: 100%; margin-top: 4mm; border: 1px solid #000;">
           <tr>
-            <td style="width: 50%; padding: 2mm 3mm; font-size: 11pt; font-weight: bold; background: ${transaction.paymentStatus === 'Lunas' ? '#d4edda' : '#fff3cd'};">
-              STATUS: ${transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS'}
-            </td>
-            <td style="width: 50%; padding: 2mm 3mm; font-size: 10.5pt; text-align: right;">
-              ${transaction.paymentStatus !== 'Lunas' ? `<strong>Sisa Bayar: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</strong>` : 'Pembayaran Lengkap'}
+            <td colspan="2" style="padding: 3mm; font-size: 11pt; font-weight: bold; background: ${transaction.paymentStatus === 'Lunas' ? '#d4edda' : '#fff3cd'}; text-align: center; border-bottom: 1px solid #000;">
+              STATUS PEMBAYARAN: ${transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS'}
             </td>
           </tr>
+          <tr>
+            <td style="width: 50%; padding: 2mm 3mm; font-size: 10.5pt; border-right: 1px solid #ccc;">
+              Dibayar: <strong>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</strong>
+            </td>
+            <td style="width: 50%; padding: 2mm 3mm; font-size: 10.5pt; text-align: right;">
+              Sisa: <strong style="color: ${(transaction.total - (transaction.paidAmount || 0)) > 0 ? '#dc2626' : '#16a34a'};">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</strong>
+            </td>
+          </tr>
+          ${transaction.dueDate ? `
+          <tr>
+            <td colspan="2" style="padding: 2mm 3mm; font-size: 10pt; text-align: center; background: #fef2f2; border-top: 1px solid #ccc;">
+              <strong>Jatuh Tempo: ${safeFormatDate(transaction.dueDate, "dd MMMM yyyy")}</strong>
+            </td>
+          </tr>
+          ` : ''}
         </table>
 
         <!-- Footer dengan Tanda Tangan -->

@@ -792,12 +792,16 @@ export function useDeliveries() {
       // ============================================================================
       try {
         // Get transaction data untuk cek apakah ini office sale atau bukan
-        // Use .order('id').limit(1) and handle array response
-        const { data: txnRaw } = await supabase
+        // Note: transaction_number column doesn't exist, use id as reference
+        const { data: txnRaw, error: txnError } = await supabase
           .from('transactions')
-          .select('id, is_office_sale, transaction_number, items')
+          .select('id, is_office_sale, items')
           .eq('id', request.transactionId)
           .order('id').limit(1);
+
+        if (txnError) {
+          console.error('❌ Error fetching transaction for delivery journal:', txnError.message);
+        }
 
         const txnData = Array.isArray(txnRaw) ? txnRaw[0] : txnRaw;
 
@@ -805,16 +809,17 @@ export function useDeliveries() {
         if (txnData && !txnData.is_office_sale && itemsData.length > 0) {
           console.log('📒 Creating delivery journal for non-office sale...');
 
-          // Calculate HPP per unit from transaction items
+          // Calculate HPP per unit from transaction items or product cost_price
           const txnItems = txnData.items || [];
-          const deliveryJournalItems = itemsData.map((item: any) => {
+          const deliveryJournalItems: Array<{ productId: string; productName: string; quantity: number; hppPerUnit: number }> = [];
+
+          for (const item of itemsData) {
             // Find matching transaction item to get HPP
             const txnItem = txnItems.find((ti: any) =>
               ti.product?.id === item.product_id && !ti._isSalesMeta && !ti.isBonus
             );
 
             // Calculate HPP per unit (use hppPerUnit from transaction if available)
-            // Otherwise calculate from total HPP / quantity
             let hppPerUnit = 0;
             if (txnItem) {
               if (txnItem.hppPerUnit) {
@@ -826,20 +831,34 @@ export function useDeliveries() {
               }
             }
 
-            return {
-              productId: item.product_id,
-              productName: item.product_name,
-              quantity: item.quantity_delivered,
-              hppPerUnit
-            };
-          }).filter((item: any) => item.hppPerUnit > 0); // Only include items with valid HPP
+            // Fallback: Get cost_price from products table
+            if (hppPerUnit <= 0 && item.product_id) {
+              const { data: productDataRaw } = await supabase
+                .from('products')
+                .select('cost_price, base_price')
+                .eq('id', item.product_id)
+                .order('id').limit(1);
+              const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+              hppPerUnit = productData?.cost_price || productData?.base_price || 0;
+              console.log(`📦 Fallback HPP for ${item.product_name}: ${hppPerUnit}`);
+            }
+
+            if (hppPerUnit > 0) {
+              deliveryJournalItems.push({
+                productId: item.product_id,
+                productName: item.product_name,
+                quantity: item.quantity_delivered,
+                hppPerUnit
+              });
+            }
+          }
 
           if (deliveryJournalItems.length > 0) {
             const journalResult = await createDeliveryJournal({
               deliveryId: deliveryData.id,
               deliveryDate: new Date(deliveryData.delivery_date),
               transactionId: request.transactionId,
-              transactionNumber: txnData.transaction_number || `TXN-${request.transactionId}`,
+              transactionNumber: txnData.id || request.transactionId,
               items: deliveryJournalItems,
               branchId: currentBranch?.id || deliveryData.branch_id || ''
             });

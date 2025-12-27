@@ -480,20 +480,20 @@ export default function TransactionDetailPage() {
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
 
     const dotMatrixContent = `
-      <div style="width: 100%; max-width: 241mm;">
+      <div style="width: 100%; max-width: 241mm; font-weight: bold;">
         <!-- Header Section -->
         <table style="width: 100%; border-bottom: 0.5px solid #000; margin-bottom: 4mm; padding-bottom: 2mm;">
           <tr>
             <td style="width: 60%; vertical-align: top; padding-right: 10mm;">
-              <div style="font-size: 15.5pt; font-weight: bold; margin-bottom: 2mm;">${companyInfo?.name || 'NAMA PERUSAHAAN'}</div>
-              <div style="font-size: 10.5pt; line-height: 1.5;">
+              <div style="font-size: 16.5pt; font-weight: bold; margin-bottom: 2mm;">${companyInfo?.name || 'NAMA PERUSAHAAN'}</div>
+              <div style="font-size: 11.5pt; line-height: 1.5;">
                 ${companyInfo?.address || ''}<br/>
                 ${companyInfo?.phone ? `Telp: ${companyInfo.phone}` : ''}${companyInfo?.email ? ` | Email: ${companyInfo.email}` : ''}
               </div>
             </td>
             <td style="width: 40%; vertical-align: top; text-align: right;">
-              <div style="font-size: 17.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR PENJUALAN</div>
-              <div style="font-size: 10.5pt; margin-top: 2mm; line-height: 1.5;">
+              <div style="font-size: 18.5pt; font-weight: bold; letter-spacing: 1px;">FAKTUR PENJUALAN</div>
+              <div style="font-size: 11.5pt; margin-top: 2mm; line-height: 1.5;">
                 <strong>No:</strong> ${transaction.id}<br/>
                 <strong>Tanggal:</strong> ${orderDate ? format(orderDate, "dd MMMM yyyy", { locale: id }) : 'N/A'}
               </div>
@@ -505,13 +505,13 @@ export default function TransactionDetailPage() {
         <table style="width: 100%; margin-bottom: 4mm;">
           <tr>
             <td style="width: 50%; vertical-align: top;">
-              <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 1mm;">KEPADA:</div>
-              <div style="font-size: 11.5pt; font-weight: bold;">${transaction.customerName}</div>
-              <div style="font-size: 10.5pt;">Pelanggan</div>
+              <div style="font-size: 11.5pt; font-weight: bold; margin-bottom: 1mm;">KEPADA:</div>
+              <div style="font-size: 12.5pt; font-weight: bold;">${transaction.customerName}</div>
+              <div style="font-size: 11.5pt;">Pelanggan</div>
             </td>
             <td style="width: 50%; vertical-align: top; text-align: right;">
-              <div style="font-size: 10.5pt;"><strong>Kasir:</strong> ${transaction.cashierName}</div>
-              ${transaction.dueDate ? `<div style="font-size: 10.5pt;"><strong>Jatuh Tempo:</strong> ${format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</div>` : ''}
+              <div style="font-size: 11.5pt;"><strong>Kasir:</strong> ${transaction.cashierName}</div>
+              ${transaction.dueDate ? `<div style="font-size: 11.5pt;"><strong>Jatuh Tempo:</strong> ${format(new Date(transaction.dueDate), "dd/MM/yyyy", { locale: id })}</div>` : ''}
             </td>
           </tr>
         </table>
@@ -520,19 +520,19 @@ export default function TransactionDetailPage() {
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 4mm;">
           <thead>
             <tr style="border-top: 0.5px solid #000; border-bottom: 0.5px solid #000;">
-              <th style="text-align: left; padding: 2mm 1mm; font-size: 10.5pt; width: 50%;">DESKRIPSI</th>
-              <th style="text-align: center; padding: 2mm 1mm; font-size: 10.5pt; width: 10%;">QTY</th>
-              <th style="text-align: right; padding: 2mm 1mm; font-size: 10.5pt; width: 20%;">HARGA</th>
-              <th style="text-align: right; padding: 2mm 1mm; font-size: 10.5pt; width: 20%;">TOTAL</th>
+              <th style="text-align: left; padding: 2mm 1mm; font-size: 11.5pt; width: 50%;">DESKRIPSI</th>
+              <th style="text-align: center; padding: 2mm 1mm; font-size: 11.5pt; width: 10%;">QTY</th>
+              <th style="text-align: right; padding: 2mm 1mm; font-size: 11.5pt; width: 20%;">HARGA</th>
+              <th style="text-align: right; padding: 2mm 1mm; font-size: 11.5pt; width: 20%;">TOTAL</th>
             </tr>
           </thead>
           <tbody>
             ${transaction.items.map((item, idx) => `
               <tr>
-                <td style="padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.product.name}${item.notes ? `<br/><small style="font-size: 9.5pt;">${item.notes}</small>` : ''}</td>
-                <td style="text-align: center; padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.quantity} ${item.unit}</td>
-                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price)}</td>
-                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 10.5pt; font-weight: bold; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
+                <td style="padding: 1.5mm 1mm; font-size: 11.5pt; border-bottom: 0.5px dotted #999;">${item.product.name}${item.notes ? `<br/><small style="font-size: 10.5pt;">${item.notes}</small>` : ''}</td>
+                <td style="text-align: center; padding: 1.5mm 1mm; font-size: 11.5pt; border-bottom: 0.5px dotted #999;">${item.quantity} ${item.unit}</td>
+                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 11.5pt; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price)}</td>
+                <td style="text-align: right; padding: 1.5mm 1mm; font-size: 11.5pt; font-weight: bold; border-bottom: 0.5px dotted #999;">${new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0 }).format(item.price * item.quantity)}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -542,46 +542,67 @@ export default function TransactionDetailPage() {
         <table style="width: 100%; border-top: 0.5px solid #000; padding-top: 3mm;">
           <tr>
             <td style="width: 60%; vertical-align: top; padding-right: 10mm;">
-              <div style="font-size: 10.5pt; font-weight: bold; margin-bottom: 2mm;">CATATAN PEMBAYARAN:</div>
-              <div style="font-size: 9.5pt; line-height: 1.5;">
+              <div style="font-size: 11.5pt; font-weight: bold; margin-bottom: 2mm;">CATATAN PEMBAYARAN:</div>
+              <div style="font-size: 10.5pt; line-height: 1.5;">
                 • Pembayaran dapat dilakukan melalui transfer bank<br/>
                 • Harap sertakan nomor faktur penjualan saat melakukan pembayaran<br/>
                 • Konfirmasi pembayaran ke nomor di atas
               </div>
             </td>
             <td style="width: 40%; vertical-align: top;">
-              <table style="width: 100%; font-size: 10.5pt;">
+              <table style="width: 100%; font-size: 11.5pt; font-weight: bold;">
                 <tr>
                   <td style="padding: 1mm 2mm; text-align: left;">Subtotal:</td>
-                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.subtotal)}</td>
+                  <td style="padding: 1mm 2mm; text-align: right;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.subtotal)}</td>
                 </tr>
                 ${transaction.ppnEnabled ? `
                 <tr>
                   <td style="padding: 1mm 2mm; text-align: left;">PPN (${transaction.ppnPercentage}%):</td>
-                  <td style="padding: 1mm 2mm; text-align: right; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.ppnAmount)}</td>
+                  <td style="padding: 1mm 2mm; text-align: right;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.ppnAmount)}</td>
                 </tr>
                 ` : ''}
                 <tr style="border-top: 0.5px solid #000; border-bottom: 0.5px solid #000;">
-                  <td style="padding: 2mm; text-align: left; font-size: 12.5pt; font-weight: bold;">TOTAL:</td>
-                  <td style="padding: 2mm; text-align: right; font-size: 12.5pt; font-weight: bold;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}</td>
+                  <td style="padding: 2mm; text-align: left; font-size: 13.5pt;">TOTAL:</td>
+                  <td style="padding: 2mm; text-align: right; font-size: 13.5pt;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">Dibayar:</td>
+                  <td style="padding: 1mm 2mm; text-align: right;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">Sisa:</td>
+                  <td style="padding: 1mm 2mm; text-align: right;">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total - (transaction.paidAmount || 0))}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 1mm 2mm; text-align: left;">Status:</td>
+                  <td style="padding: 1mm 2mm; text-align: right;">${(transaction.paidAmount || 0) >= transaction.total ? 'LUNAS' : 'BELUM LUNAS'}</td>
                 </tr>
               </table>
             </td>
           </tr>
         </table>
 
-        <!-- Footer -->
-        <div style="margin-top: 10mm; border-top: 0.5px solid #ccc; padding-top: 3mm;">
+        <!-- Footer - 3 Box Tanda Tangan -->
+        <div style="margin-top: 10mm; padding-top: 3mm;">
           <table style="width: 100%;">
             <tr>
-              <td style="width: 50%; text-align: center; vertical-align: bottom;">
-                <div style="font-size: 10.5pt; margin-bottom: 15mm;">Hormat Kami,</div>
-                <div style="border-top: 0.5px solid #000; display: inline-block; padding-top: 1mm; min-width: 50mm;">
-                  <strong style="font-size: 10.5pt;">${transaction.cashierName}</strong>
+              <td style="width: 33%; text-align: center; vertical-align: top; padding: 0 5mm;">
+                <div style="font-size: 12.5pt; margin-bottom: 15mm;">Hormat Kami,</div>
+                <div style="border-top: 0.5px solid #000; padding-top: 1mm; margin: 0 auto; width: 45mm;">
+                  <strong style="font-size: 12.5pt;">${transaction.cashierName}</strong>
                 </div>
               </td>
-              <td style="width: 50%; text-align: center; font-size: 9.5pt; vertical-align: bottom;">
-                Dicetak: ${format(new Date(), "dd MMMM yyyy, HH:mm", { locale: id })} WIB
+              <td style="width: 33%; text-align: center; vertical-align: top; padding: 0 5mm;">
+                <div style="font-size: 12.5pt; margin-bottom: 15mm;">Diterima Oleh,</div>
+                <div style="border-top: 0.5px solid #000; padding-top: 1mm; margin: 0 auto; width: 40mm;">
+                  <span style="font-size: 12.5pt;">(....................)</span>
+                </div>
+              </td>
+              <td style="width: 33%; text-align: center; vertical-align: top; padding: 0 5mm;">
+                <div style="font-size: 12.5pt; margin-bottom: 15mm;">Supir,</div>
+                <div style="border-top: 0.5px solid #000; padding-top: 1mm; margin: 0 auto; width: 40mm;">
+                  <span style="font-size: 12.5pt;">(....................)</span>
+                </div>
               </td>
             </tr>
           </table>
