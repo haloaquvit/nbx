@@ -22,6 +22,7 @@ interface AuthSession {
   token_type: string;
   expires_in: number;
   refresh_token: string;
+  session_token?: string; // For single session enforcement
   user: AuthUser;
 }
 
@@ -32,12 +33,11 @@ interface AuthResponse {
 
 const SESSION_STORAGE_KEY = 'postgrest_auth_session';
 
-// In-memory session store - more secure than localStorage
-// Token lives only as long as the page is loaded
+// In-memory session store for fast access
 let currentSession: AuthSession | null = null;
 
 // Helper to get stored session
-// Priority: Memory -> sessionStorage (for page refresh recovery)
+// Priority: Memory -> localStorage (shared across all tabs)
 function getStoredSession(): AuthSession | null {
   // 1. Return from memory if available
   if (currentSession) {
@@ -49,22 +49,22 @@ function getStoredSession(): AuthSession | null {
         if (payload.exp * 1000 < Date.now()) {
           // Token expired, clear everything
           currentSession = null;
-          sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          localStorage.removeItem(SESSION_STORAGE_KEY);
           return null;
         }
       }
     } catch (e) {
       // Invalid token format
       currentSession = null;
-      sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      localStorage.removeItem(SESSION_STORAGE_KEY);
       return null;
     }
     return currentSession;
   }
 
-  // 2. Try to recover from sessionStorage (page refresh scenario)
+  // 2. Try to recover from localStorage (shared across all tabs)
   try {
-    const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
     if (stored) {
       const session = JSON.parse(stored);
       // Validate token expiration
@@ -73,7 +73,7 @@ function getStoredSession(): AuthSession | null {
         const payload = JSON.parse(atob(tokenParts[1]));
         if (payload.exp * 1000 < Date.now()) {
           // Token expired, clear
-          sessionStorage.removeItem(SESSION_STORAGE_KEY);
+          localStorage.removeItem(SESSION_STORAGE_KEY);
           return null;
         }
       }
@@ -88,15 +88,15 @@ function getStoredSession(): AuthSession | null {
 }
 
 // Helper to store session
-// Stores in both memory (primary) and sessionStorage (for page refresh)
+// Stores in both memory (primary) and localStorage (shared across all tabs)
 function storeSession(session: AuthSession | null) {
   // Always update memory first
   currentSession = session;
 
   if (session) {
-    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
   } else {
-    sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
   }
 }
 
@@ -246,6 +246,42 @@ export const postgrestAuth = {
   getAccessToken(): string | null {
     const session = getStoredSession();
     return session?.access_token || null;
+  },
+
+  /**
+   * Validate if current session is still active (not kicked by another login)
+   * Returns { valid: true } if session is active, { valid: false, kicked: true } if kicked
+   */
+  async validateSession(): Promise<{ valid: boolean; kicked?: boolean; error?: string }> {
+    const session = getStoredSession();
+    const tenantConfig = getTenantConfigDynamic();
+
+    if (!session || !tenantConfig.authUrl) {
+      return { valid: false, error: 'No session' };
+    }
+
+    try {
+      const response = await fetch(`${tenantConfig.authUrl}/v1/session/validate`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+
+      if (!result.valid && result.kicked) {
+        // Session was kicked - auto logout
+        storeSession(null);
+        notifyAuthChange('SIGNED_OUT', null);
+        return { valid: false, kicked: true, error: result.error_description };
+      }
+
+      return result;
+    } catch (error) {
+      // Network error - don't logout, just return invalid
+      return { valid: false, error: 'Network error' };
+    }
   },
 
   /**

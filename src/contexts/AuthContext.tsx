@@ -15,6 +15,7 @@ import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 // Idle timeout configuration (in milliseconds)
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const IDLE_WARNING_MS = 55 * 60 * 1000; // Warning at 55 minutes (5 minutes before logout)
+const SESSION_VALIDATE_INTERVAL_MS = 30 * 1000; // Validate session every 30 seconds
 
 interface AuthContextType {
   session: Session | null;
@@ -23,6 +24,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   idleWarning: boolean; // Show warning before auto logout
   resetIdleTimer: () => void; // Manual reset for user activity
+  sessionKicked: boolean; // True if session was kicked by another login
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,6 +34,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [idleWarning, setIdleWarning] = useState(false);
+  const [sessionKicked, setSessionKicked] = useState(false);
 
   // Simple cache for user profiles to avoid repeated DB calls
   const profileCacheRef = useRef<Map<string, Employee>>(new Map());
@@ -39,6 +42,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Idle timer refs
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const sessionValidateTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
   // Simplified and fast user profile creation from auth data
@@ -116,10 +120,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Sign out
   const signOut = useCallback(async () => {
     try {
-      // Clear idle timers
+      // Clear all timers
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+      if (sessionValidateTimerRef.current) clearInterval(sessionValidateTimerRef.current);
       setIdleWarning(false);
+      setSessionKicked(false);
 
       // Clear cache
       profileCacheRef.current.clear();
@@ -192,6 +198,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
     };
   }, [session, resetIdleTimer]);
+
+  // Session validation - check if session was kicked by another login (PostgREST mode only)
+  useEffect(() => {
+    if (!session || !isPostgRESTMode) return;
+
+    const validateSession = async () => {
+      const result = await postgrestAuth.validateSession();
+      if (!result.valid && result.kicked) {
+        console.log('🚫 Session kicked: Anda telah login di perangkat lain');
+        setSessionKicked(true);
+        setSession(null);
+        setUser(null);
+      }
+    };
+
+    // Validate immediately on mount
+    validateSession();
+
+    // Validate every 30 seconds
+    sessionValidateTimerRef.current = setInterval(validateSession, SESSION_VALIDATE_INTERVAL_MS);
+
+    return () => {
+      if (sessionValidateTimerRef.current) clearInterval(sessionValidateTimerRef.current);
+    };
+  }, [session]);
 
   // Initial session check on mount - simplified
   useEffect(() => {
@@ -301,7 +332,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ session, user, isLoading, signOut, idleWarning, resetIdleTimer }}
+      value={{ session, user, isLoading, signOut, idleWarning, resetIdleTimer, sessionKicked }}
     >
       {children}
     </AuthContext.Provider>

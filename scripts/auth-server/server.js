@@ -7,6 +7,7 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 
 const app = express();
@@ -15,6 +16,11 @@ const PORT = process.env.AUTH_PORT || 3002;
 // JWT Secret - MUST match PostgREST jwt-secret
 const JWT_SECRET = process.env.JWT_SECRET || 'c7ltcd4PN7uyaZJ/UoBbf71xdnHA3ezq7HYaaIvxizA=';
 const JWT_EXPIRES_IN = '7d';
+
+// Generate unique session token
+function generateSessionToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 // PostgreSQL connection
 const pool = new Pool({
@@ -78,7 +84,22 @@ app.post('/auth/v1/token', async (req, res) => {
       // Get password_changed_at timestamp for token invalidation
       const pca = user.password_changed_at ? Math.floor(new Date(user.password_changed_at).getTime() / 1000) : 0;
 
-      // Generate JWT token with user's actual role for RLS
+      // Generate unique session token for this login
+      const sessionToken = generateSessionToken();
+
+      // Delete any existing session for this user (auto-kick old session)
+      await pool.query('DELETE FROM active_sessions WHERE user_id = $1', [user.id]);
+
+      // Create new active session
+      const deviceInfo = req.headers['user-agent'] || 'Unknown';
+      const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown';
+      await pool.query(
+        `INSERT INTO active_sessions (user_id, session_token, device_info, ip_address)
+         VALUES ($1, $2, $3, $4)`,
+        [user.id, sessionToken, deviceInfo, ipAddress]
+      );
+
+      // Generate JWT token with session_token included
       const token = jwt.sign(
         {
           sub: user.id,
@@ -87,6 +108,7 @@ app.post('/auth/v1/token', async (req, res) => {
           role: user.role, // User's actual role (owner, admin, etc) for RLS
           aud: 'authenticated',
           pca: pca, // password_changed_at - for token invalidation on password reset
+          sid: sessionToken, // Session ID for single session enforcement
           iat: Math.floor(Date.now() / 1000),
           exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days
         },
@@ -100,6 +122,7 @@ app.post('/auth/v1/token', async (req, res) => {
         token_type: 'bearer',
         expires_in: 604800,
         refresh_token: token, // Simplified: same as access token
+        session_token: sessionToken, // For client-side session validation
         user: {
           id: user.id,
           email: user.email,
@@ -261,10 +284,83 @@ app.get('/auth/v1/user', async (req, res) => {
 
 /**
  * POST /auth/v1/logout
- * Logout (just returns success, token invalidation handled client-side)
+ * Logout - removes active session from database
  */
-app.post('/auth/v1/logout', (req, res) => {
+app.post('/auth/v1/logout', async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.substring(7);
+      const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
+
+      // Remove active session
+      await pool.query('DELETE FROM active_sessions WHERE user_id = $1', [decoded.sub]);
+    } catch (e) {
+      // Ignore token errors on logout
+    }
+  }
+
   res.json({ message: 'Logged out successfully' });
+});
+
+/**
+ * GET /auth/v1/session/validate
+ * Validate if current session is still active (not kicked by another login)
+ */
+app.get('/auth/v1/session/validate', async (req, res) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      valid: false,
+      error: 'unauthorized',
+      error_description: 'Missing authorization header'
+    });
+  }
+
+  const token = authHeader.substring(7);
+
+  try {
+    const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
+    const sessionToken = decoded.sid;
+
+    if (!sessionToken) {
+      // Old token without session ID - consider valid but warn
+      return res.json({ valid: true, legacy: true });
+    }
+
+    // Check if session exists in database
+    const result = await pool.query(
+      'SELECT id FROM active_sessions WHERE user_id = $1 AND session_token = $2',
+      [decoded.sub, sessionToken]
+    );
+
+    if (result.rows.length === 0) {
+      // Session was kicked (user logged in from another device)
+      return res.json({
+        valid: false,
+        kicked: true,
+        error: 'session_kicked',
+        error_description: 'Anda telah login di perangkat lain. Session ini telah berakhir.'
+      });
+    }
+
+    // Update last activity
+    await pool.query(
+      'UPDATE active_sessions SET last_activity = NOW() WHERE session_token = $1',
+      [sessionToken]
+    );
+
+    return res.json({ valid: true });
+
+  } catch (error) {
+    return res.json({
+      valid: false,
+      error: 'invalid_token',
+      error_description: 'Token is invalid or expired'
+    });
+  }
 });
 
 /**
