@@ -257,52 +257,57 @@ export function NearbyCustomerList({
                         </div>
 
                         {/* Actions */}
-                        <div className="flex gap-2 mt-2">
-                          <Button
-                            size="sm"
-                            className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
-                            onClick={e => {
-                              e.stopPropagation()
-                              handleOpenDriverPos(customer as Customer)
-                            }}
-                          >
-                            <ShoppingCart className="h-3 w-3 mr-1" />
-                            POS
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={e => {
-                              e.stopPropagation()
-                              handleCall(customer.phone)
-                            }}
-                          >
-                            <Phone className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={e => {
-                              e.stopPropagation()
-                              handleOpenMaps(customer as Customer)
-                            }}
-                          >
-                            <Navigation className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
-                            className={`h-7 px-2 text-xs ${
-                              visitedIds.has(customer.id)
-                                ? 'bg-green-100 text-green-700 border-green-300'
-                                : ''
-                            }`}
-                            onClick={e => handleMarkVisited(customer as Customer, e)}
-                          >
-                            <CheckCircle2 className="h-3 w-3" />
-                          </Button>
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
+                              onClick={e => {
+                                e.stopPropagation()
+                                handleOpenDriverPos(customer as Customer)
+                              }}
+                            >
+                              <ShoppingCart className="h-3 w-3 mr-1" />
+                              POS
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              onClick={e => {
+                                e.stopPropagation()
+                                handleCall(customer.phone)
+                              }}
+                            >
+                              <Phone className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              onClick={e => {
+                                e.stopPropagation()
+                                handleOpenMaps(customer as Customer)
+                              }}
+                            >
+                              <Navigation className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="border-l pl-2 ml-1">
+                            <Button
+                              size="sm"
+                              variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
+                              className={`h-7 px-2 text-xs ${
+                                visitedIds.has(customer.id)
+                                  ? 'bg-green-100 text-green-700 border-green-300'
+                                  : 'border-dashed'
+                              }`}
+                              onClick={e => handleMarkVisited(customer as Customer, e)}
+                            >
+                              <CheckCircle2 className="h-3 w-3 mr-1" />
+                              Visited
+                            </Button>
+                          </div>
                         </div>
                       </div>
 
