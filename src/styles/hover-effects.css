@@ -189,3 +189,108 @@
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
 }
+
+/* ====================================
+   MOBILE TAP EFFECTS
+   ==================================== */
+
+/* Touch-friendly tap effect for buttons */
+.tap-effect {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  transition: transform 0.1s ease, opacity 0.1s ease, background-color 0.15s ease;
+}
+
+.tap-effect:active {
+  transform: scale(0.95) !important;
+  opacity: 0.8 !important;
+}
+
+/* Ripple effect on touch */
+.tap-ripple {
+  position: relative;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tap-ripple::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  transition: width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tap-ripple:active::after {
+  width: 200%;
+  height: 200%;
+  opacity: 1;
+}
+
+/* Card tap effect for mobile */
+.card-tap {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.card-tap:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Menu item tap effect */
+.menu-tap {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 0.1s ease, background-color 0.15s ease;
+}
+
+.menu-tap:active {
+  transform: scale(0.96);
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.dark .menu-tap:active {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Global touch improvements */
+@media (hover: none) and (pointer: coarse) {
+  /* On touch devices, make :active states more prominent */
+  button:active,
+  [role="button"]:active,
+  a:active {
+    transform: scale(0.96);
+    opacity: 0.85;
+  }
+
+  /* Remove hover effects on touch devices to prevent sticky hover */
+  .hover-glow:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .hover-glow:hover::before {
+    opacity: 0;
+  }
+
+  /* Better touch targets */
+  button,
+  [role="button"],
+  a,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
