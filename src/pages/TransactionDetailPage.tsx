@@ -474,7 +474,7 @@ export default function TransactionDetailPage() {
     printWindow?.print();
   };
 
-  // Cetak Dot Matrix - optimal untuk continuous form (format seperti faktur tradisional)
+  // Cetak Dot Matrix - optimal untuk 1/2 A4 (A5: 148mm x 210mm)
   const handleDotMatrixPrint = () => {
     if (!transaction) return;
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
@@ -484,156 +484,112 @@ export default function TransactionDetailPage() {
     const formatNumber = (num: number) => new Intl.NumberFormat("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
 
     const dotMatrixContent = `
-      <div style="width: 100%; font-family: 'Courier New', monospace; font-weight: bold; font-size: 11pt; border: 2px solid #0099cc; padding: 3mm;">
-        <!-- Header dengan border cyan -->
-        <table style="width: 100%; margin-bottom: 2mm;">
-          <tr>
-            <td style="width: 55%; vertical-align: top;">
-              <div style="font-size: 14pt; font-weight: bold; color: #0066cc;">FAKTUR PENJUALAN</div>
-              <div style="font-size: 12pt; font-weight: bold; margin-top: 1mm;">${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}</div>
-              <div style="font-size: 10pt; line-height: 1.4;">
-                ${companyInfo?.address || 'JL. DS YAN MAMORIBO, SIRIWINI'}<br/>
-                <span style="color: #cc0000;">KANTOR</span> : ${companyInfo?.phone || '081310099141'}<br/>
-                <span style="color: #cc0000;">SALES</span> : ${companyInfo?.salesPhone || '081344707573'}
-              </div>
-            </td>
-            <td style="width: 45%; vertical-align: top;">
-              <table style="width: 100%; font-size: 10pt;">
-                <tr>
-                  <td>No Transaksi</td>
-                  <td>: <strong>${transaction.id}</strong></td>
-                  <td style="text-align: right;">SALES</td>
-                  <td>: ${transaction.cashierName?.split(' ')[0] || 'KANTOR'}</td>
-                </tr>
-                <tr>
-                  <td>Tanggal</td>
-                  <td>: ${orderDate ? format(orderDate, "dd/MM/yyyy.HH.mm", { locale: id }) : 'N/A'}</td>
-                  <td style="text-align: right;">PPN</td>
-                  <td>: ${transaction.ppnEnabled ? 'Include' : '-'}</td>
-                </tr>
-                <tr>
-                  <td>Pelanggan</td>
-                  <td colspan="3">: <strong>${transaction.customerName}</strong></td>
-                </tr>
-                <tr>
-                  <td>Alamat</td>
-                  <td colspan="3">: ${customer?.address || customer?.full_address || 'NABIRE PAPUA TENGAH'}</td>
-                </tr>
-                <tr>
-                  <td>No Kontak</td>
-                  <td colspan="3">: ${customer?.phone || ''}</td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-        </table>
-
-        <!-- Tabel Item -->
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 2mm;">
-          <thead>
-            <tr style="background: #0099cc; color: white;">
-              <th style="border: 1px solid #0099cc; padding: 1.5mm; text-align: left; width: 5%;">No.</th>
-              <th style="border: 1px solid #0099cc; padding: 1.5mm; text-align: left; width: 15%;">Kode Item</th>
-              <th style="border: 1px solid #0099cc; padding: 1.5mm; text-align: left; width: 30%;">Nama Item</th>
-              <th style="border: 1px solid #0099cc; padding: 1.5mm; text-align: center; width: 12%;">Jml Satuan</th>
-              <th style="border: 1px solid #0099cc; padding: 1.5mm; text-align: right; width: 18%;">Harga</th>
-              <th style="border: 1px solid #0099cc; padding: 1.5mm; text-align: center; width: 5%;">Pot</th>
-              <th style="border: 1px solid #0099cc; padding: 1.5mm; text-align: right; width: 15%;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${transaction.items.map((item, idx) => `
+      <table class="main-table" style="width: 100%; border-collapse: collapse;">
+        <!-- Header Row -->
+        <tr>
+          <td colspan="6" style="border-bottom: 1px solid #000; padding-bottom: 2mm;">
+            <table style="width: 100%;">
               <tr>
-                <td style="border-bottom: 1px solid #ccc; padding: 1.5mm; text-align: left;">${idx + 1}</td>
-                <td style="border-bottom: 1px solid #ccc; padding: 1.5mm; text-align: left;">${item.product.code || item.product.id?.substring(0, 7) || 'AQV001'}</td>
-                <td style="border-bottom: 1px solid #ccc; padding: 1.5mm; text-align: left;">${item.product.name}</td>
-                <td style="border-bottom: 1px solid #ccc; padding: 1.5mm; text-align: center;">${formatNumber(item.quantity)} ${item.unit}</td>
-                <td style="border-bottom: 1px solid #ccc; padding: 1.5mm; text-align: right;">${formatNumber(item.price)}</td>
-                <td style="border-bottom: 1px solid #ccc; padding: 1.5mm; text-align: center;">${item.discount ? formatNumber(item.discount) : '0,00'}</td>
-                <td style="border-bottom: 1px solid #ccc; padding: 1.5mm; text-align: right;">${formatNumber(item.price * item.quantity)}</td>
+                <td style="width: 40%; vertical-align: top;">
+                  <div style="font-size: 14pt; font-weight: bold;">FAKTUR PENJUALAN</div>
+                  <div style="font-size: 10pt; font-weight: bold;">${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}</div>
+                  <div style="font-size: 9pt;">
+                    ${companyInfo?.address || 'JL. DS YAN MAMORIBO, SIRIWINI'}<br/>
+                    KANTOR: ${companyInfo?.phone || '081310099141'} | SALES: ${companyInfo?.salesPhone || '081344707573'}
+                  </div>
+                </td>
+                <td style="width: 60%; vertical-align: top; font-size: 9pt;">
+                  <table style="width: 100%;">
+                    <tr><td width="80">No</td><td>: ${transaction.id}</td><td width="50">SALES</td><td>: ${transaction.cashierName?.split(' ')[0] || 'KANTOR'}</td></tr>
+                    <tr><td>Tanggal</td><td>: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : '-'}</td><td>PPN</td><td>: ${transaction.ppnEnabled ? 'Ya' : '-'}</td></tr>
+                    <tr><td>Pelanggan</td><td colspan="3">: ${transaction.customerName}</td></tr>
+                    <tr><td>Alamat</td><td colspan="3">: ${customer?.address || customer?.full_address || '-'}</td></tr>
+                    <tr><td>Telepon</td><td colspan="3">: ${customer?.phone || '-'}</td></tr>
+                  </table>
+                </td>
               </tr>
-            `).join('')}
-          </tbody>
-        </table>
+            </table>
+          </td>
+        </tr>
 
-        <!-- Footer dengan Keterangan, Tanda Tangan, dan Summary -->
-        <table style="width: 100%; margin-top: 3mm;">
+        <!-- Table Header -->
+        <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
+          <th style="padding: 1mm; text-align: left; width: 5%; font-size: 9pt;">No</th>
+          <th style="padding: 1mm; text-align: left; width: 15%; font-size: 9pt;">Kode</th>
+          <th style="padding: 1mm; text-align: left; width: 35%; font-size: 9pt;">Nama Item</th>
+          <th style="padding: 1mm; text-align: center; width: 15%; font-size: 9pt;">Jml</th>
+          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 9pt;">Harga</th>
+          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 9pt;">Total</th>
+        </tr>
+
+        <!-- Items -->
+        ${transaction.items.map((item, idx) => `
           <tr>
-            <td style="width: 55%; vertical-align: top;">
-              <div style="font-size: 10pt; margin-bottom: 2mm;">Keterangan :</div>
-
-              <!-- 2 Box Tanda Tangan -->
-              <table style="width: 90%; margin-top: 3mm;">
-                <tr>
-                  <td style="width: 50%; text-align: center; vertical-align: top;">
-                    <div style="font-size: 10pt;">Hormat Kami</div>
-                    <div style="height: 12mm;"></div>
-                    <div style="font-size: 10pt;">(....................)</div>
-                  </td>
-                  <td style="width: 50%; text-align: center; vertical-align: top;">
-                    <div style="font-size: 10pt;">Penerima</div>
-                    <div style="height: 12mm;"></div>
-                    <div style="font-size: 10pt;">(....................)</div>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Rekening Bank -->
-              <div style="font-size: 9pt; margin-top: 3mm; line-height: 1.5;">
-                <strong>NO REKENING :</strong><br/>
-                MANDIRI - 1540020855197<br/>
-                BNI - 2990213245<br/>
-                BRI - 777201000033304<br/>
-                <strong>A.N ${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}</strong>
-              </div>
-            </td>
-            <td style="width: 45%; vertical-align: top;">
-              <table style="width: 100%; font-size: 11pt;">
-                <tr>
-                  <td style="padding: 1mm;">Sub Total</td>
-                  <td style="padding: 1mm;">:</td>
-                  <td style="padding: 1mm; text-align: right;">${formatNumber(transaction.subtotal)}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 1mm;">Total Akhir</td>
-                  <td style="padding: 1mm;">:</td>
-                  <td style="padding: 1mm; text-align: right;">${formatNumber(transaction.total)}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 1mm;">DP PO</td>
-                  <td style="padding: 1mm;">:</td>
-                  <td style="padding: 1mm; text-align: right;">0,00</td>
-                </tr>
-                <tr>
-                  <td style="padding: 1mm;">Tunai</td>
-                  <td style="padding: 1mm;">:</td>
-                  <td style="padding: 1mm; text-align: right;">${formatNumber(paidAmount)}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 1mm;">Kredit</td>
-                  <td style="padding: 1mm;">:</td>
-                  <td style="padding: 1mm; text-align: right;">${formatNumber(remaining > 0 ? remaining : 0)}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 1mm;">Kembali</td>
-                  <td style="padding: 1mm;">:</td>
-                  <td style="padding: 1mm; text-align: right;">${formatNumber(paidAmount > transaction.total ? paidAmount - transaction.total : 0)}</td>
-                </tr>
-              </table>
-            </td>
+            <td style="padding: 0.5mm 1mm; font-size: 9pt;">${idx + 1}</td>
+            <td style="padding: 0.5mm 1mm; font-size: 9pt;">${item.product.code || item.product.id?.substring(0, 8) || '-'}</td>
+            <td style="padding: 0.5mm 1mm; font-size: 9pt;">${item.product.name}</td>
+            <td style="padding: 0.5mm 1mm; text-align: center; font-size: 9pt;">${formatNumber(item.quantity)} ${item.unit}</td>
+            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 9pt;">${formatNumber(item.price)}</td>
+            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 9pt;">${formatNumber(item.price * item.quantity)}</td>
           </tr>
-        </table>
+        `).join('')}
 
-        <!-- Footer Warning -->
-        <div style="margin-top: 4mm; padding-top: 2mm; border-top: 2px solid #0099cc; font-size: 9pt;">
-          <table style="width: 100%;">
-            <tr>
-              <td style="color: #cc0000; font-weight: bold;">WAJIB CEK STOK ANDA SENDIRI SEBELUM BARANG TURUN, KEHILANGAN BUKAN TANGGUNG JAWAB KAMI</td>
+        <!-- Spacer row to push footer to bottom -->
+        <tr style="height: 100%;">
+          <td colspan="6" style="vertical-align: bottom;"></td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td colspan="6" style="border-top: 1px solid #000; padding-top: 2mm;">
+            <table style="width: 100%;">
+              <tr>
+                <td style="width: 55%; vertical-align: top;">
+                  <div style="font-size: 9pt; margin-bottom: 1mm;">Keterangan:</div>
+                  <table style="width: 90%; margin-top: 3mm;">
+                    <tr>
+                      <td style="width: 33%; text-align: center;">
+                        <div style="font-size: 9pt;">Hormat Kami</div>
+                        <div style="height: 12mm;"></div>
+                        <div style="font-size: 9pt;">(.................)</div>
+                      </td>
+                      <td style="width: 33%; text-align: center;">
+                        <div style="font-size: 9pt;">Penerima</div>
+                        <div style="height: 12mm;"></div>
+                        <div style="font-size: 9pt;">(.................)</div>
+                      </td>
+                    </tr>
+                  </table>
+                  <div style="font-size: 8pt; margin-top: 2mm;">
+                    <strong>NO REK:</strong> MANDIRI-1540020855197 | BNI-2990213245 | BRI-777201000033304<br/>
+                    A.N ${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}
+                  </div>
+                </td>
+                <td style="width: 45%; vertical-align: top; font-size: 10pt;">
+                  <table style="width: 100%;">
+                    <tr><td>Sub Total</td><td style="text-align: right;">:</td><td style="text-align: right; width: 40%;">${formatNumber(transaction.subtotal)}</td></tr>
+                    <tr><td>Total Akhir</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(transaction.total)}</td></tr>
+                    <tr><td>DP PO</td><td style="text-align: right;">:</td><td style="text-align: right;">0,00</td></tr>
+                    <tr><td>Tunai</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount)}</td></tr>
+                    <tr><td>Kredit</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(remaining > 0 ? remaining : 0)}</td></tr>
+                    <tr><td>Kembali</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount > transaction.total ? paidAmount - transaction.total : 0)}</td></tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Warning Footer -->
+        <tr>
+          <td colspan="6" style="border-top: 1px solid #000; padding-top: 1mm; font-size: 8pt;">
+            <table style="width: 100%;"><tr>
+              <td>WAJIB CEK STOK ANDA SENDIRI SEBELUM BARANG TURUN, KEHILANGAN BUKAN TANGGUNG JAWAB KAMI</td>
               <td style="text-align: right;">${transaction.cashierName?.split(' ')[0] || 'ADMIN'}</td>
-            </tr>
-          </table>
-        </div>
-      </div>
+            </tr></table>
+          </td>
+        </tr>
+      </table>
     `;
 
     const printWindow = window.open('', '_blank');
@@ -641,48 +597,34 @@ export default function TransactionDetailPage() {
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Cetak Dot Matrix - Faktur ${transaction.id}</title>
+          <title>Faktur ${transaction.id}</title>
           <meta charset="UTF-8">
           <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-
-            @page {
-              size: 215mm 140mm;
-              margin: 3mm;
-            }
-
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            @page { size: A5 landscape; margin: 0; }
             @media print {
-              body {
-                width: 215mm;
-                margin: 0 auto;
-              }
-              * {
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-              }
+              html, body { height: 100%; margin: 0; padding: 0; }
             }
-
+            html, body {
+              height: 100%;
+            }
             body {
-              font-family: 'Courier New', 'Courier', monospace;
+              font-family: 'Courier New', Courier, monospace;
+              font-weight: bold;
               font-size: 10pt;
-              line-height: 1.3;
-              margin: 0;
+              line-height: 1.4;
               padding: 2mm;
               background: white;
               color: black;
+              display: flex;
+              flex-direction: column;
             }
-
-            table {
+            .main-table {
               border-collapse: collapse;
+              width: 100%;
+              height: 100%;
             }
-
-            strong, b {
-              font-weight: bold;
-            }
+            table { border-collapse: collapse; width: 100%; }
           </style>
         </head>
         <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
