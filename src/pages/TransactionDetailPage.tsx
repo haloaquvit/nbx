@@ -492,10 +492,10 @@ export default function TransactionDetailPage() {
               <tr>
                 <td style="width: 40%; vertical-align: top;">
                   <div style="font-size: 17pt; font-weight: bold;">FAKTUR PENJUALAN</div>
-                  <div style="font-size: 13pt; font-weight: bold;">${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}</div>
+                  <div style="font-size: 13pt; font-weight: bold;">${companyInfo?.name || ''}</div>
                   <div style="font-size: 11pt;">
-                    ${companyInfo?.address || 'JL. DS YAN MAMORIBO, SIRIWINI'}<br/>
-                    KANTOR: ${String(companyInfo?.phone || '081310099141').replace(/,/g, '')} | SALES: ${String(companyInfo?.salesPhone || '081344707573').replace(/,/g, '')}
+                    ${companyInfo?.address || ''}<br/>
+                    KANTOR: ${String(companyInfo?.phone || '').replace(/,/g, '')}${companyInfo?.salesPhone ? ` | SALES: ${String(companyInfo.salesPhone).replace(/,/g, '')}` : ''}
                   </div>
                 </td>
                 <td style="width: 60%; vertical-align: top; font-size: 11pt;">
@@ -561,8 +561,8 @@ export default function TransactionDetailPage() {
                     </tr>
                   </table>
                   <div style="font-size: 10pt; margin-top: 2mm;">
-                    <strong>NO REK:</strong> ${[companyInfo?.bankAccount1, companyInfo?.bankAccount2, companyInfo?.bankAccount3].filter(Boolean).join(' | ') || 'MANDIRI-1540020855197 | BNI-2990213245 | BRI-777201000033304'}<br/>
-                    <strong>A.N:</strong> ${companyInfo?.bankAccountName || companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}
+                    <strong>NO REK:</strong> ${[companyInfo?.bankAccount1, companyInfo?.bankAccount2, companyInfo?.bankAccount3].filter(Boolean).join(' | ') || '-'}<br/>
+                    <strong>A.N:</strong> ${companyInfo?.bankAccountName || companyInfo?.name || '-'}
                   </div>
                 </td>
                 <td style="width: 45%; vertical-align: top; font-size: 11pt;">
