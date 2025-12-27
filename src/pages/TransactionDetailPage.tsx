@@ -602,7 +602,7 @@ export default function TransactionDetailPage() {
           <meta charset="UTF-8">
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold !important; }
-            @page { size: A5 landscape; margin: 0; }
+            @page { size: A5 landscape; margin: 5mm 3mm 3mm 3mm; }
             @media print {
               html, body { height: 100%; margin: 0; padding: 0; }
             }
@@ -614,7 +614,7 @@ export default function TransactionDetailPage() {
               font-weight: bold;
               font-size: 10pt;
               line-height: 1.4;
-              padding: 2mm;
+              padding: 0;
               background: white;
               color: black;
               display: flex;
@@ -637,19 +637,24 @@ export default function TransactionDetailPage() {
     printWindow?.document.close();
   };
 
-  // Fungsi cetak Rawbt Thermal 80mm
+  // Fungsi cetak Rawbt Thermal - ukuran sesuai setting (58mm atau 80mm)
   const handleRawbtPrint = () => {
     if (!transaction) return;
 
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
-    
+
+    // Lebar karakter berdasarkan setting: 58mm = 32 char, 80mm = 48 char
+    const paperWidth = companyInfo?.thermalPrinterWidth || '58mm';
+    const charWidth = paperWidth === '80mm' ? 48 : 32;
+    const separator = '-'.repeat(charWidth);
+
     const formatCurrency = (amount: number): string => {
       if (amount === null || amount === undefined || isNaN(amount)) {
         return "Rp 0";
       }
       const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-      let result = new Intl.NumberFormat("id-ID", { 
-        style: "currency", 
+      let result = new Intl.NumberFormat("id-ID", {
+        style: "currency",
         currency: "IDR",
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
@@ -670,7 +675,7 @@ export default function TransactionDetailPage() {
       result = result.replace(/\u00A0/g, ' ');
       return result;
     };
-    
+
     let receiptText = '';
     receiptText += '\x1B\x40';
     receiptText += '\x1B\x61\x01';
@@ -679,66 +684,72 @@ export default function TransactionDetailPage() {
       receiptText += companyInfo.address + '\n';
     }
     if (companyInfo?.phone) {
-      receiptText += companyInfo.phone + '\n';
+      receiptText += String(companyInfo.phone).replace(/,/g, '') + '\n';
     }
     receiptText += '\x1B\x61\x00';
-    receiptText += '--------------------------------\n';
+    receiptText += separator + '\n';
     receiptText += `No: ${transaction.id}\n`;
     receiptText += `Tgl: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : 'N/A'}\n`;
     receiptText += `Plgn: ${transaction.customerName}\n`;
     receiptText += `Kasir: ${transaction.cashierName}\n`;
-    receiptText += '--------------------------------\n';
-    receiptText += 'Item                        Total\n';
-    receiptText += '--------------------------------\n';
-    
+    receiptText += separator + '\n';
+
+    // Header item dengan lebar dinamis
+    if (paperWidth === '80mm') {
+      receiptText += 'Item                                    Total\n';
+    } else {
+      receiptText += 'Item                        Total\n';
+    }
+    receiptText += separator + '\n';
+
     transaction.items.forEach((item) => {
       receiptText += item.product.name + '\n';
       const qtyPrice = `${item.quantity}x @${formatNumber(item.price)}`;
       const itemTotal = formatNumber(item.price * item.quantity);
-      const spacing = 32 - qtyPrice.length - itemTotal.length;
+      const spacing = charWidth - qtyPrice.length - itemTotal.length;
       receiptText += qtyPrice + ' '.repeat(Math.max(0, spacing)) + itemTotal + '\n';
     });
-    
-    receiptText += '--------------------------------\n';
+
+    receiptText += separator + '\n';
     const subtotalText = 'Subtotal:';
     const subtotalAmount = formatCurrency(transaction.subtotal);
-    const subtotalSpacing = 32 - subtotalText.length - subtotalAmount.length;
+    const subtotalSpacing = charWidth - subtotalText.length - subtotalAmount.length;
     receiptText += subtotalText + ' '.repeat(Math.max(0, subtotalSpacing)) + subtotalAmount + '\n';
-    
+
     if (transaction.ppnEnabled) {
       const ppnText = `PPN (${transaction.ppnPercentage}%):`;
       const ppnAmount = formatCurrency(transaction.ppnAmount);
-      const ppnSpacing = 32 - ppnText.length - ppnAmount.length;
+      const ppnSpacing = charWidth - ppnText.length - ppnAmount.length;
       receiptText += ppnText + ' '.repeat(Math.max(0, ppnSpacing)) + ppnAmount + '\n';
     }
-    
-    receiptText += '--------------------------------\n';
+
+    receiptText += separator + '\n';
     const totalText = 'Total:';
     const totalAmount = formatCurrency(transaction.total);
-    const totalSpacing = 32 - totalText.length - totalAmount.length;
-    
+    const totalSpacing = charWidth - totalText.length - totalAmount.length;
+
     receiptText += '\x1B\x45\x01';
     receiptText += totalText + ' '.repeat(Math.max(0, totalSpacing)) + totalAmount + '\n';
     receiptText += '\x1B\x45\x00';
-    receiptText += '--------------------------------\n';
-    
+    receiptText += separator + '\n';
+
     const statusText = 'Status:';
     const statusValue = getPaymentStatusText(transaction.paidAmount || 0, transaction.total);
-    const statusSpacing = 32 - statusText.length - statusValue.length;
+    const statusSpacing = charWidth - statusText.length - statusValue.length;
     receiptText += statusText + ' '.repeat(Math.max(0, statusSpacing)) + statusValue + '\n';
-    
+
     const paidText = 'Jumlah Bayar:';
     const paidAmount = formatCurrency(transaction.paidAmount || 0);
-    const paidSpacing = 32 - paidText.length - paidAmount.length;
+    const paidSpacing = charWidth - paidText.length - paidAmount.length;
     receiptText += paidText + ' '.repeat(Math.max(0, paidSpacing)) + paidAmount + '\n';
-    
+
     if (transaction.total > (transaction.paidAmount || 0)) {
       const remainingText = 'Sisa Tagihan:';
       const remainingAmount = formatCurrency(transaction.total - (transaction.paidAmount || 0));
-      const remainingSpacing = 32 - remainingText.length - remainingAmount.length;
+      const remainingSpacing = charWidth - remainingText.length - remainingAmount.length;
       receiptText += remainingText + ' '.repeat(Math.max(0, remainingSpacing)) + remainingAmount + '\n';
     }
-    
+
     receiptText += '\n';
     receiptText += '\x1B\x61\x01';
     receiptText += 'Terima kasih!\n';

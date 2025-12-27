@@ -13,28 +13,34 @@ interface ThermalPanjarDialogProps {
   onOpenChange: (open: boolean) => void
   advance: EmployeeAdvance
   companyName?: string
+  thermalPrinterWidth?: '58mm' | '80mm'
 }
 
-export function ThermalPanjarDialog({ 
-  open, 
-  onOpenChange, 
+export function ThermalPanjarDialog({
+  open,
+  onOpenChange,
   advance,
-  companyName = "AQUVIT"
+  companyName = "AQUVIT",
+  thermalPrinterWidth = '58mm'
 }: ThermalPanjarDialogProps) {
   const [isGenerating, setIsGenerating] = useState(false)
 
   const generateThermalPDF = () => {
     setIsGenerating(true)
-    
+
     try {
-      // Thermal printer size: 58mm width (approximately 164 points at 72 DPI)
+      // Dynamic paper width based on settings
+      const paperWidthMm = thermalPrinterWidth === '80mm' ? 80 : 58
+      const charWidth = thermalPrinterWidth === '80mm' ? 48 : 32
+      const separator = '-'.repeat(charWidth)
+
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: [58, 180] // Width: 58mm, Height: increased for more content
+        format: [paperWidthMm, 180]
       })
 
-      const pageWidth = 58
+      const pageWidth = paperWidthMm
       let yPos = 5
       const centerX = pageWidth / 2
 
@@ -51,7 +57,7 @@ export function ThermalPanjarDialog({
 
       // Divider
       doc.setFontSize(8)
-      doc.text('--------------------------------', centerX, yPos, { align: 'center' })
+      doc.text(separator, centerX, yPos, { align: 'center' })
       yPos += 6
 
       // Receipt details
@@ -69,7 +75,7 @@ export function ThermalPanjarDialog({
       yPos += 6
 
       // Amount box
-      doc.text('--------------------------------', centerX, yPos, { align: 'center' })
+      doc.text(separator, centerX, yPos, { align: 'center' })
       yPos += 4
       
       doc.setFontSize(12)
@@ -82,7 +88,7 @@ export function ThermalPanjarDialog({
       yPos += 6
       
       doc.setFontSize(8)
-      doc.text('--------------------------------', centerX, yPos, { align: 'center' })
+      doc.text(separator, centerX, yPos, { align: 'center' })
       yPos += 6
 
       // Remaining amount
@@ -139,7 +145,7 @@ export function ThermalPanjarDialog({
       }
 
       // Footer
-      doc.text('--------------------------------', centerX, yPos, { align: 'center' })
+      doc.text(separator, centerX, yPos, { align: 'center' })
       yPos += 4
       doc.setFontSize(7)
       doc.text(`Dicetak: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, centerX, yPos, { align: 'center' })
@@ -157,20 +163,22 @@ export function ThermalPanjarDialog({
 
   const generateRawBT = () => {
     // Generate ESC/POS commands for thermal printer via Bluetooth
+    const charWidth = thermalPrinterWidth === '80mm' ? 48 : 32
+    const separator = '-'.repeat(charWidth)
     const commands = []
-    
+
     // Initialize printer
     commands.push('\x1b\x40') // Initialize
     commands.push('\x1b\x61\x01') // Center alignment
-    
+
     // Company name
     commands.push('\x1b\x21\x08') // Double height
     commands.push(`${companyName}\n`)
     commands.push('\x1b\x21\x00') // Normal size
-    
+
     // Title
     commands.push('BUKTI PANJAR\n')
-    commands.push('--------------------------------\n')
+    commands.push(`${separator}\n`)
     
     // Details
     commands.push('\x1b\x61\x00') // Left align
@@ -180,15 +188,15 @@ export function ThermalPanjarDialog({
     
     // Amount
     commands.push('\x1b\x61\x01') // Center
-    commands.push('--------------------------------\n')
+    commands.push(`${separator}\n`)
     commands.push('\x1b\x21\x10') // Double width
-    const amount = new Intl.NumberFormat('id-ID', { 
-      style: 'currency', 
-      currency: 'IDR' 
+    const amount = new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR'
     }).format(advance.amount)
     commands.push(`${amount}\n`)
     commands.push('\x1b\x21\x00') // Normal size
-    commands.push('--------------------------------\n\n')
+    commands.push(`${separator}\n\n`)
     
     // Remaining amount
     commands.push('\x1b\x61\x00') // Left align
@@ -225,7 +233,7 @@ export function ThermalPanjarDialog({
     
     // Footer
     commands.push('\x1b\x61\x01') // Center
-    commands.push('--------------------------------\n')
+    commands.push(`${separator}\n`)
     commands.push(`Dicetak: ${format(new Date(), 'dd/MM/yyyy HH:mm')}\n\n\n`)
     
     // Cut paper

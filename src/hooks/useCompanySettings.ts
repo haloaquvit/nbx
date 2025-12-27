@@ -18,6 +18,8 @@ export interface CompanyInfo {
   bankAccount3?: string; // e.g., "BRI-777201000033304"
   bankAccountName3?: string; // Nama pemilik rekening 3
   salesPhone?: string; // Nomor HP Sales
+  // Thermal printer settings
+  thermalPrinterWidth?: '58mm' | '80mm'; // Ukuran kertas thermal (58mm atau 80mm)
 }
 
 export const useCompanySettings = () => {
@@ -50,6 +52,7 @@ export const useCompanySettings = () => {
         bankAccount3: settingsObj.company_bank_account_3 || '',
         bankAccountName3: settingsObj.company_bank_account_name_3 || '',
         salesPhone: settingsObj.company_sales_phone || '',
+        thermalPrinterWidth: (settingsObj.thermal_printer_width as '58mm' | '80mm') || '58mm',
       };
     },
     staleTime: 60 * 60 * 1000, // 1 hour (settings rarely change)
@@ -76,6 +79,7 @@ export const useCompanySettings = () => {
         { key: 'company_bank_account_3', value: newInfo.bankAccount3 || '' },
         { key: 'company_bank_account_name_3', value: newInfo.bankAccountName3 || '' },
         { key: 'company_sales_phone', value: newInfo.salesPhone || '' },
+        { key: 'thermal_printer_width', value: newInfo.thermalPrinterWidth || '58mm' },
       ];
       const { error } = await supabase.from('company_settings').upsert(settingsData);
       if (error) throw new Error(error.message);

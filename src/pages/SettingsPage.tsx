@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { Upload, Image as ImageIcon, MapPin } from 'lucide-react'
+import { Upload, Image as ImageIcon, MapPin, Printer } from 'lucide-react'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
@@ -37,6 +37,7 @@ export default function SettingsPage() {
     bankAccount3: '',
     bankAccountName3: '',
     salesPhone: '',
+    thermalPrinterWidth: '58mm' as '58mm' | '80mm',
   });
 
   useEffect(() => {
@@ -57,6 +58,7 @@ export default function SettingsPage() {
         bankAccount3: settings.bankAccount3 || '',
         bankAccountName3: settings.bankAccountName3 || '',
         salesPhone: settings.salesPhone || '',
+        thermalPrinterWidth: settings.thermalPrinterWidth || '58mm',
       });
     }
   }, [settings]);
@@ -254,6 +256,35 @@ export default function SettingsPage() {
             <Button type="button" variant="secondary" onClick={handleGetCurrentLocation} className="mt-4">
               <MapPin className="mr-2 h-4 w-4" /> Gunakan Lokasi Saat Ini
             </Button>
+          </div>
+
+          <div className="pt-6 border-t">
+            <CardTitle className="text-lg mb-2 flex items-center gap-2">
+              <Printer className="h-5 w-5" /> Pengaturan Printer Thermal
+            </CardTitle>
+            <CardDescription className="mb-4">
+              Atur ukuran kertas thermal untuk cetak struk via RawBT atau printer thermal lainnya.
+            </CardDescription>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="thermalPrinterWidth">Ukuran Kertas Thermal</Label>
+                <Select
+                  value={localInfo.thermalPrinterWidth}
+                  onValueChange={(value: '58mm' | '80mm') => setLocalInfo(prev => ({ ...prev, thermalPrinterWidth: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih ukuran kertas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="58mm">58mm (Kecil/Mobile)</SelectItem>
+                    <SelectItem value="80mm">80mm (Standar Kasir)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  58mm = 32 karakter/baris, 80mm = 48 karakter/baris
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="flex justify-end pt-6 border-t">

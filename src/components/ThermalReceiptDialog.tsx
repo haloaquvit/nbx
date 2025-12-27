@@ -13,28 +13,31 @@ interface ThermalReceiptDialogProps {
   onOpenChange: (open: boolean) => void
   expense: Expense
   companyName?: string
+  thermalPrinterWidth?: '58mm' | '80mm'
 }
 
-export function ThermalReceiptDialog({ 
-  open, 
-  onOpenChange, 
+export function ThermalReceiptDialog({
+  open,
+  onOpenChange,
   expense,
-  companyName = "AQUVIT"
+  companyName = "AQUVIT",
+  thermalPrinterWidth = '58mm'
 }: ThermalReceiptDialogProps) {
   const [isGenerating, setIsGenerating] = useState(false)
 
   const generateThermalPDF = () => {
     setIsGenerating(true)
-    
+
     try {
-      // Thermal printer size: 58mm width (approximately 164 points at 72 DPI)
+      // Lebar kertas berdasarkan setting
+      const paperWidthMm = thermalPrinterWidth === '80mm' ? 80 : 58
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
-        format: [58, 150] // Width: 58mm, Height: auto-adjust
+        format: [paperWidthMm, 150]
       })
 
-      const pageWidth = 58
+      const pageWidth = paperWidthMm
       let yPos = 5
       const centerX = pageWidth / 2
 
@@ -121,19 +124,23 @@ export function ThermalReceiptDialog({
   const generateRawBT = () => {
     // Generate ESC/POS commands for thermal printer via Bluetooth
     const commands = []
-    
+
+    // Lebar karakter berdasarkan setting: 58mm = 32 char, 80mm = 48 char
+    const charWidth = thermalPrinterWidth === '80mm' ? 48 : 32
+    const separator = '-'.repeat(charWidth)
+
     // Initialize printer
     commands.push('\x1b\x40') // Initialize
     commands.push('\x1b\x61\x01') // Center alignment
-    
+
     // Company name
     commands.push('\x1b\x21\x08') // Double height
     commands.push(`${companyName}\n`)
     commands.push('\x1b\x21\x00') // Normal size
-    
+
     // Title
     commands.push('BUKTI PENGELUARAN\n')
-    commands.push('--------------------------------\n')
+    commands.push(`${separator}\n`)
     
     // Details
     commands.push('\x1b\x61\x00') // Left align
@@ -143,15 +150,15 @@ export function ThermalReceiptDialog({
     
     // Amount
     commands.push('\x1b\x61\x01') // Center
-    commands.push('--------------------------------\n')
+    commands.push(`${separator}\n`)
     commands.push('\x1b\x21\x10') // Double width
-    const amount = new Intl.NumberFormat('id-ID', { 
-      style: 'currency', 
-      currency: 'IDR' 
+    const amount = new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR'
     }).format(expense.amount)
     commands.push(`${amount}\n`)
     commands.push('\x1b\x21\x00') // Normal size
-    commands.push('--------------------------------\n\n')
+    commands.push(`${separator}\n\n`)
     
     // Description
     commands.push('\x1b\x61\x00') // Left align
@@ -164,7 +171,7 @@ export function ThermalReceiptDialog({
     
     // Footer
     commands.push('\x1b\x61\x01') // Center
-    commands.push('--------------------------------\n')
+    commands.push(`${separator}\n`)
     commands.push(`Dicetak: ${format(new Date(), 'dd/MM/yyyy HH:mm')}\n\n\n`)
     
     // Cut paper

@@ -511,6 +511,10 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
   const handleThermalPrint = () => {
     const printWindow = window.open('', '_blank');
     const printableArea = document.getElementById('printable-area')?.innerHTML;
+    // Ukuran kertas dari setting
+    const paperWidth = companyInfo?.thermalPrinterWidth || '58mm';
+    const paperWidthMm = paperWidth === '80mm' ? '80mm' : '58mm';
+
     printWindow?.document.write(`
       <html>
         <head>
@@ -524,15 +528,15 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
               box-sizing: border-box;
             }
 
-            /* Setup halaman untuk thermal 80mm */
+            /* Setup halaman untuk thermal ${paperWidthMm} */
             @page {
-              size: 80mm auto;
+              size: ${paperWidthMm} auto;
               margin: 0;
             }
 
             @media print {
               body {
-                width: 80mm;
+                width: ${paperWidthMm};
                 margin: 0 auto;
               }
             }
@@ -544,7 +548,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
               line-height: 1.3;
               margin: 0;
               padding: 3mm 2mm;
-              width: 80mm;
+              width: ${paperWidthMm};
               background: white;
               color: black;
               -webkit-print-color-adjust: exact;
@@ -888,7 +892,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     printWindow?.document.close();
   };
 
-  // Fungsi cetak Rawbt Thermal 80mm
+  // Fungsi cetak Rawbt Thermal - ukuran sesuai setting (58mm atau 80mm)
   // RawBT URL Scheme: rawbt:base64,[base64_encoded_data]
   // Dokumentasi: https://rawbt.ru/en/docs/
   const handleRawbtPrint = () => {
@@ -896,7 +900,13 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
 
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
 
-    // Format teks untuk printer thermal 80mm - PLAIN TEXT (RawBT akan handle ESC/POS)
+    // Lebar karakter berdasarkan setting: 58mm = 32 char, 80mm = 48 char
+    const paperWidth = companyInfo?.thermalPrinterWidth || '58mm';
+    const charWidth = paperWidth === '80mm' ? 48 : 32;
+    const separator = '='.repeat(charWidth);
+    const separatorDash = '-'.repeat(charWidth);
+
+    // Format teks untuk printer thermal - PLAIN TEXT (RawBT akan handle ESC/POS)
     let receiptText = '';
 
     // Header - center
@@ -905,20 +915,20 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
       receiptText += '[C]' + companyInfo.address + '\n';
     }
     if (companyInfo?.phone) {
-      receiptText += '[C]' + companyInfo.phone + '\n';
+      receiptText += '[C]' + String(companyInfo.phone).replace(/,/g, '') + '\n';
     }
-    receiptText += '[C]================================\n';
+    receiptText += '[C]' + separator + '\n';
 
     // Transaction info section - left align
     receiptText += '[L]No: ' + transaction.id + '\n';
     receiptText += '[L]Tgl: ' + safeFormatDate(orderDate, "dd/MM/yy HH:mm") + '\n';
     receiptText += '[L]Plgn: ' + transaction.customerName + '\n';
     receiptText += '[L]Kasir: ' + transaction.cashierName + '\n';
-    receiptText += '[C]================================\n';
+    receiptText += '[C]' + separator + '\n';
 
     // Items header
     receiptText += '[L]<b>Item</b>[R]<b>Total</b>\n';
-    receiptText += '[C]--------------------------------\n';
+    receiptText += '[C]' + separatorDash + '\n';
 
     // Items - format seperti struk
     transaction.items.forEach((item) => {
@@ -930,7 +940,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
       receiptText += '[L]  ' + qtyPrice + '[R]' + itemTotal + '\n';
     });
 
-    receiptText += '[C]--------------------------------\n';
+    receiptText += '[C]' + separatorDash + '\n';
 
     // Subtotal
     const subtotalAmount = new Intl.NumberFormat("id-ID").format(transaction.subtotal);
@@ -942,14 +952,14 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
       receiptText += '[L]PPN (' + transaction.ppnPercentage + '%):[R]Rp ' + ppnAmount + '\n';
     }
 
-    receiptText += '[C]================================\n';
+    receiptText += '[C]' + separator + '\n';
 
     // Total - bold
     const totalAmount = new Intl.NumberFormat("id-ID").format(transaction.total);
     receiptText += '[L]<b>TOTAL:</b>[R]<b>Rp ' + totalAmount + '</b>\n';
 
     // Payment info
-    receiptText += '[C]--------------------------------\n';
+    receiptText += '[C]' + separatorDash + '\n';
     if (transaction.paidAmount > 0) {
       const paidAmount = new Intl.NumberFormat("id-ID").format(transaction.paidAmount);
       receiptText += '[L]Dibayar:[R]Rp ' + paidAmount + '\n';
@@ -962,7 +972,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     receiptText += '[L]Status:[R]' + (transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS') + '\n';
 
     // Thank you message
-    receiptText += '[C]================================\n';
+    receiptText += '[C]' + separator + '\n';
     receiptText += '[C]<b>Terima kasih!</b>\n';
     receiptText += '[C]' + format(new Date(), "dd/MM/yy HH:mm", { locale: id }) + '\n';
     receiptText += '\n\n\n'; // Feed paper
