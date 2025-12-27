@@ -6,7 +6,12 @@ echo.
 
 cd /d "%~dp0.."
 
-echo [1/3] Building web assets for Manokwari...
+echo [1/4] Setting server URL to Manokwari...
+powershell -Command "(Get-Content capacitor.config.ts) -replace \"url: 'https://nbx.aquvit.id'\", \"url: 'https://mkw.aquvit.id'\" | Set-Content capacitor.config.ts"
+echo Server URL set to: https://mkw.aquvit.id
+
+echo.
+echo [2/4] Building web assets for Manokwari...
 call npm run build:manokwari
 if errorlevel 1 (
     echo ERROR: Build failed!
@@ -15,7 +20,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/3] Syncing with Capacitor...
+echo [3/4] Syncing with Capacitor...
 call npx cap sync android
 if errorlevel 1 (
     echo ERROR: Capacitor sync failed!
@@ -24,7 +29,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] Building APK with Gradle...
+echo [4/4] Building APK with Gradle...
 cd android
 call gradlew.bat assembleDebug
 if errorlevel 1 (
@@ -42,5 +47,7 @@ echo APK Location: android\app\build\outputs\apk\debug\app-debug.apk
 echo Rename to: aquvit-manokwari.apk
 echo.
 echo Server: https://mkw.aquvit.id
+echo.
+echo NOTE: APK loads from LIVE URL - no need to rebuild for web updates!
 echo.
 pause
