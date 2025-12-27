@@ -97,6 +97,7 @@ export const PosForm = () => {
   const [transactionNotes, setTransactionNotes] = useState('');
   const [loadingPrices, setLoadingPrices] = useState<{[key: number]: boolean}>({});
   const productSearchInputRef = useRef<HTMLInputElement>(null);
+  const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({});
 
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
@@ -239,6 +240,13 @@ export const PosForm = () => {
     }
   }, [showProductDropdown]);
 
+  // Cleanup debounce timers on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimers.current).forEach(timer => clearTimeout(timer));
+    };
+  }, []);
+
   // Check retasi validation for drivers
   useEffect(() => {
     const checkRetasiValidation = async () => {
@@ -297,10 +305,29 @@ export const PosForm = () => {
     }
     
     if (field === 'qty' && newItems[index].product && !newItems[index].isBonus) {
-      // Handle main item quantity change with bonus updates
-      setLoadingPrices(prev => ({ ...prev, [newItems[index].id]: true }));
-      await updateItemWithBonuses(newItems[index], value);
-      setLoadingPrices(prev => ({ ...prev, [newItems[index].id]: false }));
+      const itemId = newItems[index].id;
+      const itemToUpdate = { ...newItems[index], qty: value };
+
+      // Update qty secara lokal dulu (UI responsif)
+      newItems[index].qty = value;
+      setItems(newItems);
+
+      // Clear timer sebelumnya jika ada
+      if (debounceTimers.current[itemId]) {
+        clearTimeout(debounceTimers.current[itemId]);
+      }
+
+      // Set timer baru untuk calculate price setelah delay (500ms)
+      debounceTimers.current[itemId] = setTimeout(async () => {
+        setLoadingPrices(prev => ({ ...prev, [itemId]: true }));
+        // Gunakan itemToUpdate yang sudah di-capture dengan qty baru
+        if (itemToUpdate.product) {
+          await updateItemWithBonuses(itemToUpdate, value);
+        }
+        setLoadingPrices(prev => ({ ...prev, [itemId]: false }));
+        delete debounceTimers.current[itemId];
+      }, 500);
+
       return;
     }
 
