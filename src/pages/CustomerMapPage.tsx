@@ -128,10 +128,10 @@ export default function CustomerMapPage() {
   return (
     <div className="h-[calc(100vh-12rem)] md:h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 md:p-4 border-b bg-background">
+      <div className="flex items-center justify-between p-3 md:p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         <div>
-          <h1 className="text-xl font-bold">Peta Pelanggan</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-xl font-bold text-gray-900 dark:text-white">Peta Pelanggan</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
             {customersWithCoords.length} pelanggan dengan koordinat
           </p>
         </div>
@@ -140,6 +140,7 @@ export default function CustomerMapPage() {
             variant="outline"
             size="sm"
             onClick={() => refetch()}
+            className="dark:border-gray-600"
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -148,7 +149,7 @@ export default function CustomerMapPage() {
             size="sm"
             onClick={getUserLocation}
             disabled={isGettingLocation}
-            className={userLocation ? '' : 'bg-blue-600 hover:bg-blue-700'}
+            className={userLocation ? 'dark:border-gray-600' : 'bg-blue-600 hover:bg-blue-700'}
           >
             {isGettingLocation ? (
               <RefreshCw className="h-4 w-4 animate-spin" />
@@ -203,7 +204,7 @@ export default function CustomerMapPage() {
           />
         </TabsContent>
 
-        <TabsContent value="nearby" className="flex-1 m-0 p-4 pt-2 overflow-hidden">
+        <TabsContent value="nearby" className="flex-1 m-0 px-2 pt-2 overflow-hidden">
           <NearbyCustomerList
             customers={customers || []}
             userLocation={userLocation}

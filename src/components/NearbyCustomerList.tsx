@@ -6,7 +6,6 @@ import { sortCustomersByDistance, filterByRadius } from '@/utils/geoUtils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
@@ -195,148 +194,141 @@ export function NearbyCustomerList({
           <p>Tidak ada pelanggan dalam radius {radiusMeters >= 1000 ? `${radiusMeters/1000} km` : `${radiusMeters} m`}</p>
         </div>
       ) : (
-        <ScrollArea className="h-[calc(100vh-22rem)] md:h-[calc(100vh-280px)]">
-          <div className="space-y-3 pr-4">
-            {nearbyCustomers.map((customer, index) => {
-              const isKiosk = customer.classification === 'Kios/Toko'
+        <div className="space-y-3 overflow-y-auto pb-4" style={{ maxHeight: 'calc(100vh - 20rem)' }}>
+          {nearbyCustomers.map((customer, index) => {
+            const isKiosk = customer.classification === 'Kios/Toko'
 
-              return (
-                <Card
-                  key={customer.id}
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => onCustomerSelect?.(customer as Customer)}
-                >
-                  <CardContent className="p-3">
-                    <div className="flex gap-3">
-                      {/* Photo or Icon */}
-                      <div className="flex-shrink-0">
-                        {customer.store_photo_url ? (
-                          <img
-                            src={PhotoUploadService.getPhotoUrl(customer.store_photo_url, 'Customers_Images')}
-                            alt={customer.name}
-                            className="w-16 h-16 object-cover rounded-lg"
-                          />
-                        ) : (
-                          <div className={`w-16 h-16 rounded-lg flex items-center justify-center ${
-                            isKiosk ? 'bg-green-100 dark:bg-green-900/50' : 'bg-blue-100 dark:bg-blue-900/50'
-                          }`}>
-                            {isKiosk ? (
-                              <Store className="h-8 w-8 text-green-600 dark:text-green-400" />
-                            ) : (
-                              <Home className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                            )}
-                          </div>
-                        )}
-                      </div>
+            return (
+              <Card
+                key={customer.id}
+                className="cursor-pointer hover:shadow-md transition-shadow dark:bg-slate-800/50"
+                onClick={() => onCustomerSelect?.(customer as Customer)}
+              >
+                <CardContent className="p-3">
+                  {/* Top row: Photo, Name, Distance, Rank */}
+                  <div className="flex gap-3 items-start">
+                    {/* Photo or Icon */}
+                    <div className="flex-shrink-0">
+                      {customer.store_photo_url ? (
+                        <img
+                          src={PhotoUploadService.getPhotoUrl(customer.store_photo_url, 'Customers_Images')}
+                          alt={customer.name}
+                          className="w-14 h-14 object-cover rounded-lg"
+                        />
+                      ) : (
+                        <div className={`w-14 h-14 rounded-lg flex items-center justify-center ${
+                          isKiosk ? 'bg-green-100 dark:bg-green-900/50' : 'bg-blue-100 dark:bg-blue-900/50'
+                        }`}>
+                          {isKiosk ? (
+                            <Store className="h-6 w-6 text-green-600 dark:text-green-400" />
+                          ) : (
+                            <Home className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                          )}
+                        </div>
+                      )}
+                    </div>
 
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <h4 className="font-semibold text-sm truncate">
-                              {customer.name}
-                            </h4>
-                            <p className="text-xs text-muted-foreground line-clamp-2">
-                              {customer.address}
-                            </p>
-                          </div>
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-1">
+                        <h4 className="font-semibold text-sm truncate dark:text-white">
+                          {customer.name}
+                        </h4>
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           <Badge
                             variant="outline"
-                            className="flex-shrink-0 bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700"
+                            className="bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700 text-xs"
                           >
                             {customer.distanceFormatted}
                           </Badge>
+                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                            index === 0
+                              ? 'bg-yellow-400 text-yellow-900'
+                              : index === 1
+                              ? 'bg-gray-300 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
+                              : index === 2
+                              ? 'bg-orange-300 text-orange-800'
+                              : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
+                          }`}>
+                            {index + 1}
+                          </div>
                         </div>
-
-                        {/* Classification & Order Count */}
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge
-                            variant="secondary"
-                            className={`text-xs ${
-                              isKiosk
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
-                                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
-                            }`}
-                          >
-                            {customer.classification || 'Umum'}
-                          </Badge>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex gap-1 mt-2">
-                          {canAccessDriverPos && (
-                            <Button
-                              size="sm"
-                              className="h-7 px-2 text-xs bg-green-600 hover:bg-green-700"
-                              onClick={e => {
-                                e.stopPropagation()
-                                handleOpenDriverPos(customer as Customer)
-                              }}
-                            >
-                              <ShoppingCart className="h-3 w-3 mr-1" />
-                              POS
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={e => {
-                              e.stopPropagation()
-                              handleCall(customer.phone)
-                            }}
-                          >
-                            <Phone className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={e => {
-                              e.stopPropagation()
-                              handleOpenMaps(customer as Customer)
-                            }}
-                          >
-                            <Navigation className="h-3 w-3" />
-                          </Button>
-                        </div>
-
                       </div>
+                      <p className="text-xs text-muted-foreground line-clamp-1">
+                        {customer.address}
+                      </p>
+                      {/* Classification */}
+                      <Badge
+                        variant="secondary"
+                        className={`text-xs mt-1 ${
+                          isKiosk
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+                            : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                        }`}
+                      >
+                        {customer.classification || 'Umum'}
+                      </Badge>
+                    </div>
+                  </div>
 
-                      {/* Rank & Visited Button */}
-                      <div className="flex-shrink-0 flex flex-col items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                          index === 0
-                            ? 'bg-yellow-400 text-yellow-900 dark:bg-yellow-500 dark:text-yellow-900'
-                            : index === 1
-                            ? 'bg-gray-300 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
-                            : index === 2
-                            ? 'bg-orange-300 text-orange-800 dark:bg-orange-600 dark:text-orange-100'
-                            : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
-                        }`}>
-                          {index + 1}
-                        </div>
+                  {/* Bottom row: Actions */}
+                  <div className="flex gap-2 mt-2 justify-between">
+                    <div className="flex gap-1">
+                      {canAccessDriverPos && (
                         <Button
                           size="sm"
-                          variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
-                          className={`h-auto py-1 px-2 text-[10px] leading-tight ${
-                            visitedIds.has(customer.id)
-                              ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700'
-                              : 'border-dashed'
-                          }`}
-                          onClick={e => handleMarkVisited(customer as Customer, e)}
+                          className="h-8 px-3 text-xs bg-green-600 hover:bg-green-700"
+                          onClick={e => {
+                            e.stopPropagation()
+                            handleOpenDriverPos(customer as Customer)
+                          }}
                         >
-                          <CheckCircle2 className="h-3 w-3 mr-0.5" />
-                          <span className="whitespace-nowrap">Sudah<br/>Dikunjungi</span>
+                          <ShoppingCart className="h-3 w-3 mr-1" />
+                          POS
                         </Button>
-                      </div>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-3 text-xs dark:border-slate-600"
+                        onClick={e => {
+                          e.stopPropagation()
+                          handleCall(customer.phone)
+                        }}
+                      >
+                        <Phone className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 px-3 text-xs dark:border-slate-600"
+                        onClick={e => {
+                          e.stopPropagation()
+                          handleOpenMaps(customer as Customer)
+                        }}
+                      >
+                        <Navigation className="h-3 w-3" />
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        </ScrollArea>
+                    <Button
+                      size="sm"
+                      variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
+                      className={`h-8 px-2 text-xs ${
+                        visitedIds.has(customer.id)
+                          ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700'
+                          : 'border-dashed dark:border-slate-600'
+                      }`}
+                      onClick={e => handleMarkVisited(customer as Customer, e)}
+                    >
+                      <CheckCircle2 className="h-3 w-3 mr-1" />
+                      Dikunjungi
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
       )}
     </div>
   )

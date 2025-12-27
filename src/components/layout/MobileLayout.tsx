@@ -216,9 +216,11 @@ const MobileLayout = () => {
 
       {/* Sidebar */}
       <div className={cn(
-        "fixed left-0 top-0 z-50 h-full w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out flex flex-col",
+        "fixed left-0 top-0 z-50 h-screen w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out",
         isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-      )}>
+      )}
+      style={{ display: 'flex', flexDirection: 'column' }}
+      >
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="flex items-center space-x-3">
             <Avatar className="h-10 w-10">
@@ -238,7 +240,7 @@ const MobileLayout = () => {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto min-h-0">
+        <nav className="p-4 space-y-2 overflow-y-auto" style={{ flex: 1, minHeight: 0 }}>
           {/* Back/Home Button */}
           {currentPath !== '/' && (
             <Button
