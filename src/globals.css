@@ -117,14 +117,14 @@
   }
 
   body {
-    @apply bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 text-foreground min-h-screen;
+    @apply bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-foreground min-h-screen;
     font-size: 1.125rem; /* 18px - increased from default 16px */
     background-attachment: fixed;
   }
 
   /* Custom card styling with subtle animations */
   .card {
-    @apply backdrop-blur-sm bg-white/80 border border-white/50 shadow-lg hover:shadow-xl transition-all duration-300;
+    @apply backdrop-blur-sm bg-white/80 dark:bg-slate-800/80 border border-white/50 dark:border-slate-700/50 shadow-lg hover:shadow-xl transition-all duration-300;
   }
 
   /* Enhanced button hover effects */
@@ -134,7 +134,7 @@
 
   /* Glass morphism effect for cards */
   .glass-card {
-    @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl shadow-xl;
+    @apply bg-white/10 dark:bg-slate-800/30 backdrop-blur-md border border-white/20 dark:border-slate-700/30 rounded-xl shadow-xl;
   }
 
   /* Animated gradient background for important elements */

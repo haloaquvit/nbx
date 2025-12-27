@@ -158,7 +158,7 @@ export function NearbyCustomerList({
       </div>
 
       {/* Hide visited toggle */}
-      <div className="flex items-center justify-between px-1 py-2 bg-muted/50 rounded-lg">
+      <div className="flex items-center justify-between px-1 py-2 bg-muted/50 dark:bg-slate-800/50 rounded-lg">
         <div className="flex items-center gap-2">
           {hideVisited ? (
             <EyeOff className="h-4 w-4 text-muted-foreground" />
@@ -169,7 +169,7 @@ export function NearbyCustomerList({
             Sembunyikan yang sudah dikunjungi
           </Label>
           {visitCount > 0 && (
-            <Badge variant="secondary" className="bg-green-100 text-green-700">
+            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300">
               {visitCount} dikunjungi
             </Badge>
           )}
@@ -195,7 +195,7 @@ export function NearbyCustomerList({
           <p>Tidak ada pelanggan dalam radius {radiusMeters >= 1000 ? `${radiusMeters/1000} km` : `${radiusMeters} m`}</p>
         </div>
       ) : (
-        <ScrollArea className="h-[calc(100vh-280px)]">
+        <ScrollArea className="h-[calc(100vh-22rem)] md:h-[calc(100vh-280px)]">
           <div className="space-y-3 pr-4">
             {nearbyCustomers.map((customer, index) => {
               const isKiosk = customer.classification === 'Kios/Toko'
@@ -218,12 +218,12 @@ export function NearbyCustomerList({
                           />
                         ) : (
                           <div className={`w-16 h-16 rounded-lg flex items-center justify-center ${
-                            isKiosk ? 'bg-green-100' : 'bg-blue-100'
+                            isKiosk ? 'bg-green-100 dark:bg-green-900/50' : 'bg-blue-100 dark:bg-blue-900/50'
                           }`}>
                             {isKiosk ? (
-                              <Store className="h-8 w-8 text-green-600" />
+                              <Store className="h-8 w-8 text-green-600 dark:text-green-400" />
                             ) : (
-                              <Home className="h-8 w-8 text-blue-600" />
+                              <Home className="h-8 w-8 text-blue-600 dark:text-blue-400" />
                             )}
                           </div>
                         )}
@@ -242,7 +242,7 @@ export function NearbyCustomerList({
                           </div>
                           <Badge
                             variant="outline"
-                            className="flex-shrink-0 bg-orange-50 text-orange-700 border-orange-200"
+                            className="flex-shrink-0 bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700"
                           >
                             {customer.distanceFormatted}
                           </Badge>
@@ -254,8 +254,8 @@ export function NearbyCustomerList({
                             variant="secondary"
                             className={`text-xs ${
                               isKiosk
-                                ? 'bg-green-100 text-green-700'
-                                : 'bg-blue-100 text-blue-700'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+                                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
                             }`}
                           >
                             {customer.classification || 'Umum'}
@@ -307,12 +307,12 @@ export function NearbyCustomerList({
                       <div className="flex-shrink-0 flex flex-col items-center gap-2">
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                           index === 0
-                            ? 'bg-yellow-400 text-yellow-900'
+                            ? 'bg-yellow-400 text-yellow-900 dark:bg-yellow-500 dark:text-yellow-900'
                             : index === 1
-                            ? 'bg-gray-300 text-gray-700'
+                            ? 'bg-gray-300 text-gray-700 dark:bg-gray-600 dark:text-gray-200'
                             : index === 2
-                            ? 'bg-orange-300 text-orange-800'
-                            : 'bg-gray-100 text-gray-500'
+                            ? 'bg-orange-300 text-orange-800 dark:bg-orange-600 dark:text-orange-100'
+                            : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
                         }`}>
                           {index + 1}
                         </div>
@@ -321,7 +321,7 @@ export function NearbyCustomerList({
                           variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
                           className={`h-auto py-1 px-2 text-[10px] leading-tight ${
                             visitedIds.has(customer.id)
-                              ? 'bg-green-100 text-green-700 border-green-300'
+                              ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700'
                               : 'border-dashed'
                           }`}
                           onClick={e => handleMarkVisited(customer as Customer, e)}

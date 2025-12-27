@@ -168,14 +168,14 @@ export default function ProductionPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="text-lg md:text-xl font-semibold mb-2">Produksi</div>
-      <div className="text-sm text-slate-600 mb-4">
+      <div className="text-sm text-slate-600 dark:text-slate-400 mb-4">
         Input produksi untuk menambah stok Finished Goods. Jika "Konsumsi BOM" aktif, sistem otomatis mengurangi bahan.
       </div>
 
-      <section className="bg-white border border-slate-200 rounded-xl p-4 mb-6">
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6">
         <div className="grid md:grid-cols-3 gap-3">
           <div>
-            <div className="text-xs text-slate-600 mb-1">Produk (Finished Goods)</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Produk (Finished Goods)</div>
             <Select value={selectedProductId} onValueChange={setSelectedProductId}>
               <SelectTrigger>
                 <SelectValue placeholder="Pilih produk..." />
@@ -194,7 +194,7 @@ export default function ProductionPage() {
             </Select>
           </div>
           <div>
-            <div className="text-xs text-slate-600 mb-1">Qty Produksi</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Qty Produksi</div>
             <Input
               type="number"
               inputMode="numeric"
@@ -205,7 +205,7 @@ export default function ProductionPage() {
             />
           </div>
           <div>
-            <div className="text-xs text-slate-600 mb-1">Catatan (opsional)</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Catatan (opsional)</div>
             <Input 
               value={note} 
               onChange={(e) => setNote(e.target.value)} 
@@ -237,25 +237,25 @@ export default function ProductionPage() {
         {/* BOM Preview - Hidden on mobile */}
         {selectedProduct && bom && bom.length > 0 && (
           <div className="mt-4 hidden md:block">
-            <div className="text-xs text-slate-600 mb-1">Ringkasan BOM (per 1 unit)</div>
-            <div className="border rounded overflow-hidden">
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Ringkasan BOM (per 1 unit)</div>
+            <div className="border border-slate-200 dark:border-slate-700 rounded overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[600px]">
-                  <thead className="bg-slate-50">
+                  <thead className="bg-slate-50 dark:bg-slate-800">
                     <tr>
-                      <th className="text-left px-3 py-2">Material</th>
-                      <th className="text-left px-3 py-2">Unit</th>
-                      <th className="text-left px-3 py-2">Qty per Unit</th>
-                      <th className="text-left px-3 py-2">Total Qty ({quantity} unit)</th>
+                      <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Material</th>
+                      <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Unit</th>
+                      <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Qty per Unit</th>
+                      <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Total Qty ({quantity} unit)</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="bg-white dark:bg-slate-900">
                     {bom.map((item, index) => (
-                      <tr key={index} className="border-t">
-                        <td className="px-3 py-2">{item.materialName}</td>
-                        <td className="px-3 py-2">{item.unit}</td>
-                        <td className="px-3 py-2">{item.quantity}</td>
-                        <td className="px-3 py-2 font-medium">
+                      <tr key={index} className="border-t border-slate-200 dark:border-slate-700">
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{item.materialName}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{item.unit}</td>
+                        <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{item.quantity}</td>
+                        <td className="px-3 py-2 font-medium text-slate-700 dark:text-slate-300">
                           {(item.quantity * quantity).toFixed(2)}
                         </td>
                       </tr>
@@ -264,32 +264,32 @@ export default function ProductionPage() {
                 </table>
               </div>
             </div>
-            <div className="text-xs text-slate-500 mt-1">
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
               BOM hanya dikonsumsi jika opsi "Konsumsi BOM" diaktifkan.
             </div>
           </div>
         )}
 
         {selectedProduct && bom.length === 0 && (
-          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+          <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-sm text-yellow-800 dark:text-yellow-200">
             Produk ini belum memiliki BOM (Bill of Materials). Produksi akan tetap berjalan tanpa konsumsi bahan.
           </div>
         )}
       </section>
 
       {/* Error Input Section */}
-      <section className="bg-white border border-slate-200 rounded-xl p-4 mb-6">
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6">
         <div className="flex items-center gap-2 mb-4">
           <AlertTriangle className="h-5 w-5 text-red-500" />
-          <div className="text-lg font-semibold text-red-600">Input Bahan Rusak</div>
+          <div className="text-lg font-semibold text-red-600 dark:text-red-400">Input Bahan Rusak</div>
         </div>
-        <div className="text-sm text-slate-600 mb-4">
+        <div className="text-sm text-slate-600 dark:text-slate-400 mb-4">
           Input bahan yang rusak/cacat dalam produksi. Stock akan berkurang dan tercatat di riwayat produksi.
         </div>
 
         <div className="grid md:grid-cols-3 gap-3">
           <div>
-            <div className="text-xs text-slate-600 mb-1">Nama Bahan *</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Nama Bahan *</div>
             <Select value={selectedMaterialId} onValueChange={setSelectedMaterialId}>
               <SelectTrigger>
                 <SelectValue placeholder="Pilih bahan..." />
@@ -308,7 +308,7 @@ export default function ProductionPage() {
             </Select>
           </div>
           <div>
-            <div className="text-xs text-slate-600 mb-1">Jumlah Bahan Rusak *</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Jumlah Bahan Rusak *</div>
             <Input
               type="number"
               inputMode="numeric"
@@ -319,17 +319,17 @@ export default function ProductionPage() {
             />
           </div>
           <div>
-            <div className="text-xs text-slate-600 mb-1">Catatan Kerusakan</div>
-            <Input 
-              value={errorNote} 
-              onChange={(e) => setErrorNote(e.target.value)} 
-              placeholder="Deskripsi kerusakan/cacat" 
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Catatan Kerusakan</div>
+            <Input
+              value={errorNote}
+              onChange={(e) => setErrorNote(e.target.value)}
+              placeholder="Deskripsi kerusakan/cacat"
             />
           </div>
         </div>
 
         <div className="mt-4 flex justify-between items-center">
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
             Tanggal input: {format(new Date(), 'dd/MM/yyyy HH:mm')} | Yang mencatat: {user?.name || 'Unknown'}
           </div>
           <Button 
@@ -342,42 +342,42 @@ export default function ProductionPage() {
         </div>
       </section>
 
-      <section className="bg-white border border-slate-200 rounded-xl">
-        <div className="px-4 py-3 font-medium">Riwayat Produksi Terakhir</div>
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
+        <div className="px-4 py-3 font-medium text-slate-800 dark:text-slate-200">Riwayat Produksi Terakhir</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[600px]">
-            <thead className="bg-slate-50">
+            <thead className="bg-slate-50 dark:bg-slate-800">
               <tr>
-                <th className="text-left px-3 py-2">Waktu</th>
-                <th className="text-left px-3 py-2">Ref</th>
-                <th className="text-left px-3 py-2">Produk</th>
-                <th className="text-left px-3 py-2">Qty</th>
-                <th className="text-left px-3 py-2">BOM</th>
-                <th className="text-left px-3 py-2">Catatan</th>
-                <th className="text-left px-3 py-2">Action</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Waktu</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Ref</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Produk</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Qty</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">BOM</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Catatan</th>
+                <th className="text-left px-3 py-2 text-slate-700 dark:text-slate-200">Action</th>
               </tr>
             </thead>
             <tbody>
               {productions.map((record) => (
-                <tr key={record.id} className="border-t">
-                  <td className="px-3 py-2">
+                <tr key={record.id} className="border-t border-slate-200 dark:border-slate-700">
+                  <td className="px-3 py-2 text-slate-700 dark:text-slate-300">
                     {format(record.createdAt, 'dd/MM/yyyy HH:mm')}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs">
+                  <td className="px-3 py-2 font-mono text-xs text-slate-700 dark:text-slate-300">
                     {record.ref}
                   </td>
-                  <td className="px-3 py-2">{record.productName}</td>
-                  <td className="px-3 py-2 font-medium">{formatNumber(record.quantity)}</td>
+                  <td className="px-3 py-2 text-slate-700 dark:text-slate-300">{record.productName}</td>
+                  <td className="px-3 py-2 font-medium text-slate-700 dark:text-slate-300">{formatNumber(record.quantity)}</td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-1 rounded-full text-xs ${
-                      record.consumeBOM 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-gray-100 text-gray-800'
+                      record.consumeBOM
+                        ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-300'
                     }`}>
                       {record.consumeBOM ? 'Ya' : 'Tidak'}
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-gray-600">
+                  <td className="px-3 py-2 text-gray-600 dark:text-slate-400">
                     {record.note || '-'}
                   </td>
                   <td className="px-3 py-2">
@@ -431,7 +431,7 @@ export default function ProductionPage() {
               ))}
               {productions.length === 0 && (
                 <tr>
-                  <td className="px-3 py-6 text-center text-slate-500" colSpan={7}>
+                  <td className="px-3 py-6 text-center text-slate-500 dark:text-slate-400" colSpan={7}>
                     {isLoading ? 'Loading...' : 'Belum ada produksi'}
                   </td>
                 </tr>

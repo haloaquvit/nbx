@@ -22,7 +22,9 @@ export default function CustomerMapPage() {
 
   // Filter state
   const [radiusMeters, setRadiusMeters] = useState(2000) // 2km default
-  const [activeTab, setActiveTab] = useState('map')
+
+  // Default to 'nearby' tab for all users (especially on mobile)
+  const [activeTab, setActiveTab] = useState('nearby')
 
   // Get user location on mount
   useEffect(() => {
@@ -124,9 +126,9 @@ export default function CustomerMapPage() {
   }
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col">
+    <div className="h-[calc(100vh-12rem)] md:h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b bg-background">
+      <div className="flex items-center justify-between p-3 md:p-4 border-b bg-background">
         <div>
           <h1 className="text-xl font-bold">Peta Pelanggan</h1>
           <p className="text-sm text-muted-foreground">
@@ -162,13 +164,13 @@ export default function CustomerMapPage() {
 
       {/* Location Error Banner */}
       {locationError && !userLocation && (
-        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2 flex items-center gap-2 text-sm text-orange-800">
+        <div className="bg-orange-50 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800 px-4 py-2 flex items-center gap-2 text-sm text-orange-800 dark:text-orange-200">
           <AlertCircle className="h-4 w-4" />
           {locationError}
           <Button
             variant="link"
             size="sm"
-            className="ml-auto text-orange-800 p-0 h-auto"
+            className="ml-auto text-orange-800 dark:text-orange-200 p-0 h-auto"
             onClick={getUserLocation}
           >
             Coba lagi

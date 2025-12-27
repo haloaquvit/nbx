@@ -57,10 +57,10 @@ export function ReceivablesTable() {
 
   // Get aging category based on days
   const getAgingCategory = (days: number): { label: string; color: string; bgColor: string } => {
-    if (days <= 30) return { label: '0-30 hari', color: 'text-green-700', bgColor: 'bg-green-100' }
-    if (days <= 60) return { label: '31-60 hari', color: 'text-yellow-700', bgColor: 'bg-yellow-100' }
-    if (days <= 90) return { label: '61-90 hari', color: 'text-orange-700', bgColor: 'bg-orange-100' }
-    return { label: '>90 hari', color: 'text-red-700', bgColor: 'bg-red-100' }
+    if (days <= 30) return { label: '0-30 hari', color: 'text-green-700 dark:text-green-400', bgColor: 'bg-green-100 dark:bg-green-900/30' }
+    if (days <= 60) return { label: '31-60 hari', color: 'text-yellow-700 dark:text-yellow-400', bgColor: 'bg-yellow-100 dark:bg-yellow-900/30' }
+    if (days <= 90) return { label: '61-90 hari', color: 'text-orange-700 dark:text-orange-400', bgColor: 'bg-orange-100 dark:bg-orange-900/30' }
+    return { label: '>90 hari', color: 'text-red-700 dark:text-red-400', bgColor: 'bg-red-100 dark:bg-red-900/30' }
   }
 
   const receivables = React.useMemo(() => {

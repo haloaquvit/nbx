@@ -38,7 +38,7 @@ export function CashFlowPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
               {isBalanceLoading ? "..." : new Intl.NumberFormat("id-ID", {
                 style: "currency",
                 currency: "IDR",
@@ -57,7 +57,7 @@ export function CashFlowPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-gray-600">
+            <div className="text-2xl font-bold text-gray-600 dark:text-slate-400">
               {isBalanceLoading ? "..." : new Intl.NumberFormat("id-ID", {
                 style: "currency",
                 currency: "IDR",
@@ -73,10 +73,10 @@ export function CashFlowPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Kas Masuk Hari Ini</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-600" />
+            <TrendingUp className="h-4 w-4 text-green-600 dark:text-green-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
               {isBalanceLoading ? "..." : new Intl.NumberFormat("id-ID", {
                 style: "currency",
                 currency: "IDR",
@@ -92,10 +92,10 @@ export function CashFlowPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Kas Keluar Hari Ini</CardTitle>
-            <TrendingDown className="h-4 w-4 text-red-600" />
+            <TrendingDown className="h-4 w-4 text-red-600 dark:text-red-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">
+            <div className="text-2xl font-bold text-red-600 dark:text-red-400">
               {isBalanceLoading ? "..." : new Intl.NumberFormat("id-ID", {
                 style: "currency",
                 currency: "IDR",
@@ -111,9 +111,9 @@ export function CashFlowPage() {
 
       {/* Net Cash Flow Today */}
       {cashBalance && (
-        <Card className={`mb-6 ${cashBalance.todayNet >= 0 ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+        <Card className={`mb-6 ${cashBalance.todayNet >= 0 ? 'border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20' : 'border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20'}`}>
           <CardHeader>
-            <CardTitle className={`flex items-center gap-2 ${cashBalance.todayNet >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+            <CardTitle className={`flex items-center gap-2 ${cashBalance.todayNet >= 0 ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>
               {cashBalance.todayNet >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
               Arus Kas Bersih Hari Ini
             </CardTitle>
@@ -122,7 +122,7 @@ export function CashFlowPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className={`text-3xl font-bold ${cashBalance.todayNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className={`text-3xl font-bold ${cashBalance.todayNet >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
               {new Intl.NumberFormat("id-ID", {
                 style: "currency",
                 currency: "IDR",

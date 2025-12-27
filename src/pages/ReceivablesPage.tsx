@@ -9,7 +9,7 @@ export default function ReceivablesPage() {
   return (
     <div className="w-full max-w-none p-4 lg:p-6">
       <div className="text-lg md:text-xl font-semibold mb-2">Manajemen Piutang</div>
-      <div className="text-sm text-slate-600 mb-6">
+      <div className="text-sm text-slate-600 dark:text-slate-400 mb-6">
         Kelola piutang pelanggan dan lihat history pembayaran
       </div>
 
