@@ -12,7 +12,8 @@ import { PayReceivableDialog } from "./PayReceivableDialog"
 import { ReceivablesReportPDF } from "./ReceivablesReportPDF"
 // import { PaymentHistoryRow } from "./PaymentHistoryRow" // Removed
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
-import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer, Pencil } from "lucide-react"
+import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer, Pencil, FileSpreadsheet } from "lucide-react"
+import * as XLSX from 'xlsx'
 import { Input } from "./ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Badge } from "./ui/badge"
@@ -387,6 +388,80 @@ export function ReceivablesTable() {
     return { counts, amounts }
   }, [allReceivables])
 
+  const handleExportExcel = () => {
+    const exportData = receivables.map((t, idx) => {
+      const days = getAgingDays(t.orderDate)
+      const category = getAgingCategory(days)
+      const remaining = t.total - (t.paidAmount || 0)
+      const dueStatus = getDueStatus(t)
+
+      let statusLabel = ''
+      if ((t.paidAmount || 0) === 0) statusLabel = 'Belum Bayar'
+      else if ((t.paidAmount || 0) >= t.total) statusLabel = 'Lunas'
+      else statusLabel = 'Kredit'
+
+      let dueStatusLabel = ''
+      if (dueStatus === 'overdue') dueStatusLabel = 'Terlambat'
+      else if (dueStatus === 'due-soon') dueStatusLabel = 'Segera'
+      else if (dueStatus === 'normal') dueStatusLabel = 'Normal'
+      else dueStatusLabel = '-'
+
+      return {
+        'No': idx + 1,
+        'No. Order': t.id,
+        'Pelanggan': t.customerName,
+        'Tgl Order': format(new Date(t.orderDate), "dd/MM/yyyy", { locale: id }),
+        'Tgl Jatuh Tempo': t.dueDate ? format(new Date(t.dueDate), "dd/MM/yyyy", { locale: id }) : '-',
+        'Status Jatuh Tempo': dueStatusLabel,
+        'Total Tagihan': t.total,
+        'Telah Dibayar': t.paidAmount || 0,
+        'Sisa Tagihan': remaining,
+        'Status Pembayaran': statusLabel,
+        'Umur (Hari)': days,
+        'Kategori Umur': category.label,
+      }
+    })
+
+    // Create summary data
+    const totalTagihan = receivables.reduce((sum, t) => sum + t.total, 0)
+    const totalDibayar = receivables.reduce((sum, t) => sum + (t.paidAmount || 0), 0)
+    const totalSisa = receivables.reduce((sum, t) => sum + (t.total - (t.paidAmount || 0)), 0)
+
+    const summaryData = [
+      {},
+      { 'No': 'RINGKASAN', 'No. Order': '', 'Pelanggan': '', 'Tgl Order': '', 'Tgl Jatuh Tempo': '', 'Status Jatuh Tempo': '', 'Total Tagihan': totalTagihan, 'Telah Dibayar': totalDibayar, 'Sisa Tagihan': totalSisa },
+      {},
+      { 'No': 'Aging 0-30 hari', 'No. Order': agingCounts.counts['0-30'] + ' transaksi', 'Total Tagihan': agingCounts.amounts['0-30'] },
+      { 'No': 'Aging 31-60 hari', 'No. Order': agingCounts.counts['31-60'] + ' transaksi', 'Total Tagihan': agingCounts.amounts['31-60'] },
+      { 'No': 'Aging 61-90 hari', 'No. Order': agingCounts.counts['61-90'] + ' transaksi', 'Total Tagihan': agingCounts.amounts['61-90'] },
+      { 'No': 'Aging >90 hari', 'No. Order': agingCounts.counts['>90'] + ' transaksi', 'Total Tagihan': agingCounts.amounts['>90'] },
+    ]
+
+    const ws = XLSX.utils.json_to_sheet([...exportData, ...summaryData])
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 5 },   // No
+      { wch: 18 },  // No. Order
+      { wch: 25 },  // Pelanggan
+      { wch: 12 },  // Tgl Order
+      { wch: 15 },  // Tgl Jatuh Tempo
+      { wch: 15 },  // Status Jatuh Tempo
+      { wch: 15 },  // Total Tagihan
+      { wch: 15 },  // Telah Dibayar
+      { wch: 15 },  // Sisa Tagihan
+      { wch: 15 },  // Status Pembayaran
+      { wch: 12 },  // Umur (Hari)
+      { wch: 12 },  // Kategori Umur
+    ]
+
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Daftar Piutang')
+
+    const fileName = `Laporan-Piutang-${format(new Date(), 'yyyy-MM-dd')}.xlsx`
+    XLSX.writeFile(wb, fileName)
+  }
+
   return (
     <>
       {/* Filter Controls */}
@@ -421,6 +496,10 @@ export function ReceivablesTable() {
             receivables={receivables}
             filterStatus={filterStatus}
           />
+          <Button variant="outline" onClick={handleExportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Export Excel
+          </Button>
         </div>
       </div>
 

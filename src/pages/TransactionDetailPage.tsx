@@ -481,13 +481,44 @@ export default function TransactionDetailPage() {
     const paidAmount = transaction.paidAmount || 0;
     const remaining = transaction.total - paidAmount;
 
-    const formatNumber = (num: number) => new Intl.NumberFormat("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+    const formatNumber = (num: number) => new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
+
+    // Singkat satuan
+    const shortUnit = (unit: string) => {
+      const unitMap: Record<string, string> = {
+        'Karton': 'Krt',
+        'karton': 'Krt',
+        'Lusin': 'Lsn',
+        'lusin': 'Lsn',
+        'Botol': 'Btl',
+        'botol': 'Btl',
+        'Pieces': 'Pcs',
+        'pieces': 'Pcs',
+        'Pcs': 'Pcs',
+        'pcs': 'Pcs',
+        'Kilogram': 'Kg',
+        'kilogram': 'Kg',
+        'Gram': 'Gr',
+        'gram': 'Gr',
+        'Liter': 'Ltr',
+        'liter': 'Ltr',
+        'Pack': 'Pck',
+        'pack': 'Pck',
+        'Dus': 'Dus',
+        'dus': 'Dus',
+        'Box': 'Box',
+        'box': 'Box',
+        'Unit': 'Unt',
+        'unit': 'Unt',
+      };
+      return unitMap[unit] || unit;
+    };
 
     const dotMatrixContent = `
       <table class="main-table" style="width: 100%; border-collapse: collapse;">
         <!-- Header Row -->
         <tr>
-          <td colspan="6" style="border-bottom: 1px solid #000; padding-bottom: 2mm;">
+          <td colspan="5" style="border-bottom: 1px solid #000; padding-bottom: 2mm;">
             <table style="width: 100%;">
               <tr>
                 <td style="width: 40%; vertical-align: top;">
@@ -515,20 +546,18 @@ export default function TransactionDetailPage() {
         <!-- Table Header -->
         <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
           <th style="padding: 1mm; text-align: left; width: 5%; font-size: 11pt;">No</th>
-          <th style="padding: 1mm; text-align: left; width: 15%; font-size: 11pt;">Kode</th>
-          <th style="padding: 1mm; text-align: left; width: 35%; font-size: 11pt;">Nama Item</th>
+          <th style="padding: 1mm; text-align: left; width: 45%; font-size: 11pt;">Nama Item</th>
           <th style="padding: 1mm; text-align: center; width: 15%; font-size: 11pt;">Jml</th>
-          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 11pt;">Harga</th>
-          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 11pt;">Total</th>
+          <th style="padding: 1mm; text-align: right; width: 17%; font-size: 11pt;">Harga</th>
+          <th style="padding: 1mm; text-align: right; width: 18%; font-size: 11pt;">Total</th>
         </tr>
 
         <!-- Items -->
         ${transaction.items.map((item, idx) => `
           <tr>
             <td style="padding: 0.5mm 1mm; font-size: 11pt;">${idx + 1}</td>
-            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product.code || item.product.id?.substring(0, 8) || '-'}</td>
             <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product.name}</td>
-            <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(item.quantity)} ${item.unit}</td>
+            <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(item.quantity)} ${shortUnit(item.unit)}</td>
             <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price)}</td>
             <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price * item.quantity)}</td>
           </tr>
@@ -536,12 +565,12 @@ export default function TransactionDetailPage() {
 
         <!-- Spacer row to push footer to bottom -->
         <tr style="height: 100%;">
-          <td colspan="6" style="vertical-align: bottom;"></td>
+          <td colspan="5" style="vertical-align: bottom;"></td>
         </tr>
 
         <!-- Footer -->
         <tr>
-          <td colspan="6" style="border-top: 1px solid #000; padding-top: 2mm;">
+          <td colspan="5" style="border-top: 1px solid #000; padding-top: 2mm;">
             <table style="width: 100%;">
               <tr>
                 <td style="width: 55%; vertical-align: top;">
@@ -583,11 +612,8 @@ export default function TransactionDetailPage() {
 
         <!-- Warning Footer -->
         <tr>
-          <td colspan="6" style="border-top: 1px solid #000; padding-top: 1mm; font-size: 10pt;">
-            <table style="width: 100%;"><tr>
-              <td>WAJIB CEK STOK ANDA SENDIRI SEBELUM BARANG TURUN, KEHILANGAN BUKAN TANGGUNG JAWAB KAMI</td>
-              <td style="text-align: right;">${transaction.cashierName?.split(' ')[0] || 'ADMIN'}</td>
-            </tr></table>
+          <td colspan="5" style="border-top: 1px solid #000; padding-top: 1mm; font-size: 10pt;">
+            WAJIB CEK STOK ANDA SENDIRI SEBELUM BARANG TURUN, KEHILANGAN BUKAN TANGGUNG JAWAB KAMI
           </td>
         </tr>
       </table>
