@@ -293,26 +293,10 @@ export function NearbyCustomerList({
                           </Button>
                         </div>
 
-                        {/* Visited Button - separate row, right aligned */}
-                        <div className="flex justify-end mt-2">
-                          <Button
-                            size="sm"
-                            variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
-                            className={`h-7 px-3 text-xs ${
-                              visitedIds.has(customer.id)
-                                ? 'bg-green-100 text-green-700 border-green-300'
-                                : 'border-dashed'
-                            }`}
-                            onClick={e => handleMarkVisited(customer as Customer, e)}
-                          >
-                            <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Sudah Dikunjungi
-                          </Button>
-                        </div>
                       </div>
 
-                      {/* Rank */}
-                      <div className="flex-shrink-0 flex items-center">
+                      {/* Rank & Visited Button */}
+                      <div className="flex-shrink-0 flex flex-col items-center gap-2">
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                           index === 0
                             ? 'bg-yellow-400 text-yellow-900'
@@ -324,6 +308,19 @@ export function NearbyCustomerList({
                         }`}>
                           {index + 1}
                         </div>
+                        <Button
+                          size="sm"
+                          variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
+                          className={`h-6 w-6 p-0 ${
+                            visitedIds.has(customer.id)
+                              ? 'bg-green-100 text-green-700 border-green-300'
+                              : 'border-dashed'
+                          }`}
+                          onClick={e => handleMarkVisited(customer as Customer, e)}
+                          title="Tandai sudah dikunjungi"
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
