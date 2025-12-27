@@ -789,6 +789,7 @@ export default function ChartOfAccountsPage() {
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                   placeholder="1.1.1.01"
+                  noFormat
                 />
               </div>
               <div className="space-y-2">
@@ -815,6 +816,7 @@ export default function ChartOfAccountsPage() {
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="Nama akun"
+                noFormat
               />
             </div>
 
@@ -865,6 +867,7 @@ export default function ChartOfAccountsPage() {
                 <Input
                   value={formData.code}
                   onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                  noFormat
                 />
               </div>
               <div className="space-y-2">
@@ -890,6 +893,7 @@ export default function ChartOfAccountsPage() {
               <Input
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                noFormat
               />
             </div>
 

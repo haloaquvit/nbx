@@ -154,11 +154,11 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="phone">Nomor Telepon Kantor</Label>
-                <Input id="phone" value={localInfo.phone} onChange={handleInputChange} placeholder="0812-3456-7890" />
+                <Input id="phone" value={localInfo.phone} onChange={handleInputChange} placeholder="0812-3456-7890" noFormat />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="salesPhone">Nomor HP Sales</Label>
-                <Input id="salesPhone" value={localInfo.salesPhone} onChange={handleInputChange} placeholder="0813-4470-7573" />
+                <Input id="salesPhone" value={localInfo.salesPhone} onChange={handleInputChange} placeholder="0813-4470-7573" noFormat />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="timezone">Zona Waktu</Label>
@@ -181,27 +181,27 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="bankAccount1">Rekening 1</Label>
-                <Input id="bankAccount1" value={localInfo.bankAccount1} onChange={handleInputChange} placeholder="MANDIRI-1540020855197" />
+                <Input id="bankAccount1" value={localInfo.bankAccount1} onChange={handleInputChange} placeholder="MANDIRI-1540020855197" noFormat />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bankAccountName1">A.N Rekening 1</Label>
-                <Input id="bankAccountName1" value={localInfo.bankAccountName1} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
+                <Input id="bankAccountName1" value={localInfo.bankAccountName1} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" noFormat />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bankAccount2">Rekening 2</Label>
-                <Input id="bankAccount2" value={localInfo.bankAccount2} onChange={handleInputChange} placeholder="BNI-2990213245" />
+                <Input id="bankAccount2" value={localInfo.bankAccount2} onChange={handleInputChange} placeholder="BNI-2990213245" noFormat />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bankAccountName2">A.N Rekening 2</Label>
-                <Input id="bankAccountName2" value={localInfo.bankAccountName2} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
+                <Input id="bankAccountName2" value={localInfo.bankAccountName2} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" noFormat />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bankAccount3">Rekening 3</Label>
-                <Input id="bankAccount3" value={localInfo.bankAccount3} onChange={handleInputChange} placeholder="BRI-777201000033304" />
+                <Input id="bankAccount3" value={localInfo.bankAccount3} onChange={handleInputChange} placeholder="BRI-777201000033304" noFormat />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bankAccountName3">A.N Rekening 3</Label>
-                <Input id="bankAccountName3" value={localInfo.bankAccountName3} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
+                <Input id="bankAccountName3" value={localInfo.bankAccountName3} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" noFormat />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 Rekening ini akan tampil di faktur cetak (PDF, Dot Matrix, Thermal)

@@ -2,8 +2,12 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, onChange, value, ...props }, ref) => {
+export interface InputProps extends React.ComponentProps<"input"> {
+  noFormat?: boolean; // Disable auto thousand separator formatting
+}
+
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className, type, onChange, value, noFormat, ...props }, ref) => {
     const innerRef = React.useRef<HTMLInputElement>(null);
 
     // Combine refs
@@ -49,7 +53,8 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
     };
 
     // Determine if we should format this input
-    const shouldFormat = type === 'number' || (value !== undefined && isNumericValue(value));
+    // Skip formatting if noFormat is true
+    const shouldFormat = !noFormat && (type === 'number' || (value !== undefined && isNumericValue(value)));
 
     // Get display value with formatting
     const getDisplayValue = (): string | number | readonly string[] | undefined => {
