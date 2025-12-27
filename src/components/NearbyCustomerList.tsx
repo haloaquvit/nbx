@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Customer } from '@/types/customer'
 import { sortCustomersByDistance, filterByRadius } from '@/utils/geoUtils'
 import { Button } from '@/components/ui/button'
@@ -8,8 +8,17 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useToast } from '@/components/ui/use-toast'
+import {
+  markAsVisited,
+  getVisitedCustomerIds,
+  cleanExpiredVisits,
+  getTodayVisitCount
+} from '@/utils/customerVisitUtils'
 
 interface NearbyCustomerListProps {
   customers: Customer[]
@@ -36,6 +45,20 @@ export function NearbyCustomerList({
   onCustomerSelect
 }: NearbyCustomerListProps) {
   const navigate = useNavigate()
+  const { toast } = useToast()
+
+  // State untuk hide visited customers
+  const [hideVisited, setHideVisited] = useState(true)
+  const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set())
+  const [visitCount, setVisitCount] = useState(0)
+
+  // Load visited customers on mount
+  useEffect(() => {
+    cleanExpiredVisits()
+    setVisitedIds(getVisitedCustomerIds())
+    setVisitCount(getTodayVisitCount())
+  }, [])
+
   // Sort and filter customers by distance
   const nearbyCustomers = useMemo(() => {
     if (!userLocation) return []
@@ -46,8 +69,27 @@ export function NearbyCustomerList({
       userLocation.lng
     )
 
-    return filterByRadius(sorted, radiusMeters)
-  }, [customers, userLocation, radiusMeters])
+    let filtered = filterByRadius(sorted, radiusMeters)
+
+    // Filter out visited customers if hideVisited is true
+    if (hideVisited) {
+      filtered = filtered.filter(c => !visitedIds.has(c.id))
+    }
+
+    return filtered
+  }, [customers, userLocation, radiusMeters, hideVisited, visitedIds])
+
+  // Handle mark as visited
+  const handleMarkVisited = (customer: Customer, e: React.MouseEvent) => {
+    e.stopPropagation()
+    markAsVisited(customer.id)
+    setVisitedIds(getVisitedCustomerIds())
+    setVisitCount(getTodayVisitCount())
+    toast({
+      title: 'Ditandai Dikunjungi',
+      description: `${customer.name} akan tersembunyi selama 24 jam`
+    })
+  }
 
   const handleOpenMaps = (customer: Customer) => {
     if (userLocation) {
@@ -107,6 +149,30 @@ export function NearbyCustomerList({
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      {/* Hide visited toggle */}
+      <div className="flex items-center justify-between px-1 py-2 bg-muted/50 rounded-lg">
+        <div className="flex items-center gap-2">
+          {hideVisited ? (
+            <EyeOff className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <Eye className="h-4 w-4 text-muted-foreground" />
+          )}
+          <Label htmlFor="hide-visited" className="text-sm cursor-pointer">
+            Sembunyikan yang sudah dikunjungi
+          </Label>
+          {visitCount > 0 && (
+            <Badge variant="secondary" className="bg-green-100 text-green-700">
+              {visitCount} dikunjungi
+            </Badge>
+          )}
+        </div>
+        <Switch
+          id="hide-visited"
+          checked={hideVisited}
+          onCheckedChange={setHideVisited}
+        />
       </div>
 
       {/* Results count */}
@@ -224,6 +290,18 @@ export function NearbyCustomerList({
                             }}
                           >
                             <Navigation className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
+                            className={`h-7 px-2 text-xs ${
+                              visitedIds.has(customer.id)
+                                ? 'bg-green-100 text-green-700 border-green-300'
+                                : ''
+                            }`}
+                            onClick={e => handleMarkVisited(customer as Customer, e)}
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
                           </Button>
                         </div>
                       </div>
