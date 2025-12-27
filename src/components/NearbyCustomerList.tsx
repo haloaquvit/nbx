@@ -311,15 +311,15 @@ export function NearbyCustomerList({
                         <Button
                           size="sm"
                           variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
-                          className={`h-6 w-6 p-0 ${
+                          className={`h-auto py-1 px-2 text-[10px] leading-tight ${
                             visitedIds.has(customer.id)
                               ? 'bg-green-100 text-green-700 border-green-300'
                               : 'border-dashed'
                           }`}
                           onClick={e => handleMarkVisited(customer as Customer, e)}
-                          title="Tandai sudah dikunjungi"
                         >
-                          <CheckCircle2 className="h-4 w-4" />
+                          <CheckCircle2 className="h-3 w-3 mr-0.5" />
+                          <span className="whitespace-nowrap">Sudah<br/>Dikunjungi</span>
                         </Button>
                       </div>
                     </div>
