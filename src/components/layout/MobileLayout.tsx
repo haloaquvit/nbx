@@ -332,7 +332,10 @@ const MobileLayout = () => {
                 )} />
               </div>
               <div className="flex-1 min-w-0 overflow-hidden">
-                <p className="font-medium truncate">Beranda</p>
+                <p className={cn(
+                  "font-medium truncate",
+                  currentPath === '/' ? "text-white" : "text-gray-900 dark:text-white"
+                )}>Beranda</p>
                 <p className={cn(
                   "text-sm truncate",
                   currentPath === '/' ? "text-white/80" : "text-gray-500 dark:text-gray-400"
@@ -372,7 +375,10 @@ const MobileLayout = () => {
                     )} />
                   </div>
                   <div className="flex-1 min-w-0 overflow-hidden">
-                    <p className="font-medium truncate">{item.title}</p>
+                    <p className={cn(
+                      "font-medium truncate",
+                      isActive ? "text-white" : "text-gray-900 dark:text-white"
+                    )}>{item.title}</p>
                     <p className={cn(
                       "text-sm truncate",
                       isActive ? "text-white/80" : "text-gray-500 dark:text-gray-400"
@@ -384,71 +390,82 @@ const MobileLayout = () => {
               </Button>
             )
           })}
-        </nav>
 
-        {/* Settings Section */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3 flex-shrink-0">
-          {/* Branch Selector - Owner Only */}
-          {isOwner && canAccessAllBranches && availableBranches.length > 1 && (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                <Building2 className="h-3 w-3" />
-                Pindah Cabang
-              </label>
-              <Select
-                value={currentBranch?.id || ''}
-                onValueChange={(value) => switchBranch(value)}
-              >
-                <SelectTrigger className="w-full h-10">
-                  <SelectValue placeholder="Pilih cabang...">
-                    {currentBranch?.name || 'Pilih cabang...'}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {availableBranches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{branch.name}</span>
-                        <span className="text-xs text-muted-foreground">{branch.code}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Settings Section - Inside scrollable nav */}
+          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-1">
+              Pengaturan
+            </p>
 
-          {/* Theme Toggle */}
-          <Button
-            variant="outline"
-            className="w-full justify-between h-10"
-            onClick={toggleTheme}
-          >
-            <span className="flex items-center gap-2">
-              {theme === 'dark' ? (
-                <Moon className="h-4 w-4" />
-              ) : (
-                <Sun className="h-4 w-4" />
-              )}
-              <span className="text-sm">
-                {theme === 'dark' ? 'Mode Gelap' : 'Mode Terang'}
+            {/* Branch Selector - Owner Only */}
+            {isOwner && canAccessAllBranches && availableBranches.length > 1 && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2 px-1">
+                  <Building2 className="h-3 w-3" />
+                  Pindah Cabang
+                </label>
+                <Select
+                  value={currentBranch?.id || ''}
+                  onValueChange={(value) => switchBranch(value)}
+                >
+                  <SelectTrigger className="w-full h-10">
+                    <SelectValue placeholder="Pilih cabang...">
+                      {currentBranch?.name || 'Pilih cabang...'}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableBranches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{branch.name}</span>
+                          <span className="text-xs text-muted-foreground">{branch.code}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Theme Toggle */}
+            <Button
+              variant="outline"
+              className="w-full justify-between h-12 transition-all duration-150 active:scale-95 active:opacity-80 dark:border-gray-600"
+              onClick={toggleTheme}
+            >
+              <span className="flex items-center gap-3">
+                <div className={cn(
+                  "p-2 rounded-lg",
+                  theme === 'dark' ? "bg-indigo-500" : "bg-amber-500"
+                )}>
+                  {theme === 'dark' ? (
+                    <Moon className="h-4 w-4 text-white" />
+                  ) : (
+                    <Sun className="h-4 w-4 text-white" />
+                  )}
+                </div>
+                <span className="text-sm font-medium text-gray-900 dark:text-white">
+                  {theme === 'dark' ? 'Mode Gelap' : 'Mode Terang'}
+                </span>
               </span>
-            </span>
-            <Badge variant="secondary" className="text-xs">
-              {theme === 'dark' ? 'Aktif' : 'Aktif'}
-            </Badge>
-          </Button>
+              <Badge variant="secondary" className="text-xs dark:bg-gray-700 dark:text-gray-200">
+                Aktif
+              </Badge>
+            </Button>
 
-          {/* Logout Button */}
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-            onClick={handleLogout}
-          >
-            <LogOut className="mr-3 h-5 w-5" />
-            Keluar
-          </Button>
-        </div>
+            {/* Logout Button */}
+            <Button
+              variant="ghost"
+              className="w-full justify-start h-12 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 transition-all duration-150 active:scale-95 active:opacity-80"
+              onClick={handleLogout}
+            >
+              <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30 mr-3">
+                <LogOut className="h-4 w-4" />
+              </div>
+              Keluar
+            </Button>
+          </div>
+        </nav>
       </div>
 
       {/* Main Content */}
@@ -526,14 +543,14 @@ const MobileLayout = () => {
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 dark:bg-gray-900/95 dark:border-gray-700">
         <div className="flex items-center justify-between px-6 py-4">
           {/* Left - Menu Button */}
-          <Button variant="ghost" size="lg" onClick={toggleSidebar} className="flex items-center space-x-2 h-12 px-6">
+          <Button variant="ghost" size="lg" onClick={toggleSidebar} className="flex items-center space-x-2 h-12 px-6 text-gray-900 dark:text-white">
             {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             <span className="text-sm font-medium">{isSidebarOpen ? 'Tutup' : 'Menu'}</span>
           </Button>
-          
+
           {/* Right - Back Button */}
           {currentPath !== '/' ? (
-            <Button variant="ghost" size="lg" onClick={handleBack} className="flex items-center space-x-2 h-12 px-6">
+            <Button variant="ghost" size="lg" onClick={handleBack} className="flex items-center space-x-2 h-12 px-6 text-gray-900 dark:text-white">
               <ArrowLeft className="h-5 w-5" />
               <span className="text-sm font-medium">Kembali</span>
             </Button>
