@@ -7,12 +7,18 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
+    "build:nabire": "vite build --mode nabire",
+    "build:manokwari": "vite build --mode manokwari",
+    "apk:nabire": "npm run build:nabire && npx cap sync android",
+    "apk:manokwari": "npm run build:manokwari && npx cap sync android",
     "lint": "eslint .",
     "preview": "vite preview",
     "upload-server": "node --env-file=.env.local server/upload.cjs",
     "upload-server-local": "node server/upload-local.cjs"
   },
   "dependencies": {
+    "@capacitor-community/bluetooth-le": "^7.3.0",
+    "@capacitor-community/contacts": "^7.1.0",
     "@capacitor/android": "^8.0.0",
     "@capacitor/browser": "^8.0.0",
     "@capacitor/camera": "^8.0.0",

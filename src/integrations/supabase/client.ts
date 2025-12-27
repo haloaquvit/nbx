@@ -20,6 +20,10 @@ const SERVERS: Record<string, string> = {
   'manokwari': 'https://mkw.aquvit.id',
 };
 
+// Hardcoded server URL for APK builds (set via environment variable)
+// VITE_APK_SERVER can be: 'nabire', 'manokwari', or a full URL
+const APK_SERVER = import.meta.env.VITE_APK_SERVER as string | undefined;
+
 // In-memory session reference for token access
 // This mirrors postgrestAuth.ts to avoid circular dependency
 let cachedSession: { access_token: string; exp: number } | null = null;
@@ -120,6 +124,8 @@ function getSelectedServerUrl(): string | null {
 // IMPORTANT: Returns false if in Capacitor and no server selected yet
 export function isServerSelected(): boolean {
   if (!isCapacitorApp()) return true; // Web always has server from origin
+  // If APK_SERVER is set, server is always "selected"
+  if (APK_SERVER) return true;
   return getSelectedServerUrl() !== null;
 }
 
@@ -146,8 +152,14 @@ function getBaseUrl(): string {
     return origin;
   }
 
-  // For Capacitor/APK, use selected server from localStorage
+  // For Capacitor/APK, check for hardcoded server first
   if (isCapacitorApp()) {
+    // If APK_SERVER is set, use it (bypasses server selector)
+    if (APK_SERVER) {
+      // APK_SERVER can be a key like 'nabire' or a full URL
+      return SERVERS[APK_SERVER] || APK_SERVER;
+    }
+
     const selectedUrl = getSelectedServerUrl();
     if (selectedUrl) {
       return selectedUrl;

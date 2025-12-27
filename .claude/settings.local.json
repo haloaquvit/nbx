@@ -167,7 +167,11 @@
       "Bash(move \"D:\\App\\Aquvit Fix - Copy\\fix-useProducts.js\" \"D:\\App\\Aquvit Fix - Copy\\fix-useProducts.cjs\")",
       "Bash(dir \"D:\\App\\APP\\VPS NBX\"\" /s /b | findstr /i \"Customers_Images \")",
       "Bash(git push)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Improve Dot Matrix invoice template\n\n- Add payment status (Dibayar, Sisa, Status LUNAS/BELUM LUNAS)\n- Add 3 signature boxes (Hormat Kami, Diterima Oleh, Supir)\n- Make all text bold for better dot matrix printing\n- Increase font sizes by 1pt throughout\n- Remove footer border and timestamp\n- Fix signature line spacing\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Improve Dot Matrix invoice template\n\n- Add payment status (Dibayar, Sisa, Status LUNAS/BELUM LUNAS)\n- Add 3 signature boxes (Hormat Kami, Diterima Oleh, Supir)\n- Make all text bold for better dot matrix printing\n- Increase font sizes by 1pt throughout\n- Remove footer border and timestamp\n- Fix signature line spacing\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(where convert:*)",
+      "Bash(npm run build:nabire:*)",
+      "Bash(.build_nabire.bat)",
+      "Bash(npm run build:manokwari:*)"
     ],
     "deny": [],
     "ask": [],

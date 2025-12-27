@@ -27,13 +27,31 @@ Semua perubahan penting pada proyek AQUVIT ERP System didokumentasikan di file i
 
 ### Services Running
 
-| Service | Port | Config |
-|---------|------|--------|
-| PostgREST (Nabire) | 3000 | `/home/deployer/postgrest/postgrest.conf` |
-| PostgREST (Manokwari) | 3001 | `/home/deployer/postgrest/postgrest-manokwari.conf` |
-| Nginx | 80, 443 | Reverse proxy ke PostgREST |
-| PostgreSQL | 5432 | Database server |
-| Auth Server | 3002 | Custom JWT auth `/home/deployer/auth-server/` |
+| Service | Port | Config | Database |
+|---------|------|--------|----------|
+| PostgREST (Nabire) | 3000 | `/home/deployer/postgrest/postgrest.conf` | `aquvit_new` |
+| PostgREST (Manokwari) | 3007 | `/home/deployer/postgrest-mkw/postgrest.conf` | `mkw_db` |
+| Auth Server (Nabire) | 3006 | `/home/deployer/auth-server/server.js` | `aquvit_new` |
+| Auth Server (Manokwari) | 3003 | `/home/deployer/auth-server-mkw/server.js` | `mkw_db` |
+| Nginx | 80, 443 | Reverse proxy |  |
+| PostgreSQL | 5432 | Database server |  |
+
+### Database Configuration
+
+| Lokasi | Database Name | PostgREST Port | Auth Port |
+|--------|---------------|----------------|-----------|
+| Nabire | `aquvit_new` | 3000 | 3006 |
+| Manokwari | `mkw_db` | 3007 | 3003 |
+
+### PM2 Process Names
+
+```bash
+pm2 list
+# auth-server-new     (port 3006 - Nabire)
+# auth-server-mkw     (port 3003 - Manokwari)
+# postgrest-aquvit    (port 3000 - Nabire)
+# postgrest-mkw       (port 3007 - Manokwari)
+```
 
 ### SSH Connection
 
@@ -59,6 +77,143 @@ sudo tail -f /var/log/postgresql/postgresql-14-main.log
 # Check Nginx logs
 sudo tail -f /var/log/nginx/error.log
 ```
+
+---
+
+## [v4] 2025-12-28 - APK Build & Bluetooth Printer Support
+
+### New Features
+
+46. **APK Build Terpisah per Server**
+    - Build APK terpisah untuk Nabire dan Manokwari
+    - Server selector di-bypass, URL server di-hardcode saat build
+    - Environment files: `.env.nabire`, `.env.manokwari`
+    - Scripts: `npm run build:nabire`, `npm run build:manokwari`
+    - Batch files: `android/build_nabire.bat`, `android/build_manokwari.bat`
+
+47. **Bluetooth Thermal Printer Support**
+    - Plugin: `@capacitor-community/bluetooth-le@7.3.0`
+    - Service: `src/services/bluetoothPrintService.ts`
+    - Hook: `src/hooks/useBluetoothPrinter.ts`
+    - Fitur:
+      - Scan printer Bluetooth
+      - Connect/Disconnect printer
+      - Test print
+      - Print struk POS dengan format ESC/POS
+      - Auto-reconnect ke printer tersimpan
+
+48. **Contacts Plugin**
+    - Plugin: `@capacitor-community/contacts@7.1.0`
+    - Permission: READ_CONTACTS, WRITE_CONTACTS
+
+49. **Fix Auth Server Routing**
+    - Perbaikan nginx config untuk auth routing
+    - Sebelum: `/auth/v1/token` return 404
+    - Sesudah: Auth endpoint berfungsi normal
+    - Update pada `mkw.aquvit.id` dan `nbx.aquvit.id`
+
+### APK Build Instructions
+
+```bash
+# Build untuk Nabire (nbx.aquvit.id)
+npm run build:nabire
+npx cap sync android
+# Buka Android Studio -> Build APK
+
+# Build untuk Manokwari (mkw.aquvit.id)
+npm run build:manokwari
+npx cap sync android
+# Buka Android Studio -> Build APK
+
+# Atau gunakan batch file:
+android\build_nabire.bat
+android\build_manokwari.bat
+```
+
+### Capacitor Plugins Installed
+
+| Plugin | Version | Fungsi |
+|--------|---------|--------|
+| `@capacitor/camera` | 8.0.0 | Kamera & Galeri |
+| `@capacitor/geolocation` | 8.0.0 | GPS/Lokasi |
+| `@capacitor-community/bluetooth-le` | 7.3.0 | Bluetooth Printer |
+| `@capacitor-community/contacts` | 7.1.0 | Akses Kontak |
+| `@capacitor/browser` | 8.0.0 | In-app Browser |
+| `@capacitor/local-notifications` | 8.0.0 | Notifikasi Lokal |
+| `@capacitor/push-notifications` | 8.0.0 | Push Notification |
+
+### Android Permissions (AndroidManifest.xml)
+
+```xml
+<!-- Bluetooth -->
+<uses-permission android:name="android.permission.BLUETOOTH" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+<!-- Contacts -->
+<uses-permission android:name="android.permission.READ_CONTACTS" />
+<uses-permission android:name="android.permission.WRITE_CONTACTS" />
+
+<!-- Camera, Location, Storage - sudah ada sebelumnya -->
+```
+
+### Files Created/Modified
+
+| File | Perubahan |
+|------|-----------|
+| `src/services/bluetoothPrintService.ts` | Service Bluetooth printer |
+| `src/hooks/useBluetoothPrinter.ts` | React hook untuk printer |
+| `src/integrations/supabase/client.ts` | Support `VITE_APK_SERVER` env |
+| `.env.nabire` | Environment untuk build Nabire |
+| `.env.manokwari` | Environment untuk build Manokwari |
+| `android/build_nabire.bat` | Batch file build Nabire |
+| `android/build_manokwari.bat` | Batch file build Manokwari |
+| `android/BUILD_APK.md` | Panduan build APK |
+| `android/app/src/main/AndroidManifest.xml` | Tambah permission Bluetooth & Contacts |
+| `package.json` | Tambah scripts build:nabire, build:manokwari |
+
+### Bluetooth Printer Usage
+
+```tsx
+import { useBluetoothPrinter } from '@/hooks/useBluetoothPrinter';
+
+function MyComponent() {
+  const {
+    scanForPrinters,
+    connectToPrinter,
+    printReceipt,
+    testPrint,
+    isConnected,
+    devices,
+  } = useBluetoothPrinter();
+
+  // Scan printer
+  await scanForPrinters();
+
+  // Connect
+  await connectToPrinter(devices[0]);
+
+  // Print struk
+  await printReceipt({
+    storeName: 'Aquvit Store',
+    transactionNo: 'TRX-001',
+    items: [...],
+    total: 100000,
+    // ...
+  });
+}
+```
+
+### Forecast / Roadmap
+
+| Fitur | Status | Deskripsi |
+|-------|--------|-----------|
+| **Driver Location Tracking** | Planned | Lacak lokasi supir secara real-time |
+| - Background Location Service | - | Kirim lokasi ke server meski app di background |
+| - Database `driver_locations` | - | Simpan history lokasi supir |
+| - Admin Monitoring UI | - | Peta untuk melihat posisi semua supir |
+| - WebSocket/Polling | - | Update posisi real-time ke admin |
 
 ---
 
