@@ -561,8 +561,9 @@ export default function TransactionDetailPage() {
                     </tr>
                   </table>
                   <div style="font-size: 10pt; margin-top: 2mm;">
-                    <strong>NO REK:</strong> ${[companyInfo?.bankAccount1, companyInfo?.bankAccount2, companyInfo?.bankAccount3].filter(Boolean).join(' | ') || '-'}<br/>
-                    <strong>A.N:</strong> ${companyInfo?.bankAccountName || companyInfo?.name || '-'}
+                    ${companyInfo?.bankAccount1 ? `<strong>${companyInfo.bankAccount1}</strong> A.N ${companyInfo?.bankAccountName1 || companyInfo?.name || '-'}` : ''}
+                    ${companyInfo?.bankAccount2 ? `<br/><strong>${companyInfo.bankAccount2}</strong> A.N ${companyInfo?.bankAccountName2 || companyInfo?.name || '-'}` : ''}
+                    ${companyInfo?.bankAccount3 ? `<br/><strong>${companyInfo.bankAccount3}</strong> A.N ${companyInfo?.bankAccountName3 || companyInfo?.name || '-'}` : ''}
                   </div>
                 </td>
                 <td style="width: 45%; vertical-align: top; font-size: 11pt;">

@@ -31,9 +31,11 @@ export default function SettingsPage() {
     attendanceRadius: 50 as number | null,
     timezone: 'Asia/Jakarta',
     bankAccount1: '',
+    bankAccountName1: '',
     bankAccount2: '',
+    bankAccountName2: '',
     bankAccount3: '',
-    bankAccountName: '',
+    bankAccountName3: '',
     salesPhone: '',
   });
 
@@ -49,9 +51,11 @@ export default function SettingsPage() {
         attendanceRadius: settings.attendanceRadius || 50,
         timezone: settings.timezone || 'Asia/Jakarta',
         bankAccount1: settings.bankAccount1 || '',
+        bankAccountName1: settings.bankAccountName1 || '',
         bankAccount2: settings.bankAccount2 || '',
+        bankAccountName2: settings.bankAccountName2 || '',
         bankAccount3: settings.bankAccount3 || '',
-        bankAccountName: settings.bankAccountName || '',
+        bankAccountName3: settings.bankAccountName3 || '',
         salesPhone: settings.salesPhone || '',
       });
     }
@@ -176,21 +180,28 @@ export default function SettingsPage() {
             {/* Kolom 2: Rekening Bank */}
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="bankAccountName">Nama Pemilik Rekening</Label>
-                <Input id="bankAccountName" value={localInfo.bankAccountName} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bankAccount1">Rekening Perusahaan 1</Label>
+                <Label htmlFor="bankAccount1">Rekening 1</Label>
                 <Input id="bankAccount1" value={localInfo.bankAccount1} onChange={handleInputChange} placeholder="MANDIRI-1540020855197" />
-                <p className="text-xs text-muted-foreground">Format: BANK-NoRek</p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="bankAccount2">Rekening Perusahaan 2</Label>
+                <Label htmlFor="bankAccountName1">A.N Rekening 1</Label>
+                <Input id="bankAccountName1" value={localInfo.bankAccountName1} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bankAccount2">Rekening 2</Label>
                 <Input id="bankAccount2" value={localInfo.bankAccount2} onChange={handleInputChange} placeholder="BNI-2990213245" />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="bankAccount3">Rekening Perusahaan 3</Label>
+                <Label htmlFor="bankAccountName2">A.N Rekening 2</Label>
+                <Input id="bankAccountName2" value={localInfo.bankAccountName2} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bankAccount3">Rekening 3</Label>
                 <Input id="bankAccount3" value={localInfo.bankAccount3} onChange={handleInputChange} placeholder="BRI-777201000033304" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bankAccountName3">A.N Rekening 3</Label>
+                <Input id="bankAccountName3" value={localInfo.bankAccountName3} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
                 Rekening ini akan tampil di faktur cetak (PDF, Dot Matrix, Thermal)

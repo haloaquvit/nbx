@@ -12,9 +12,11 @@ export interface CompanyInfo {
   timezone?: string; // e.g., 'Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura'
   // Bank accounts for invoice
   bankAccount1?: string; // e.g., "MANDIRI-1540020855197"
+  bankAccountName1?: string; // Nama pemilik rekening 1
   bankAccount2?: string; // e.g., "BNI-2990213245"
+  bankAccountName2?: string; // Nama pemilik rekening 2
   bankAccount3?: string; // e.g., "BRI-777201000033304"
-  bankAccountName?: string; // Nama pemilik rekening, e.g., "CV. PERSADA INTIM PUSAKA"
+  bankAccountName3?: string; // Nama pemilik rekening 3
   salesPhone?: string; // Nomor HP Sales
 }
 
@@ -42,9 +44,11 @@ export const useCompanySettings = () => {
         attendanceRadius: settingsObj.company_attendance_radius ? parseInt(settingsObj.company_attendance_radius, 10) : null,
         timezone: settingsObj.company_timezone || 'Asia/Jakarta', // Default WIB
         bankAccount1: settingsObj.company_bank_account_1 || '',
+        bankAccountName1: settingsObj.company_bank_account_name_1 || '',
         bankAccount2: settingsObj.company_bank_account_2 || '',
+        bankAccountName2: settingsObj.company_bank_account_name_2 || '',
         bankAccount3: settingsObj.company_bank_account_3 || '',
-        bankAccountName: settingsObj.company_bank_account_name || '',
+        bankAccountName3: settingsObj.company_bank_account_name_3 || '',
         salesPhone: settingsObj.company_sales_phone || '',
       };
     },
@@ -66,9 +70,11 @@ export const useCompanySettings = () => {
         { key: 'company_attendance_radius', value: newInfo.attendanceRadius?.toString() ?? '' },
         { key: 'company_timezone', value: newInfo.timezone || 'Asia/Jakarta' },
         { key: 'company_bank_account_1', value: newInfo.bankAccount1 || '' },
+        { key: 'company_bank_account_name_1', value: newInfo.bankAccountName1 || '' },
         { key: 'company_bank_account_2', value: newInfo.bankAccount2 || '' },
+        { key: 'company_bank_account_name_2', value: newInfo.bankAccountName2 || '' },
         { key: 'company_bank_account_3', value: newInfo.bankAccount3 || '' },
-        { key: 'company_bank_account_name', value: newInfo.bankAccountName || '' },
+        { key: 'company_bank_account_name_3', value: newInfo.bankAccountName3 || '' },
         { key: 'company_sales_phone', value: newInfo.salesPhone || '' },
       ];
       const { error } = await supabase.from('company_settings').upsert(settingsData);
