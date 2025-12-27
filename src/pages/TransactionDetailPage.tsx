@@ -569,11 +569,11 @@ export default function TransactionDetailPage() {
                 <td style="width: 45%; vertical-align: top; font-size: 11pt;">
                   <table style="width: 100%;">
                     <tr><td>Sub Total</td><td style="text-align: right;">:</td><td style="text-align: right; width: 40%;">${formatNumber(transaction.subtotal)}</td></tr>
+                    ${transaction.ppnEnabled && transaction.ppnAmount > 0 ? `<tr><td>PPN (${transaction.ppnPercentage || 11}%)</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(transaction.ppnAmount)}</td></tr>` : ''}
                     <tr><td>Total Akhir</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(transaction.total)}</td></tr>
-                    <tr><td>DP PO</td><td style="text-align: right;">:</td><td style="text-align: right;">0,00</td></tr>
-                    <tr><td>Tunai</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount)}</td></tr>
-                    <tr><td>Kredit</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(remaining > 0 ? remaining : 0)}</td></tr>
-                    <tr><td>Kembali</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount > transaction.total ? paidAmount - transaction.total : 0)}</td></tr>
+                    ${paidAmount > 0 ? `<tr><td>Tunai</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount)}</td></tr>` : ''}
+                    ${remaining > 0 ? `<tr><td>Kredit</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(remaining)}</td></tr>` : ''}
+                    ${paidAmount > transaction.total ? `<tr><td>Kembali</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount - transaction.total)}</td></tr>` : ''}
                   </table>
                 </td>
               </tr>
