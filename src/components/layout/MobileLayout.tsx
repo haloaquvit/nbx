@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,23 @@ const MobileLayout = () => {
   const { theme, setTheme } = useTheme()
   const { currentBranch, availableBranches, canAccessAllBranches, switchBranch } = useBranch()
   const { hasGranularPermission } = useGranularPermission()
+
+  // Ref for active menu item to scroll into view
+  const activeMenuRef = useRef<HTMLButtonElement>(null)
+  const navRef = useRef<HTMLElement>(null)
+
+  // Scroll to active menu when sidebar opens
+  useEffect(() => {
+    if (isSidebarOpen && activeMenuRef.current && navRef.current) {
+      // Small delay to ensure sidebar animation is complete
+      setTimeout(() => {
+        activeMenuRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        })
+      }, 150)
+    }
+  }, [isSidebarOpen])
 
   const toggleTheme = () => {
     setTheme(theme === 'dark' ? 'light' : 'dark')
@@ -240,7 +257,7 @@ const MobileLayout = () => {
           </div>
         </div>
 
-        <nav className="p-4 space-y-2 overflow-y-auto" style={{ flex: 1, minHeight: 0 }}>
+        <nav ref={navRef} className="p-4 space-y-2 overflow-y-auto" style={{ flex: 1, minHeight: 0 }}>
           {/* Back/Home Button */}
           {currentPath !== '/' && (
             <Button
@@ -304,10 +321,11 @@ const MobileLayout = () => {
           {menuItems.map((item) => {
             const Icon = item.icon
             const isActive = currentPath === item.path
-            
+
             return (
               <Button
                 key={item.path}
+                ref={isActive ? activeMenuRef : undefined}
                 variant={isActive ? "default" : "ghost"}
                 className={cn(
                   "w-full justify-start h-auto p-4 text-left overflow-hidden",
