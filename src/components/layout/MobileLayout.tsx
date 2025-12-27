@@ -287,7 +287,7 @@ const MobileLayout = () => {
           {currentPath !== '/' && (
             <Button
               variant="outline"
-              className="w-full justify-start h-auto p-4 text-left overflow-hidden mb-4 border-gray-300 dark:border-gray-600"
+              className="w-full justify-start h-auto p-4 text-left overflow-hidden mb-4 border-gray-300 dark:border-gray-600 transition-all duration-150 active:scale-95 active:opacity-80"
               onClick={() => {
                 handleBack()
                 setIsSidebarOpen(false)
@@ -313,7 +313,7 @@ const MobileLayout = () => {
           <Button
             variant={currentPath === '/' ? "default" : "ghost"}
             className={cn(
-              "w-full justify-start h-auto p-4 text-left overflow-hidden mb-4",
+              "w-full justify-start h-auto p-4 text-left overflow-hidden mb-4 transition-all duration-150 active:scale-95 active:opacity-80",
               currentPath === '/' && "bg-primary text-white"
             )}
             onClick={() => {
@@ -353,8 +353,8 @@ const MobileLayout = () => {
                 ref={isActive ? activeMenuRef : undefined}
                 variant={isActive ? "default" : "ghost"}
                 className={cn(
-                  "w-full justify-start h-auto p-4 text-left overflow-hidden",
-                  isActive && "bg-primary text-white"
+                  "w-full justify-start h-auto p-4 text-left overflow-hidden transition-all duration-150 active:scale-95 active:opacity-80",
+                  isActive && "bg-primary text-white ring-2 ring-primary/30"
                 )}
                 onClick={() => {
                   navigate(item.path)
