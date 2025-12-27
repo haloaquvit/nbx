@@ -491,20 +491,20 @@ export default function TransactionDetailPage() {
             <table style="width: 100%;">
               <tr>
                 <td style="width: 40%; vertical-align: top;">
-                  <div style="font-size: 14pt; font-weight: bold;">FAKTUR PENJUALAN</div>
-                  <div style="font-size: 10pt; font-weight: bold;">${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}</div>
-                  <div style="font-size: 9pt;">
+                  <div style="font-size: 17pt; font-weight: bold;">FAKTUR PENJUALAN</div>
+                  <div style="font-size: 13pt; font-weight: bold;">${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}</div>
+                  <div style="font-size: 11pt;">
                     ${companyInfo?.address || 'JL. DS YAN MAMORIBO, SIRIWINI'}<br/>
-                    KANTOR: ${companyInfo?.phone || '081310099141'} | SALES: ${companyInfo?.salesPhone || '081344707573'}
+                    KANTOR: ${String(companyInfo?.phone || '081310099141').replace(/,/g, '')} | SALES: ${String(companyInfo?.salesPhone || '081344707573').replace(/,/g, '')}
                   </div>
                 </td>
-                <td style="width: 60%; vertical-align: top; font-size: 9pt;">
+                <td style="width: 60%; vertical-align: top; font-size: 11pt;">
                   <table style="width: 100%;">
                     <tr><td width="80">No</td><td>: ${transaction.id}</td><td width="50">SALES</td><td>: ${transaction.cashierName?.split(' ')[0] || 'KANTOR'}</td></tr>
                     <tr><td>Tanggal</td><td>: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : '-'}</td><td>PPN</td><td>: ${transaction.ppnEnabled ? 'Ya' : '-'}</td></tr>
                     <tr><td>Pelanggan</td><td colspan="3">: ${transaction.customerName}</td></tr>
                     <tr><td>Alamat</td><td colspan="3">: ${customer?.address || customer?.full_address || '-'}</td></tr>
-                    <tr><td>Telepon</td><td colspan="3">: ${customer?.phone || '-'}</td></tr>
+                    <tr><td>Telepon</td><td colspan="3">: ${String(customer?.phone || '-').replace(/,/g, '')}</td></tr>
                   </table>
                 </td>
               </tr>
@@ -514,23 +514,23 @@ export default function TransactionDetailPage() {
 
         <!-- Table Header -->
         <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
-          <th style="padding: 1mm; text-align: left; width: 5%; font-size: 9pt;">No</th>
-          <th style="padding: 1mm; text-align: left; width: 15%; font-size: 9pt;">Kode</th>
-          <th style="padding: 1mm; text-align: left; width: 35%; font-size: 9pt;">Nama Item</th>
-          <th style="padding: 1mm; text-align: center; width: 15%; font-size: 9pt;">Jml</th>
-          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 9pt;">Harga</th>
-          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 9pt;">Total</th>
+          <th style="padding: 1mm; text-align: left; width: 5%; font-size: 11pt;">No</th>
+          <th style="padding: 1mm; text-align: left; width: 15%; font-size: 11pt;">Kode</th>
+          <th style="padding: 1mm; text-align: left; width: 35%; font-size: 11pt;">Nama Item</th>
+          <th style="padding: 1mm; text-align: center; width: 15%; font-size: 11pt;">Jml</th>
+          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 11pt;">Harga</th>
+          <th style="padding: 1mm; text-align: right; width: 15%; font-size: 11pt;">Total</th>
         </tr>
 
         <!-- Items -->
         ${transaction.items.map((item, idx) => `
           <tr>
-            <td style="padding: 0.5mm 1mm; font-size: 9pt;">${idx + 1}</td>
-            <td style="padding: 0.5mm 1mm; font-size: 9pt;">${item.product.code || item.product.id?.substring(0, 8) || '-'}</td>
-            <td style="padding: 0.5mm 1mm; font-size: 9pt;">${item.product.name}</td>
-            <td style="padding: 0.5mm 1mm; text-align: center; font-size: 9pt;">${formatNumber(item.quantity)} ${item.unit}</td>
-            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 9pt;">${formatNumber(item.price)}</td>
-            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 9pt;">${formatNumber(item.price * item.quantity)}</td>
+            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${idx + 1}</td>
+            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product.code || item.product.id?.substring(0, 8) || '-'}</td>
+            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product.name}</td>
+            <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(item.quantity)} ${item.unit}</td>
+            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price)}</td>
+            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price * item.quantity)}</td>
           </tr>
         `).join('')}
 
@@ -545,27 +545,27 @@ export default function TransactionDetailPage() {
             <table style="width: 100%;">
               <tr>
                 <td style="width: 55%; vertical-align: top;">
-                  <div style="font-size: 9pt; margin-bottom: 1mm;">Keterangan:</div>
+                  <div style="font-size: 11pt; margin-bottom: 1mm;">Keterangan:</div>
                   <table style="width: 90%; margin-top: 3mm;">
                     <tr>
                       <td style="width: 33%; text-align: center;">
-                        <div style="font-size: 9pt;">Hormat Kami</div>
+                        <div style="font-size: 11pt;">Hormat Kami</div>
                         <div style="height: 12mm;"></div>
-                        <div style="font-size: 9pt;">(.................)</div>
+                        <div style="font-size: 11pt;">(.................)</div>
                       </td>
                       <td style="width: 33%; text-align: center;">
-                        <div style="font-size: 9pt;">Penerima</div>
+                        <div style="font-size: 11pt;">Penerima</div>
                         <div style="height: 12mm;"></div>
-                        <div style="font-size: 9pt;">(.................)</div>
+                        <div style="font-size: 11pt;">(.................)</div>
                       </td>
                     </tr>
                   </table>
-                  <div style="font-size: 8pt; margin-top: 2mm;">
-                    <strong>NO REK:</strong> MANDIRI-1540020855197 | BNI-2990213245 | BRI-777201000033304<br/>
-                    A.N ${companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}
+                  <div style="font-size: 10pt; margin-top: 2mm;">
+                    <strong>NO REK:</strong> ${[companyInfo?.bankAccount1, companyInfo?.bankAccount2, companyInfo?.bankAccount3].filter(Boolean).join(' | ') || 'MANDIRI-1540020855197 | BNI-2990213245 | BRI-777201000033304'}<br/>
+                    <strong>A.N:</strong> ${companyInfo?.bankAccountName || companyInfo?.name || 'CV. PERSADA INTIM PUSAKA'}
                   </div>
                 </td>
-                <td style="width: 45%; vertical-align: top; font-size: 10pt;">
+                <td style="width: 45%; vertical-align: top; font-size: 11pt;">
                   <table style="width: 100%;">
                     <tr><td>Sub Total</td><td style="text-align: right;">:</td><td style="text-align: right; width: 40%;">${formatNumber(transaction.subtotal)}</td></tr>
                     <tr><td>Total Akhir</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(transaction.total)}</td></tr>
@@ -582,7 +582,7 @@ export default function TransactionDetailPage() {
 
         <!-- Warning Footer -->
         <tr>
-          <td colspan="6" style="border-top: 1px solid #000; padding-top: 1mm; font-size: 8pt;">
+          <td colspan="6" style="border-top: 1px solid #000; padding-top: 1mm; font-size: 10pt;">
             <table style="width: 100%;"><tr>
               <td>WAJIB CEK STOK ANDA SENDIRI SEBELUM BARANG TURUN, KEHILANGAN BUKAN TANGGUNG JAWAB KAMI</td>
               <td style="text-align: right;">${transaction.cashierName?.split(' ')[0] || 'ADMIN'}</td>
@@ -600,7 +600,7 @@ export default function TransactionDetailPage() {
           <title>Faktur ${transaction.id}</title>
           <meta charset="UTF-8">
           <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
+            * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold !important; }
             @page { size: A5 landscape; margin: 0; }
             @media print {
               html, body { height: 100%; margin: 0; padding: 0; }
@@ -625,6 +625,7 @@ export default function TransactionDetailPage() {
               height: 100%;
             }
             table { border-collapse: collapse; width: 100%; }
+            td, th, div, span, p { font-weight: bold !important; }
           </style>
         </head>
         <body onload="window.print(); window.onafterprint = function(){ window.close(); }">

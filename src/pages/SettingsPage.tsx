@@ -21,7 +21,21 @@ export default function SettingsPage() {
   const { settings, isLoading, updateSettings } = useCompanySettings();
   const { toast } = useToast();
   const { user } = useAuth();
-  const [localInfo, setLocalInfo] = useState({ name: '', address: '', phone: '', logo: '', latitude: null as number | null, longitude: null as number | null, attendanceRadius: 50 as number | null, timezone: 'Asia/Jakarta' });
+  const [localInfo, setLocalInfo] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    logo: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
+    attendanceRadius: 50 as number | null,
+    timezone: 'Asia/Jakarta',
+    bankAccount1: '',
+    bankAccount2: '',
+    bankAccount3: '',
+    bankAccountName: '',
+    salesPhone: '',
+  });
 
   useEffect(() => {
     if (settings) {
@@ -34,6 +48,11 @@ export default function SettingsPage() {
         longitude: settings.longitude || null,
         attendanceRadius: settings.attendanceRadius || 50,
         timezone: settings.timezone || 'Asia/Jakarta',
+        bankAccount1: settings.bankAccount1 || '',
+        bankAccount2: settings.bankAccount2 || '',
+        bankAccount3: settings.bankAccount3 || '',
+        bankAccountName: settings.bankAccountName || '',
+        salesPhone: settings.salesPhone || '',
       });
     }
   }, [settings]);
@@ -118,7 +137,8 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid md:grid-cols-3 gap-6">
+            {/* Kolom 1: Info Dasar */}
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Nama Perusahaan</Label>
@@ -126,11 +146,15 @@ export default function SettingsPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="address">Alamat</Label>
-                <Textarea id="address" value={localInfo.address} onChange={handleInputChange} placeholder="Contoh: Jl. Pahlawan No. 123, Kota Bandung" />
+                <Textarea id="address" value={localInfo.address} onChange={handleInputChange} placeholder="Contoh: Jl. Pahlawan No. 123" rows={2} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="phone">Nomor Telepon / Kontak</Label>
-                <Input id="phone" value={localInfo.phone} onChange={handleInputChange} placeholder="Contoh: 0812-3456-7890" />
+                <Label htmlFor="phone">Nomor Telepon Kantor</Label>
+                <Input id="phone" value={localInfo.phone} onChange={handleInputChange} placeholder="0812-3456-7890" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="salesPhone">Nomor HP Sales</Label>
+                <Input id="salesPhone" value={localInfo.salesPhone} onChange={handleInputChange} placeholder="0813-4470-7573" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="timezone">Zona Waktu</Label>
@@ -146,28 +170,53 @@ export default function SettingsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Waktu pada sistem akan mengikuti zona waktu ini</p>
               </div>
             </div>
+
+            {/* Kolom 2: Rekening Bank */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="bankAccountName">Nama Pemilik Rekening</Label>
+                <Input id="bankAccountName" value={localInfo.bankAccountName} onChange={handleInputChange} placeholder="CV. PERSADA INTIM PUSAKA" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bankAccount1">Rekening Perusahaan 1</Label>
+                <Input id="bankAccount1" value={localInfo.bankAccount1} onChange={handleInputChange} placeholder="MANDIRI-1540020855197" />
+                <p className="text-xs text-muted-foreground">Format: BANK-NoRek</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bankAccount2">Rekening Perusahaan 2</Label>
+                <Input id="bankAccount2" value={localInfo.bankAccount2} onChange={handleInputChange} placeholder="BNI-2990213245" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bankAccount3">Rekening Perusahaan 3</Label>
+                <Input id="bankAccount3" value={localInfo.bankAccount3} onChange={handleInputChange} placeholder="BRI-777201000033304" />
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Rekening ini akan tampil di faktur cetak (PDF, Dot Matrix, Thermal)
+              </p>
+            </div>
+
+            {/* Kolom 3: Logo */}
             <div className="space-y-2">
               <Label>Logo Perusahaan</Label>
-              <div className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center text-center">
+              <div className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center justify-center text-center">
                 {localInfo.logo ? (
-                  <img src={localInfo.logo} alt="Logo Preview" className="max-h-32 mb-4" />
+                  <img src={localInfo.logo} alt="Logo Preview" className="max-h-20 mb-2" />
                 ) : (
-                  <div className="mb-4 text-muted-foreground">
-                    <ImageIcon className="mx-auto h-12 w-12" />
-                    <p>Belum ada logo</p>
+                  <div className="mb-2 text-muted-foreground">
+                    <ImageIcon className="mx-auto h-8 w-8" />
+                    <p className="text-xs">Belum ada logo</p>
                   </div>
                 )}
-                <Button asChild variant="outline">
+                <Button asChild variant="outline" size="sm">
                   <label htmlFor="logo-upload" className="cursor-pointer">
-                    <Upload className="mr-2 h-4 w-4" />
-                    {localInfo.logo ? 'Ganti Logo' : 'Unggah Logo'}
+                    <Upload className="mr-2 h-3 w-3" />
+                    {localInfo.logo ? 'Ganti' : 'Unggah'}
                     <input id="logo-upload" type="file" className="sr-only" accept="image/*" onChange={handleLogoUpload} />
                   </label>
                 </Button>
-                <p className="text-xs text-muted-foreground mt-2">PNG, JPG, GIF (maks. 800x400px)</p>
+                <p className="text-xs text-muted-foreground mt-1">PNG, JPG, GIF</p>
               </div>
             </div>
           </div>
