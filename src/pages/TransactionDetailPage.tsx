@@ -602,7 +602,7 @@ export default function TransactionDetailPage() {
           <meta charset="UTF-8">
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold !important; }
-            @page { size: A5 landscape; margin: 5mm 3mm 3mm 3mm; }
+            @page { size: A5 landscape; margin: 10mm 5mm 5mm 5mm; }
             @media print {
               html, body { height: 100%; margin: 0; padding: 0; }
             }
@@ -614,7 +614,7 @@ export default function TransactionDetailPage() {
               font-weight: bold;
               font-size: 10pt;
               line-height: 1.4;
-              padding: 0;
+              padding: 3mm 0 0 0;
               background: white;
               color: black;
               display: flex;

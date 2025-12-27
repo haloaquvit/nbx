@@ -828,7 +828,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
             /* Page setup untuk continuous form 9.5 inch */
             @page {
               size: 241mm auto;  /* 9.5 inch width, auto height */
-              margin: 8mm 6mm;
+              margin: 12mm 6mm 8mm 6mm;
             }
 
             @media print {
@@ -849,7 +849,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
               font-size: 10pt;
               line-height: 1.4;
               margin: 0;
-              padding: 8mm 6mm;
+              padding: 5mm 6mm 8mm 6mm;
               width: 241mm;
               background: white;
               color: black;
