@@ -69,8 +69,14 @@ const generateJournalNumber = async (): Promise<string> => {
     const lastNumber = data[0].entry_number;
     const match = lastNumber.match(/JE-\d{4}-(\d+)/);
     if (match) {
-      const nextNum = parseInt(match[1], 10) + 1;
-      return `${prefix}${nextNum.toString().padStart(6, '0')}`;
+      const parsed = parseInt(match[1], 10);
+      // Validasi NaN untuk mencegah error "0NaN"
+      if (!isNaN(parsed) && parsed > 0) {
+        const nextNum = parsed + 1;
+        return `${prefix}${nextNum.toString().padStart(6, '0')}`;
+      } else {
+        console.warn(`[useJournalEntries] Invalid entry_number format: ${lastNumber}`);
+      }
     }
   }
 

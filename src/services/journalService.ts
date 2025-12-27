@@ -149,7 +149,14 @@ async function generateJournalNumber(branchId: string): Promise<string> {
   const day = now.getDate().toString().padStart(2, '0');
   const prefix = `JE-${year}${month}${day}-`;
 
-  const { data } = await supabase
+  // Validasi branchId
+  if (!branchId) {
+    console.warn('[JournalService] generateJournalNumber called without branchId, using timestamp fallback');
+    const timestamp = now.getTime().toString().slice(-10);
+    return `${prefix}${timestamp}`;
+  }
+
+  const { data, error } = await supabase
     .from('journal_entries')
     .select('entry_number')
     .eq('branch_id', branchId)
@@ -157,12 +164,31 @@ async function generateJournalNumber(branchId: string): Promise<string> {
     .order('entry_number', { ascending: false })
     .limit(1);
 
+  if (error) {
+    console.error('[JournalService] Error fetching last journal number:', error);
+    // Fallback ke timestamp-based number
+    const timestamp = now.getTime().toString().slice(-10);
+    return `${prefix}${timestamp}`;
+  }
+
   let nextNumber = 1;
   if (data && data.length > 0) {
     const lastNumber = data[0].entry_number;
     const parts = lastNumber.split('-');
     if (parts.length === 3) {
-      nextNumber = parseInt(parts[2], 10) + 1;
+      // Extract hanya digit dari parts[2], handle berbagai format
+      const numericPart = parts[2].replace(/\D/g, ''); // Hapus semua non-digit
+      const parsed = parseInt(numericPart, 10);
+
+      if (!isNaN(parsed) && parsed > 0) {
+        // Ambil 4 digit pertama sebagai sequence number (sisanya adalah ms suffix)
+        const sequenceStr = numericPart.slice(0, 4);
+        const sequence = parseInt(sequenceStr, 10);
+        nextNumber = (!isNaN(sequence) && sequence > 0) ? sequence + 1 : 1;
+      } else {
+        console.warn(`[JournalService] Invalid entry_number format: ${lastNumber}, resetting to 1`);
+        nextNumber = 1;
+      }
     }
   }
 
