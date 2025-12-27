@@ -215,7 +215,7 @@ export default function ProductionPage() {
         </div>
 
         <div className="mt-3 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
+          <div className="hidden md:flex items-center space-x-2">
             <Switch
               id="consume-bom"
               checked={consumeBOM}
@@ -234,9 +234,9 @@ export default function ProductionPage() {
           </Button>
         </div>
 
-        {/* BOM Preview */}
+        {/* BOM Preview - Hidden on mobile */}
         {selectedProduct && bom && bom.length > 0 && (
-          <div className="mt-4">
+          <div className="mt-4 hidden md:block">
             <div className="text-xs text-slate-600 mb-1">Ringkasan BOM (per 1 unit)</div>
             <div className="border rounded overflow-hidden">
               <div className="overflow-x-auto">
