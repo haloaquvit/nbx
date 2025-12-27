@@ -555,8 +555,11 @@ const MobileLayout = () => {
         )}
       </div>
 
-      {/* Mobile Footer Navigation - Minimal */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-gray-200 dark:bg-gray-900/95 dark:border-gray-700">
+      {/* Mobile Footer Navigation - Minimal (hide when sidebar is open) */}
+      <div className={cn(
+        "fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-gray-200 dark:bg-gray-900/95 dark:border-gray-700 transition-transform duration-300",
+        isSidebarOpen && "translate-y-full"
+      )}>
         <div className="flex items-center justify-between px-6 py-4">
           {/* Left - Menu Button */}
           <Button variant="ghost" size="lg" onClick={toggleSidebar} className="flex items-center space-x-2 h-12 px-6 text-gray-900 dark:text-white">
