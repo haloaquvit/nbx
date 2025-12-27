@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Download, Calendar, Package, CalendarDays, ShoppingCart, Truck, Store, Navigation, FileSpreadsheet } from 'lucide-react'
+import { Download, Calendar, Package, CalendarDays, ShoppingCart, Truck, Store, Navigation, FileSpreadsheet, User } from 'lucide-react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 import jsPDF from 'jspdf'
@@ -42,6 +42,8 @@ export const TransactionItemsReport = () => {
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
   const [itemFilter, setItemFilter] = useState<'all' | 'regular' | 'bonus'>('all')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'delivery' | 'office_sale' | 'retasi'>('all')
+  const [driverKasirFilter, setDriverKasirFilter] = useState<string>('all')
+  const [availableDriversKasir, setAvailableDriversKasir] = useState<string[]>([])
   const [reportData, setReportData] = useState<SoldProduct[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
@@ -120,15 +122,38 @@ export const TransactionItemsReport = () => {
         if (deliveryError) {
           console.error('Error fetching deliveries:', deliveryError)
         } else if (deliveryData) {
+          // Collect retasi_ids from delivery transactions to get retasi_ke info
+          const deliveryRetasiIds = [...new Set(
+            deliveryData
+              .map((d: any) => d.transaction?.retasi_id)
+              .filter(Boolean)
+          )]
+
+          // Fetch retasi details for deliveries
+          let deliveryRetasiMap: Record<string, any> = {}
+          if (deliveryRetasiIds.length > 0) {
+            const { data: deliveryRetasiDetails } = await supabase
+              .from('retasi')
+              .select('id, retasi_number, retasi_ke, driver_name')
+              .in('id', deliveryRetasiIds)
+
+            if (deliveryRetasiDetails) {
+              deliveryRetasiDetails.forEach(r => {
+                deliveryRetasiMap[r.id] = r
+              })
+            }
+          }
+
           deliveryData.forEach((delivery: any) => {
             const deliveryDate = new Date(delivery.delivery_date)
             const transaction = delivery.transaction
             const transactionItems = transaction?.items || []
 
-            // Skip if transaction is linked to retasi (will be counted in retasi section)
-            if (transaction?.retasi_id && sourceFilter === 'all') {
-              // Don't skip, we'll track it as delivery but mark it
-            }
+            // Get retasi info for this delivery's transaction
+            const retasiInfo = transaction?.retasi_id ? deliveryRetasiMap[transaction.retasi_id] : null
+            const retasiNumberDisplay = retasiInfo
+              ? `${retasiInfo.retasi_number} (ke-${retasiInfo.retasi_ke})`
+              : undefined
 
             delivery.delivery_items?.forEach((item: any) => {
               // Find matching transaction item to get price and isBonus info
@@ -159,6 +184,7 @@ export const TransactionItemsReport = () => {
                 total: item.quantity_delivered * price,
                 source: 'delivery',
                 driverName: delivery.driver?.full_name,
+                retasiNumber: retasiNumberDisplay,
                 cashierName: transaction?.cashier?.full_name || 'Unknown',
                 isBonus: isBonus
               })
@@ -329,7 +355,29 @@ export const TransactionItemsReport = () => {
       // Sort by sold date (newest first)
       items.sort((a, b) => b.soldDate.getTime() - a.soldDate.getTime())
 
-      setReportData(items)
+      // Extract unique driver/kasir names for filter dropdown
+      const uniqueDriversKasir = [...new Set(
+        items.map(item => {
+          if (item.source === 'delivery' || item.source === 'retasi') {
+            return item.driverName || ''
+          }
+          return item.cashierName || ''
+        }).filter(Boolean)
+      )].sort()
+      setAvailableDriversKasir(uniqueDriversKasir)
+
+      // Apply driver/kasir filter if selected
+      let filteredItems = items
+      if (driverKasirFilter !== 'all') {
+        filteredItems = items.filter(item => {
+          if (item.source === 'delivery' || item.source === 'retasi') {
+            return item.driverName === driverKasirFilter
+          }
+          return item.cashierName === driverKasirFilter
+        })
+      }
+
+      setReportData(filteredItems)
     } catch (error) {
       console.error('Error generating report:', error)
     } finally {
@@ -560,7 +608,7 @@ export const TransactionItemsReport = () => {
         <CardContent className="space-y-4">
           <div className="space-y-4">
             {/* Filter Type Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Jenis Filter</Label>
                 <Select value={filterType} onValueChange={(value: 'monthly' | 'dateRange') => setFilterType(value)}>
@@ -599,6 +647,26 @@ export const TransactionItemsReport = () => {
                     <SelectItem value="delivery">Pengantaran</SelectItem>
                     <SelectItem value="office_sale">Laku Kantor</SelectItem>
                     <SelectItem value="retasi">Retasi</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-1">
+                  <User className="h-3 w-3" />
+                  Supir/Kasir
+                </Label>
+                <Select value={driverKasirFilter} onValueChange={setDriverKasirFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Semua" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Supir/Kasir</SelectItem>
+                    {availableDriversKasir.map(name => (
+                      <SelectItem key={name} value={name}>
+                        {name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
