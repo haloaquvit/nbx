@@ -64,9 +64,15 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
   const fromAccountId = watch('fromAccountId')
   const toAccountId = watch('toAccountId')
   const amount = watch('amount')
-  
-  const fromAccount = accounts?.find(acc => acc.id === fromAccountId)
-  const toAccount = accounts?.find(acc => acc.id === toAccountId)
+
+  // ============================================================================
+  // FILTER: Hanya akun dengan isPaymentAccount = true (Kas/Bank)
+  // Transfer antar kas hanya bisa dilakukan pada akun kas pembayaran
+  // ============================================================================
+  const paymentAccounts = accounts?.filter(acc => acc.isPaymentAccount) || []
+
+  const fromAccount = paymentAccounts.find(acc => acc.id === fromAccountId)
+  const toAccount = paymentAccounts.find(acc => acc.id === toAccountId)
 
   const onSubmit = async (data: TransferFormData) => {
     if (!user) {
@@ -190,10 +196,10 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowRightLeft className="h-5 w-5 text-blue-600" />
-            Transfer Antar Akun
+            Transfer Antar Kas
           </DialogTitle>
           <DialogDescription>
-            Transfer dana dari satu akun ke akun lainnya
+            Transfer dana antar akun kas/bank (akun pembayaran)
           </DialogDescription>
         </DialogHeader>
         
@@ -206,7 +212,7 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
                   <SelectValue placeholder="Pilih akun asal..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {accounts?.map(account => (
+                  {paymentAccounts.map(account => (
                     <SelectItem key={account.id} value={account.id}>
                       <div className="flex flex-col">
                         <span className="font-medium">{account.name}</span>
@@ -228,7 +234,7 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
                   <SelectValue placeholder="Pilih akun tujuan..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {accounts?.filter(acc => acc.id !== fromAccountId).map(account => (
+                  {paymentAccounts.filter(acc => acc.id !== fromAccountId).map(account => (
                     <SelectItem key={account.id} value={account.id}>
                       <div className="flex flex-col">
                         <span className="font-medium">{account.name}</span>
