@@ -65,56 +65,198 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
     }
   }
 
+  // Cetak Dot Matrix - format sama dengan Faktur di TransactionDetailPage (A5 landscape)
   const handleDotMatrixPrint = () => {
     if (!dotMatrixRef.current) {
       console.error('Dot matrix ref is null')
       return
     }
 
+    const orderDate = delivery.deliveryDate ? new Date(delivery.deliveryDate) : new Date()
+
+    // Singkat satuan - sama dengan Faktur
+    const shortUnit = (unit: string) => {
+      const unitMap: Record<string, string> = {
+        'Karton': 'Krt', 'karton': 'Krt',
+        'Lusin': 'Lsn', 'lusin': 'Lsn',
+        'Botol': 'Btl', 'botol': 'Btl',
+        'Pieces': 'Pcs', 'pieces': 'Pcs', 'Pcs': 'Pcs', 'pcs': 'Pcs',
+        'Kilogram': 'Kg', 'kilogram': 'Kg',
+        'Gram': 'Gr', 'gram': 'Gr',
+        'Liter': 'Ltr', 'liter': 'Ltr',
+        'Pack': 'Pck', 'pack': 'Pck',
+        'Dus': 'Dus', 'dus': 'Dus',
+        'Box': 'Box', 'box': 'Box',
+        'Unit': 'Unt', 'unit': 'Unt',
+      }
+      return unitMap[unit] || unit
+    }
+
+    const formatNumber = (num: number) => new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num)
+
+    // Format sama persis dengan Faktur di TransactionDetailPage
+    const dotMatrixContent = `
+      <table class="main-table" style="width: 100%; border-collapse: collapse;">
+        <!-- Header Row -->
+        <tr>
+          <td colspan="5" style="border-bottom: 1px solid #000; padding-bottom: 2mm;">
+            <table style="width: 100%;">
+              <tr>
+                <td style="width: 40%; vertical-align: top;">
+                  <div style="font-size: 17pt; font-weight: bold;">SURAT JALAN</div>
+                  <div style="font-size: 13pt; font-weight: bold;">${settings?.name || ''}</div>
+                  <div style="font-size: 11pt;">
+                    ${settings?.address || ''}<br/>
+                    KANTOR: ${String(settings?.phone || '').replace(/,/g, '')}${settings?.salesPhone ? ` | SALES: ${String(settings.salesPhone).replace(/,/g, '')}` : ''}
+                  </div>
+                </td>
+                <td style="width: 60%; vertical-align: top; font-size: 11pt;">
+                  <table style="width: 100%;">
+                    <tr><td width="80">No</td><td>: ${delivery.transactionId}-${delivery.deliveryNumber}</td><td width="50">Driver</td><td>: ${delivery.driverName?.split(' ')[0] || '-'}</td></tr>
+                    <tr><td>Tanggal</td><td>: ${safeFormatDate(orderDate, "dd/MM/yy HH:mm")}</td><td>Helper</td><td>: ${delivery.helperName?.split(' ')[0] || '-'}</td></tr>
+                    <tr><td>Pelanggan</td><td colspan="3">: ${transaction?.customerName || '-'}</td></tr>
+                    <tr><td>Alamat</td><td colspan="3">: ${transaction?.customerAddress || '-'}</td></tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Table Header -->
+        <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
+          <th style="padding: 1mm; text-align: left; width: 5%; font-size: 11pt;">No</th>
+          <th style="padding: 1mm; text-align: left; width: 40%; font-size: 11pt;">Nama Item</th>
+          <th style="padding: 1mm; text-align: center; width: 20%; font-size: 11pt;">Jml Antar</th>
+          <th style="padding: 1mm; text-align: center; width: 17%; font-size: 11pt;">Total Antar</th>
+          <th style="padding: 1mm; text-align: center; width: 18%; font-size: 11pt;">Sisa</th>
+        </tr>
+
+        <!-- Items -->
+        ${delivery.items.map((item, index) => {
+          const deliverySummaryItem = transaction?.deliverySummary?.find(ds => ds.productId === item.productId)
+          const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
+          const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
+          const cumulativeDeliveredAtThisPoint = transaction?.deliveries
+            ? transaction.deliveries
+                .filter(d => {
+                  const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
+                  return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
+                })
+                .reduce((sum, d) => {
+                  const productItem = d.items.find(di => di.productId === item.productId)
+                  return sum + (productItem?.quantityDelivered || 0)
+                }, 0)
+            : item.quantityDelivered
+          const remainingAtThisPoint = transaction?.deliverySummary
+            ? orderedQuantity - cumulativeDeliveredAtThisPoint
+            : 0
+          return `
+            <tr>
+              <td style="padding: 0.5mm 1mm; font-size: 11pt;">${index + 1}</td>
+              <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.productName}</td>
+              <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(item.quantityDelivered)} ${shortUnit(item.unit)}</td>
+              <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(cumulativeDeliveredAtThisPoint)} ${shortUnit(item.unit)}</td>
+              <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(remainingAtThisPoint)} ${shortUnit(item.unit)}</td>
+            </tr>
+          `
+        }).join('')}
+
+        <!-- Spacer row to push footer to bottom -->
+        <tr style="height: 100%;">
+          <td colspan="5" style="vertical-align: bottom;"></td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td colspan="5" style="border-top: 1px solid #000; padding-top: 2mm;">
+            <table style="width: 100%;">
+              <tr>
+                <td style="width: 55%; vertical-align: top;">
+                  <div style="font-size: 11pt; margin-bottom: 1mm;">Keterangan: ${delivery.notes || '-'}</div>
+                  <table style="width: 90%; margin-top: 3mm;">
+                    <tr>
+                      <td style="width: 33%; text-align: center;">
+                        <div style="font-size: 11pt;">Supir</div>
+                        <div style="height: 12mm;"></div>
+                        <div style="font-size: 11pt;">(${delivery.driverName || '.................'})</div>
+                      </td>
+                      <td style="width: 33%; text-align: center;">
+                        <div style="font-size: 11pt;">Kepala Gudang</div>
+                        <div style="height: 12mm;"></div>
+                        <div style="font-size: 11pt;">(.................)</div>
+                      </td>
+                      <td style="width: 33%; text-align: center;">
+                        <div style="font-size: 11pt;">Pelanggan</div>
+                        <div style="height: 12mm;"></div>
+                        <div style="font-size: 11pt;">(.................)</div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+                <td style="width: 45%; vertical-align: top; font-size: 11pt;">
+                  <table style="width: 100%;">
+                    <tr><td>Total Item</td><td style="text-align: right;">:</td><td style="text-align: right; width: 40%;">${delivery.items.length} item</td></tr>
+                    <tr><td>Total Qty Antar</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(delivery.items.reduce((sum, i) => sum + i.quantityDelivered, 0))}</td></tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Warning Footer -->
+        <tr>
+          <td colspan="5" style="border-top: 1px solid #000; padding-top: 1mm; font-size: 10pt;">
+            WAJIB CEK BARANG ANDA SENDIRI SEBELUM BARANG TURUN, KEHILANGAN BUKAN TANGGUNG JAWAB KAMI
+          </td>
+        </tr>
+      </table>
+    `
+
     const printWindow = window.open('', '_blank')
     if (printWindow) {
       printWindow.document.write(`
+        <!DOCTYPE html>
         <html>
           <head>
-            <title>Cetak Dot Matrix</title>
+            <title>Surat Jalan ${delivery.transactionId}-${delivery.deliveryNumber}</title>
+            <meta charset="UTF-8">
             <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold !important; }
+              @page { size: A5 landscape; margin: 10mm 5mm 5mm 5mm; }
+              @media print {
+                html, body { height: 100%; margin: 0; padding: 0; }
+              }
+              html, body {
+                height: 100%;
+              }
               body {
                 font-family: 'Courier New', Courier, monospace;
+                font-weight: bold;
                 font-size: 10pt;
-                margin: 0;
-                padding: 10mm;
-                width: 210mm;
-                background: #fff;
+                line-height: 1.4;
+                padding: 3mm 0 0 0;
+                background: white;
+                color: black;
+                display: flex;
+                flex-direction: column;
               }
-              table { width: 100%; border-collapse: collapse; }
-              td, th { padding: 2px; }
-              .text-center { text-align: center; }
-              .text-right { text-align: right; }
-              .font-bold { font-weight: bold; }
-              .border-y { border-top: 1px dashed; border-bottom: 1px dashed; }
-              .border-b { border-bottom: 1px dashed; }
-              .py-1 { padding-top: 4px; padding-bottom: 4px; }
-              .mb-1 { margin-bottom: 4px; }
-              .mb-2 { margin-bottom: 8px; }
-              .mt-2 { margin-top: 8px; }
-              .mt-3 { margin-top: 12px; }
-              .mx-auto { margin-left: auto; margin-right: auto; }
-              .max-h-12 { max-height: 48px; }
-              .flex { display: flex; }
-              .justify-between { justify-content: space-between; }
-              @media print {
-                body { width: 210mm; }
+              .main-table {
+                border-collapse: collapse;
+                width: 100%;
+                height: 100%;
               }
+              table { border-collapse: collapse; width: 100%; }
+              td, th, div, span, p { font-weight: bold !important; }
             </style>
           </head>
-          <body>
-            ${dotMatrixRef.current.innerHTML}
+          <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
+            ${dotMatrixContent}
           </body>
         </html>
       `)
       printWindow.document.close()
-      printWindow.print()
-      printWindow.close()
       setIsDialogOpen(false)
     }
   }
