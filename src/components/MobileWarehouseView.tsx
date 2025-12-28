@@ -4,14 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
-import { Package, AlertTriangle, ShoppingCart, Truck, Search, Calendar, Building2, CheckCircle2 } from 'lucide-react'
+import { Package, AlertTriangle, ShoppingCart, Truck, Search, Calendar, Building2, CheckCircle2, Factory, Box } from 'lucide-react'
 import { useMaterials } from '@/hooks/useMaterials'
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders'
+import { useProducts } from '@/hooks/useProducts'
 import { useAuth } from '@/hooks/useAuth'
 import { MobileCreatePOSheet } from './MobileCreatePOSheet'
 import { MobileReceiveGoodsSheet } from './MobileReceiveGoodsSheet'
+import { MobileRequestProductionSheet } from './MobileRequestProductionSheet'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
@@ -19,14 +20,18 @@ import { cn } from '@/lib/utils'
 export const MobileWarehouseView = () => {
   const { materials, isLoading: isLoadingMaterials } = useMaterials()
   const { purchaseOrders, isLoading: isLoadingPOs, receivePurchaseOrder } = usePurchaseOrders()
+  const { products, isLoading: isLoadingProducts } = useProducts()
   const { user } = useAuth()
 
   const [searchMaterial, setSearchMaterial] = useState('')
+  const [searchProduct, setSearchProduct] = useState('')
   const [searchPO, setSearchPO] = useState('')
   const [isCreatePOOpen, setIsCreatePOOpen] = useState(false)
   const [selectedMaterialForPO, setSelectedMaterialForPO] = useState<string | null>(null)
   const [isReceiveSheetOpen, setIsReceiveSheetOpen] = useState(false)
   const [selectedPOForReceive, setSelectedPOForReceive] = useState<any>(null)
+  const [isProductionSheetOpen, setIsProductionSheetOpen] = useState(false)
+  const [selectedProductForProduction, setSelectedProductForProduction] = useState<string | null>(null)
 
   const isOwner = user?.role === 'owner'
 
@@ -35,9 +40,19 @@ export const MobileWarehouseView = () => {
     m.type === 'Stock' && m.stock <= (m.minStock || 0)
   ) || []
 
+  // Filter products with low stock (currentStock <= minStock)
+  const lowStockProducts = products?.filter(p =>
+    p.currentStock <= (p.minStock || 0)
+  ) || []
+
   // Filter by search
   const filteredMaterials = lowStockMaterials.filter(m =>
     m.name.toLowerCase().includes(searchMaterial.toLowerCase())
+  )
+
+  // Filter products by search
+  const filteredProducts = lowStockProducts.filter(p =>
+    p.name.toLowerCase().includes(searchProduct.toLowerCase())
   )
 
   // Filter POs by search
@@ -76,6 +91,11 @@ export const MobileWarehouseView = () => {
     setIsReceiveSheetOpen(true)
   }
 
+  const handleRequestProduction = (productId: string) => {
+    setSelectedProductForProduction(productId)
+    setIsProductionSheetOpen(true)
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -90,14 +110,18 @@ export const MobileWarehouseView = () => {
 
       {/* Tabs */}
       <Tabs defaultValue="stock" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 h-12 dark:bg-gray-800">
-          <TabsTrigger value="stock" className="text-sm data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700">
-            <AlertTriangle className="h-4 w-4 mr-1.5" />
-            Persediaan ({lowStockMaterials.length})
+        <TabsList className="grid w-full grid-cols-3 h-12 dark:bg-gray-800">
+          <TabsTrigger value="stock" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 px-1">
+            <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+            Bahan ({lowStockMaterials.length})
           </TabsTrigger>
-          <TabsTrigger value="po" className="text-sm data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700">
-            <ShoppingCart className="h-4 w-4 mr-1.5" />
-            Daftar PO ({purchaseOrders?.length || 0})
+          <TabsTrigger value="product" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 px-1">
+            <Box className="h-3.5 w-3.5 mr-1" />
+            Produk ({lowStockProducts.length})
+          </TabsTrigger>
+          <TabsTrigger value="po" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 px-1">
+            <ShoppingCart className="h-3.5 w-3.5 mr-1" />
+            PO ({purchaseOrders?.length || 0})
           </TabsTrigger>
         </TabsList>
 
@@ -172,6 +196,114 @@ export const MobileWarehouseView = () => {
                           <ShoppingCart className="h-4 w-4 mr-1" />
                           Pesan
                         </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Tab: Produk Minimal */}
+        <TabsContent value="product" className="mt-4 space-y-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              placeholder="Cari produk..."
+              value={searchProduct}
+              onChange={(e) => setSearchProduct(e.target.value)}
+              className="pl-10 h-10 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+            />
+          </div>
+
+          {isLoadingProducts ? (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <Box className="h-8 w-8 mx-auto mb-2 animate-pulse" />
+              <p>Memuat data...</p>
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-green-500" />
+              <p className="font-medium">Semua stok aman!</p>
+              <p className="text-sm">Tidak ada produk dengan stok minimal</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredProducts.map((product) => {
+                const isOutOfStock = product.currentStock <= 0
+                const isCritical = product.currentStock <= (product.minStock || 0) / 2
+                const isProduction = product.type === 'Produksi'
+
+                return (
+                  <Card
+                    key={product.id}
+                    className={cn(
+                      "dark:bg-gray-800 dark:border-gray-700",
+                      isOutOfStock && "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20",
+                      isCritical && !isOutOfStock && "border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20"
+                    )}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-semibold text-sm truncate dark:text-white">{product.name}</p>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "text-[10px] px-1.5 py-0",
+                                isProduction ? "border-amber-500 text-amber-600" : "border-blue-500 text-blue-600"
+                              )}
+                            >
+                              {isProduction ? 'Produksi' : 'Beli'}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={cn(
+                              "text-lg font-bold",
+                              isOutOfStock ? "text-red-600 dark:text-red-400" :
+                              isCritical ? "text-orange-600 dark:text-orange-400" :
+                              "text-yellow-600 dark:text-yellow-400"
+                            )}>
+                              {product.currentStock}
+                            </span>
+                            <span className="text-gray-400">/</span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">{product.minStock || 0} min</span>
+                            <span className="text-xs text-gray-400">({product.unit})</span>
+                          </div>
+                          {isOutOfStock && (
+                            <Badge variant="destructive" className="mt-1 text-xs">HABIS</Badge>
+                          )}
+                          {isCritical && !isOutOfStock && (
+                            <Badge className="mt-1 text-xs bg-orange-500">KRITIS</Badge>
+                          )}
+                        </div>
+                        {isProduction ? (
+                          <Button
+                            size="sm"
+                            onClick={() => handleRequestProduction(product.id)}
+                            className="ml-2 bg-amber-600 hover:bg-amber-700 h-9"
+                          >
+                            <Factory className="h-4 w-4 mr-1" />
+                            Produksi
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              // For "Jual Langsung" products, open PO sheet
+                              // The PO dialog already supports products
+                              setSelectedMaterialForPO(null)
+                              setIsCreatePOOpen(true)
+                            }}
+                            className="ml-2 bg-blue-600 hover:bg-blue-700 h-9"
+                          >
+                            <ShoppingCart className="h-4 w-4 mr-1" />
+                            Pesan PO
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -286,6 +418,13 @@ export const MobileWarehouseView = () => {
           isLoading={receivePurchaseOrder.isPending}
         />
       )}
+
+      {/* Production Sheet */}
+      <MobileRequestProductionSheet
+        open={isProductionSheetOpen}
+        onOpenChange={setIsProductionSheetOpen}
+        productId={selectedProductForProduction || undefined}
+      />
     </div>
   )
 }
