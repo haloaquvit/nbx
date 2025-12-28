@@ -1679,11 +1679,63 @@ export async function generateCashFlowStatement(
   const netCashFlow = netCashFromOperations + netCashFromInvesting + netCashFromFinancing;
 
   // ============================================================================
-  // SALDO KAS AWAL PERIODE
+  // SALDO KAS AWAL PERIODE - DIHITUNG DARI JOURNAL ENTRIES SEBELUM PERIODE
   // ============================================================================
-  // Saldo awal = Saldo akhir - Arus kas bersih periode ini
+  // Saldo awal = initial_balance + Sum(Debit - Credit) dari journal SEBELUM fromDate
   // ============================================================================
-  const beginningCash = endingCash - netCashFlow;
+
+  // Get cash account IDs for beginning balance calculation
+  const cashAccountIdsForBeginning = cashAccounts.map(acc => acc.id);
+
+  // Calculate beginning cash from initial_balance + journal entries BEFORE periodFrom
+  let beginningCash = 0;
+
+  // Start with initial_balance from cash accounts
+  cashAccounts.forEach(acc => {
+    beginningCash += acc.initialBalance || 0;
+  });
+
+  // Fetch journal entries BEFORE periodFrom for cash/bank accounts
+  const { data: beforePeriodLines, error: beforeError } = await supabase
+    .from('journal_entry_lines')
+    .select(`
+      account_id,
+      debit_amount,
+      credit_amount,
+      journal_entries (
+        branch_id,
+        status,
+        is_voided,
+        entry_date
+      )
+    `)
+    .in('account_id', cashAccountIdsForBeginning);
+
+  if (beforeError) {
+    console.warn('Error fetching before-period journal lines:', beforeError.message);
+  } else {
+    // Filter: before periodFrom, posted, not voided, correct branch
+    (beforePeriodLines || []).forEach((line: any) => {
+      const journal = line.journal_entries;
+      if (!journal) return;
+      if (journal.status !== 'posted' || journal.is_voided === true) return;
+      if (journal.branch_id !== branchId) return;
+      if (journal.entry_date >= fromDateStr) return; // Only BEFORE period
+
+      const debit = Number(line.debit_amount) || 0;
+      const credit = Number(line.credit_amount) || 0;
+      beginningCash += (debit - credit);
+    });
+  }
+
+  console.log('📊 Cash Flow Statement - Beginning Cash:', {
+    fromInitialBalance: cashAccounts.reduce((sum, acc) => sum + (acc.initialBalance || 0), 0),
+    fromJournalBeforePeriod: beginningCash - cashAccounts.reduce((sum, acc) => sum + (acc.initialBalance || 0), 0),
+    totalBeginningCash: beginningCash,
+    endingCash,
+    netCashFlow,
+    checkSum: beginningCash + netCashFlow // Should equal endingCash
+  });
 
   // ============================================================================
   // GROUP CASH FLOWS BY COA ACCOUNT
