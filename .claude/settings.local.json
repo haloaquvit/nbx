@@ -196,7 +196,8 @@
       "Bash(__NEW_LINE__ echo \"=== Check if product exists ===\")",
       "Bash(__NEW_LINE__ echo \"=== Try to insert a test delivery item ===\")",
       "Bash(powershell -Command \"Invoke-RestMethod -Uri ''''https://upload.aquvit.id/upload'''' -Method Post -Form @{file = Get-Item -Path ''''C:\\Windows\\System32\\shell32.dll'''' -ErrorAction SilentlyContinue; category=''''test''''; filename=''''test-file.txt''''}\")",
-      "Bash(Select-Object -First 10)"
+      "Bash(Select-Object -First 10)",
+      "Bash(MKW_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ1c2VyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZW1haWwiOiJvd25lckBhcXV2aXQuaWQiLCJyb2xlIjoib3duZXIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwicGNhIjoxNzY2NzUwMDczLCJzaWQiOiJiZTZkNmUzYjg3NTNkZTRhNjkwOGRhMGZmODFmODI5NmM1MzllNGMwMDFmNjkwY2RlNTM4MmYzOWU2YTYxOTUxIiwiaWF0IjoxNzY2ODkxMzUxLCJleHAiOjE3Njc0OTYxNTF9.raHdN4goyoyK9iMxvip9UJpzxcQvTGob6RLDRdDd5lE\")"
     ],
     "deny": [],
     "ask": [],
