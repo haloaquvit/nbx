@@ -48,8 +48,9 @@ const FEATURES = [
   {
     category: 'Transaksi & POS',
     items: [
-      { id: 'pos_access', name: 'Akses POS', icon: Eye },
-      { id: 'pos_driver_access', name: 'Akses POS Supir', icon: Eye },
+      { id: 'pos_access', name: 'Akses POS Kasir (Mobile)', icon: Eye },
+      { id: 'pos_driver_access', name: 'Akses POS Supir (Mobile)', icon: Eye },
+      { id: 'warehouse_access', name: 'Akses Gudang (Mobile)', icon: Eye },
       { id: 'transactions_view', name: 'Lihat Transaksi', icon: Eye },
       { id: 'transactions_create', name: 'Buat Transaksi', icon: Plus },
       { id: 'transactions_edit', name: 'Edit Transaksi', icon: Edit },
@@ -60,7 +61,7 @@ const FEATURES = [
     category: 'Produksi',
     items: [
       { id: 'production_view', name: 'Lihat Produksi', icon: Eye },
-      { id: 'production_create', name: 'Proses Produksi', icon: Plus },
+      { id: 'production_create', name: 'Input Produksi (Mobile)', icon: Plus },
       { id: 'production_edit', name: 'Edit Produksi', icon: Edit },
       { id: 'production_delete', name: 'Hapus Produksi', icon: Trash2 },
     ]

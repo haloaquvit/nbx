@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, MapPin } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, MapPin, Warehouse } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
@@ -70,22 +70,23 @@ const MobileLayout = () => {
   // Check if user is owner
   const isOwner = user?.role?.toLowerCase() === 'owner'
 
-  // Permission checks
+  // Permission checks for mobile features
+  const canAccessPOS = hasGranularPermission('pos_access')
+  const canAccessDriverPOS = hasGranularPermission('pos_driver_access')
+  const canAccessWarehouse = hasGranularPermission('warehouse_access')
   const canAccessProduction = hasGranularPermission('production_view') || hasGranularPermission('production_create')
 
-  // Filter menu based on user role
-  const allowedRoles = ['supir', 'helper', 'admin', 'owner']
-  const canAccessDriverPOS = user?.role && allowedRoles.includes(user.role)
-
   const menuItems = [
-    {
+    // POS Kasir - controlled by pos_access permission
+    ...(canAccessPOS ? [{
       title: 'Point of Sale',
       icon: ShoppingCart,
       path: '/pos',
       description: 'Buat transaksi penjualan',
       color: 'bg-blue-500 hover:bg-blue-600',
       textColor: 'text-white'
-    },
+    }] : []),
+    // POS Supir - controlled by pos_driver_access permission
     ...(canAccessDriverPOS ? [{
       title: 'POS Supir',
       icon: Truck,
@@ -118,12 +119,22 @@ const MobileLayout = () => {
       color: 'bg-rose-500 hover:bg-rose-600',
       textColor: 'text-white'
     },
+    // Input Produksi - controlled by production_view or production_create permission
     ...(canAccessProduction ? [{
       title: 'Input Produksi',
       icon: Factory,
       path: '/production',
       description: 'Catat hasil produksi',
       color: 'bg-amber-500 hover:bg-amber-600',
+      textColor: 'text-white'
+    }] : []),
+    // Gudang - controlled by warehouse_access permission
+    ...(canAccessWarehouse ? [{
+      title: 'Gudang',
+      icon: Warehouse,
+      path: '/warehouse',
+      description: 'Persediaan & Purchase Order',
+      color: 'bg-indigo-500 hover:bg-indigo-600',
       textColor: 'text-white'
     }] : []),
     {

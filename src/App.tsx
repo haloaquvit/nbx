@@ -66,6 +66,7 @@ const JournalPage = lazy(() => import("@/pages/JournalPage"));
 const MaterialUsageSummaryPage = lazy(() => import("@/pages/MaterialUsageSummaryPage"));
 const WebManagementPage = lazy(() => import("@/pages/WebManagementPage"));
 const CustomerMapPage = lazy(() => import("@/pages/CustomerMapPage"));
+const WarehousePage = lazy(() => import("@/pages/WarehousePage"));
 
 const SERVERS = [
   {
@@ -262,6 +263,8 @@ function WebApp() {
                   <Route path="/customers" element={<CustomerPage />} />
                   <Route path="/customers/:id" element={<CustomerDetailPage />} />
                   <Route path="/customer-map" element={<CustomerMapPage />} />
+                  <Route path="/production" element={<ProductionPage />} />
+                  <Route path="/warehouse" element={<WarehousePage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               ) : (
