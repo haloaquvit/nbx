@@ -21,6 +21,10 @@ const fromDbToApp = (dbAccount: any): Account => ({
   isActive: dbAccount.is_active !== false, // Default to true if not specified
   sortOrder: dbAccount.sort_order || 0,
   branchId: dbAccount.branch_id || undefined, // Branch ID for multi-branch COA
+
+  // Employee assignment for cash accounts
+  employeeId: dbAccount.employee_id || undefined,
+  employeeName: dbAccount.profiles?.name || dbAccount.profiles?.full_name || undefined, // From join with profiles table
 });
 
 // Helper to map from App (camelCase) to DB (snake_case)
@@ -33,6 +37,8 @@ const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => 
     isActive,
     sortOrder,
     branchId,
+    employeeId,
+    employeeName, // Exclude from DB data (it's from join)
     ...rest
   } = appAccount as any;
 
@@ -63,6 +69,11 @@ const fromAppToDb = (appAccount: Partial<Omit<Account, 'id' | 'createdAt'>>) => 
     dbData.branch_id = branchId || null;
   }
 
+  // Employee assignment for cash accounts
+  if (employeeId !== undefined) {
+    dbData.employee_id = employeeId || null;
+  }
+
   return dbData;
 };
 
@@ -84,9 +95,10 @@ export const useAccounts = () => {
       // ============================================================================
 
       // Get accounts for current branch only (or accounts without branch_id for backward compat)
+      // Include join with profiles table to get employee name for cash accounts
       let accountsQuery = supabase
         .from('accounts')
-        .select('*');
+        .select('*, profiles:employee_id(name, full_name)');
 
       // Filter by branch_id if currentBranch is available
       if (currentBranch?.id) {
@@ -498,6 +510,37 @@ export const useAccounts = () => {
     }
   });
 
+  // Get cash account assigned to a specific employee
+  const getEmployeeCashAccount = (employeeId: string): Account | undefined => {
+    if (!accounts) return undefined;
+    return accounts.find(acc =>
+      acc.isPaymentAccount &&
+      acc.employeeId === employeeId &&
+      acc.isActive !== false
+    );
+  };
+
+  // Get all cash accounts with employee assignments
+  const getCashAccountsWithEmployees = (): Account[] => {
+    if (!accounts) return [];
+    return accounts.filter(acc =>
+      acc.isPaymentAccount &&
+      !acc.isHeader &&
+      acc.isActive !== false
+    );
+  };
+
+  // Get unassigned cash accounts (no employee linked)
+  const getUnassignedCashAccounts = (): Account[] => {
+    if (!accounts) return [];
+    return accounts.filter(acc =>
+      acc.isPaymentAccount &&
+      !acc.isHeader &&
+      !acc.employeeId &&
+      acc.isActive !== false
+    );
+  };
+
   return {
     accounts,
     isLoading,
@@ -512,5 +555,9 @@ export const useAccounts = () => {
     bulkUpdateAccountCodes,
     importStandardCoA,
     getAccountBalance,
+    // Employee cash account functions
+    getEmployeeCashAccount,
+    getCashAccountsWithEmployees,
+    getUnassignedCashAccounts,
   }
 }

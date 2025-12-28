@@ -53,8 +53,8 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
   const { user } = useAuth()
   const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
-  const { accounts } = useAccounts()
-  
+  const { accounts, getEmployeeCashAccount } = useAccounts()
+
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const remainingAmount = transaction ? transaction.total - (transaction.paidAmount || 0) : 0
   
@@ -70,6 +70,17 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
       trigger("amount");
     }
   }, [remainingAmount, watchedAmount, trigger]);
+
+  // Auto-select payment account based on logged-in user's assigned cash account
+  React.useEffect(() => {
+    if (open && user?.id && accounts && accounts.length > 0) {
+      const employeeCashAccount = getEmployeeCashAccount(user.id);
+      if (employeeCashAccount) {
+        setValue("paymentAccountId", employeeCashAccount.id);
+        console.log(`[PayReceivable] Auto-selected cash account "${employeeCashAccount.name}" for user ${user.name}`);
+      }
+    }
+  }, [open, user?.id, accounts, setValue, getEmployeeCashAccount]);
 
   const onSubmit = async (data: PaymentFormData) => {
     if (!transaction || !user) return;
@@ -254,12 +265,22 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
             </div>
             <div>
               <Label htmlFor="paymentAccountId">Setor Ke Akun</Label>
-              <Select onValueChange={(value) => setValue("paymentAccountId", value)}>
+              <Select
+                value={watch("paymentAccountId") || ""}
+                onValueChange={(value) => setValue("paymentAccountId", value)}
+              >
                 <SelectTrigger><SelectValue placeholder="Pilih Akun..." /></SelectTrigger>
                 <SelectContent>
-                  {accounts?.filter(a => a.isPaymentAccount).map(acc => (
-                    <SelectItem key={acc.id} value={acc.id}><Wallet className="inline-block mr-2 h-4 w-4" />{acc.name}</SelectItem>
-                  ))}
+                  {accounts?.filter(a => a.isPaymentAccount).map(acc => {
+                    const isMyAccount = acc.employeeId === user?.id;
+                    return (
+                      <SelectItem key={acc.id} value={acc.id}>
+                        <Wallet className="inline-block mr-2 h-4 w-4" />
+                        {acc.name}
+                        {isMyAccount && <span className="text-green-600 font-medium ml-2">(Kas Saya)</span>}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
               {errors.paymentAccountId && <p className="text-sm text-destructive mt-1">{errors.paymentAccountId.message}</p>}

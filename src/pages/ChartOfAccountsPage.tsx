@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { useAccounts } from "@/hooks/useAccounts"
 import { useBranch } from "@/contexts/BranchContext"
+import { useEmployees } from "@/hooks/useEmployees"
 import { STANDARD_COA_TEMPLATE } from "@/utils/chartOfAccountsUtils"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/hooks/useAuth"
@@ -96,6 +97,8 @@ interface CoaTemplateItem {
   id?: string
   balance?: number
   initialBalance?: number
+  employeeId?: string
+  employeeName?: string
 }
 
 interface TreeNode {
@@ -244,8 +247,13 @@ function TreeNodeRow({
         </div>
 
         {/* Name */}
-        <div className="flex-1 min-w-0 truncate">
-          {account.name}
+        <div className="flex-1 min-w-0 truncate flex items-center gap-2">
+          <span>{account.name}</span>
+          {account.isPaymentAccount && account.employeeName && (
+            <Badge variant="outline" className="text-xs font-normal shrink-0">
+              {account.employeeName}
+            </Badge>
+          )}
         </div>
 
         {/* Type Badge */}
@@ -337,6 +345,7 @@ function TreeNodeRow({
 export default function ChartOfAccountsPage() {
   const { accounts, isLoading, addAccount, updateAccount, deleteAccount } = useAccounts()
   const { currentBranch } = useBranch()
+  const { employees } = useEmployees()
   const { toast } = useToast()
   const { user } = useAuth()
 
@@ -365,8 +374,19 @@ export default function ChartOfAccountsPage() {
     type: 'Aset' as 'Aset' | 'Kewajiban' | 'Modal' | 'Pendapatan' | 'Beban',
     isHeader: false,
     isPaymentAccount: false,
-    initialBalance: 0
+    initialBalance: 0,
+    employeeId: '' as string // Karyawan yang ditugaskan untuk akun kas
   })
+
+  // Filter employees for cash account assignment (supir, driver, cashier, sales, helper)
+  const cashAccountEmployees = useMemo(() => {
+    if (!employees) return [];
+    const allowedRoles = ['supir', 'driver', 'cashier', 'sales', 'helper'];
+    return employees.filter(emp =>
+      allowedRoles.includes(emp.role?.toLowerCase()) &&
+      emp.status === 'Aktif'
+    );
+  }, [employees]);
 
   const userIsOwner = isOwner(user)
   const userIsAdminOrOwner = isAdminOrOwner(user)
@@ -389,7 +409,9 @@ export default function ChartOfAccountsPage() {
       isPaymentAccount: acc.isPaymentAccount,
       id: acc.id,
       balance: acc.balance,
-      initialBalance: acc.initialBalance
+      initialBalance: acc.initialBalance,
+      employeeId: acc.employeeId,
+      employeeName: acc.employeeName
     }))
 
     return buildTree(mappedAccounts)
@@ -603,7 +625,8 @@ export default function ChartOfAccountsPage() {
       type: existingAccount.type,
       isHeader: existingAccount.isHeader || false,
       isPaymentAccount: existingAccount.isPaymentAccount,
-      initialBalance: existingAccount.initialBalance || 0
+      initialBalance: existingAccount.initialBalance || 0,
+      employeeId: existingAccount.employeeId || ''
     })
     setIsEditDialogOpen(true)
   }
@@ -732,7 +755,9 @@ export default function ChartOfAccountsPage() {
           type: formData.type,
           isHeader: formData.isHeader,
           isPaymentAccount: formData.isPaymentAccount,
-          initialBalance: formData.initialBalance
+          initialBalance: formData.initialBalance,
+          // Only include employeeId for payment accounts (cash/bank)
+          ...(formData.isPaymentAccount && { employeeId: formData.employeeId || undefined })
         }
       })
 
@@ -1009,11 +1034,37 @@ export default function ChartOfAccountsPage() {
                 <Checkbox
                   id="editIsPaymentAccount"
                   checked={formData.isPaymentAccount}
-                  onCheckedChange={(checked) => setFormData({ ...formData, isPaymentAccount: !!checked })}
+                  onCheckedChange={(checked) => setFormData({ ...formData, isPaymentAccount: !!checked, employeeId: checked ? formData.employeeId : '' })}
                 />
                 <Label htmlFor="editIsPaymentAccount" className="text-sm">Akun Pembayaran (Kas/Bank)</Label>
               </div>
             </div>
+
+            {/* Employee Assignment - only for payment accounts */}
+            {formData.isPaymentAccount && (
+              <div className="space-y-2">
+                <Label>Ditugaskan ke Karyawan</Label>
+                <Select
+                  value={formData.employeeId || "none"}
+                  onValueChange={(v) => setFormData({ ...formData, employeeId: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih karyawan (opsional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Tidak ditugaskan</SelectItem>
+                    {cashAccountEmployees.map((emp) => (
+                      <SelectItem key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.role})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Kas yang ditugaskan ke karyawan akan otomatis digunakan saat karyawan tersebut menerima pembayaran
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2">

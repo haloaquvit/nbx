@@ -13,6 +13,7 @@ import { Truck, Plus, Trash2, ShoppingCart, User, Package, CreditCard, AlertCirc
 import { useCustomers } from "@/hooks/useCustomers"
 import { useProducts } from "@/hooks/useProducts"
 import { useAccounts } from "@/hooks/useAccounts"
+import { useBranch } from "@/contexts/BranchContext"
 import { useTransactions } from "@/hooks/useTransactions"
 import { useAuth } from "@/hooks/useAuth"
 import { useActiveRetasi } from "@/hooks/useRetasi"
@@ -34,7 +35,7 @@ export default function DriverPosPage() {
   const { user } = useAuth()
   const { customers } = useCustomers()
   const { products } = useProducts()
-  const { accounts } = useAccounts()
+  const { accounts, getEmployeeCashAccount } = useAccounts()
   const { addTransaction } = useTransactions()
   const [searchParams] = useSearchParams()
 
@@ -59,6 +60,17 @@ export default function DriverPosPage() {
   }, [searchParams, customers, selectedCustomer])
   const [items, setItems] = useState<CartItem[]>([])
   const [paymentAccount, setPaymentAccount] = useState("")
+
+  // Auto-select payment account based on logged-in user's assigned cash account
+  useEffect(() => {
+    if (user?.id && accounts && accounts.length > 0 && !paymentAccount) {
+      const employeeCashAccount = getEmployeeCashAccount(user.id);
+      if (employeeCashAccount) {
+        setPaymentAccount(employeeCashAccount.id);
+        console.log(`[DriverPOS] Auto-selected cash account "${employeeCashAccount.name}" for user ${user.name}`);
+      }
+    }
+  }, [user?.id, accounts, paymentAccount, getEmployeeCashAccount]);
   const [paidAmount, setPaidAmount] = useState(0)
   const [dueDate, setDueDate] = useState(() => {
     const date = new Date();
@@ -634,11 +646,14 @@ export default function DriverPosPage() {
                   <SelectValue placeholder="Pilih Kas/Bank" />
                 </SelectTrigger>
                 <SelectContent>
-                  {accounts?.filter(a => a.isPaymentAccount).map((acc) => (
-                    <SelectItem key={acc.id} value={acc.id} className="text-base py-3">
-                      {acc.name}
-                    </SelectItem>
-                  ))}
+                  {accounts?.filter(a => a.isPaymentAccount).map((acc) => {
+                    const isMyAccount = acc.employeeId === user?.id;
+                    return (
+                      <SelectItem key={acc.id} value={acc.id} className="text-base py-3">
+                        {acc.name} {isMyAccount && <span className="text-green-600 font-medium">(Kas Saya)</span>}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>

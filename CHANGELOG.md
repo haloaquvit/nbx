@@ -43,6 +43,65 @@ Semua perubahan penting pada proyek AQUVIT ERP System didokumentasikan di file i
 | Nabire | `aquvit_new` | 3000 | 3006 |
 | Manokwari | `mkw_db` | 3007 | 3003 |
 
+### Database Credentials
+
+```
+User: aquavit
+Password: Aquvit2024
+Host: 127.0.0.1
+Port: 5432
+```
+
+**Contoh koneksi psql:**
+```bash
+# Nabire
+PGPASSWORD='Aquvit2024' psql -U aquavit -h 127.0.0.1 -d aquvit_new
+
+# Manokwari
+PGPASSWORD='Aquvit2024' psql -U aquavit -h 127.0.0.1 -d mkw_db
+
+# Atau dengan sudo (untuk ALTER TABLE dll jika perlu superuser)
+sudo -u postgres psql -d aquvit_new
+sudo -u postgres psql -d mkw_db
+```
+
+### Database Schema Notes
+
+**PENTING untuk AI:**
+
+1. **Tabel Karyawan = `profiles`** (bukan `employees`)
+   - Frontend type: `Employee` → Database table: `profiles`
+   - Field `name` adalah generated column dari `full_name`
+   - Roles: `owner`, `admin`, `cashier`, `driver`, `sales`, `helper`, `operator`, `designer`, `supervisor`
+
+2. **Foreign Key ke karyawan selalu ke `profiles(id)`**
+   ```sql
+   -- Contoh benar:
+   ALTER TABLE accounts ADD COLUMN employee_id UUID REFERENCES profiles(id);
+
+   -- SALAH (tabel tidak ada):
+   ALTER TABLE accounts ADD COLUMN employee_id UUID REFERENCES employees(id);
+   ```
+
+3. **Ownership tabel berbeda per database:**
+   - Nabire: Mix `aquavit` dan `postgres`
+   - Manokwari: Semua owned by `postgres`
+   - Gunakan `sudo -u postgres` untuk ALTER TABLE di Manokwari
+
+4. **Setelah ALTER TABLE, restart PostgREST:**
+   ```bash
+   pm2 restart postgrest-aquvit postgrest-mkw
+   ```
+
+5. **Total 55 tabel** termasuk:
+   - `accounts` - Chart of Accounts
+   - `profiles` - Karyawan/Users
+   - `transactions` - Transaksi penjualan
+   - `deliveries` - Pengiriman
+   - `journal_entries` + `journal_entry_lines` - Jurnal akuntansi
+   - `customers`, `suppliers`, `products`, `materials`
+   - Dan lainnya...
+
 ### PM2 Process Names
 
 ```bash

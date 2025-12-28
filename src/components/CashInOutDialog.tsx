@@ -16,7 +16,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useBranch } from "@/contexts/BranchContext"
 import { TrendingUp, TrendingDown } from "lucide-react"
 import { createManualCashInJournal, createManualCashOutJournal } from "@/services/journalService"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -43,7 +43,7 @@ interface CashInOutDialogProps {
 }
 
 export function CashInOutDialog({ open, onOpenChange, type, title, description }: CashInOutDialogProps) {
-  const { accounts } = useAccounts()
+  const { accounts, getEmployeeCashAccount } = useAccounts()
   const { toast } = useToast()
   const { user } = useAuth()
   const { currentBranch } = useBranch()
@@ -61,6 +61,17 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
 
   const selectedAccountId = watch('accountId')
   const selectedAccount = accounts?.find(acc => acc.id === selectedAccountId)
+
+  // Auto-select cash account based on logged-in user's assigned cash account
+  useEffect(() => {
+    if (open && user?.id && accounts && accounts.length > 0) {
+      const employeeCashAccount = getEmployeeCashAccount(user.id);
+      if (employeeCashAccount) {
+        setValue("accountId", employeeCashAccount.id);
+        console.log(`[CashInOut] Auto-selected cash account "${employeeCashAccount.name}" for user ${user.name}`);
+      }
+    }
+  }, [open, user?.id, accounts, setValue, getEmployeeCashAccount]);
 
   const onSubmit = async (data: CashTransactionFormData) => {
     if (!user) {
@@ -188,21 +199,30 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="accountId">Akun</Label>
-            <Select onValueChange={(value) => setValue("accountId", value)}>
+            <Select
+              value={selectedAccountId || ""}
+              onValueChange={(value) => setValue("accountId", value)}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Pilih akun kas..." />
               </SelectTrigger>
               <SelectContent>
-                {cashAccounts?.map(account => (
-                  <SelectItem key={account.id} value={account.id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{account.name}</span>
-                      <span className="text-sm text-muted-foreground">
-                        Saldo: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(account.balance)}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
+                {cashAccounts?.map(account => {
+                  const isMyAccount = account.employeeId === user?.id;
+                  return (
+                    <SelectItem key={account.id} value={account.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">
+                          {account.name}
+                          {isMyAccount && <span className="text-green-600 font-medium ml-2">(Kas Saya)</span>}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          Saldo: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(account.balance)}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             {errors.accountId && <p className="text-sm text-destructive">{errors.accountId.message}</p>}

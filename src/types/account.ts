@@ -18,6 +18,10 @@ export interface Account {
   isActive?: boolean; // Status aktif account
   sortOrder?: number; // Urutan tampilan dalam laporan
   branchId?: string; // Branch ID untuk multi-branch COA
+
+  // Employee assignment for cash accounts
+  employeeId?: string; // ID karyawan yang ditugaskan untuk akun kas ini
+  employeeName?: string; // Nama karyawan (dari join)
 }
 
 // Account tree node for hierarchical display
