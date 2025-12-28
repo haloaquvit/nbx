@@ -11,10 +11,10 @@ export interface Driver {
 }
 
 export const useDrivers = () => {
-  const { currentBranch, canAccessAllBranches } = useBranch();
+  const { currentBranch } = useBranch();
 
   const { data: drivers, isLoading } = useQuery<Driver[]>({
-    queryKey: ['drivers', currentBranch?.id, canAccessAllBranches],
+    queryKey: ['drivers', currentBranch?.id],
     queryFn: async () => {
       // Get drivers from profiles table with 'supir' or 'helper' role
       try {
@@ -25,8 +25,9 @@ export const useDrivers = () => {
           .eq('status', 'Aktif')
           .order('full_name', { ascending: true });
 
-        // Apply branch filter if user cannot access all branches
-        if (currentBranch?.id && !canAccessAllBranches) {
+        // Always apply branch filter based on selected branch
+        // All users should see drivers from the currently selected branch only
+        if (currentBranch?.id) {
           query = query.eq('branch_id', currentBranch.id);
         }
 
@@ -54,8 +55,8 @@ export const useDrivers = () => {
           .eq('status', 'Aktif')
           .order('full_name', { ascending: true });
 
-        // Apply branch filter if user cannot access all branches
-        if (currentBranch?.id && !canAccessAllBranches) {
+        // Always apply branch filter based on selected branch
+        if (currentBranch?.id) {
           fallbackQuery = fallbackQuery.eq('branch_id', currentBranch.id);
         }
 

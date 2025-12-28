@@ -15,10 +15,10 @@ import { createDeliveryJournal } from '@/services/journalService'
 
 // Fetch employees with driver and helper roles from profiles table
 export function useDeliveryEmployees() {
-  const { currentBranch, canAccessAllBranches } = useBranch();
+  const { currentBranch } = useBranch();
 
   return useQuery({
-    queryKey: ['delivery-employees', currentBranch?.id, canAccessAllBranches],
+    queryKey: ['delivery-employees', currentBranch?.id],
     queryFn: async (): Promise<DeliveryEmployee[]> => {
       let query = supabase
         .from('profiles')
@@ -28,8 +28,8 @@ export function useDeliveryEmployees() {
         .order('role')
         .order('full_name');
 
-      // Apply branch filter if user cannot access all branches
-      if (currentBranch?.id && !canAccessAllBranches) {
+      // Always apply branch filter based on selected branch
+      if (currentBranch?.id) {
         query = query.eq('branch_id', currentBranch.id);
       }
 
@@ -53,7 +53,7 @@ export function useDeliveryEmployees() {
 
 // Fetch transactions ready for delivery (exclude office sales)
 export function useTransactionsReadyForDelivery() {
-  const { currentBranch, canAccessAllBranches } = useBranch();
+  const { currentBranch } = useBranch();
 
   return useQuery({
     queryKey: ['transactions-ready-for-delivery', currentBranch?.id],
@@ -1210,7 +1210,7 @@ export function useDeliveries() {
 
 // Fetch all delivery history for admin/owner
 export function useDeliveryHistory() {
-  const { currentBranch, canAccessAllBranches } = useBranch();
+  const { currentBranch } = useBranch();
 
   return useQuery({
     queryKey: ['delivery-history', currentBranch?.id],
