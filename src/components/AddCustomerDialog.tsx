@@ -53,8 +53,9 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
   const [photoPreview, setPhotoPreview] = useState<string | null>(null) // Preview foto
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Check if user must provide coordinates and photo
-  const requiresLocationAndPhoto = user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
+  // Foto wajib untuk semua user, koordinat GPS opsional untuk admin/owner
+  const requiresPhoto = true // Foto WAJIB untuk semua
+  const requiresLocation = user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
   const {
     register,
     handleSubmit,
@@ -173,22 +174,23 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
 
 
   const onSubmit = async (data: CustomerFormData) => {
-    // Validate required fields for non-privileged users
-    if (requiresLocationAndPhoto) {
+    // Validate foto - WAJIB untuk semua user
+    if (!storePhotoFilename) {
+      toast({
+        variant: "destructive",
+        title: "Foto Toko Wajib",
+        description: "Foto toko/kios pelanggan wajib diupload.",
+      })
+      return
+    }
+
+    // Validate koordinat GPS - wajib untuk role tertentu
+    if (requiresLocation) {
       if (!data.latitude || !data.longitude) {
         toast({
           variant: "destructive",
           title: "Koordinat GPS Wajib",
           description: "Untuk role Anda, koordinat GPS pelanggan wajib diisi.",
-        })
-        return
-      }
-      
-      if (!storePhotoFilename) {
-        toast({
-          variant: "destructive",
-          title: "Foto Toko Wajib",
-          description: "Untuk role Anda, foto toko/kios pelanggan wajib diupload.",
         })
         return
       }
@@ -237,10 +239,9 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
           <DialogHeader>
             <DialogTitle>Tambah Pelanggan Baru</DialogTitle>
             <DialogDescription>
-              Isi detail pelanggan di bawah ini. {requiresLocationAndPhoto && (
-                <strong className="text-red-600">
-                  Koordinat GPS dan foto toko wajib diisi untuk role Anda.
-                </strong>
+              Isi detail pelanggan di bawah ini. <strong className="text-red-600">Foto toko wajib diisi.</strong>
+              {requiresLocation && (
+                <span className="text-red-600"> Koordinat GPS juga wajib untuk role Anda.</span>
               )}
             </DialogDescription>
           </DialogHeader>
@@ -264,7 +265,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
             <div className="space-y-2">
               <Label htmlFor="full_address">
                 Koordinat GPS
-                {requiresLocationAndPhoto && <span className="text-red-500 ml-1">*</span>}
+                {requiresLocation && <span className="text-red-500 ml-1">*</span>}
               </Label>
               <Textarea 
                 id="full_address" 
@@ -300,7 +301,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
             <div className="space-y-2">
               <Label>
                 Lokasi
-                {requiresLocationAndPhoto && <span className="text-red-500 ml-1">*</span>}
+                {requiresLocation && <span className="text-red-500 ml-1">*</span>}
               </Label>
               <div className="space-y-2">
                 <Button 
@@ -322,7 +323,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
             <div className="space-y-2">
               <Label>
                 Foto Toko
-                {requiresLocationAndPhoto && <span className="text-red-500 ml-1">*</span>}
+                <span className="text-red-500 ml-1">*</span>
               </Label>
               <div className="space-y-2">
                 <input

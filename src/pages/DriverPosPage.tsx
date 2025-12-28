@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Plus, Trash2, ShoppingCart, User, Package, CreditCard, AlertCircle, Phone, MapPin, Calendar, Minus, Gift } from "lucide-react"
+import { Truck, Plus, Trash2, ShoppingCart, User, Package, CreditCard, AlertCircle, Phone, MapPin, Calendar, Minus, Gift, UserPlus } from "lucide-react"
 import { useCustomers } from "@/hooks/useCustomers"
 import { useProducts } from "@/hooks/useProducts"
 import { useAccounts } from "@/hooks/useAccounts"
@@ -19,6 +19,7 @@ import { useActiveRetasi } from "@/hooks/useRetasi"
 import { TransactionItem, Transaction } from "@/types/transaction"
 import { DriverDeliveryDialog } from "@/components/DriverDeliveryDialog"
 import { DriverPrintDialog } from "@/components/DriverPrintDialog"
+import { AddCustomerDialog } from "@/components/AddCustomerDialog"
 import { PricingService } from "@/services/pricingService"
 import { Product } from "@/types/product"
 
@@ -70,6 +71,7 @@ export default function DriverPosPage() {
   const [printDialogOpen, setPrintDialogOpen] = useState(false)
   const [createdTransaction, setCreatedTransaction] = useState<Transaction | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isCustomerAddOpen, setIsCustomerAddOpen] = useState(false)
 
   // Memoized values
   const filteredCustomers = useMemo(() => {
@@ -382,10 +384,22 @@ export default function DriverPosPage() {
 
       {/* Customer Input - Larger & Easier */}
       <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 shadow-md">
-        <Label className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-2 block">
-          <User className="inline h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
-          Pelanggan
-        </Label>
+        <div className="flex items-center justify-between mb-2">
+          <Label className="text-base font-semibold text-gray-700 dark:text-gray-200">
+            <User className="inline h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
+            Pelanggan
+          </Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 px-3 text-sm font-medium bg-green-50 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50"
+            onClick={() => setIsCustomerAddOpen(true)}
+          >
+            <UserPlus className="h-4 w-4 mr-1" />
+            Tambah Baru
+          </Button>
+        </div>
         <div className="relative">
           <input
             type="text"
@@ -685,6 +699,19 @@ export default function DriverPosPage() {
       )}
 
       {/* Dialogs */}
+      <AddCustomerDialog
+        open={isCustomerAddOpen}
+        onOpenChange={setIsCustomerAddOpen}
+        onCustomerAdded={(newCustomer) => {
+          // Auto-select pelanggan baru
+          setSelectedCustomer(newCustomer.id)
+          setCustomerSearch(newCustomer.name)
+          toast({
+            title: "Pelanggan Ditambahkan",
+            description: `${newCustomer.name} berhasil ditambahkan dan dipilih.`
+          })
+        }}
+      />
       {createdTransaction && (
         <>
           <DriverDeliveryDialog
