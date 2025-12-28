@@ -23,28 +23,35 @@ export const useCustomers = () => {
       const { data, error } = await query;
       if (error) throw new Error(error.message);
 
-      // Fetch last order date for each customer
+      // Fetch order count and last order date for each customer
       const customerIds = (data || []).map(c => c.id);
       if (customerIds.length > 0) {
-        // Get last order date per customer using a single query
-        const { data: lastOrders, error: ordersError } = await supabase
+        // Get all orders for these customers to calculate count and last order date
+        const { data: orders, error: ordersError } = await supabase
           .from('transactions')
           .select('customer_id, order_date')
           .in('customer_id', customerIds)
           .order('order_date', { ascending: false });
 
-        if (!ordersError && lastOrders) {
-          // Create a map of customer_id -> last order date
+        if (!ordersError && orders) {
+          // Create maps for customer_id -> order count and last order date
+          const orderCountMap = new Map<string, number>();
           const lastOrderMap = new Map<string, string>();
-          for (const order of lastOrders) {
+
+          for (const order of orders) {
+            // Count orders per customer
+            orderCountMap.set(order.customer_id, (orderCountMap.get(order.customer_id) || 0) + 1);
+
+            // Set last order date (first occurrence since sorted desc)
             if (!lastOrderMap.has(order.customer_id)) {
               lastOrderMap.set(order.customer_id, order.order_date);
             }
           }
 
-          // Enrich customers with lastOrderDate
+          // Enrich customers with orderCount and lastOrderDate
           return (data || []).map(customer => ({
             ...customer,
+            orderCount: orderCountMap.get(customer.id) || 0,
             lastOrderDate: lastOrderMap.has(customer.id)
               ? new Date(lastOrderMap.get(customer.id)!)
               : null
@@ -54,6 +61,7 @@ export const useCustomers = () => {
 
       return (data || []).map(customer => ({
         ...customer,
+        orderCount: 0,
         lastOrderDate: null
       }));
     },

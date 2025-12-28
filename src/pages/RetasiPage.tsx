@@ -8,6 +8,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Truck,
   Plus,
   Calendar,
@@ -56,8 +66,16 @@ export default function RetasiPage() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailRetasi, setDetailRetasi] = useState<any>(null);
 
-  // Get granular permissions for retasi create and edit
-  const { canCreateRetasi, canEditRetasi } = useGranularPermission();
+  // Get granular permissions for retasi create, edit, delete
+  const { canCreateRetasi, canEditRetasi, canDeleteRetasi } = useGranularPermission();
+
+  // Delete confirmation state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [retasiToDelete, setRetasiToDelete] = useState<any>(null);
+
+  // Edit retasi state
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [retasiToEdit, setRetasiToEdit] = useState<any>(null);
 
   const filters = {
     is_returned: statusFilter === "active" ? false : statusFilter === "returned" ? true : undefined,
@@ -66,7 +84,7 @@ export default function RetasiPage() {
     date_to: dateTo || undefined,
   };
 
-  const { retasiList, stats, isLoading, markRetasiReturned, getRetasiItems } = useRetasi(filters);
+  const { retasiList, stats, isLoading, markRetasiReturned, getRetasiItems, deleteRetasi, updateRetasi } = useRetasi(filters);
   const { drivers } = useDrivers();
 
   const filteredRetasi = retasiList || [];
@@ -103,12 +121,35 @@ export default function RetasiPage() {
         retasiId: selectedRetasi.id,
         ...returnData,
       });
-      
+
       toast.success('Retasi berhasil dikembalikan');
       setReturnDialogOpen(false);
       setSelectedRetasi(null);
     } catch (error: any) {
       toast.error(error.message || 'Gagal mengembalikan retasi');
+    }
+  };
+
+  const handleDeleteRetasi = (retasi: any) => {
+    setRetasiToDelete(retasi);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleEditRetasi = (retasi: any) => {
+    setRetasiToEdit(retasi);
+    setEditDialogOpen(true);
+  };
+
+  const confirmDeleteRetasi = async () => {
+    if (!retasiToDelete) return;
+
+    try {
+      await deleteRetasi.mutateAsync(retasiToDelete.id);
+      toast.success(`Retasi ${retasiToDelete.retasi_number} berhasil dihapus`);
+      setDeleteDialogOpen(false);
+      setRetasiToDelete(null);
+    } catch (error: any) {
+      toast.error(error.message || 'Gagal menghapus retasi');
     }
   };
 
@@ -381,6 +422,17 @@ export default function RetasiPage() {
                               <ArrowLeft className="h-4 w-4" />
                             </Button>
                           ) : null}
+                          {canEditRetasi() && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditRetasi(retasi)}
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              title="Edit Retasi"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -392,6 +444,17 @@ export default function RetasiPage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
+                          {canDeleteRetasi() && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteRetasi(retasi)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              title="Hapus Retasi"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -427,6 +490,57 @@ export default function RetasiPage() {
             setDetailDialogOpen(open);
             if (!open) setDetailRetasi(null);
           }}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Hapus Retasi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Apakah Anda yakin ingin menghapus retasi <strong>{retasiToDelete?.retasi_number}</strong>?
+              {retasiToDelete?.driver_name && (
+                <> Supir: <strong>{retasiToDelete.driver_name}</strong>.</>
+              )}
+              <br /><br />
+              Tindakan ini tidak dapat dibatalkan dan akan menghapus semua data terkait retasi ini.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setRetasiToDelete(null)}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteRetasi}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={deleteRetasi.isPending}
+            >
+              {deleteRetasi.isPending ? "Menghapus..." : "Ya, Hapus"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Retasi Dialog */}
+      {retasiToEdit && (
+        <EditRetasiDialog
+          retasi={retasiToEdit}
+          drivers={drivers || []}
+          open={editDialogOpen}
+          onOpenChange={(open) => {
+            setEditDialogOpen(open);
+            if (!open) setRetasiToEdit(null);
+          }}
+          onSave={async (data) => {
+            try {
+              await updateRetasi.mutateAsync({ id: retasiToEdit.id, ...data });
+              toast.success(`Retasi ${retasiToEdit.retasi_number} berhasil diupdate`);
+              setEditDialogOpen(false);
+              setRetasiToEdit(null);
+            } catch (error: any) {
+              toast.error(error.message || 'Gagal mengupdate retasi');
+            }
+          }}
+          isLoading={updateRetasi.isPending}
         />
       )}
     </div>
@@ -1014,6 +1128,148 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
               transactions={transactions || []}
             />
           </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Edit Retasi Dialog component
+function EditRetasiDialog({
+  retasi,
+  drivers,
+  open,
+  onOpenChange,
+  onSave,
+  isLoading
+}: {
+  retasi: any;
+  drivers: { id: string; name: string }[];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (data: any) => Promise<void>;
+  isLoading: boolean;
+}) {
+  const [driverName, setDriverName] = useState(retasi?.driver_name || "");
+  const [helperName, setHelperName] = useState(retasi?.helper_name || "");
+  const [truckNumber, setTruckNumber] = useState(retasi?.truck_number || "");
+  const [notes, setNotes] = useState(retasi?.notes || "");
+
+  // Reset form when retasi changes
+  React.useEffect(() => {
+    if (retasi) {
+      setDriverName(retasi.driver_name || "");
+      setHelperName(retasi.helper_name || "");
+      setTruckNumber(retasi.truck_number || "");
+      setNotes(retasi.notes || "");
+    }
+  }, [retasi]);
+
+  const handleSave = async () => {
+    await onSave({
+      driver_name: driverName || undefined,
+      helper_name: helperName || undefined,
+      truck_number: truckNumber || undefined,
+      notes: notes || undefined,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Retasi</DialogTitle>
+          <DialogDescription>
+            {retasi?.retasi_number} - Retasi ke-{retasi?.retasi_ke}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Driver */}
+          <div className="space-y-2">
+            <Label>Supir</Label>
+            <Select value={driverName} onValueChange={setDriverName}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih Supir" />
+              </SelectTrigger>
+              <SelectContent>
+                {drivers.map((driver) => (
+                  <SelectItem key={driver.id} value={driver.name}>
+                    {driver.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Helper */}
+          <div className="space-y-2">
+            <Label>Helper (Opsional)</Label>
+            <Select value={helperName || "no-helper"} onValueChange={(v) => setHelperName(v === "no-helper" ? "" : v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih Helper" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no-helper">Tidak ada helper</SelectItem>
+                {drivers
+                  .filter((driver) => driver.name !== driverName)
+                  .map((driver) => (
+                    <SelectItem key={driver.id} value={driver.name}>
+                      {driver.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Truck Number */}
+          <div className="space-y-2">
+            <Label>Nomor Kendaraan</Label>
+            <Input
+              value={truckNumber}
+              onChange={(e) => setTruckNumber(e.target.value)}
+              placeholder="Contoh: B 1234 XYZ"
+            />
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-2">
+            <Label>Catatan</Label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Catatan retasi"
+            />
+          </div>
+
+          {/* Summary info */}
+          <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Tanggal Berangkat:</span>
+              <span className="font-medium">
+                {retasi?.departure_date && format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Total Item Bawa:</span>
+              <span className="font-medium">{retasi?.total_items || 0}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Status:</span>
+              <span className={`font-medium ${retasi?.is_returned ? 'text-green-600' : 'text-amber-600'}`}>
+                {retasi?.is_returned ? 'Armada Kembali' : 'Armada Berangkat'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Batal
+          </Button>
+          <Button onClick={handleSave} disabled={isLoading}>
+            {isLoading ? "Menyimpan..." : "Simpan Perubahan"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

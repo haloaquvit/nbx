@@ -56,7 +56,16 @@ export function TransactionTable() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+
+  // Check if mobile view
+  const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
+
+  React.useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Filter states
   const [showFilters, setShowFilters] = React.useState(false);
   const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
@@ -161,8 +170,15 @@ export function TransactionTable() {
       });
     }
 
+    // Sort: ascending (oldest first) for mobile, descending (newest first) for desktop
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.orderDate || 0).getTime();
+      const dateB = new Date(b.orderDate || 0).getTime();
+      return isMobile ? dateA - dateB : dateB - dateA; // Mobile: oldest first, Desktop: newest first
+    });
+
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter]);
+  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, isMobile]);
 
   const clearFilters = () => {
     setDateRange({ from: undefined, to: undefined });
@@ -753,8 +769,8 @@ export function TransactionTable() {
         </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+      {/* Summary Cards - Hidden on mobile */}
+      <div className="hidden md:grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="text-sm font-medium text-blue-700">Total Transaksi</div>
           <div className="text-2xl font-bold text-blue-600">{filteredSummary.count}</div>
@@ -791,61 +807,126 @@ export function TransactionTable() {
         </div>
       </div>
       
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
-        <div className="text-sm text-muted-foreground">
-          Menampilkan {filteredTransactions.length} dari {transactions?.length || 0} transaksi
+      {/* Info & Actions - Different for mobile/desktop */}
+      {isMobile ? (
+        <div className="text-sm text-muted-foreground py-2">
+          {filteredTransactions.length} pesanan
         </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <Button variant="outline" onClick={handleExportExcel} className="text-xs sm:text-sm hover-glow">
-            <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
-            <span className="hidden sm:inline">Ekspor </span>Excel
-          </Button>
-          <Button variant="outline" onClick={handleExportPdf} className="text-xs sm:text-sm hover-glow">
-            <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
-            <span className="hidden sm:inline">Ekspor </span>PDF
-          </Button>
-          <Button asChild>
-            <Link to="/pos" className="text-xs sm:text-sm">
-              <PlusCircle className="mr-2 h-3 w-3 sm:h-4 sm:w-4" /> 
-              <span className="hidden sm:inline">Tambah </span>Transaksi
-            </Link>
-          </Button>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4">
+          <div className="text-sm text-muted-foreground">
+            Menampilkan {filteredTransactions.length} dari {transactions?.length || 0} transaksi
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <Button variant="outline" onClick={handleExportExcel} className="text-xs sm:text-sm hover-glow">
+              <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Ekspor </span>Excel
+            </Button>
+            <Button variant="outline" onClick={handleExportPdf} className="text-xs sm:text-sm hover-glow">
+              <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Ekspor </span>PDF
+            </Button>
+            <Button asChild>
+              <Link to="/pos" className="text-xs sm:text-sm">
+                <PlusCircle className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Tambah </span>Transaksi
+              </Link>
+            </Button>
+          </div>
         </div>
-      </div>
-      <div className="rounded-md border overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table className="min-w-[800px]">
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => (<TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>))}</TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, i) => (<TableRow key={i}><TableCell colSpan={columns.length}><Skeleton className="h-8 w-full" /></TableCell></TableRow>))
-            ) : table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  onClick={() => navigate(`/transactions/${row.original.id}`)}
-                  className="cursor-pointer table-row-hover"
+      )}
+      {/* Mobile View - Simple Card List */}
+      {isMobile ? (
+        <div className="space-y-2">
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="bg-white border rounded-lg p-3">
+                <Skeleton className="h-16 w-full" />
+              </div>
+            ))
+          ) : filteredTransactions.length > 0 ? (
+            filteredTransactions.map((transaction, index) => (
+              <div
+                key={transaction.id}
+                className="bg-white border rounded-lg p-3 shadow-sm active:bg-gray-50"
+              >
+                <div
+                  className="flex items-center justify-between"
+                  onClick={() => navigate(`/transactions/${transaction.id}`)}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No results.</TableCell></TableRow>
-            )}
-          </TableBody>
-          </Table>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">
+                        #{index + 1}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {transaction.orderDate ? format(new Date(transaction.orderDate), "d MMM", { locale: id }) : '-'}
+                      </span>
+                    </div>
+                    <div className="font-medium text-sm truncate">{transaction.customerName}</div>
+                    <div className="text-xs text-gray-500 truncate">
+                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/transactions/${transaction.id}`);
+                    }}
+                    className="bg-green-600 hover:bg-green-700 text-white ml-2 h-10 px-3"
+                  >
+                    <Truck className="h-4 w-4 mr-1" />
+                    Antar
+                  </Button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-center py-8 text-gray-500">Tidak ada transaksi</div>
+          )}
         </div>
-      </div>
-      <div className="flex items-center justify-end space-x-2 py-4">
-        <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="hover-glow">Previous</Button>
-        <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="hover-glow">Next</Button>
-      </div>
+      ) : (
+        /* Desktop View - Full Table */
+        <div className="rounded-md border overflow-hidden">
+          <div className="overflow-x-auto">
+            <Table className="min-w-[800px]">
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => (<TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>))}</TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (<TableRow key={i}><TableCell colSpan={columns.length}><Skeleton className="h-8 w-full" /></TableCell></TableRow>))
+              ) : table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    onClick={() => navigate(`/transactions/${row.original.id}`)}
+                    className="cursor-pointer table-row-hover"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No results.</TableCell></TableRow>
+              )}
+            </TableBody>
+            </Table>
+          </div>
+        </div>
+      )}
+
+      {/* Pagination - Desktop only */}
+      {!isMobile && (
+        <div className="flex items-center justify-end space-x-2 py-4">
+          <Button variant="outline" size="sm" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="hover-glow">Previous</Button>
+          <Button variant="outline" size="sm" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="hover-glow">Next</Button>
+        </div>
+      )}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
