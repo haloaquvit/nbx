@@ -174,13 +174,21 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
     }
   }
 
-  const cashAccounts = accounts?.filter(acc => 
-    acc.type === 'Aset' && (
-      acc.name.toLowerCase().includes('kas') || 
+  const cashAccounts = accounts?.filter(acc => {
+    // Must be cash/payment account
+    const isCashAccount = acc.type === 'Aset' && (
+      acc.name.toLowerCase().includes('kas') ||
       acc.name.toLowerCase().includes('cash') ||
       acc.isPaymentAccount
-    )
-  )
+    );
+    if (!isCashAccount) return false;
+    // If account has no employee assigned, show to everyone
+    if (!acc.employeeId) return true;
+    // If account is assigned to current user, show it
+    if (acc.employeeId === user?.id) return true;
+    // Account is assigned to someone else, hide it
+    return false;
+  })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
