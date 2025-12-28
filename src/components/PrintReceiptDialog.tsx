@@ -22,6 +22,7 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { useCompanySettings, CompanyInfo } from "@/hooks/useCompanySettings"
 import { saveCompressedPDF } from "@/utils/pdfUtils"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface PrintReceiptDialogProps {
   open: boolean
@@ -304,6 +305,7 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
 
 export function PrintReceiptDialog({ open, onOpenChange, transaction, template, onClose }: PrintReceiptDialogProps) {
   const { settings: companyInfo } = useCompanySettings();
+  const isMobile = useIsMobile();
 
   // Handle close button click
   const handleClose = () => {
@@ -1087,8 +1089,8 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
           {template === 'receipt' ? (<div style={{ width: '80mm' }}><ReceiptTemplate transaction={transaction} companyInfo={companyInfo} /></div>) : (<InvoiceTemplate transaction={transaction} companyInfo={companyInfo} />)}
         </div>
         <DialogFooter className="p-4 border-t bg-muted/40 no-print flex-wrap gap-2">
-          <Button variant="outline" onClick={handlePdfDownload}><FileDown className="mr-2 h-4 w-4" /> Simpan PDF</Button>
-          <Button variant="outline" onClick={handleDotMatrixPrint}><Printer className="mr-2 h-4 w-4" /> Dot Matrix</Button>
+          {!isMobile && <Button variant="outline" onClick={handlePdfDownload}><FileDown className="mr-2 h-4 w-4" /> Simpan PDF</Button>}
+          {!isMobile && <Button variant="outline" onClick={handleDotMatrixPrint}><Printer className="mr-2 h-4 w-4" /> Dot Matrix</Button>}
           <Button onClick={handleRawbtPrint} className="bg-blue-600 hover:bg-blue-700"><Printer className="mr-2 h-4 w-4" /> RawBT</Button>
           <Button variant="secondary" onClick={handleClose}><X className="mr-2 h-4 w-4" /> Selesai</Button>
         </DialogFooter>

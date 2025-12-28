@@ -21,6 +21,7 @@ function safeFormatDate(date: Date | string | null | undefined, formatStr: strin
 import { useCompanySettings } from "@/hooks/useCompanySettings"
 import { useTransactions } from "@/hooks/useTransactions"
 import { createCompressedPDF } from "@/utils/pdfUtils"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface DeliveryNotePDFProps {
   delivery: Delivery
@@ -34,6 +35,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
   const printRef = React.useRef<HTMLDivElement>(null)
   const dotMatrixRef = React.useRef<HTMLDivElement>(null)
   const [isDialogOpen, setIsDialogOpen] = React.useState(false)
+  const isMobile = useIsMobile()
 
   // Get transaction info if not provided
   const transaction = transactionInfo || transactions?.find(t => t.id === delivery.transactionId)
@@ -271,6 +273,11 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         Loading...
       </Button>
     )
+  }
+
+  // Di mobile tidak tampilkan opsi cetak (karena hanya ada dot matrix dan PDF, tidak ada thermal)
+  if (isMobile) {
+    return null
   }
 
   return (

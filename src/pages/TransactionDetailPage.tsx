@@ -849,14 +849,14 @@ export default function TransactionDetailPage() {
         </div>
       </div>
 
-      {/* Mobile Actions - Sticky at top */}
+      {/* Mobile Actions - Sticky at top (hanya tampilkan thermal/RawBT) */}
       <div className="md:hidden sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40 -mx-6 px-6 py-3">
         <div className="flex gap-2 overflow-x-auto">
           {/* Show delivery button if transaction has delivery info and not office sale */}
           {deliveryInfo && !transaction?.isOfficeSale && (
-            <Button 
+            <Button
               variant="outline"
-              size="sm" 
+              size="sm"
               className="flex-shrink-0 bg-green-50 border-green-200 text-green-700"
               onClick={() => setShowDeliveryForm(true)}
             >
@@ -864,40 +864,13 @@ export default function TransactionDetailPage() {
               Antar
             </Button>
           )}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex-1 min-w-0"
-            onClick={handleGenerateInvoicePdf}
-          >
-            <FileDown className="mr-1 h-3 w-3" />
-            <span className="text-xs">PDF</span>
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex-1 min-w-0"
-            onClick={handleThermalPrint}
-          >
-            <Printer className="mr-1 h-3 w-3" />
-            <span className="text-xs">Thermal</span>
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex-1 min-w-0"
-            onClick={handleDotMatrixPrint}
-          >
-            <Printer className="mr-1 h-3 w-3" />
-            <span className="text-xs">Dot Matrix</span>
-          </Button>
-          <Button 
-            size="sm" 
-            className="flex-1 min-w-0"
+          <Button
+            size="sm"
+            className="flex-1 bg-blue-600 hover:bg-blue-700"
             onClick={handleRawbtPrint}
           >
             <Printer className="mr-1 h-3 w-3" />
-            <span className="text-xs">Rawbt</span>
+            <span className="text-xs">Cetak Thermal</span>
           </Button>
         </div>
       </div>
