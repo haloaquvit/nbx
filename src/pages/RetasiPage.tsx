@@ -56,8 +56,8 @@ export default function RetasiPage() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailRetasi, setDetailRetasi] = useState<any>(null);
 
-  // Get granular permissions for retasi create
-  const { canCreateRetasi } = useGranularPermission();
+  // Get granular permissions for retasi create and edit
+  const { canCreateRetasi, canEditRetasi } = useGranularPermission();
 
   const filters = {
     is_returned: statusFilter === "active" ? false : statusFilter === "returned" ? true : undefined,
@@ -370,7 +370,7 @@ export default function RetasiPage() {
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex gap-1">
-                          {!retasi.is_returned ? (
+                          {!retasi.is_returned && canEditRetasi() ? (
                             <Button
                               variant="outline"
                               size="sm"

@@ -129,6 +129,20 @@ export const useGranularPermission = () => {
     return hasGranularPermission('delivery_create');
   };
 
+  /**
+   * Check if user can edit retasi (mark as returned, edit data)
+   */
+  const canEditRetasi = (): boolean => {
+    return hasGranularPermission('retasi_edit');
+  };
+
+  /**
+   * Check if user can delete retasi
+   */
+  const canDeleteRetasi = (): boolean => {
+    return hasGranularPermission('retasi_delete');
+  };
+
   return {
     hasGranularPermission,
     userGranularPermissions,
@@ -137,5 +151,7 @@ export const useGranularPermission = () => {
     canCreateRetasi,
     canEditDelivery,
     canCreateDelivery,
+    canEditRetasi,
+    canDeleteRetasi,
   };
 };
