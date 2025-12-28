@@ -1864,6 +1864,174 @@ export async function createDeliveryJournal(params: {
 }
 
 /**
+ * Generate journal for Migration Receivable (Piutang Migrasi)
+ *
+ * Untuk migrasi data piutang dari sistem lain:
+ * Dr. Piutang Usaha (1210)      xxx
+ *   Cr. Saldo Awal/Modal (3100)      xxx
+ *
+ * Jurnal ini TIDAK mempengaruhi pendapatan penjualan,
+ * hanya mencatat piutang yang sudah ada dari sistem sebelumnya.
+ */
+export async function createMigrationReceivableJournal(params: {
+  receivableId: string;
+  receivableDate: Date;
+  amount: number;
+  customerName: string;
+  description?: string;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { receivableId, receivableDate, amount, customerName, description, branchId } = params;
+
+  // Find Piutang Usaha account (1210)
+  const piutangAccount = await getAccountByCode('1210', branchId)
+    || await findAccountByPattern('piutang', 'Aset', branchId);
+
+  if (!piutangAccount) {
+    return { success: false, error: 'Akun Piutang Usaha (1210) tidak ditemukan' };
+  }
+
+  // Find Saldo Awal / Modal account (3100)
+  const saldoAwalAccount = await getAccountByCode('3100', branchId)
+    || await findAccountByPattern('saldo awal', 'Modal', branchId)
+    || await findAccountByPattern('modal', 'Modal', branchId);
+
+  if (!saldoAwalAccount) {
+    return { success: false, error: 'Akun Saldo Awal/Modal (3100) tidak ditemukan' };
+  }
+
+  const journalDescription = `Migrasi Piutang - ${customerName}${description ? `: ${description}` : ''}`;
+
+  return createJournalEntry({
+    entryDate: receivableDate,
+    description: journalDescription,
+    referenceType: 'opening', // Use 'opening' for migration entries
+    referenceId: receivableId,
+    branchId,
+    autoPost: true,
+    lines: [
+      {
+        accountId: piutangAccount.id,
+        accountCode: piutangAccount.code,
+        accountName: piutangAccount.name,
+        debitAmount: amount,
+        creditAmount: 0,
+        description: `Piutang migrasi dari ${customerName}`,
+      },
+      {
+        accountId: saldoAwalAccount.id,
+        accountCode: saldoAwalAccount.code,
+        accountName: saldoAwalAccount.name,
+        debitAmount: 0,
+        creditAmount: amount,
+        description: 'Saldo awal piutang migrasi',
+      },
+    ],
+  });
+}
+
+/**
+ * Generate journal for Migration Debt (Hutang Migrasi)
+ *
+ * Untuk migrasi data hutang dari sistem lain:
+ * Dr. Saldo Awal/Modal (3100)     xxx
+ *   Cr. Hutang Usaha (2110)           xxx
+ *
+ * Jurnal ini TIDAK mempengaruhi kas/bank (tidak ada penerimaan dana),
+ * hanya mencatat hutang yang sudah ada dari sistem sebelumnya.
+ */
+export async function createMigrationDebtJournal(params: {
+  debtId: string;
+  debtDate: Date;
+  amount: number;
+  creditorName: string;
+  creditorType: 'supplier' | 'bank' | 'credit_card' | 'other';
+  description?: string;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { debtId, debtDate, amount, creditorName, creditorType, description, branchId } = params;
+
+  // Find Saldo Awal / Modal account (3100)
+  const saldoAwalAccount = await getAccountByCode('3100', branchId)
+    || await findAccountByPattern('saldo awal', 'Modal', branchId)
+    || await findAccountByPattern('modal', 'Modal', branchId);
+
+  if (!saldoAwalAccount) {
+    return { success: false, error: 'Akun Saldo Awal/Modal (3100) tidak ditemukan' };
+  }
+
+  // Find appropriate liability account based on creditor type
+  let hutangAccount: { id: string; code: string; name: string } | null = null;
+
+  switch (creditorType) {
+    case 'bank':
+      hutangAccount = await getAccountByCode('2210', branchId)
+        || await getAccountByCode('2200', branchId)
+        || await findAccountByPattern('hutang bank', 'Kewajiban', branchId);
+      break;
+    case 'credit_card':
+      hutangAccount = await getAccountByCode('2150', branchId)
+        || await findAccountByPattern('kartu kredit', 'Kewajiban', branchId);
+      break;
+    case 'supplier':
+      hutangAccount = await getAccountByCode('2110', branchId)
+        || await findAccountByPattern('hutang usaha', 'Kewajiban', branchId);
+      break;
+    case 'other':
+    default:
+      hutangAccount = await getAccountByCode('2900', branchId)
+        || await findAccountByPattern('hutang lain', 'Kewajiban', branchId);
+      break;
+  }
+
+  // Fallback to general hutang account
+  if (!hutangAccount) {
+    hutangAccount = await getAccountByCode('2110', branchId)
+      || await findAccountByPattern('hutang', 'Kewajiban', branchId);
+  }
+
+  if (!hutangAccount) {
+    return { success: false, error: 'Akun Hutang tidak ditemukan' };
+  }
+
+  const creditorTypeLabel = {
+    bank: 'Bank',
+    credit_card: 'Kartu Kredit',
+    supplier: 'Supplier',
+    other: 'Lainnya'
+  }[creditorType];
+
+  const journalDescription = `Migrasi Hutang ${creditorTypeLabel} - ${creditorName}${description ? `: ${description}` : ''}`;
+
+  return createJournalEntry({
+    entryDate: debtDate,
+    description: journalDescription,
+    referenceType: 'opening', // Use 'opening' for migration entries
+    referenceId: debtId,
+    branchId,
+    autoPost: true,
+    lines: [
+      {
+        accountId: saldoAwalAccount.id,
+        accountCode: saldoAwalAccount.code,
+        accountName: saldoAwalAccount.name,
+        debitAmount: amount,
+        creditAmount: 0,
+        description: 'Saldo awal hutang migrasi',
+      },
+      {
+        accountId: hutangAccount.id,
+        accountCode: hutangAccount.code,
+        accountName: hutangAccount.name,
+        debitAmount: 0,
+        creditAmount: amount,
+        description: `Hutang migrasi kepada ${creditorName}`,
+      },
+    ],
+  });
+}
+
+/**
  * Generate journal for Material Spoilage/Waste (Bahan Rusak)
  *
  * Bahan Rusak saat Produksi:
