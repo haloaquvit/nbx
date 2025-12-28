@@ -77,28 +77,35 @@ export class PhotoUploadService {
    */
   static async uploadPhoto(file: File, customerName: string, category: string = 'customers'): Promise<PhotoUploadResult> {
     try {
-      console.log('🔄 Uploading photo to VPS server...');
-
-      // Prepare form data
       const formData = new FormData();
       formData.append('file', file);
       formData.append('category', category);
 
-      // Clean filename: replace special characters with hyphens
       const cleanName = customerName.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-').toLowerCase();
       const timestamp = Date.now();
       const extension = file.name.split('.').pop() || 'jpg';
       const filename = `${cleanName}-${timestamp}.${extension}`;
       formData.append('filename', filename);
 
-      // Call VPS upload server
       const uploadUrl = this.getUploadUrl();
-      console.log(`Uploading to: ${uploadUrl}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
-      });
+      let response: Response;
+      try {
+        response = await fetch(uploadUrl, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal
+        });
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Upload timeout - koneksi terlalu lama');
+        }
+        throw new Error(`Network error: ${fetchError.message}`);
+      }
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -111,11 +118,20 @@ export class PhotoUploadService {
         throw new Error(result.message || 'Upload failed');
       }
 
-      console.log('✅ Photo uploaded successfully:', result);
+      // Use URL returned by VPS if available
+      let fileUrl: string;
+      let finalFilename: string;
 
-      // Return format compatible with existing code
-      const finalFilename = result.filename || filename;
-      const fileUrl = `${this.getFilesUrl()}/${category}/${finalFilename}`;
+      if (result.url) {
+        fileUrl = result.url;
+        finalFilename = result.filename || result.url.split('/').pop() || filename;
+      } else if (result.filename) {
+        finalFilename = result.filename;
+        fileUrl = `${this.getFilesUrl()}/${category}/${finalFilename}`;
+      } else {
+        finalFilename = filename;
+        fileUrl = `${this.getFilesUrl()}/${category}/${finalFilename}`;
+      }
 
       return {
         id: finalFilename,
@@ -126,7 +142,6 @@ export class PhotoUploadService {
       };
 
     } catch (error: any) {
-      console.error('❌ Photo upload failed:', error);
       throw new Error(`Photo upload failed: ${error.message}`);
     }
   }

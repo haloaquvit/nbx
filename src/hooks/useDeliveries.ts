@@ -350,14 +350,15 @@ export function useDeliveries() {
           const uploadResult = await PhotoUploadService.uploadPhoto(
             request.photo,
             request.transactionId,
-            'deliveries' // category folder
+            'deliveries'
           )
           if (uploadResult) {
             photoUrl = uploadResult.webViewLink
+          } else {
+            throw new Error('Gagal upload foto - tidak ada hasil upload')
           }
-        } catch (error) {
-          console.error('Failed to upload photo to VPS:', error)
-          // Continue without photo rather than failing the entire delivery
+        } catch (error: any) {
+          throw new Error(`Gagal upload foto pengantaran: ${error.message || 'Koneksi ke server gagal'}`)
         }
       }
 
@@ -370,14 +371,10 @@ export function useDeliveries() {
         .order('id').limit(1)
 
       if (transactionError) {
-        console.error('[useDeliveries] Transaction fetch error:', transactionError)
-
-        // Handle network connection issues
         if (transactionError.message?.includes('Failed to fetch') ||
             transactionError.message?.includes('ERR_CONNECTION_CLOSED')) {
           throw new Error('Koneksi internet bermasalah. Silakan periksa koneksi dan coba lagi.')
         }
-
         throw new Error(`Tidak dapat mengambil data transaksi: ${transactionError.message}`)
       }
 
@@ -392,14 +389,11 @@ export function useDeliveries() {
         .order('delivery_number', { ascending: false })
         .limit(1);
 
-      const nextDeliveryNumber = existingDeliveries && existingDeliveries.length > 0 
-        ? existingDeliveries[0].delivery_number + 1 
+      const nextDeliveryNumber = existingDeliveries && existingDeliveries.length > 0
+        ? existingDeliveries[0].delivery_number + 1
         : 1;
 
-      console.log(`📦 Creating delivery #${nextDeliveryNumber} for transaction ${request.transactionId}`);
-
       // Create delivery record using RPC function (SECURITY DEFINER)
-      // This bypasses RLS SELECT restrictions and guarantees RETURNING works
       let deliveryData;
       const { data: rpcResult, error: deliveryError } = await supabase
         .rpc('insert_delivery', {
@@ -416,7 +410,6 @@ export function useDeliveries() {
           p_branch_id: currentBranch?.id || null,
         })
 
-      // RPC returns array, get first item
       const initialDeliveryData = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
 
       if (!deliveryError && initialDeliveryData) {
@@ -424,7 +417,6 @@ export function useDeliveries() {
       }
 
       if (deliveryError) {
-        console.error('[useDeliveries] Delivery creation error:', deliveryError)
 
         if (deliveryError.message.includes('relation "deliveries" does not exist')) {
           throw new Error('Tabel pengantaran belum tersedia. Silakan jalankan database migration terlebih dahulu.')
@@ -576,30 +568,13 @@ export function useDeliveries() {
           .select('*')
 
         if (itemsError) {
-          console.error('[useDeliveries] Delivery items creation error:', itemsError)
-          console.error('[useDeliveries] Delivery items data was:', deliveryItems)
-          
-          // Handle missing column errors gracefully
-          if (itemsError.code === 'PGRST204' || itemsError.message?.includes('Could not find the') ||
-              itemsError.message?.includes('column') && itemsError.message?.includes('does not exist')) {
-            console.warn('[useDeliveries] Delivery items schema mismatch, skipping items insert')
-            // Continue without delivery items rather than failing the entire delivery
-          } else {
-            throw new Error(`Gagal menyimpan item pengantaran: ${itemsError.message}`)
-          }
+          throw new Error(`Gagal menyimpan item pengantaran: ${itemsError.message}`)
         } else {
           itemsData = data || []
-          console.log('[useDeliveries] Delivery items created successfully:', itemsData)
         }
       } catch (schemaError: any) {
-        console.warn('[useDeliveries] Schema error with delivery_items, continuing without items:', schemaError.message)
-        // Continue with delivery creation even if items fail due to schema issues
+        throw new Error(`Gagal menyimpan item pengantaran: ${schemaError.message}`)
       }
-
-      // Note: Material stock movements are NOT processed during delivery
-      // Delivery tracks PRODUCT delivery to customers, not material consumption
-      // Material stock movements should happen during production/manufacturing process
-      console.log('📦 Delivery created - product stock will be updated via product_stock table, not material_stock_movements');
 
       // Update transaction status automatically based on delivery completion
       try {
@@ -685,70 +660,41 @@ export function useDeliveries() {
       let driverName: string | undefined;
       let helperName: string | undefined;
 
-      console.log('[useDeliveries] Fetching driver/helper names:', {
-        driverId: deliveryData.driver_id,
-        helperId: deliveryData.helper_id
-      });
-
       if (deliveryData.driver_id) {
         try {
-          const { data: driverData, error: driverError } = await supabase
+          const { data: driverData } = await supabase
             .from('profiles')
             .select('full_name')
             .eq('id', deliveryData.driver_id)
             .order('id').limit(1);
 
-          console.log('[useDeliveries] Driver fetch result:', {
-            driverData,
-            driverError,
-            type: typeof driverData,
-            isArray: Array.isArray(driverData)
-          });
-
-          // PostgREST always returns array, get first item
           if (driverData && Array.isArray(driverData) && driverData.length > 0) {
             driverName = driverData[0].full_name || undefined;
           } else if (driverData && !Array.isArray(driverData)) {
-            // Fallback for object response
             driverName = (driverData as any).full_name || undefined;
           }
-
-          console.log('[useDeliveries] Extracted driverName:', driverName);
         } catch (err) {
-          console.error('[useDeliveries] Error fetching driver:', err);
+          // Silent fail - driver name is optional
         }
       }
 
       if (deliveryData.helper_id) {
         try {
-          const { data: helperData, error: helperError } = await supabase
+          const { data: helperData } = await supabase
             .from('profiles')
             .select('full_name')
             .eq('id', deliveryData.helper_id)
             .order('id').limit(1);
 
-          console.log('[useDeliveries] Helper fetch result:', {
-            helperData,
-            helperError,
-            type: typeof helperData,
-            isArray: Array.isArray(helperData)
-          });
-
-          // PostgREST always returns array, get first item
           if (helperData && Array.isArray(helperData) && helperData.length > 0) {
             helperName = helperData[0].full_name || undefined;
           } else if (helperData && !Array.isArray(helperData)) {
-            // Fallback for object response
             helperName = (helperData as any).full_name || undefined;
           }
-
-          console.log('[useDeliveries] Extracted helperName:', helperName);
         } catch (err) {
-          console.error('[useDeliveries] Error fetching helper:', err);
+          // Silent fail - helper name is optional
         }
       }
-
-      console.log('[useDeliveries] Final names:', { driverName, helperName });
 
       // Return complete delivery object
       const result = {

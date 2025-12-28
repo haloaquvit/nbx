@@ -201,6 +201,146 @@ export async function generateDeliveryCommission(delivery: Delivery) {
   }
 }
 
+export async function regenerateDeliveryCommission(deliveryId: string) {
+  try {
+    // Get delivery details with items
+    const { data: deliveryData, error: deliveryError } = await supabase
+      .from('deliveries')
+      .select(`
+        *,
+        items:delivery_items(*),
+        driver:profiles!driver_id(full_name),
+        helper:profiles!helper_id(full_name)
+      `)
+      .eq('id', deliveryId)
+      .order('id').limit(1);
+
+    if (deliveryError) throw deliveryError;
+
+    const delivery = Array.isArray(deliveryData) ? deliveryData[0] : deliveryData;
+    if (!delivery) {
+      throw new Error('Pengantaran tidak ditemukan');
+    }
+
+    // Check if commission already exists for this delivery
+    const { data: existingCommissions, error: existingError } = await supabase
+      .from('commission_entries')
+      .select('id')
+      .eq('delivery_id', deliveryId);
+
+    if (existingError) throw existingError;
+
+    if (existingCommissions && existingCommissions.length > 0) {
+      // Delete existing commission entries for this delivery first
+      const { error: deleteError } = await supabase
+        .from('commission_entries')
+        .delete()
+        .eq('delivery_id', deliveryId);
+
+      if (deleteError) throw deleteError;
+      console.log(`🗑️ Deleted ${existingCommissions.length} existing commission entries for delivery ${deliveryId}`);
+    }
+
+    // Get commission rules for driver and helper
+    const { data: rules, error: rulesError } = await supabase
+      .from('commission_rules')
+      .select('*')
+      .in('role', ['driver', 'helper']);
+
+    if (rulesError) throw rulesError;
+
+    if (!rules || rules.length === 0) {
+      console.log('⚠️ No commission rules found for driver/helper');
+      return { success: true, message: 'Tidak ada aturan komisi untuk driver/helper', entriesCreated: 0 };
+    }
+
+    const commissionEntries = [];
+
+    // Create commission entries for delivered items (exclude bonus items)
+    for (const item of (delivery.items || [])) {
+      // Skip bonus items
+      const isBonusItem = item.is_bonus || item.product_name?.includes('(Bonus)') || item.product_name?.includes('BONUS');
+      if (isBonusItem) {
+        continue;
+      }
+
+      const driverRule = rules.find(r => r.product_id === item.product_id && r.role === 'driver');
+      const helperRule = rules.find(r => r.product_id === item.product_id && r.role === 'helper');
+
+      // Driver commission
+      if (delivery.driver_id && driverRule && driverRule.rate_per_qty > 0) {
+        const commissionEntry = {
+          user_id: delivery.driver_id,
+          user_name: delivery.driver?.full_name || 'Unknown Driver',
+          role: 'driver' as const,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: item.quantity_delivered,
+          rate_per_qty: driverRule.rate_per_qty,
+          amount: item.quantity_delivered * driverRule.rate_per_qty,
+          transaction_id: delivery.transaction_id,
+          delivery_id: delivery.id,
+          ref: `DEL-${delivery.id}`,
+          status: 'pending' as const,
+          created_at: new Date().toISOString(),
+          branch_id: delivery.branch_id || null
+        };
+
+        commissionEntries.push(commissionEntry);
+      }
+
+      // Helper commission
+      if (delivery.helper_id && helperRule && helperRule.rate_per_qty > 0) {
+        const commissionEntry = {
+          user_id: delivery.helper_id,
+          user_name: delivery.helper?.full_name || 'Unknown Helper',
+          role: 'helper' as const,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: item.quantity_delivered,
+          rate_per_qty: helperRule.rate_per_qty,
+          amount: item.quantity_delivered * helperRule.rate_per_qty,
+          transaction_id: delivery.transaction_id,
+          delivery_id: delivery.id,
+          ref: `DEL-${delivery.id}`,
+          status: 'pending' as const,
+          created_at: new Date().toISOString(),
+          branch_id: delivery.branch_id || null
+        };
+
+        commissionEntries.push(commissionEntry);
+      }
+    }
+
+    // Insert commission entries
+    if (commissionEntries.length > 0) {
+      const { data: insertedEntries, error: insertError } = await supabase
+        .from('commission_entries')
+        .insert(commissionEntries)
+        .select();
+
+      if (insertError) throw insertError;
+
+      console.log(`✅ Regenerated ${insertedEntries?.length || 0} commission entries for delivery ${deliveryId}`);
+      return {
+        success: true,
+        message: `Berhasil generate ${insertedEntries?.length || 0} komisi`,
+        entriesCreated: insertedEntries?.length || 0
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Tidak ada item yang memenuhi syarat komisi',
+      entriesCreated: 0
+    };
+
+  } catch (error: any) {
+    console.error('Error regenerating delivery commission:', error);
+    throw error;
+  }
+}
+
 export async function getCommissionSummary(userId?: string, startDate?: Date, endDate?: Date) {
   try {
     let query = supabase

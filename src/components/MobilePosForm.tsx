@@ -511,31 +511,31 @@ export const MobilePosForm = () => {
       </Sheet>
       
       {/* Header */}
-      <Card>
+      <Card className="dark:bg-gray-800 dark:border-gray-700">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 dark:text-white">
             <ShoppingCart className="h-5 w-5" />
             Point of Sale
           </CardTitle>
         </CardHeader>
       </Card>
 
-      {/* Customer Selection */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Pelanggan</CardTitle>
+      {/* Customer Selection - Compact for mobile */}
+      <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <CardHeader className="pb-2 pt-3 px-3">
+          <CardTitle className="text-base dark:text-white">Pelanggan</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="p-3 bg-muted rounded-lg">
-            <p className="font-semibold text-base">
+        <CardContent className="space-y-2 px-3 pb-3">
+          <div className="p-2 bg-muted dark:bg-gray-700 rounded-lg">
+            <p className="font-semibold text-sm dark:text-white">
               {selectedCustomer?.name || 'Belum dipilih'}
             </p>
             {selectedCustomer && (
               <>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-xs text-muted-foreground dark:text-gray-400 mt-0.5 truncate">
                   {selectedCustomer.address}
                 </p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs text-muted-foreground dark:text-gray-400">
                   📞 {selectedCustomer.phone}
                 </p>
               </>
@@ -544,36 +544,38 @@ export const MobilePosForm = () => {
           <div className="flex gap-2">
             <Button
               onClick={() => setIsCustomerSearchOpen(true)}
-              className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-black"
+              size="sm"
+              className="flex-1 bg-yellow-400 hover:bg-yellow-500 text-black h-9"
             >
-              <Search className="mr-2 h-4 w-4" /> Cari
+              <Search className="mr-1 h-3.5 w-3.5" /> Cari
             </Button>
             <Button
               onClick={() => setIsCustomerAddOpen(true)}
-              className="flex-1"
+              size="sm"
+              className="flex-1 h-9"
             >
-              <UserPlus className="mr-2 h-4 w-4" /> Baru
+              <UserPlus className="mr-1 h-3.5 w-3.5" /> Baru
             </Button>
           </div>
         </CardContent>
       </Card>
 
       {/* Sales Selection */}
-      <Card className="border-green-200 bg-green-50">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <UserIcon className="h-5 w-5 text-green-600" />
+      <Card className="border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/30">
+        <CardHeader className="pb-2 pt-3 px-3">
+          <CardTitle className="text-base flex items-center gap-2 dark:text-white">
+            <UserIcon className="h-4 w-4 text-green-600 dark:text-green-400" />
             Sales
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 pb-3">
           <Select value={selectedSales} onValueChange={setSelectedSales}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white h-9">
               <SelectValue placeholder="Pilih Sales (Opsional)" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">
-                <span className="text-gray-500">Tanpa Sales</span>
+                <span className="text-gray-500 dark:text-gray-400">Tanpa Sales</span>
               </SelectItem>
               {salesEmployees?.map((sales) => (
                 <SelectItem key={sales.id} value={sales.id}>
@@ -586,7 +588,7 @@ export const MobilePosForm = () => {
             </SelectContent>
           </Select>
           {selectedSales && selectedSales !== 'none' && (
-            <p className="text-sm text-green-700 mt-2">
+            <p className="text-xs text-green-700 dark:text-green-300 mt-1.5">
               ✓ Sales: {salesEmployees?.find(s => s.id === selectedSales)?.name}
             </p>
           )}
@@ -594,10 +596,10 @@ export const MobilePosForm = () => {
       </Card>
 
       {/* Items Management */}
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <CardHeader className="pb-2 pt-3 px-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Item ({items.length})</CardTitle>
+            <CardTitle className="text-base dark:text-white">Item ({items.length})</CardTitle>
             <div className="flex gap-2">
               {/* Tombol Tambah Produk Cepat */}
               <Sheet open={isProductSheetOpen} onOpenChange={setIsProductSheetOpen}>
@@ -780,13 +782,13 @@ export const MobilePosForm = () => {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 pb-3">
           {items.length > 0 ? (
             <div className="space-y-2">
               {items.map((item, index) => (
                 <div key={item.id} className={cn(
                   "flex items-center gap-2 p-2 rounded",
-                  item.isBonus ? "bg-green-100 border border-green-300" : "bg-muted"
+                  item.isBonus ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" : "bg-muted dark:bg-gray-700"
                 )}>
                   {/* Qty Controls */}
                   <div className="flex items-center gap-1">
@@ -829,17 +831,17 @@ export const MobilePosForm = () => {
                   <div className="flex-1 min-w-0">
                     {item.isBonus ? (
                       <>
-                        <p className="font-medium text-sm truncate text-green-700">
+                        <p className="font-medium text-sm truncate text-green-700 dark:text-green-300">
                           🎁 {item.product?.name} (Bonus)
                         </p>
                         {item.bonusDescription && (
-                          <p className="text-xs text-green-600">{item.bonusDescription}</p>
+                          <p className="text-xs text-green-600 dark:text-green-400">{item.bonusDescription}</p>
                         )}
                       </>
                     ) : (
                       <>
-                        <p className="font-medium text-sm truncate">{item.product?.name || 'Produk'}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="font-medium text-sm truncate dark:text-white">{item.product?.name || 'Produk'}</p>
+                        <p className="text-xs text-muted-foreground dark:text-gray-400">
                           @ {new Intl.NumberFormat("id-ID").format(item.harga)}
                         </p>
                       </>
@@ -847,9 +849,9 @@ export const MobilePosForm = () => {
                   </div>
                   {/* Total */}
                   {item.isBonus ? (
-                    <span className="text-sm font-medium text-green-600">GRATIS</span>
+                    <span className="text-sm font-medium text-green-600 dark:text-green-400">GRATIS</span>
                   ) : (
-                    <p className="font-bold text-green-600">
+                    <p className="font-bold text-green-600 dark:text-green-400">
                       {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
                     </p>
                   )}
@@ -858,43 +860,43 @@ export const MobilePosForm = () => {
             </div>
           ) : (
             <div
-              className="text-center py-6 text-muted-foreground cursor-pointer hover:bg-muted rounded-lg transition-colors"
+              className="text-center py-4 text-muted-foreground dark:text-gray-400 cursor-pointer hover:bg-muted dark:hover:bg-gray-700 rounded-lg transition-colors"
               onClick={() => setIsProductSheetOpen(true)}
             >
-              <Plus className="mx-auto h-10 w-10 mb-2 text-green-600" />
-              <p className="font-medium">Ketuk untuk tambah produk</p>
+              <Plus className="mx-auto h-8 w-8 mb-2 text-green-600 dark:text-green-400" />
+              <p className="font-medium text-sm">Ketuk untuk tambah produk</p>
             </div>
           )}
         </CardContent>
       </Card>
 
       {/* Payment Summary - Simplified */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Wallet className="h-5 w-5" />
+      <Card className="dark:bg-gray-800 dark:border-gray-700">
+        <CardHeader className="pb-2 pt-3 px-3">
+          <CardTitle className="text-base flex items-center gap-2 dark:text-white">
+            <Wallet className="h-4 w-4" />
             Pembayaran
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-2 px-3 pb-3">
           {/* Total */}
-          <div className="flex justify-between items-center py-2 border-b">
-            <span className="text-lg font-medium">Total</span>
-            <span className="text-xl font-bold text-green-600">
+          <div className="flex justify-between items-center py-2 border-b dark:border-gray-600">
+            <span className="text-base font-medium dark:text-white">Total</span>
+            <span className="text-lg font-bold text-green-600 dark:text-green-400">
               {new Intl.NumberFormat("id-ID").format(totalTagihan)}
             </span>
           </div>
 
           {/* Metode Pembayaran - Quick Select Buttons */}
           <div>
-            <Label className="text-sm text-muted-foreground mb-2 block">Bayar dengan:</Label>
+            <Label className="text-xs text-muted-foreground dark:text-gray-400 mb-1.5 block">Bayar dengan:</Label>
             {accounts?.filter(a => a.isPaymentAccount).length === 0 ? (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-center">
-                <p className="text-sm text-red-600 font-medium">⚠️ Tidak ada akun pembayaran</p>
-                <p className="text-xs text-red-500 mt-1">Buka Chart of Accounts → Import COA Standar</p>
+              <div className="p-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg text-center">
+                <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ Tidak ada akun pembayaran</p>
+                <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">Buka Chart of Accounts → Import COA Standar</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 {accounts?.filter(a => a.isPaymentAccount).slice(0, 4).map(acc => (
                   <Button
                     key={acc.id}
@@ -902,12 +904,12 @@ export const MobilePosForm = () => {
                     variant={paymentAccountId === acc.id ? "default" : "outline"}
                     size="sm"
                     className={cn(
-                      "h-10",
+                      "h-8 text-xs",
                       paymentAccountId === acc.id && "bg-green-600 hover:bg-green-700"
                     )}
                     onClick={() => setPaymentAccountId(acc.id)}
                   >
-                    <Wallet className="mr-1 h-4 w-4" />
+                    <Wallet className="mr-1 h-3.5 w-3.5" />
                     {acc.name}
                   </Button>
                 ))}
@@ -916,13 +918,13 @@ export const MobilePosForm = () => {
           </div>
 
           {/* Bayar Penuh / Sebagian Toggle */}
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             <Button
               type="button"
               variant={paidAmount === totalTagihan ? "default" : "outline"}
               size="sm"
               className={cn(
-                "flex-1",
+                "flex-1 h-8 text-xs",
                 paidAmount === totalTagihan && "bg-green-600 hover:bg-green-700"
               )}
               onClick={() => setPaidAmount(totalTagihan)}
@@ -934,7 +936,7 @@ export const MobilePosForm = () => {
               variant={paidAmount !== totalTagihan && paidAmount > 0 ? "default" : "outline"}
               size="sm"
               className={cn(
-                "flex-1",
+                "flex-1 h-8 text-xs",
                 paidAmount !== totalTagihan && paidAmount > 0 && "bg-orange-500 hover:bg-orange-600"
               )}
               onClick={() => setPaidAmount(0)}
@@ -945,19 +947,19 @@ export const MobilePosForm = () => {
 
           {/* Input Bayar Sebagian (hanya muncul jika tidak lunas) */}
           {paidAmount !== totalTagihan && (
-            <div className="flex items-center gap-2 p-2 bg-orange-50 rounded-lg border border-orange-200">
-              <span className="text-sm">Bayar:</span>
+            <div className="flex items-center gap-1.5 p-2 bg-orange-50 dark:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-700">
+              <span className="text-xs dark:text-white">Bayar:</span>
               <Input
                 type="number"
                 value={paidAmount || ''}
                 onChange={handlePaidAmountChange}
                 onFocus={(e) => e.target.select()}
-                className="flex-1 h-9 text-right font-bold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="flex-1 h-8 text-right font-bold text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 placeholder="0"
                 min="0"
               />
-              <span className="text-sm text-muted-foreground">Sisa:</span>
-              <span className="font-bold text-orange-600 min-w-[80px] text-right">
+              <span className="text-xs text-muted-foreground dark:text-gray-400">Sisa:</span>
+              <span className="font-bold text-orange-600 dark:text-orange-400 min-w-[70px] text-right text-sm">
                 {new Intl.NumberFormat("id-ID").format(sisaTagihan)}
               </span>
             </div>
@@ -965,7 +967,7 @@ export const MobilePosForm = () => {
 
           {/* Status Pembayaran */}
           {paidAmount === totalTagihan && totalTagihan > 0 && (
-            <div className="text-center py-2 bg-green-100 rounded-lg text-green-700 font-medium">
+            <div className="text-center py-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg text-green-700 dark:text-green-300 font-medium text-sm">
               ✓ Pembayaran Lunas
             </div>
           )}
@@ -973,10 +975,10 @@ export const MobilePosForm = () => {
       </Card>
 
       {/* Submit Button */}
-      <Button 
+      <Button
         onClick={handleSubmit}
-        size="lg" 
-        className="w-full h-14 text-lg"
+        size="lg"
+        className="w-full h-12 text-base"
         disabled={addTransaction.isPending || !selectedCustomer || items.length === 0}
       >
         {addTransaction.isPending ? "Menyimpan..." : "Simpan Transaksi"}

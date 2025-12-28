@@ -15,10 +15,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar } from "lucide-react"
+import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar, Trash2, Loader2, Coins } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
-import { useTransactionsReadyForDelivery, useDeliveryHistory } from "@/hooks/useDeliveries"
+import { useTransactionsReadyForDelivery, useDeliveryHistory, useDeliveryMutations } from "@/hooks/useDeliveries"
 import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { DeliveryDetailModal } from "@/components/DeliveryDetailModal"
 import { DeliveryFormContent } from "@/components/DeliveryFormContent"
@@ -41,6 +41,7 @@ import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
 import { Delivery } from "@/types/delivery"
 import { PhotoUploadService } from "@/services/photoUploadService"
+import { regenerateDeliveryCommission } from "@/utils/commissionUtils"
 
 export default function DeliveryPage() {
   const { toast } = useToast()
@@ -48,6 +49,7 @@ export default function DeliveryPage() {
   const { canCreateDelivery } = useGranularPermission()
   const { data: transactions, isLoading, refetch } = useTransactionsReadyForDelivery()
   const { data: deliveryHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useDeliveryHistory()
+  const { deleteDelivery } = useDeliveryMutations()
   const [searchQuery, setSearchQuery] = useState("")
   const [historySearchQuery, setHistorySearchQuery] = useState("")
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionDeliveryInfo | null>(null)
@@ -74,7 +76,18 @@ export default function DeliveryPage() {
   const [selectedDriver, setSelectedDriver] = useState("all")
   const [selectedHelper, setSelectedHelper] = useState("all")
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
-  
+
+  // Delete confirmation state
+  const [deliveryToDelete, setDeliveryToDelete] = useState<any>(null)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  // Regenerate commission state
+  const [isRegeneratingCommission, setIsRegeneratingCommission] = useState<string | null>(null)
+
+  // Check if user is owner (for delete permission)
+  const isOwner = user?.role === 'owner'
+
   // Check if user has access to history tab
   const canAccessHistory = user?.role && ['admin', 'owner'].includes(user.role)
 
@@ -125,10 +138,56 @@ export default function DeliveryPage() {
   const getOverallStatus = (transaction: TransactionDeliveryInfo) => {
     const totalItems = transaction.deliverySummary.reduce((sum, item) => sum + item.orderedQuantity, 0)
     const deliveredItems = transaction.deliverySummary.reduce((sum, item) => sum + item.deliveredQuantity, 0)
-    
+
     if (deliveredItems === 0) return { status: "Belum Diantar", variant: "secondary" as const, icon: Clock }
     if (deliveredItems >= totalItems) return { status: "Selesai", variant: "success" as const, icon: CheckCircle }
     return { status: "Sebagian", variant: "default" as const, icon: AlertCircle }
+  }
+
+  // Handle delete delivery (owner only)
+  const handleDeleteDelivery = async () => {
+    if (!deliveryToDelete) return
+
+    setIsDeleting(true)
+    try {
+      await deleteDelivery.mutateAsync(deliveryToDelete.id)
+      toast({
+        title: "Berhasil",
+        description: `Pengantaran #${deliveryToDelete.deliveryNumber || deliveryToDelete.id.slice(-6)} berhasil dihapus dan jurnal telah di-void`
+      })
+      setIsDeleteDialogOpen(false)
+      setDeliveryToDelete(null)
+      refetchHistory()
+      refetch() // Also refresh active transactions
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Menghapus",
+        description: error.message || "Terjadi kesalahan saat menghapus pengantaran"
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  // Handle regenerate commission for a delivery (owner only)
+  const handleRegenerateCommission = async (deliveryId: string, deliveryNumber?: string) => {
+    setIsRegeneratingCommission(deliveryId)
+    try {
+      const result = await regenerateDeliveryCommission(deliveryId)
+      toast({
+        title: "Berhasil",
+        description: result.message || `Komisi untuk pengantaran #${deliveryNumber || deliveryId.slice(-6)} berhasil di-generate`
+      })
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Generate Komisi",
+        description: error.message || "Terjadi kesalahan saat generate komisi"
+      })
+    } finally {
+      setIsRegeneratingCommission(null)
+    }
   }
 
   const generateHistoryPDF = async () => {
@@ -770,7 +829,7 @@ export default function DeliveryPage() {
                               <TableCell>
                                 <div className="flex gap-1">
                                   <DeliveryNotePDF delivery={delivery} />
-                                  <Button 
+                                  <Button
                                     size="sm"
                                     variant="outline"
                                     className="text-xs px-2 py-1"
@@ -782,6 +841,38 @@ export default function DeliveryPage() {
                                     <Eye className="h-3 w-3 sm:mr-1" />
                                     <span className="hidden sm:inline">Detail</span>
                                   </Button>
+                                  {/* Owner-only actions */}
+                                  {isOwner && (
+                                    <>
+                                      {/* Regenerate Commission button */}
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs px-2 py-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                        onClick={() => handleRegenerateCommission(delivery.id, delivery.deliveryNumber)}
+                                        disabled={isRegeneratingCommission === delivery.id}
+                                        title="Generate ulang komisi"
+                                      >
+                                        {isRegeneratingCommission === delivery.id ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <Coins className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                      {/* Delete button */}
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                        onClick={() => {
+                                          setDeliveryToDelete(delivery)
+                                          setIsDeleteDialogOpen(true)
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </>
+                                  )}
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -853,6 +944,94 @@ export default function DeliveryPage() {
         delivery={completedDelivery}
         transaction={completedTransaction}
       />
+
+      {/* Delete Confirmation Dialog - Owner Only */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Hapus Pengantaran
+            </DialogTitle>
+            <DialogDescription>
+              Anda yakin ingin menghapus pengantaran ini? Tindakan ini tidak dapat dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deliveryToDelete && (
+            <div className="space-y-3 py-4">
+              <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">No. Pengantaran</span>
+                  <span className="font-medium">#{deliveryToDelete.deliveryNumber || deliveryToDelete.id.slice(-6)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Customer</span>
+                  <span className="font-medium">{deliveryToDelete.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Tanggal</span>
+                  <span className="font-medium">
+                    {format(new Date(deliveryToDelete.deliveryDate), "d MMM yyyy HH:mm", { locale: idLocale })}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Driver</span>
+                  <span className="font-medium">{deliveryToDelete.driverName || '-'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Item Diantar</span>
+                  <span className="font-medium">
+                    {deliveryToDelete.items?.length || 0} jenis ({deliveryToDelete.items?.reduce((sum: number, item: any) => sum + item.quantityDelivered, 0) || 0} total)
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-lg">
+                <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                  <strong>Perhatian:</strong> Menghapus pengantaran akan:
+                </p>
+                <ul className="text-sm text-yellow-700 dark:text-yellow-300 list-disc list-inside mt-1">
+                  <li>Void jurnal terkait (Hutang Barang Dagang)</li>
+                  <li>Mengembalikan stok produk</li>
+                  <li>Mengubah status transaksi jika perlu</li>
+                  <li>Menghapus komisi driver/helper terkait</li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsDeleteDialogOpen(false)
+                setDeliveryToDelete(null)
+              }}
+              disabled={isDeleting}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteDelivery}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Menghapus...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Hapus Pengantaran
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

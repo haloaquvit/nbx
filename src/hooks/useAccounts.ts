@@ -74,19 +74,27 @@ export const useAccounts = () => {
     queryKey: ['accounts', currentBranch?.id], // Include branch to recalculate balances
     queryFn: async () => {
       // ============================================================================
-      // COA STRUCTURE IS GLOBAL, BALANCE IS PER BRANCH
+      // COA STRUCTURE IS PER BRANCH, BALANCE IS PER BRANCH
       // ============================================================================
-      // - Struktur COA (kode, nama, tipe) sama untuk semua branch
-      // - Saldo dihitung dari journal_entry_lines per branch (BUKAN cash_history)
+      // - Setiap branch memiliki COA sendiri dengan branch_id
+      // - Saldo dihitung dari journal_entry_lines per branch
       // - journal_entries adalah sumber kebenaran untuk akuntansi
-      // - cash_history hanya untuk monitoring Buku Kas Harian
+      // - PENTING: Filter accounts berdasarkan branch_id untuk menghindari
+      //   data tercampur antar branch
       // ============================================================================
 
-      // Get ALL accounts (struktur COA global)
-      const { data: accountsData, error } = await supabase
+      // Get accounts for current branch only (or accounts without branch_id for backward compat)
+      let accountsQuery = supabase
         .from('accounts')
-        .select('*')
-        .order('code');
+        .select('*');
+
+      // Filter by branch_id if currentBranch is available
+      if (currentBranch?.id) {
+        // Get accounts that belong to current branch OR have no branch_id (legacy/global accounts)
+        accountsQuery = accountsQuery.or(`branch_id.eq.${currentBranch.id},branch_id.is.null`);
+      }
+
+      const { data: accountsData, error } = await accountsQuery.order('code');
 
       if (error) throw new Error(error.message);
 

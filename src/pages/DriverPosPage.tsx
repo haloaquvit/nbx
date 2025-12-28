@@ -332,10 +332,10 @@ export default function DriverPosPage() {
   // Loading state
   if (isCheckingRetasi && isDriver) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 p-4 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
         <div className="animate-pulse text-center">
-          <Truck className="h-8 w-8 mx-auto mb-4 text-blue-600" />
-          <p>Memeriksa akses...</p>
+          <Truck className="h-8 w-8 mx-auto mb-4 text-blue-600 dark:text-blue-400" />
+          <p className="text-gray-700 dark:text-gray-300">Memeriksa akses...</p>
         </div>
       </div>
     )
@@ -344,8 +344,8 @@ export default function DriverPosPage() {
   // Access denied
   if (!hasAccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 p-4 flex items-center justify-center">
-        <Card className="max-w-md bg-red-600 text-white">
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 dark:from-gray-900 dark:to-gray-800 p-4 flex items-center justify-center">
+        <Card className="max-w-md bg-red-600 dark:bg-red-700 text-white">
           <CardHeader className="text-center">
             <CardTitle className="flex items-center justify-center gap-2">
               <AlertCircle className="h-6 w-6" />
@@ -366,7 +366,7 @@ export default function DriverPosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-3 pb-44">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 p-3 pb-44">
       {/* Header - Larger */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-xl mb-4 flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-3">
@@ -381,9 +381,9 @@ export default function DriverPosPage() {
       </div>
 
       {/* Customer Input - Larger & Easier */}
-      <div className="bg-white rounded-xl p-4 mb-4 shadow-md">
-        <Label className="text-base font-semibold text-gray-700 mb-2 block">
-          <User className="inline h-5 w-5 mr-2 text-blue-600" />
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 shadow-md">
+        <Label className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-2 block">
+          <User className="inline h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
           Pelanggan
         </Label>
         <div className="relative">
@@ -398,22 +398,22 @@ export default function DriverPosPage() {
             }}
             onFocus={() => setShowCustomerDropdown(true)}
             onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 200)}
-            className="w-full h-14 px-4 text-lg border-2 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full h-14 px-4 text-lg border-2 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:placeholder-gray-400"
           />
           {showCustomerDropdown && filteredCustomers.length > 0 && (
-            <div className="absolute z-20 w-full mt-1 bg-white border-2 rounded-xl shadow-xl max-h-60 overflow-auto">
+            <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-800 border-2 dark:border-gray-600 rounded-xl shadow-xl max-h-60 overflow-auto">
               {filteredCustomers.map((customer) => (
                 <div
                   key={customer.id}
-                  className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b last:border-b-0"
+                  className="px-4 py-3 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer border-b dark:border-gray-700 last:border-b-0"
                   onClick={() => {
                     setSelectedCustomer(customer.id)
                     setCustomerSearch(customer.name)
                     setShowCustomerDropdown(false)
                   }}
                 >
-                  <div className="font-semibold text-base">{customer.name}</div>
-                  {customer.address && <div className="text-sm text-gray-500 truncate">{customer.address}</div>}
+                  <div className="font-semibold text-base text-gray-900 dark:text-white">{customer.name}</div>
+                  {customer.address && <div className="text-sm text-gray-500 dark:text-gray-400 truncate">{customer.address}</div>}
                 </div>
               ))}
             </div>
@@ -442,11 +442,11 @@ export default function DriverPosPage() {
 
       {/* Product Grid - Only show when customer is selected */}
       {selectedCustomer ? (
-        <div className="bg-white rounded-xl p-4 mb-4 shadow-md">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 shadow-md">
           <div className="flex items-center gap-2 mb-3">
-            <Package className="h-6 w-6 text-blue-600" />
-            <span className="text-lg font-semibold">Produk</span>
-            <span className="text-sm text-gray-500">(tap untuk tambah)</span>
+            <Package className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">Produk</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">(tap untuk tambah)</span>
           </div>
           <div className="grid grid-cols-2 gap-3">
             {availableProducts.slice(0, 8).map((product) => {
@@ -457,16 +457,16 @@ export default function DriverPosPage() {
                   onClick={() => quickAddProduct(product)}
                   className={`p-4 rounded-xl border-2 text-left transition-all active:scale-95 ${
                     inCart
-                      ? 'bg-blue-50 border-blue-400 shadow-md'
-                      : 'bg-gray-50 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                      ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-400 dark:border-blue-500 shadow-md'
+                      : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  <div className="font-bold text-base truncate">{product.name}</div>
+                  <div className="font-bold text-base truncate text-gray-900 dark:text-white">{product.name}</div>
                   <div className="flex justify-between items-center mt-2">
-                    <span className="text-base text-green-600 font-bold">
+                    <span className="text-base text-green-600 dark:text-green-400 font-bold">
                       {new Intl.NumberFormat("id-ID").format(product.basePrice || 0)}
                     </span>
-                    <span className="text-sm text-gray-500 font-medium">
+                    <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">
                       {product.currentStock} {product.unit}
                     </span>
                   </div>
@@ -481,12 +481,12 @@ export default function DriverPosPage() {
           </div>
         </div>
       ) : (
-        <div className="bg-yellow-50 rounded-xl p-6 mb-4 shadow-md border-2 border-yellow-200">
-          <div className="flex items-center gap-3 text-yellow-800">
+        <div className="bg-yellow-50 dark:bg-yellow-900/30 rounded-xl p-6 mb-4 shadow-md border-2 border-yellow-200 dark:border-yellow-700">
+          <div className="flex items-center gap-3 text-yellow-800 dark:text-yellow-200">
             <AlertCircle className="h-6 w-6" />
             <span className="text-lg font-semibold">Pilih pelanggan terlebih dahulu</span>
           </div>
-          <p className="text-yellow-700 mt-2 ml-9">
+          <p className="text-yellow-700 dark:text-yellow-300 mt-2 ml-9">
             Ketik nama pelanggan di kolom di atas untuk melanjutkan
           </p>
         </div>
@@ -494,18 +494,18 @@ export default function DriverPosPage() {
 
       {/* Cart - Larger & Easier */}
       {items.length > 0 && (
-        <div className="bg-white rounded-xl p-4 mb-4 shadow-md">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 mb-4 shadow-md">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="h-6 w-6 text-blue-600" />
-              <span className="text-lg font-semibold">Keranjang ({items.filter(i => !i.isBonus).length})</span>
+              <ShoppingCart className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              <span className="text-lg font-semibold text-gray-900 dark:text-white">Keranjang ({items.filter(i => !i.isBonus).length})</span>
               {totalBonusQty > 0 && (
                 <Badge variant="secondary" className="text-sm bg-green-100 text-green-700 px-2 py-1">
                   <Gift className="h-4 w-4 mr-1" />+{totalBonusQty} bonus
                 </Badge>
               )}
             </div>
-            <span className="font-bold text-xl text-green-600">
+            <span className="font-bold text-xl text-green-600 dark:text-green-400">
               {new Intl.NumberFormat("id-ID").format(total)}
             </span>
           </div>
@@ -514,13 +514,13 @@ export default function DriverPosPage() {
               <div
                 key={index}
                 className={`flex items-center justify-between rounded-xl p-3 ${
-                  item.isBonus ? 'bg-green-50 border-2 border-green-300' : 'bg-gray-50 border border-gray-200'
+                  item.isBonus ? 'bg-green-50 dark:bg-green-900/30 border-2 border-green-300 dark:border-green-700' : 'bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600'
                 }`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    {item.isBonus && <Gift className="h-5 w-5 text-green-600" />}
-                    <span className={`text-base font-semibold truncate ${item.isBonus ? 'text-green-700' : ''}`}>
+                    {item.isBonus && <Gift className="h-5 w-5 text-green-600 dark:text-green-400" />}
+                    <span className={`text-base font-semibold truncate ${item.isBonus ? 'text-green-700 dark:text-green-300' : 'text-gray-900 dark:text-white'}`}>
                       {item.product.name}
                     </span>
                     {item.isBonus && (
@@ -571,17 +571,17 @@ export default function DriverPosPage() {
 
       {/* Payment - Input First Flow */}
       {items.length > 0 && (
-        <div className="bg-white rounded-xl p-4 shadow-md mb-28">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-md mb-28">
           <div className="flex items-center gap-2 mb-4">
-            <CreditCard className="h-6 w-6 text-blue-600" />
-            <span className="text-lg font-semibold">Pembayaran</span>
+            <CreditCard className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+            <span className="text-lg font-semibold text-gray-900 dark:text-white">Pembayaran</span>
           </div>
 
           {/* Total Display */}
-          <div className="bg-blue-50 rounded-xl p-4 mb-4">
+          <div className="bg-blue-50 dark:bg-blue-900/30 rounded-xl p-4 mb-4">
             <div className="flex justify-between items-center">
-              <span className="text-lg font-medium text-gray-700">Total Belanja:</span>
-              <span className="text-2xl font-bold text-blue-600">
+              <span className="text-lg font-medium text-gray-700 dark:text-gray-300">Total Belanja:</span>
+              <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                 {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(total)}
               </span>
             </div>
@@ -589,7 +589,7 @@ export default function DriverPosPage() {
 
           {/* Payment Amount Input - Primary */}
           <div className="mb-4">
-            <Label className="text-base font-semibold text-gray-700 mb-2 block">Jumlah Bayar</Label>
+            <Label className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-2 block">Jumlah Bayar</Label>
             <Input
               type="number"
               inputMode="numeric"
@@ -613,10 +613,10 @@ export default function DriverPosPage() {
 
           {/* Payment Account - Highlighted */}
           {paidAmount > 0 && (
-            <div className="mb-4 p-4 bg-blue-50 rounded-xl border-2 border-blue-400 ring-2 ring-blue-300 ring-offset-2">
-              <Label className="text-base font-semibold text-blue-800 mb-2 block">Metode Pembayaran</Label>
+            <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-xl border-2 border-blue-400 dark:border-blue-600 ring-2 ring-blue-300 dark:ring-blue-700 ring-offset-2 dark:ring-offset-gray-800">
+              <Label className="text-base font-semibold text-blue-800 dark:text-blue-300 mb-2 block">Metode Pembayaran</Label>
               <Select value={paymentAccount} onValueChange={setPaymentAccount}>
-                <SelectTrigger className="h-14 text-lg bg-white border-2 border-blue-400">
+                <SelectTrigger className="h-14 text-lg bg-white dark:bg-gray-700 border-2 border-blue-400 dark:border-blue-500 dark:text-white">
                   <SelectValue placeholder="Pilih Kas/Bank" />
                 </SelectTrigger>
                 <SelectContent>
@@ -632,11 +632,11 @@ export default function DriverPosPage() {
 
           {/* Due Date - Show when there's credit (paidAmount < total) */}
           {paidAmount < total && (
-            <Card className="bg-orange-50 border-2 border-orange-300">
+            <Card className="bg-orange-50 dark:bg-orange-900/30 border-2 border-orange-300 dark:border-orange-700">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Calendar className="h-5 w-5 text-orange-600" />
-                  <span className="text-base font-semibold text-orange-800">Jatuh Tempo Piutang</span>
+                  <Calendar className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                  <span className="text-base font-semibold text-orange-800 dark:text-orange-300">Jatuh Tempo Piutang</span>
                 </div>
                 {/* Quick select buttons */}
                 <div className="grid grid-cols-4 gap-2 mb-3">
@@ -662,7 +662,7 @@ export default function DriverPosPage() {
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="h-12 text-base bg-white"
+                  className="h-12 text-base bg-white dark:bg-gray-700 dark:text-white dark:border-gray-600"
                 />
               </CardContent>
             </Card>
@@ -672,7 +672,7 @@ export default function DriverPosPage() {
 
       {/* Fixed Submit Button - Raised above bottom menu */}
       {items.length > 0 && (
-        <div className="fixed bottom-16 left-0 right-0 p-4 bg-white border-t-2 shadow-2xl z-40">
+        <div className="fixed bottom-16 left-0 right-0 p-4 bg-white dark:bg-gray-800 border-t-2 dark:border-gray-700 shadow-2xl z-40">
           <Button
             onClick={handleSubmit}
             className="w-full h-16 text-xl font-bold bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 shadow-lg active:scale-95"

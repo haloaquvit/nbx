@@ -84,12 +84,14 @@ sudo tail -f /var/log/nginx/error.log
 
 ### New Features
 
-46. **APK Build Terpisah per Server**
-    - Build APK terpisah untuk Nabire dan Manokwari
-    - Server selector di-bypass, URL server di-hardcode saat build
-    - Environment files: `.env.nabire`, `.env.manokwari`
-    - Scripts: `npm run build:nabire`, `npm run build:manokwari`
-    - Batch files: `android/build_nabire.bat`, `android/build_manokwari.bat`
+46. **APK Live URL Mode**
+    - APK sekarang load dari live server URL (tidak bundled assets)
+    - **Tidak perlu rebuild APK** untuk update web/frontend
+    - Cukup deploy ke VPS, APK otomatis dapat update terbaru
+    - Nabire: `https://nbx.aquvit.id`
+    - Manokwari: `https://mkw.aquvit.id`
+    - Batch files auto-switch URL: `android/build_nabire.bat`, `android/build_manokwari.bat`
+    - **Catatan:** APK butuh koneksi internet, tidak bisa offline
 
 47. **Bluetooth Thermal Printer Support**
     - Plugin: `@capacitor-community/bluetooth-le@7.3.0`

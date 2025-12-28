@@ -611,10 +611,10 @@ export const PosForm = () => {
       />
       {savedTransaction && <PrintReceiptDialog open={isPrintDialogOpen} onOpenChange={handlePrintDialogClose} transaction={savedTransaction} template="receipt" />}
       
-      <div className="min-h-screen bg-white">
-        <div className="bg-white border-b p-3 md:p-4">
-          <h1 className="text-lg md:text-xl font-bold text-gray-900">Buat Transaksi Baru</h1>
-          <p className="text-xs md:text-sm text-gray-600">Isi detail pesanan pelanggan pada form di bawah ini.</p>
+      <div className="min-h-screen bg-white dark:bg-gray-900">
+        <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-3 md:p-4">
+          <h1 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white">Buat Transaksi Baru</h1>
+          <p className="text-xs md:text-sm text-gray-600 dark:text-gray-400">Isi detail pesanan pelanggan pada form di bawah ini.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="p-3 md:p-6">
@@ -622,7 +622,7 @@ export const PosForm = () => {
             {/* Left Panel - Main Form Content (Scrollable) */}
             <div className="flex-1 space-y-4 md:space-y-6 lg:overflow-auto">
         {retasiBlocked && (
-          <div className="p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-50 border border-red-200" role="alert">
+          <div className="p-4 mb-4 text-sm text-red-800 dark:text-red-200 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700" role="alert">
             <div className="flex items-center">
               <AlertTriangle className="inline-block w-5 h-5 mr-2" />
               <span className="font-medium">Akses POS Diblokir</span>
@@ -641,7 +641,7 @@ export const PosForm = () => {
         )}
           <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-1 lg:grid-cols-2 md:gap-6">
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Nama Pemesan</h3>
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Nama Pemesan</h3>
               <div className="space-y-3">
                 <div className="relative">
                   <input
@@ -661,23 +661,23 @@ export const PosForm = () => {
                       setTimeout(() => setShowCustomerDropdown(false), 150)
                     }}
                     disabled={retasiBlocked}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                   
                   {showCustomerDropdown && filteredCustomers.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
                       {filteredCustomers.map((customer) => (
                         <div
                           key={customer.id}
-                          className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                          className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
                           onClick={() => {
                             setSelectedCustomer(customer)
                             setCustomerSearch(customer.name)
                             setShowCustomerDropdown(false)
                           }}
                         >
-                          <div className="font-medium">{customer.name}</div>
-                          <div className="text-xs text-gray-500">{customer.phone}</div>
+                          <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">{customer.phone}</div>
                         </div>
                       ))}
                     </div>
@@ -710,7 +710,7 @@ export const PosForm = () => {
                 </div>
                 
                 {selectedCustomer && (
-                  <div className="text-xs md:text-sm text-gray-600 space-y-2 bg-gray-50 p-3 rounded">
+                  <div className="text-xs md:text-sm text-gray-600 dark:text-gray-300 space-y-2 bg-gray-50 dark:bg-gray-700 p-3 rounded">
                     <div>
                       <strong>Alamat:</strong> <span className="break-words">{selectedCustomer.address}</span>
                     </div>
@@ -756,8 +756,8 @@ export const PosForm = () => {
             </div>
 
             {/* Sales Selection */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Sales</h3>
+            <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">Sales</h3>
               <Select value={selectedSales} onValueChange={setSelectedSales} disabled={retasiBlocked}>
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih Sales (Opsional)" />
@@ -789,7 +789,7 @@ export const PosForm = () => {
             </div>
 
             {/* Office Sale Checkbox */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
               <label className="flex items-center space-x-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -807,7 +807,7 @@ export const PosForm = () => {
 
             <div className="grid grid-cols-1 gap-4">
               <div>
-                <label className="text-sm font-medium text-gray-700">Tgl Order</label>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Tgl Order</label>
                 <DateTimePicker date={orderDate} setDate={setOrderDate} disabled={retasiBlocked} />
               </div>
             </div>
@@ -815,7 +815,7 @@ export const PosForm = () => {
 
           <div>
             <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
-              <h3 className="text-base md:text-lg font-medium text-gray-900">Daftar Item</h3>
+              <h3 className="text-base md:text-lg font-medium text-gray-900 dark:text-white">Daftar Item</h3>
               <div className="relative flex-1">
                 <Button
                   type="button"
@@ -829,8 +829,8 @@ export const PosForm = () => {
                 </Button>
 
                 {showProductDropdown && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-white border rounded-lg shadow-xl z-50 max-h-96 md:max-h-[500px] overflow-y-auto">
-                    <div className="p-4 border-b bg-gray-50 sticky top-0">
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-96 md:max-h-[500px] overflow-y-auto">
+                    <div className="p-4 border-b dark:border-gray-600 bg-gray-50 dark:bg-gray-700 sticky top-0">
                       <Input
                         ref={productSearchInputRef}
                         placeholder="Cari produk..."
@@ -848,22 +848,22 @@ export const PosForm = () => {
                         return (
                           <div
                             key={product.id}
-                            className={`p-4 border-b last:border-b-0 transition-colors ${
+                            className={`p-4 border-b dark:border-gray-600 last:border-b-0 transition-colors ${
                               isOutOfStock
-                                ? 'bg-gray-100 opacity-60 cursor-not-allowed'
-                                : 'hover:bg-gray-50 cursor-pointer'
+                                ? 'bg-gray-100 dark:bg-gray-700 opacity-60 cursor-not-allowed'
+                                : 'hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer'
                             }`}
                             onClick={() => !isOutOfStock && addToCart(product)}
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className={`font-semibold text-base ${isOutOfStock ? 'text-gray-500' : 'text-gray-900'}`}>
+                                  <span className={`font-semibold text-base ${isOutOfStock ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
                                     {product.name}
                                   </span>
                                 </div>
                               </div>
-                              <div className={`shrink-0 font-medium ${isOutOfStock ? 'text-gray-400' : 'text-green-600'}`}>
+                              <div className={`shrink-0 font-medium ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
                                 <Plus className="h-5 w-5" />
                               </div>
                             </div>
@@ -882,7 +882,7 @@ export const PosForm = () => {
                                 <span className="text-xs text-red-600 font-medium">⚠️ Stok Habis</span>
                               )}
                             </div>
-                            <div className={`text-base font-bold mb-1 ${isOutOfStock ? 'text-gray-400' : 'text-green-600'}`}>
+                            <div className={`text-base font-bold mb-1 ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
                               {new Intl.NumberFormat("id-ID", {
                                 style: "currency",
                                 currency: "IDR",
@@ -903,17 +903,17 @@ export const PosForm = () => {
               </div>
             </div>
           
-            <div className="border rounded-lg overflow-x-auto">
+            <div className="border dark:border-gray-600 rounded-lg overflow-x-auto">
               <table className="w-full min-w-[600px]">
-                <thead className="bg-gray-50">
+                <thead className="bg-gray-50 dark:bg-gray-700">
                   <tr>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">Produk</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700">Qty</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">Satuan</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700">Harga Satuan</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700">Catatan</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700">Total</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700">Aksi</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Produk</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Qty</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Satuan</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Harga Satuan</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Catatan</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Total</th>
+                    <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Aksi</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -932,10 +932,10 @@ export const PosForm = () => {
                     </tr>
                   ) : (
                     items.map((item, index) => (
-                      <tr key={item.id} className={`border-t ${item.isBonus ? 'bg-green-50' : ''}`}>
+                      <tr key={item.id} className={`border-t dark:border-gray-600 ${item.isBonus ? 'bg-green-50 dark:bg-green-900/30' : ''}`}>
                         <td className="px-2 md:px-4 py-2 md:py-3">
                           {item.isBonus ? (
-                            <div className="text-xs text-green-700 font-medium">
+                            <div className="text-xs text-green-700 dark:text-green-300 font-medium">
                               🎁 {item.product?.name} (Bonus)
                               {item.bonusDescription && (
                                 <div className="text-xs text-gray-600 mt-1">{item.bonusDescription}</div>
@@ -1006,7 +1006,7 @@ export const PosForm = () => {
                             disabled={retasiBlocked}
                           />
                         </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm">{item.unit}</td>
+                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-900 dark:text-white">{item.unit}</td>
                         <td className="px-2 md:px-4 py-2 md:py-3 text-right">
                           {item.isBonus ? (
                             <div className="text-center text-xs text-green-600 font-medium">GRATIS</div>
@@ -1038,7 +1038,7 @@ export const PosForm = () => {
                             disabled={retasiBlocked}
                           />
                         </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium">
+                        <td className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-900 dark:text-white">
                           {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
                         </td>
                         <td className="px-2 md:px-4 py-2 md:py-3 text-center">
@@ -1055,9 +1055,9 @@ export const PosForm = () => {
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700">Catatan</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Catatan</label>
             <textarea
-              className="mt-1 w-full p-2 md:p-3 border rounded-lg resize-none text-sm"
+              className="mt-1 w-full p-2 md:p-3 border dark:border-gray-600 rounded-lg resize-none text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               rows={2}
               placeholder="Tambahkan catatan untuk transaksi ini..."
               value={transactionNotes}
@@ -1067,7 +1067,7 @@ export const PosForm = () => {
             </div>
 
             {/* Right Panel - Payment & Submit (Sticky on Desktop) */}
-            <div className="lg:w-1/3 lg:min-w-[320px] lg:max-w-[400px] lg:sticky lg:top-4 lg:self-start space-y-3 bg-gray-50 lg:bg-white lg:border lg:rounded-lg lg:p-4 lg:shadow-sm">
+            <div className="lg:w-1/3 lg:min-w-[320px] lg:max-w-[400px] lg:sticky lg:top-4 lg:self-start space-y-3 bg-gray-50 dark:bg-gray-800 lg:bg-white dark:lg:bg-gray-800 lg:border dark:lg:border-gray-600 lg:rounded-lg lg:p-4 lg:shadow-sm">
               {/* Payment Summary Header */}
               <div className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-2 rounded-lg -m-4 mb-2 lg:m-0 lg:mb-2 lg:-mt-4 lg:-mx-4 lg:rounded-t-lg lg:rounded-b-none">
                 <h3 className="font-semibold text-center text-sm">Pembayaran</h3>
@@ -1076,14 +1076,14 @@ export const PosForm = () => {
               <div className="space-y-3">
                 {/* Total & Payment Amount - Compact */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-gray-100 p-2 rounded-lg">
-                    <label className="text-xs text-gray-500">Total Tagihan</label>
-                    <div className="text-lg font-bold text-gray-900">
+                  <div className="bg-gray-100 dark:bg-gray-700 p-2 rounded-lg">
+                    <label className="text-xs text-gray-500 dark:text-gray-400">Total Tagihan</label>
+                    <div className="text-lg font-bold text-gray-900 dark:text-white">
                       {new Intl.NumberFormat("id-ID").format(totalTagihan)}
                     </div>
                   </div>
-                  <div className="bg-emerald-50 p-2 rounded-lg border border-emerald-200">
-                    <label className="text-xs text-emerald-700">Jumlah Bayar</label>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/30 p-2 rounded-lg border border-emerald-200 dark:border-emerald-700">
+                    <label className="text-xs text-emerald-700 dark:text-emerald-400">Jumlah Bayar</label>
                     <NumberInput
                       value={paidAmount}
                       onChange={(value) => setPaidAmount(value || 0)}
@@ -1120,7 +1120,7 @@ export const PosForm = () => {
                 </div>
 
                 {/* Status & Sisa/Kembali - Compact */}
-                <div className="flex justify-between text-xs bg-gray-50 p-2 rounded">
+                <div className="flex justify-between text-xs bg-gray-50 dark:bg-gray-700 p-2 rounded">
                   <span className={sisaTagihan <= 0 ? 'text-green-600 font-medium' : sisaTagihan < totalTagihan ? 'text-orange-600' : 'text-gray-600'}>
                     {sisaTagihan <= 0 ? '✅ Lunas' : sisaTagihan < totalTagihan ? `⏳ Sisa: ${new Intl.NumberFormat("id-ID").format(sisaTagihan)}` : '❌ Belum Bayar'}
                   </span>
@@ -1133,8 +1133,8 @@ export const PosForm = () => {
 
                 {/* Payment Method - Only show if paidAmount > 0 */}
                 {paidAmount > 0 && (
-                  <div className="border border-emerald-200 bg-emerald-50/50 p-3 rounded-lg">
-                    <h3 className="text-xs font-medium text-gray-700 mb-2">Metode Pembayaran</h3>
+                  <div className="border border-emerald-200 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-900/30 p-3 rounded-lg">
+                    <h3 className="text-xs font-medium text-gray-700 dark:text-gray-200 mb-2">Metode Pembayaran</h3>
                     <Select value={paymentAccountId} onValueChange={setPaymentAccountId} disabled={retasiBlocked}>
                       <SelectTrigger className="w-full text-sm">
                         <SelectValue placeholder="Pilih Kas/Bank..." />
@@ -1161,7 +1161,7 @@ export const PosForm = () => {
 
                 {/* Diskon - Compact inline */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-600 whitespace-nowrap">Diskon:</label>
+                  <label className="text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">Diskon:</label>
                   <NumberInput
                     value={diskon}
                     onChange={(value) => setDiskon(value || 0)}
@@ -1173,26 +1173,26 @@ export const PosForm = () => {
                 </div>
 
                 {/* Tax Settings - Collapsed by default */}
-                <div className="border rounded-lg">
+                <div className="border dark:border-gray-600 rounded-lg">
                   <button
                     type="button"
-                    className="flex items-center justify-between w-full text-xs font-medium text-gray-600 p-2 hover:bg-gray-50"
+                    className="flex items-center justify-between w-full text-xs font-medium text-gray-600 dark:text-gray-300 p-2 hover:bg-gray-50 dark:hover:bg-gray-700"
                     onClick={() => setShowTaxSettings(!showTaxSettings)}
                   >
                     <span>⚙️ Pajak: {ppnEnabled ? `PPN ${ppnMode === 'include' ? 'Include' : 'Exclude'} ${ppnPercentage}%` : 'Non Pajak'}</span>
                     <ChevronDown className={`w-3 h-3 transition-transform ${showTaxSettings ? "rotate-180" : ""}`} />
                   </button>
                   {showTaxSettings && (
-                    <div className="p-2 pt-0 space-y-1 border-t">
-                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50">
+                    <div className="p-2 pt-0 space-y-1 border-t dark:border-gray-600">
+                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
                         <input type="radio" name="taxMode" checked={ppnEnabled && ppnMode === 'include'} onChange={() => { setPpnEnabled(true); setPpnMode('include'); }} className="mr-2 w-3 h-3" disabled={retasiBlocked} />
                         PPN Include ({ppnPercentage}%)
                       </label>
-                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50">
+                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
                         <input type="radio" name="taxMode" checked={ppnEnabled && ppnMode === 'exclude'} onChange={() => { setPpnEnabled(true); setPpnMode('exclude'); }} className="mr-2 w-3 h-3" disabled={retasiBlocked} />
                         PPN Exclude ({ppnPercentage}%)
                       </label>
-                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50">
+                      <label className="flex items-center text-xs cursor-pointer p-1 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">
                         <input type="radio" name="taxMode" checked={!ppnEnabled} onChange={() => setPpnEnabled(false)} className="mr-2 w-3 h-3" disabled={retasiBlocked} />
                         Non Pajak
                       </label>
@@ -1215,8 +1215,8 @@ export const PosForm = () => {
 
                 {/* Due Date Section - Only show if payment is not full */}
                 {sisaTagihan > 0 && (
-                  <div className="pt-3 md:pt-4 border-t border-gray-200">
-                    <label className="text-sm font-medium text-gray-700">Tanggal Jatuh Tempo</label>
+                  <div className="pt-3 md:pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Tanggal Jatuh Tempo</label>
                     <Input
                       type="date"
                       value={dueDate}
@@ -1224,7 +1224,7 @@ export const PosForm = () => {
                       className="mt-1 text-sm"
                       min={new Date().toISOString().split('T')[0]}
                     />
-                    <p className="text-xs text-gray-500 mt-1">Tenggat waktu pembayaran kredit</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Tenggat waktu pembayaran kredit</p>
 
                     <div className="flex flex-wrap gap-2 mt-2">
                       <Button

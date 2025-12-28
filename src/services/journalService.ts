@@ -53,6 +53,7 @@ export function clearAccountCache() {
 
 /**
  * Fetch and cache account by code
+ * Searches for account with matching branch_id OR legacy accounts with null branch_id
  */
 async function getAccountByCode(code: string, branchId: string): Promise<{ id: string; code: string; name: string } | null> {
   const cacheKey = `${branchId}:${code}`;
@@ -63,13 +64,15 @@ async function getAccountByCode(code: string, branchId: string): Promise<{ id: s
 
   // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
   // which makes PostgREST return array instead of object
+  // Search for account with matching branch_id OR legacy accounts with null branch_id
   const { data, error } = await supabase
     .from('accounts')
-    .select('id, code, name, is_header')
+    .select('id, code, name, is_header, branch_id')
     .eq('code', code)
-    .eq('branch_id', branchId)
+    .or(`branch_id.eq.${branchId},branch_id.is.null`)
     .eq('is_active', true)
-    .order('id').limit(1);
+    .order('branch_id', { ascending: false, nullsFirst: false }) // Prefer branch-specific accounts
+    .limit(1);
 
   if (error) {
     console.warn(`[getAccountByCode] Error fetching account ${code}:`, error.message);
@@ -91,13 +94,14 @@ async function getAccountByCode(code: string, branchId: string): Promise<{ id: s
 
   const account = { id: record.id, code: record.code, name: record.name };
   accountCache.set(cacheKey, account);
-  console.log(`[getAccountByCode] Found account: ${code} - ${record.name}`);
+  console.log(`[getAccountByCode] Found account: ${code} - ${record.name} (branch: ${record.branch_id || 'global'})`);
   return account;
 }
 
 /**
  * Find account by partial code match or name search
  * Now supports multiple types (e.g., 'Kewajiban' can match 'Liabilitas', 'Liability')
+ * Searches for accounts with matching branch_id OR legacy accounts with null branch_id
  */
 async function findAccountByPattern(pattern: string, type: string, branchId: string): Promise<{ id: string; code: string; name: string } | null> {
   // Map common type variations
@@ -115,15 +119,17 @@ async function findAccountByPattern(pattern: string, type: string, branchId: str
   const typeFilter = typesToSearch.map(t => `type.eq.${t}`).join(',');
 
   // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+  // Search for accounts with matching branch_id OR legacy accounts with null branch_id
   const { data, error } = await supabase
     .from('accounts')
-    .select('id, code, name')
-    .eq('branch_id', branchId)
+    .select('id, code, name, branch_id')
+    .or(`branch_id.eq.${branchId},branch_id.is.null`)
     .or(typeFilter)
     .eq('is_active', true)
     .eq('is_header', false)
     .or(`code.ilike.%${pattern}%,name.ilike.%${pattern}%`)
-    .order('id').limit(1);
+    .order('branch_id', { ascending: false, nullsFirst: false }) // Prefer branch-specific accounts
+    .limit(1);
 
   if (error) {
     return null;

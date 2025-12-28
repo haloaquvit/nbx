@@ -40,8 +40,14 @@ import {
   Upload,
   FolderOpen,
   FileText,
-  Search
+  Search,
+  Eye,
+  Loader2
 } from "lucide-react"
+import { supabase } from "@/integrations/supabase/client"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
 // ============================================================================
@@ -149,6 +155,19 @@ function formatCurrency(amount: number): string {
 // ============================================================================
 // TREE NODE COMPONENT
 // ============================================================================
+interface JournalLineDetail {
+  id: string
+  journalId: string
+  entryNumber: string
+  entryDate: string
+  description: string
+  debitAmount: number
+  creditAmount: number
+  referenceType: string
+  status: string
+  isVoided: boolean
+}
+
 interface TreeNodeRowProps {
   node: TreeNode
   level: number
@@ -156,6 +175,7 @@ interface TreeNodeRowProps {
   onEdit: (account: TreeNode['account']) => void
   onDelete: (account: TreeNode['account']) => void
   onAddChild: (parentCode: string) => void
+  onViewJournals: (account: TreeNode['account']) => void
   canEdit: boolean
   canDelete: boolean
   selectedCode: string | null
@@ -169,6 +189,7 @@ function TreeNodeRow({
   onEdit,
   onDelete,
   onAddChild,
+  onViewJournals,
   canEdit,
   canDelete,
   selectedCode,
@@ -243,7 +264,19 @@ function TreeNodeRow({
         </div>
 
         {/* Actions */}
-        <div className="w-24 flex-shrink-0 flex justify-end gap-1">
+        <div className="w-28 flex-shrink-0 flex justify-end gap-1">
+          {/* View Journals - always show for non-header accounts */}
+          {!account.isHeader && account.id && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-blue-600 hover:text-blue-700"
+              onClick={(e) => { e.stopPropagation(); onViewJournals(account) }}
+              title="Lihat Jurnal"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {canEdit && !account.isHeader && (
             <Button
               variant="ghost"
@@ -287,6 +320,7 @@ function TreeNodeRow({
           onEdit={onEdit}
           onDelete={onDelete}
           onAddChild={onAddChild}
+          onViewJournals={onViewJournals}
           canEdit={canEdit}
           canDelete={canDelete}
           selectedCode={selectedCode}
@@ -317,6 +351,12 @@ export default function ChartOfAccountsPage() {
   const [parentCodeForNew, setParentCodeForNew] = useState<string | null>(null)
   const [accountToEdit, setAccountToEdit] = useState<Account | null>(null)
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null)
+
+  // Journal view state
+  const [isJournalDialogOpen, setIsJournalDialogOpen] = useState(false)
+  const [selectedAccountForJournal, setSelectedAccountForJournal] = useState<CoaTemplateItem | null>(null)
+  const [journalLines, setJournalLines] = useState<JournalLineDetail[]>([])
+  const [isLoadingJournals, setIsLoadingJournals] = useState(false)
 
   // Form state
   const [formData, setFormData] = useState({
@@ -578,6 +618,63 @@ export default function ChartOfAccountsPage() {
     setIsDeleteDialogOpen(true)
   }
 
+  const handleViewJournals = async (account: TreeNode['account']) => {
+    if (!account.id || !currentBranch?.id) return
+
+    setSelectedAccountForJournal(account)
+    setIsJournalDialogOpen(true)
+    setIsLoadingJournals(true)
+    setJournalLines([])
+
+    try {
+      // Fetch journal lines for this account
+      const { data, error } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          id,
+          debit_amount,
+          credit_amount,
+          description,
+          journal_entries (
+            id,
+            entry_number,
+            entry_date,
+            description,
+            reference_type,
+            status,
+            is_voided,
+            branch_id
+          )
+        `)
+        .eq('account_id', account.id)
+        .order('id', { ascending: false })
+
+      if (error) throw error
+
+      // Filter by branch and map to our interface
+      const lines: JournalLineDetail[] = (data || [])
+        .filter((line: any) => line.journal_entries?.branch_id === currentBranch.id)
+        .map((line: any) => ({
+          id: line.id,
+          journalId: line.journal_entries?.id || '',
+          entryNumber: line.journal_entries?.entry_number || '',
+          entryDate: line.journal_entries?.entry_date || '',
+          description: line.journal_entries?.description || line.description || '',
+          debitAmount: Number(line.debit_amount) || 0,
+          creditAmount: Number(line.credit_amount) || 0,
+          referenceType: line.journal_entries?.reference_type || '',
+          status: line.journal_entries?.status || '',
+          isVoided: line.journal_entries?.is_voided || false
+        }))
+
+      setJournalLines(lines)
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Error", description: error.message })
+    } finally {
+      setIsLoadingJournals(false)
+    }
+  }
+
   const handleSubmitAdd = async () => {
     if (!currentBranch?.id) {
       toast({ variant: "destructive", title: "Error", description: "Pilih cabang terlebih dahulu" })
@@ -722,7 +819,7 @@ export default function ChartOfAccountsPage() {
             <div className="w-24 flex-shrink-0 text-center">Tipe</div>
             <div className="w-32 flex-shrink-0 text-right">Saldo Awal</div>
             <div className="w-32 flex-shrink-0 text-right">Saldo</div>
-            <div className="w-24 flex-shrink-0 text-right">Aksi</div>
+            <div className="w-28 flex-shrink-0 text-right">Aksi</div>
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -745,6 +842,7 @@ export default function ChartOfAccountsPage() {
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                   onAddChild={handleAddChild}
+                  onViewJournals={handleViewJournals}
                   canEdit={userIsAdminOrOwner}
                   canDelete={userIsOwner}
                   selectedCode={selectedCode}
@@ -990,6 +1088,121 @@ export default function ChartOfAccountsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Journal Lines Dialog */}
+      <Dialog open={isJournalDialogOpen} onOpenChange={setIsJournalDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5" />
+              Detail Jurnal: {selectedAccountForJournal?.code} - {selectedAccountForJournal?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Menampilkan semua transaksi jurnal untuk akun ini
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingJournals ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : journalLines.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Tidak ada transaksi jurnal untuk akun ini
+            </div>
+          ) : (
+            <>
+              {/* Summary */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-muted rounded-lg mb-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Debit</p>
+                  <p className="text-lg font-bold text-green-600">
+                    {formatCurrency(journalLines.filter(l => !l.isVoided && l.status === 'posted').reduce((sum, l) => sum + l.debitAmount, 0))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Credit</p>
+                  <p className="text-lg font-bold text-red-600">
+                    {formatCurrency(journalLines.filter(l => !l.isVoided && l.status === 'posted').reduce((sum, l) => sum + l.creditAmount, 0))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Saldo (Debit - Credit)</p>
+                  <p className={cn(
+                    "text-lg font-bold",
+                    journalLines.filter(l => !l.isVoided && l.status === 'posted').reduce((sum, l) => sum + l.debitAmount - l.creditAmount, 0) >= 0
+                      ? "text-green-600"
+                      : "text-red-600"
+                  )}>
+                    {formatCurrency(journalLines.filter(l => !l.isVoided && l.status === 'posted').reduce((sum, l) => sum + l.debitAmount - l.creditAmount, 0))}
+                  </p>
+                </div>
+              </div>
+
+              <ScrollArea className="h-[400px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">No. Jurnal</TableHead>
+                      <TableHead className="w-[100px]">Tanggal</TableHead>
+                      <TableHead>Deskripsi</TableHead>
+                      <TableHead className="w-[80px]">Tipe</TableHead>
+                      <TableHead className="w-[80px]">Status</TableHead>
+                      <TableHead className="w-[120px] text-right">Debit</TableHead>
+                      <TableHead className="w-[120px] text-right">Credit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {journalLines.map((line) => (
+                      <TableRow
+                        key={line.id}
+                        className={cn(
+                          line.isVoided && "opacity-50 line-through",
+                          line.status !== 'posted' && "bg-yellow-50 dark:bg-yellow-900/20"
+                        )}
+                      >
+                        <TableCell className="font-mono text-xs">
+                          {line.entryNumber}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {line.entryDate ? new Date(line.entryDate).toLocaleDateString('id-ID') : '-'}
+                        </TableCell>
+                        <TableCell className="text-sm max-w-[300px] truncate" title={line.description}>
+                          {line.description}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {line.referenceType}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {line.isVoided ? (
+                            <Badge variant="destructive" className="text-xs">Void</Badge>
+                          ) : line.status === 'posted' ? (
+                            <Badge className="text-xs bg-green-600">Posted</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">Draft</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-green-600">
+                          {line.debitAmount > 0 ? formatCurrency(line.debitAmount) : '-'}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm text-red-600">
+                          {line.creditAmount > 0 ? formatCurrency(line.creditAmount) : '-'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+
+              <div className="text-sm text-muted-foreground mt-2">
+                Total {journalLines.length} transaksi ({journalLines.filter(l => l.isVoided).length} void, {journalLines.filter(l => l.status !== 'posted').length} draft)
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
