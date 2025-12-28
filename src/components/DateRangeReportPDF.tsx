@@ -90,100 +90,179 @@ export function DateRangeReportPDF({ cashHistory }: DateRangeReportPDFProps) {
   const [selectedDate, setSelectedDate] = React.useState<Date>(new Date());
   const [isCalendarOpen, setIsCalendarOpen] = React.useState(false);
 
-  // Calculate data for selected date using accounts table + cash history (same as dashboard)
+  // Calculate data for selected date using JOURNAL ENTRIES for accurate period balances
+  // ============================================================================
+  // PERBAIKAN: Saldo awal periode dihitung dari jurnal, bukan dari saldo saat ini
+  // Rumus: Saldo Awal = Total Debit - Total Credit SEBELUM tanggal yang dipilih
+  // Saldo Akhir = Saldo Awal + (Debit - Credit) pada tanggal yang dipilih
+  // ============================================================================
   const calculateDataForDate = async (targetDate: Date) => {
-    const dateStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-    const dateEnd = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
+    const dateStr = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD format
 
-    // Get current account balances from accounts table
+    // Get payment accounts (kas/bank) with is_payment_account = true
     const { data: accounts, error: accountsError } = await supabase
       .from('accounts')
-      .select('id, name, balance')
+      .select('id, name, code, is_payment_account')
+      .eq('is_payment_account', true)
       .order('name');
 
     if (accountsError) {
       throw new Error(`Failed to fetch accounts: ${accountsError.message}`);
     }
 
-    // Filter transactions for selected date
-    const dateTransactions = cashHistory.filter(item => {
-      const itemDate = new Date(item.date || item.created_at);
-      return itemDate >= dateStart && itemDate < dateEnd;
-    });
+    const paymentAccountIds = (accounts || []).map(acc => acc.id);
 
-    // Initialize tracking variables
-    let dateIncome = 0;
-    let dateExpense = 0;
-    let totalBalance = 0;
+    if (paymentAccountIds.length === 0) {
+      return {
+        dateIncome: 0,
+        dateExpense: 0,
+        dateNet: 0,
+        currentBalance: 0,
+        previousBalance: 0,
+        dateTransactions: [],
+        accountBalances: []
+      };
+    }
+
+    // ============================================================================
+    // 1. HITUNG SALDO AWAL PERIODE (sebelum tanggal yang dipilih)
+    // Untuk akun Aset: Saldo = Total Debit - Total Credit
+    // ============================================================================
+    const { data: beforeDateLines, error: beforeError } = await supabase
+      .from('journal_entry_lines')
+      .select(`
+        account_id,
+        debit_amount,
+        credit_amount,
+        journal_entries!inner (
+          entry_date,
+          status,
+          is_voided
+        )
+      `)
+      .in('account_id', paymentAccountIds)
+      .lt('journal_entries.entry_date', dateStr);
+
+    if (beforeError) {
+      console.error('Error fetching before-date journal lines:', beforeError);
+    }
+
+    // Calculate opening balance per account
     const accountBalances = new Map();
-
-    // Initialize account data with current balances from accounts table
     (accounts || []).forEach(account => {
       accountBalances.set(account.id, {
         accountId: account.id,
         accountName: account.name,
-        currentBalance: account.balance || 0,
-        previousBalance: 0,
+        accountCode: account.code,
+        previousBalance: 0, // Saldo awal periode
+        currentBalance: 0,  // Saldo akhir periode
         dateIncome: 0,
         dateExpense: 0,
         dateNet: 0,
         todayChange: 0
       });
-      totalBalance += account.balance || 0;
     });
 
-    // Calculate for selected date
-    dateTransactions.forEach(item => {
-      // Skip transfers in total calculation (they don't change total cash, only move between accounts)
-      if (item.source_type === 'transfer_masuk' || item.source_type === 'transfer_keluar') {
-        // Still update per-account data for transfers
-        if (item.account_id && accountBalances.has(item.account_id)) {
-          const current = accountBalances.get(item.account_id);
-          if (item.source_type === 'transfer_masuk') {
-            current.dateIncome += item.amount;
-          } else if (item.source_type === 'transfer_keluar') {
-            current.dateExpense += item.amount;
-          }
-          current.dateNet = current.dateIncome - current.dateExpense;
-          current.todayChange = current.dateNet;
-        }
-        return; // Skip adding to total income/expense
-      }
+    // Sum up all transactions BEFORE selected date for opening balance
+    let totalPreviousBalance = 0;
+    (beforeDateLines || []).forEach((line: any) => {
+      const journal = line.journal_entries;
+      if (!journal || journal.status !== 'posted' || journal.is_voided === true) return;
 
-      const isIncome = isIncomeType(item);
-      if (isIncome) {
-        dateIncome += item.amount;
-      } else {
-        dateExpense += item.amount;
-      }
+      const accountId = line.account_id;
+      const debit = Number(line.debit_amount) || 0;
+      const credit = Number(line.credit_amount) || 0;
 
-      // Update account data for the date
-      if (item.account_id && accountBalances.has(item.account_id)) {
-        const current = accountBalances.get(item.account_id);
-        if (isIncome) {
-          current.dateIncome += item.amount;
-        } else {
-          current.dateExpense += item.amount;
-        }
-        current.dateNet = current.dateIncome - current.dateExpense;
-        current.todayChange = current.dateNet;
+      if (accountBalances.has(accountId)) {
+        const account = accountBalances.get(accountId);
+        account.previousBalance += (debit - credit);
       }
     });
 
-    // Calculate totals based on accounts table + selected date activity
-    const dateNet = dateIncome - dateExpense;
-    const totalPreviousBalance = totalBalance - dateNet;
-
-    // Calculate previous balance for each account
+    // Calculate total previous balance
     accountBalances.forEach(account => {
-      account.previousBalance = account.currentBalance - account.dateNet;
+      totalPreviousBalance += account.previousBalance;
     });
+
+    // ============================================================================
+    // 2. HITUNG TRANSAKSI PADA TANGGAL YANG DIPILIH
+    // ============================================================================
+    const { data: dateLines, error: dateError } = await supabase
+      .from('journal_entry_lines')
+      .select(`
+        account_id,
+        debit_amount,
+        credit_amount,
+        journal_entries!inner (
+          entry_date,
+          status,
+          is_voided,
+          description,
+          reference_type
+        )
+      `)
+      .in('account_id', paymentAccountIds)
+      .eq('journal_entries.entry_date', dateStr);
+
+    if (dateError) {
+      console.error('Error fetching date journal lines:', dateError);
+    }
+
+    // Calculate income/expense for selected date
+    let dateIncome = 0;
+    let dateExpense = 0;
+
+    (dateLines || []).forEach((line: any) => {
+      const journal = line.journal_entries;
+      if (!journal || journal.status !== 'posted' || journal.is_voided === true) return;
+
+      const accountId = line.account_id;
+      const debit = Number(line.debit_amount) || 0;
+      const credit = Number(line.credit_amount) || 0;
+
+      // For Asset accounts (Kas/Bank): Debit = income, Credit = expense
+      dateIncome += debit;
+      dateExpense += credit;
+
+      if (accountBalances.has(accountId)) {
+        const account = accountBalances.get(accountId);
+        account.dateIncome += debit;
+        account.dateExpense += credit;
+        account.dateNet = account.dateIncome - account.dateExpense;
+        account.todayChange = account.dateNet;
+      }
+    });
+
+    // Calculate current balance (end of selected date)
+    accountBalances.forEach(account => {
+      account.currentBalance = account.previousBalance + account.dateNet;
+    });
+
+    const dateNet = dateIncome - dateExpense;
+    const totalCurrentBalance = totalPreviousBalance + dateNet;
+
+    // ============================================================================
+    // 3. FILTER CASH HISTORY UNTUK DETAIL TRANSAKSI
+    // ============================================================================
+    const dateStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    const dateEnd = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() + 1);
+
+    const dateTransactions = cashHistory.filter(item => {
+      const itemDate = new Date(item.date || item.created_at);
+      return itemDate >= dateStart && itemDate < dateEnd;
+    });
+
+    console.log(`📊 Cash Flow Report for ${dateStr}:`);
+    console.log(`   Saldo Awal Periode: Rp ${totalPreviousBalance.toLocaleString('id-ID')}`);
+    console.log(`   Kas Masuk: Rp ${dateIncome.toLocaleString('id-ID')}`);
+    console.log(`   Kas Keluar: Rp ${dateExpense.toLocaleString('id-ID')}`);
+    console.log(`   Saldo Akhir Periode: Rp ${totalCurrentBalance.toLocaleString('id-ID')}`);
 
     return {
       dateIncome,
       dateExpense,
       dateNet,
-      currentBalance: totalBalance,
+      currentBalance: totalCurrentBalance,
       previousBalance: totalPreviousBalance,
       dateTransactions,
       accountBalances: Array.from(accountBalances.values())
@@ -218,11 +297,11 @@ export function DateRangeReportPDF({ cashHistory }: DateRangeReportPDFProps) {
 
       // Summary data
       const summaryData = [
-        ['Saldo Sebelumnya', formatCurrency(data.previousBalance)],
-        ['Kas Masuk Hari Ini', formatCurrency(data.dateIncome)],
-        ['Kas Keluar Hari Ini', formatCurrency(data.dateExpense)],
+        ['Saldo Awal Periode', formatCurrency(data.previousBalance)],
+        ['Kas Masuk', formatCurrency(data.dateIncome)],
+        ['Kas Keluar', formatCurrency(data.dateExpense)],
         ['Arus Kas Bersih', formatCurrency(data.dateNet)],
-        ['Saldo Saat Ini', formatCurrency(data.currentBalance)]
+        ['Saldo Akhir Periode', formatCurrency(data.currentBalance)]
       ];
 
       autoTable(doc, {
@@ -258,7 +337,7 @@ export function DateRangeReportPDF({ cashHistory }: DateRangeReportPDFProps) {
 
         autoTable(doc, {
           startY: currentY,
-          head: [['Akun', 'Saldo Sebelumnya', 'Masuk', 'Keluar', 'Net', 'Saldo Saat Ini']],
+          head: [['Akun', 'Saldo Awal', 'Kas Masuk', 'Kas Keluar', 'Net', 'Saldo Akhir']],
           body: accountData,
           theme: 'grid',
           headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255] },
