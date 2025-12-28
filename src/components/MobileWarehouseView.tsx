@@ -35,25 +35,25 @@ export const MobileWarehouseView = () => {
 
   const isOwner = user?.role === 'owner'
 
-  // Filter materials with low stock (stock <= minStock)
-  const lowStockMaterials = materials?.filter(m =>
-    m.type === 'Stock' && m.stock <= (m.minStock || 0)
-  ) || []
+  // Get all stock materials (type = 'Stock')
+  const allStockMaterials = materials?.filter(m => m.type === 'Stock') || []
 
-  // Filter products with low stock (currentStock <= minStock)
-  const lowStockProducts = products?.filter(p =>
-    p.currentStock <= (p.minStock || 0)
-  ) || []
+  // Get all products
+  const allProducts = products || []
 
   // Filter by search
-  const filteredMaterials = lowStockMaterials.filter(m =>
+  const filteredMaterials = allStockMaterials.filter(m =>
     m.name.toLowerCase().includes(searchMaterial.toLowerCase())
   )
 
   // Filter products by search
-  const filteredProducts = lowStockProducts.filter(p =>
+  const filteredProducts = allProducts.filter(p =>
     p.name.toLowerCase().includes(searchProduct.toLowerCase())
   )
+
+  // Count low stock items for badge
+  const lowStockMaterialsCount = allStockMaterials.filter(m => m.stock <= (m.minStock || 0)).length
+  const lowStockProductsCount = allProducts.filter(p => p.currentStock <= (p.minStock || 0)).length
 
   // Filter POs by search
   const filteredPOs = purchaseOrders?.filter(po =>
@@ -112,12 +112,12 @@ export const MobileWarehouseView = () => {
       <Tabs defaultValue="stock" className="w-full">
         <TabsList className="grid w-full grid-cols-3 h-12 dark:bg-gray-800">
           <TabsTrigger value="stock" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 px-1">
-            <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-            Bahan ({lowStockMaterials.length})
+            <Package className="h-3.5 w-3.5 mr-1" />
+            Bahan {lowStockMaterialsCount > 0 && <Badge variant="destructive" className="ml-1 h-4 px-1 text-[10px]">{lowStockMaterialsCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="product" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 px-1">
             <Box className="h-3.5 w-3.5 mr-1" />
-            Produk ({lowStockProducts.length})
+            Produk {lowStockProductsCount > 0 && <Badge variant="destructive" className="ml-1 h-4 px-1 text-[10px]">{lowStockProductsCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="po" className="text-xs data-[state=active]:bg-white dark:data-[state=active]:bg-gray-700 px-1">
             <ShoppingCart className="h-3.5 w-3.5 mr-1" />
@@ -145,14 +145,15 @@ export const MobileWarehouseView = () => {
             </div>
           ) : filteredMaterials.length === 0 ? (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-green-500" />
-              <p className="font-medium">Semua stok aman!</p>
-              <p className="text-sm">Tidak ada bahan dengan stok minimal</p>
+              <Package className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="font-medium">Tidak ada bahan ditemukan</p>
+              <p className="text-sm">Coba ubah kata kunci pencarian</p>
             </div>
           ) : (
             <div className="space-y-2">
               {filteredMaterials.map((material) => {
                 const isOutOfStock = material.stock <= 0
+                const isLowStock = material.stock <= (material.minStock || 0)
                 const isCritical = material.stock <= (material.minStock || 0) / 2
 
                 return (
@@ -161,7 +162,8 @@ export const MobileWarehouseView = () => {
                     className={cn(
                       "dark:bg-gray-800 dark:border-gray-700",
                       isOutOfStock && "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20",
-                      isCritical && !isOutOfStock && "border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20"
+                      isCritical && !isOutOfStock && "border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20",
+                      isLowStock && !isCritical && !isOutOfStock && "border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20"
                     )}
                   >
                     <CardContent className="p-3">
@@ -173,7 +175,8 @@ export const MobileWarehouseView = () => {
                               "text-lg font-bold",
                               isOutOfStock ? "text-red-600 dark:text-red-400" :
                               isCritical ? "text-orange-600 dark:text-orange-400" :
-                              "text-yellow-600 dark:text-yellow-400"
+                              isLowStock ? "text-yellow-600 dark:text-yellow-400" :
+                              "text-green-600 dark:text-green-400"
                             )}>
                               {material.stock}
                             </span>
@@ -186,6 +189,9 @@ export const MobileWarehouseView = () => {
                           )}
                           {isCritical && !isOutOfStock && (
                             <Badge className="mt-1 text-xs bg-orange-500">KRITIS</Badge>
+                          )}
+                          {isLowStock && !isCritical && !isOutOfStock && (
+                            <Badge className="mt-1 text-xs bg-yellow-500">RENDAH</Badge>
                           )}
                         </div>
                         <Button
@@ -225,14 +231,15 @@ export const MobileWarehouseView = () => {
             </div>
           ) : filteredProducts.length === 0 ? (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-green-500" />
-              <p className="font-medium">Semua stok aman!</p>
-              <p className="text-sm">Tidak ada produk dengan stok minimal</p>
+              <Box className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="font-medium">Tidak ada produk ditemukan</p>
+              <p className="text-sm">Coba ubah kata kunci pencarian</p>
             </div>
           ) : (
             <div className="space-y-2">
               {filteredProducts.map((product) => {
                 const isOutOfStock = product.currentStock <= 0
+                const isLowStock = product.currentStock <= (product.minStock || 0)
                 const isCritical = product.currentStock <= (product.minStock || 0) / 2
                 const isProduction = product.type === 'Produksi'
 
@@ -242,7 +249,8 @@ export const MobileWarehouseView = () => {
                     className={cn(
                       "dark:bg-gray-800 dark:border-gray-700",
                       isOutOfStock && "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20",
-                      isCritical && !isOutOfStock && "border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20"
+                      isCritical && !isOutOfStock && "border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900/20",
+                      isLowStock && !isCritical && !isOutOfStock && "border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20"
                     )}
                   >
                     <CardContent className="p-3">
@@ -265,7 +273,8 @@ export const MobileWarehouseView = () => {
                               "text-lg font-bold",
                               isOutOfStock ? "text-red-600 dark:text-red-400" :
                               isCritical ? "text-orange-600 dark:text-orange-400" :
-                              "text-yellow-600 dark:text-yellow-400"
+                              isLowStock ? "text-yellow-600 dark:text-yellow-400" :
+                              "text-green-600 dark:text-green-400"
                             )}>
                               {product.currentStock}
                             </span>
@@ -278,6 +287,9 @@ export const MobileWarehouseView = () => {
                           )}
                           {isCritical && !isOutOfStock && (
                             <Badge className="mt-1 text-xs bg-orange-500">KRITIS</Badge>
+                          )}
+                          {isLowStock && !isCritical && !isOutOfStock && (
+                            <Badge className="mt-1 text-xs bg-yellow-500">RENDAH</Badge>
                           )}
                         </div>
                         {isProduction ? (
