@@ -359,7 +359,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
               {/* Customer Selection */}
               <div className="space-y-2">
                 <Label>Pelanggan *</Label>
-                <Popover open={customerOpen} onOpenChange={setCustomerOpen}>
+                <Popover open={customerOpen} onOpenChange={setCustomerOpen} modal={true}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -426,7 +426,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
               {/* Due Date */}
               <div className="space-y-2">
                 <Label>Tanggal Jatuh Tempo (Opsional)</Label>
-                <Popover open={dueDateOpen} onOpenChange={setDueDateOpen}>
+                <Popover open={dueDateOpen} onOpenChange={setDueDateOpen} modal={true}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
