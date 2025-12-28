@@ -6,10 +6,10 @@ import { useBranch } from '@/contexts/BranchContext'
 
 export const useEmployees = () => {
   const queryClient = useQueryClient();
-  const { currentBranch, canAccessAllBranches } = useBranch();
+  const { currentBranch } = useBranch();
 
   const { data: employees, isLoading, error, isError } = useQuery<Employee[]>({
-    queryKey: ['employees', currentBranch?.id, canAccessAllBranches],
+    queryKey: ['employees', currentBranch?.id],
     queryFn: async () => {
       try {
         // Simple approach - just get profiles data, don't crash on error
@@ -17,9 +17,9 @@ export const useEmployees = () => {
           .from('profiles')
           .select('id, email, full_name, username, role, phone, address, status, branch_id');
 
-        // Apply branch filter - only if user cannot access all branches
-        // Owner/Admin can see all employees regardless of branch
-        if (currentBranch?.id && !canAccessAllBranches) {
+        // Apply branch filter based on current selected branch
+        // All users (including Owner/Admin) should see employees filtered by selected branch
+        if (currentBranch?.id) {
           query = query.eq('branch_id', currentBranch.id);
         }
 
