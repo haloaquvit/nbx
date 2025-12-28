@@ -5,6 +5,7 @@ import { useBranch } from '@/contexts/BranchContext';
 import { useAuth } from './useAuth';
 
 // Database to App mapping for RetasiItem
+// Note: Database uses returned_qty/error_qty, App uses returned_quantity/error_quantity
 const fromDbItem = (dbItem: any): RetasiItem => ({
   id: dbItem.id,
   retasi_id: dbItem.retasi_id,
@@ -12,9 +13,9 @@ const fromDbItem = (dbItem: any): RetasiItem => ({
   product_id: dbItem.product_id,
   product_name: dbItem.product_name,
   quantity: dbItem.quantity || 0,
-  returned_quantity: dbItem.returned_quantity || 0,
-  sold_quantity: dbItem.sold_quantity || 0,
-  error_quantity: dbItem.error_quantity || 0,
+  returned_quantity: dbItem.returned_qty || dbItem.returned_quantity || 0,
+  sold_quantity: dbItem.sold_qty || dbItem.sold_quantity || 0,
+  error_quantity: dbItem.error_qty || dbItem.error_quantity || 0,
   weight: dbItem.weight,
   volume: dbItem.volume,
   notes: dbItem.notes,
@@ -36,8 +37,9 @@ const fromDb = (dbRetasi: any): Retasi => ({
   notes: dbRetasi.notes,
   retasi_ke: dbRetasi.retasi_ke || 1,
   is_returned: dbRetasi.is_returned || false,
-  returned_items_count: dbRetasi.returned_items_count,
-  error_items_count: dbRetasi.error_items_count,
+  returned_items_count: dbRetasi.returned_items_count || 0,
+  error_items_count: dbRetasi.error_items_count || 0,
+  barang_laku: dbRetasi.barang_laku || 0, // Jumlah barang yang laku terjual
   return_notes: dbRetasi.return_notes,
   created_by: dbRetasi.created_by,
   created_at: new Date(dbRetasi.created_at),
@@ -420,14 +422,15 @@ export const useRetasi = (filters?: {
       }
 
       // Update individual item returns if provided
+      // Note: Database uses returned_qty/error_qty column names
       if (returnData.item_returns && returnData.item_returns.length > 0) {
         for (const itemReturn of returnData.item_returns) {
           const { error: itemError } = await supabase
             .from('retasi_items')
             .update({
-              returned_quantity: itemReturn.returned_quantity || 0,
-              sold_quantity: itemReturn.sold_quantity || 0,
-              error_quantity: itemReturn.error_quantity || 0,
+              returned_qty: itemReturn.returned_quantity || 0,
+              sold_qty: itemReturn.sold_quantity || 0,
+              error_qty: itemReturn.error_quantity || 0,
             })
             .eq('id', itemReturn.item_id);
 
