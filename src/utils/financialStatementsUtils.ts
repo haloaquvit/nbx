@@ -327,14 +327,14 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     throw new Error('Branch ID is required for generating Balance Sheet');
   }
 
-  // Get all accounts structure (without relying on balance column)
+  // Get all accounts structure for the specific branch
+  // IMPORTANT: COA is per-branch, so we MUST filter by branch_id
+  // This ensures initial_balance values are from the correct branch
   let accountsQuery = supabase
     .from('accounts')
     .select('id, name, type, balance, initial_balance, code, branch_id, is_payment_account, is_header, is_active, level, sort_order, parent_id, created_at')
+    .eq('branch_id', branchId)
     .order('code');
-
-  // Note: We don't filter by branch_id here because COA structure is global
-  // Balance will be calculated per-branch from journal entries
 
   const { data: accountsData, error: accountsError } = await accountsQuery;
 
@@ -987,13 +987,19 @@ export async function generateIncomeStatement(
 
   // ============================================================================
   // GET ACCOUNTS TO DETERMINE TYPES
-  // Note: COA (accounts) is GLOBAL - no branch_id filter needed
-  // Branch filtering is already done on journal_entries level
+  // IMPORTANT: COA is per-branch, so filter by branch_id if provided
+  // This ensures account types are from the correct branch
   // ============================================================================
-  const { data: accountsData } = await supabase
+  let accountsQuery = supabase
     .from('accounts')
     .select('id, code, name, type, is_header')
     .order('code');
+
+  if (branchId) {
+    accountsQuery = accountsQuery.eq('branch_id', branchId);
+  }
+
+  const { data: accountsData } = await accountsQuery;
 
   // Create account type lookup
   const accountTypes: Record<string, { type: string; code: string; name: string; isHeader: boolean }> = {};
@@ -1311,13 +1317,14 @@ export async function generateCashFlowStatement(
 
   // ============================================================================
   // GET ALL ACCOUNTS FOR CLASSIFICATION
+  // IMPORTANT: COA is per-branch, so filter by branch_id
+  // This ensures initial_balance values are from the correct branch
   // ============================================================================
   let allAccountsQuery = supabase
     .from('accounts')
     .select('id, code, name, type, balance, initial_balance, branch_id, is_payment_account, is_header, is_active, level, sort_order, parent_id, created_at')
+    .eq('branch_id', branchId)
     .order('code');
-
-  // Note: We get all accounts (COA is global) and calculate balance per branch
 
   const { data: allAccountsData } = await allAccountsQuery;
 
