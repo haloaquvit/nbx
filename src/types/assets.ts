@@ -4,6 +4,7 @@ export type AssetCategory = 'equipment' | 'vehicle' | 'building' | 'furniture' |
 export type AssetStatus = 'active' | 'maintenance' | 'retired' | 'sold';
 export type AssetCondition = 'excellent' | 'good' | 'fair' | 'poor';
 export type DepreciationMethod = 'straight_line' | 'declining_balance';
+export type AssetSource = 'cash' | 'credit' | 'migration';
 
 export interface Asset {
   id: string;
@@ -180,6 +181,7 @@ export interface AssetFormData {
   insuranceExpiry?: Date;
   notes?: string;
   photoUrl?: string;
+  source?: AssetSource; // cash = Tunai, credit = Kredit, migration = Migrasi (tanpa kurangi kas)
 }
 
 export interface MaintenanceFormData {

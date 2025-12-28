@@ -1202,29 +1202,47 @@ export async function createAssetPurchaseJournal(params: {
   assetAccountCode: string;
   assetAccountName: string;
   assetName: string;
-  paymentMethod: 'cash' | 'credit';
+  paymentMethod: 'cash' | 'credit' | 'migration';
   branchId: string;
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
   const { assetId, purchaseDate, amount, assetAccountId, assetAccountCode, assetAccountName, assetName, paymentMethod, branchId } = params;
 
   // Find credit account based on payment method
   let creditAccount: { id: string; code: string; name: string } | null = null;
+  let creditDescription = '';
 
-  if (paymentMethod === 'credit') {
+  if (paymentMethod === 'migration') {
+    // Migrasi: Cr. Saldo Awal/Modal (3100)
+    creditAccount = await getAccountByCode('3100', branchId)
+      || await findAccountByPattern('saldo awal', 'Modal', branchId)
+      || await findAccountByPattern('modal awal', 'Modal', branchId)
+      || await findAccountByPattern('modal', 'Modal', branchId);
+    if (!creditAccount) {
+      return { success: false, error: 'Akun Saldo Awal/Modal tidak ditemukan. Buat akun dengan kode 3100 atau tipe Modal.' };
+    }
+    creditDescription = 'Migrasi aset (saldo awal)';
+  } else if (paymentMethod === 'credit') {
+    // Kredit: Cr. Hutang (2110)
     creditAccount = await getAccountByCode('2110', branchId) || await findAccountByPattern('hutang', 'Kewajiban', branchId);
     if (!creditAccount) {
       return { success: false, error: 'Akun Hutang tidak ditemukan' };
     }
+    creditDescription = 'Hutang pembelian aset';
   } else {
+    // Tunai: Cr. Kas (1120)
     creditAccount = await getAccountByCode('1120', branchId) || await findAccountByPattern('kas', 'Aset', branchId);
     if (!creditAccount) {
       return { success: false, error: 'Akun Kas tidak ditemukan' };
     }
+    creditDescription = 'Kas keluar pembelian aset';
   }
+
+  const descriptionSuffix = paymentMethod === 'migration' ? ' (Migrasi)'
+    : paymentMethod === 'credit' ? ' (Kredit)' : ' (Tunai)';
 
   return createJournalEntry({
     entryDate: purchaseDate,
-    description: `Pembelian Aset: ${assetName}${paymentMethod === 'credit' ? ' (Kredit)' : ' (Tunai)'}`,
+    description: `Pembelian Aset: ${assetName}${descriptionSuffix}`,
     referenceType: 'manual',
     referenceId: assetId,
     branchId,
@@ -1244,7 +1262,7 @@ export async function createAssetPurchaseJournal(params: {
         accountName: creditAccount.name,
         debitAmount: 0,
         creditAmount: amount,
-        description: paymentMethod === 'credit' ? 'Hutang pembelian aset' : 'Kas keluar pembelian aset',
+        description: creditDescription,
       },
     ],
   });

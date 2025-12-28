@@ -292,7 +292,7 @@ export function useCreateAsset() {
             assetAccountCode: accountData.code || '',
             assetAccountName: accountData.name,
             assetName: formData.assetName,
-            paymentMethod: 'cash', // Default to cash, can be extended
+            paymentMethod: formData.source || 'cash', // cash, credit, or migration
             branchId: currentBranch.id,
           });
 
@@ -368,6 +368,33 @@ export function useDeleteAsset() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      // ============================================================================
+      // 1. VOID RELATED JOURNAL ENTRIES FIRST
+      // This ensures proper accounting reversal (kas/modal back to original)
+      // ============================================================================
+      const { data: journals, error: journalQueryError } = await supabase
+        .from('journal_entries')
+        .select('id')
+        .eq('reference_id', id)
+        .eq('is_voided', false);
+
+      if (journalQueryError) {
+        console.warn('⚠️ Failed to query related journals:', journalQueryError.message);
+      } else if (journals && journals.length > 0) {
+        for (const journal of journals) {
+          const voidResult = await voidJournalEntry(journal.id, 'Aset dihapus');
+          if (voidResult.success) {
+            console.log(`✅ Voided journal ${journal.id} for asset ${id}`);
+          } else {
+            console.warn(`⚠️ Failed to void journal ${journal.id}:`, voidResult.error);
+          }
+        }
+        console.log(`✅ Voided ${journals.length} journal(s) for asset ${id}`);
+      }
+
+      // ============================================================================
+      // 2. DELETE THE ASSET
+      // ============================================================================
       const { error } = await supabase
         .from('assets')
         .delete()
@@ -377,6 +404,8 @@ export function useDeleteAsset() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     },
   });
 }

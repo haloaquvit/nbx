@@ -70,6 +70,7 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
     condition: "good",
     accountId: "",
     notes: "",
+    source: "cash", // Default: Pembelian Tunai
   })
 
   useEffect(() => {
@@ -114,6 +115,7 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
         condition: "good",
         accountId: "",
         notes: "",
+        source: "cash", // Default: Pembelian Tunai
       })
     }
   }, [asset, open])
@@ -386,6 +388,27 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
                 <option value="fair">Cukup</option>
                 <option value="poor">Buruk</option>
               </select>
+            </div>
+
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="source">Sumber Aset</Label>
+              <select
+                id="source"
+                className="w-full border rounded-md px-3 py-2 text-sm"
+                value={formData.source || 'cash'}
+                onChange={(e) => setFormData({ ...formData, source: e.target.value as any })}
+              >
+                <option value="cash">Pembelian Tunai - Kurangi Kas</option>
+                <option value="credit">Pembelian Kredit - Tambah Hutang</option>
+                <option value="migration">Migrasi Data - Tidak Kurangi Kas</option>
+              </select>
+              <p className="text-xs text-muted-foreground">
+                {formData.source === 'migration'
+                  ? 'Jurnal: Dr. Aset Tetap, Cr. Saldo Awal (tidak mempengaruhi kas)'
+                  : formData.source === 'credit'
+                  ? 'Jurnal: Dr. Aset Tetap, Cr. Hutang Usaha'
+                  : 'Jurnal: Dr. Aset Tetap, Cr. Kas'}
+              </p>
             </div>
 
             <div className="space-y-2">
