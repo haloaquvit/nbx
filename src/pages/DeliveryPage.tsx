@@ -15,10 +15,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar, Trash2, Loader2, Coins } from "lucide-react"
+import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar, Trash2, Loader2 } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
-import { useTransactionsReadyForDelivery, useDeliveryHistory, useDeliveryMutations } from "@/hooks/useDeliveries"
+import { useTransactionsReadyForDelivery, useDeliveryHistory, useDeliveries } from "@/hooks/useDeliveries"
 import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { DeliveryDetailModal } from "@/components/DeliveryDetailModal"
 import { DeliveryFormContent } from "@/components/DeliveryFormContent"
@@ -41,7 +41,6 @@ import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
 import { Delivery } from "@/types/delivery"
 import { PhotoUploadService } from "@/services/photoUploadService"
-import { regenerateDeliveryCommission } from "@/utils/commissionUtils"
 
 export default function DeliveryPage() {
   const { toast } = useToast()
@@ -49,7 +48,7 @@ export default function DeliveryPage() {
   const { canCreateDelivery } = useGranularPermission()
   const { data: transactions, isLoading, refetch } = useTransactionsReadyForDelivery()
   const { data: deliveryHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useDeliveryHistory()
-  const { deleteDelivery } = useDeliveryMutations()
+  const { deleteDelivery } = useDeliveries()
   const [searchQuery, setSearchQuery] = useState("")
   const [historySearchQuery, setHistorySearchQuery] = useState("")
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionDeliveryInfo | null>(null)
@@ -81,9 +80,6 @@ export default function DeliveryPage() {
   const [deliveryToDelete, setDeliveryToDelete] = useState<any>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-
-  // Regenerate commission state
-  const [isRegeneratingCommission, setIsRegeneratingCommission] = useState<string | null>(null)
 
   // Check if user is owner (for delete permission)
   const isOwner = user?.role === 'owner'
@@ -167,26 +163,6 @@ export default function DeliveryPage() {
       })
     } finally {
       setIsDeleting(false)
-    }
-  }
-
-  // Handle regenerate commission for a delivery (owner only)
-  const handleRegenerateCommission = async (deliveryId: string, deliveryNumber?: string) => {
-    setIsRegeneratingCommission(deliveryId)
-    try {
-      const result = await regenerateDeliveryCommission(deliveryId)
-      toast({
-        title: "Berhasil",
-        description: result.message || `Komisi untuk pengantaran #${deliveryNumber || deliveryId.slice(-6)} berhasil di-generate`
-      })
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Gagal Generate Komisi",
-        description: error.message || "Terjadi kesalahan saat generate komisi"
-      })
-    } finally {
-      setIsRegeneratingCommission(null)
     }
   }
 
@@ -841,37 +817,19 @@ export default function DeliveryPage() {
                                     <Eye className="h-3 w-3 sm:mr-1" />
                                     <span className="hidden sm:inline">Detail</span>
                                   </Button>
-                                  {/* Owner-only actions */}
+                                  {/* Owner-only delete button */}
                                   {isOwner && (
-                                    <>
-                                      {/* Regenerate Commission button */}
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="text-xs px-2 py-1 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                                        onClick={() => handleRegenerateCommission(delivery.id, delivery.deliveryNumber)}
-                                        disabled={isRegeneratingCommission === delivery.id}
-                                        title="Generate ulang komisi"
-                                      >
-                                        {isRegeneratingCommission === delivery.id ? (
-                                          <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                          <Coins className="h-3 w-3" />
-                                        )}
-                                      </Button>
-                                      {/* Delete button */}
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                        onClick={() => {
-                                          setDeliveryToDelete(delivery)
-                                          setIsDeleteDialogOpen(true)
-                                        }}
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    </>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      onClick={() => {
+                                        setDeliveryToDelete(delivery)
+                                        setIsDeleteDialogOpen(true)
+                                      }}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
                                   )}
                                 </div>
                               </TableCell>
