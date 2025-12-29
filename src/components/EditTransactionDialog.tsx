@@ -65,19 +65,23 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
       setPpnPercentage(transaction.ppnPercentage)
       setIsOfficeSale(transaction.isOfficeSale || false)
       
-      // Convert transaction items to form items
-      const formItems: FormTransactionItem[] = transaction.items.map((item, index) => ({
-        id: index,
-        product: item.product,
-        keterangan: item.notes || '',
-        qty: item.quantity,
-        harga: item.price,
-        unit: item.unit,
-      }))
+      // Convert transaction items to form items (skip items without valid product)
+      const formItems: FormTransactionItem[] = transaction.items
+        .filter(item => item.product?.id) // Skip items without valid product
+        .map((item, index) => ({
+          id: index,
+          product: item.product,
+          keterangan: item.notes || '',
+          qty: item.quantity,
+          harga: item.price,
+          unit: item.unit,
+        }))
       setItems(formItems)
       
-      // Calculate discount from subtotal difference
-      const itemsTotal = transaction.items.reduce((total, item) => total + (item.quantity * item.price), 0)
+      // Calculate discount from subtotal difference (only for items with valid product)
+      const itemsTotal = transaction.items
+        .filter(item => item.product?.id)
+        .reduce((total, item) => total + (item.quantity * item.price), 0)
       const calculatedDiskon = itemsTotal - transaction.subtotal
       setDiskon(calculatedDiskon)
     }

@@ -454,7 +454,7 @@ export function TransactionTable() {
       'Pelanggan': t.customerName,
       'Tgl Order': t.orderDate ? format(new Date(t.orderDate), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
       'Kasir': t.cashierName,
-      'Produk': t.items.map(item => item.product.name).join(", "),
+      'Produk': t.items.filter(item => item.product?.name).map(item => item.product.name).join(", "),
       'Subtotal (DPP)': t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total,
       'PPN': t.ppnEnabled ? (t.ppnAmount || 0) : 0,
       'Total': t.total,

@@ -56,7 +56,7 @@ const ReceiptTemplate = ({ transaction, companyInfo }: { transaction: Transactio
           </tr>
         </thead>
         <tbody>
-          {transaction.items.map((item, index) => (
+          {transaction.items.filter(item => item.product?.name).map((item, index) => (
             <tr key={index}>
               <td className="pt-1 align-top">
                 {item.product.name}<br />
@@ -180,7 +180,7 @@ const InvoiceTemplate = ({ transaction, companyInfo }: { transaction: Transactio
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transaction.items.map((item, index) => (
+              {transaction.items.filter(item => item.product?.name).map((item, index) => (
                 <TableRow key={index} className={`border-b border-gray-100 hover:bg-gray-50 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
                   <TableCell className="font-semibold text-gray-900 py-4 px-6">{item.product.name}</TableCell>
                   <TableCell className="text-center text-gray-700 py-4 px-4 font-medium">{item.quantity}</TableCell>
@@ -360,7 +360,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     doc.setFontSize(14).setFont("helvetica", "bold").setTextColor(0, 0, 0);
     doc.text(transaction.customerName, margin + 5, y + 16);
     y += 35;
-    const tableData = transaction.items.map(item => [item.product.name, item.quantity, new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price), new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price * item.quantity)]);
+    const tableData = transaction.items.filter(item => item.product?.name).map(item => [item.product.name, item.quantity, new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price), new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(item.price * item.quantity)]);
     // Professional table with better styling
     autoTable(doc, {
       startY: y,
@@ -711,7 +711,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
             </tr>
           </thead>
           <tbody>
-            ${transaction.items.map((item, idx) => `
+            ${transaction.items.filter(item => item.product?.name).map((item, idx) => `
               <tr>
                 <td style="padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.product.name}${item.notes ? `<br/><small style="font-size: 9.5pt;">${item.notes}</small>` : ''}</td>
                 <td style="text-align: center; padding: 1.5mm 1mm; font-size: 10.5pt; border-bottom: 0.5px dotted #999;">${item.quantity} ${item.unit}</td>
@@ -933,7 +933,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     receiptText += '[C]' + separatorDash + '\n';
 
     // Items - format seperti struk
-    transaction.items.forEach((item) => {
+    transaction.items.filter(item => item.product?.name).forEach((item) => {
       // Product name
       receiptText += '[L]' + item.product.name + '\n';
       // Quantity x price = total
@@ -1043,7 +1043,7 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     doc.line(5, currentY, 75, currentY);
     currentY += 4;
 
-    transaction.items.forEach((item) => {
+    transaction.items.filter(item => item.product?.name).forEach((item) => {
       doc.text(item.product.name, 5, currentY);
       currentY += 3;
       doc.text(`${item.quantity}x @${new Intl.NumberFormat("id-ID").format(item.price)}`, 5, currentY);

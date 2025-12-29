@@ -167,7 +167,7 @@ export default function TransactionDetailPage() {
     y += 16;
     
     // Items table
-    const tableData = transaction.items.map(item => [item.product.name, item.quantity, formatCurrency(item.price), formatCurrency(item.price * item.quantity)]);
+    const tableData = transaction.items.filter(item => item.product?.name).map(item => [item.product.name, item.quantity, formatCurrency(item.price), formatCurrency(item.price * item.quantity)]);
     autoTable(doc, {
       startY: y,
       head: [['Deskripsi', 'Jumlah', 'Harga Satuan', 'Total']],
@@ -255,7 +255,7 @@ export default function TransactionDetailPage() {
               </tr>
             </thead>
             <tbody>
-              ${transaction.items.map(item => `
+              ${transaction.items.filter(item => item.product?.name).map(item => `
                 <tr>
                   <td class="pt-1 align-top pr-2">
                     <div class="break-words">${item.product.name}</div>
@@ -553,7 +553,7 @@ export default function TransactionDetailPage() {
         </tr>
 
         <!-- Items -->
-        ${transaction.items.map((item, idx) => `
+        ${transaction.items.filter(item => item.product?.name).map((item, idx) => `
           <tr>
             <td style="padding: 0.5mm 1mm; font-size: 11pt;">${idx + 1}</td>
             <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product.name}</td>
@@ -728,7 +728,7 @@ export default function TransactionDetailPage() {
     }
     receiptText += separator + '\n';
 
-    transaction.items.forEach((item) => {
+    transaction.items.filter(item => item.product?.name).forEach((item) => {
       receiptText += item.product.name + '\n';
       const qtyPrice = `${item.quantity}x @${formatNumber(item.price)}`;
       const itemTotal = formatNumber(item.price * item.quantity);
@@ -991,12 +991,12 @@ export default function TransactionDetailPage() {
             <CardContent>
               {/* Mobile View - Card List */}
               <div className="md:hidden space-y-3">
-                {transaction.items.map((item, index) => (
+                {transaction.items.filter(item => item.product?.id).map((item, index) => (
                   <Card key={index} className="p-3">
                     <div className="space-y-2">
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <Link 
+                          <Link
                             to={`/products/${item.product.id}`}
                             className="font-medium text-sm text-blue-600 hover:text-blue-800 hover:underline"
                           >
@@ -1041,11 +1041,11 @@ export default function TransactionDetailPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transaction.items.map((item, index) => (
+                    {transaction.items.filter(item => item.product?.id).map((item, index) => (
                       <TableRow key={index}>
                         <TableCell>
                           <div>
-                            <Link 
+                            <Link
                               to={`/products/${item.product.id}`}
                               className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
                             >

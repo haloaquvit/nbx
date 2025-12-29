@@ -93,6 +93,7 @@ export function DriverDeliveryDialog({
     if (transaction?.items) {
       const initialQuantities: Record<string, number> = {}
       transaction.items.forEach((item, index) => {
+        if (!item.product?.id) return // Skip items without valid product
         initialQuantities[`${item.product.id}_${index}`] = item.quantity
       })
       setItemQuantities(initialQuantities)
@@ -100,7 +101,7 @@ export function DriverDeliveryDialog({
   }, [transaction])
 
   const handleQuantityChange = (itemKey: string, quantity: number) => {
-    const item = transaction.items.find((item, index) => `${item.product.id}_${index}` === itemKey)
+    const item = transaction.items.find((item, index) => item.product?.id && `${item.product.id}_${index}` === itemKey)
     const maxQuantity = item?.quantity || 0
     
     setItemQuantities(prev => ({
@@ -198,6 +199,7 @@ export function DriverDeliveryDialog({
 
     // Validate no item exceeds ordered quantity
     const hasExcessiveQuantity = transaction.items.some((item, index) => {
+      if (!item.product?.id) return false // Skip items without valid product
       const itemKey = `${item.product.id}_${index}`
       const quantityToDeliver = itemQuantities[itemKey] || 0
       return quantityToDeliver > item.quantity
@@ -226,9 +228,10 @@ export function DriverDeliveryDialog({
         notes?: string;
       }[] = []
       transaction.items.forEach((item, index) => {
+        if (!item.product?.id) return // Skip items without valid product
         const itemKey = `${item.product.id}_${index}`
         const quantityToDeliver = itemQuantities[itemKey] || 0
-        
+
         if (quantityToDeliver > 0) {
           deliveryItems.push({
             productId: item.product.id,
@@ -388,10 +391,10 @@ export function DriverDeliveryDialog({
               Item yang Diantar
             </Label>
             <div className="space-y-2 max-h-40 overflow-y-auto">
-              {transaction.items?.map((item, index) => {
+              {transaction.items?.filter(item => item.product?.id).map((item, index) => {
                 const itemKey = `${item.product.id}_${index}`
                 const quantityToDeliver = itemQuantities[itemKey] || 0
-                
+
                 return (
                   <div key={itemKey} className="bg-gray-50 p-3 rounded-lg">
                     <div className="flex justify-between items-start mb-2">
