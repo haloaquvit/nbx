@@ -51,11 +51,19 @@ const fromDb = (dbRetasi: any): Retasi => ({
 // App to Database mapping
 const toDb = (appRetasi: CreateRetasiData | UpdateRetasiData) => {
   const dbData: any = { ...appRetasi };
-  
+
   if ('departure_date' in appRetasi && appRetasi.departure_date) {
-    dbData.departure_date = appRetasi.departure_date.toISOString().split('T')[0];
+    const depDate = appRetasi.departure_date;
+    dbData.departure_date = depDate.toISOString().split('T')[0];
+
+    // Auto-set departure_time from departure_date if not provided
+    if (!dbData.departure_time) {
+      const hours = depDate.getHours().toString().padStart(2, '0');
+      const minutes = depDate.getMinutes().toString().padStart(2, '0');
+      dbData.departure_time = `${hours}:${minutes}`;
+    }
   }
-  
+
   return dbData;
 };
 

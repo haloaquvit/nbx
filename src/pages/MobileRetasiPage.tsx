@@ -216,7 +216,7 @@ export default function MobileRetasiPage() {
                         )}
                       </div>
                       <span className="text-xs text-muted-foreground">
-                        {retasi.departure_time || format(retasi.departure_date, 'HH:mm', { locale: id })}
+                        {retasi.departure_time || format(retasi.created_at, 'HH:mm', { locale: id })}
                       </span>
                     </div>
 
