@@ -109,6 +109,22 @@ export function getOfficeDateString(timezone: string = 'Asia/Jakarta'): string {
 }
 
 /**
+ * Mendapatkan tanggal dengan offset hari di timezone kantor
+ * @param offsetDays - jumlah hari offset (negatif untuk hari lalu, positif untuk hari depan)
+ * @param timezone - timezone kantor
+ */
+export function getOfficeDateWithOffset(offsetDays: number, timezone: string = 'Asia/Jakarta'): string {
+  const now = new Date();
+  now.setDate(now.getDate() + offsetDays);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+/**
  * Safe format date - handles null, undefined, and invalid dates
  * Returns '-' if date is invalid
  */

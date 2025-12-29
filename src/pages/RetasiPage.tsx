@@ -51,25 +51,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { CreateRetasiItemData } from "@/types/retasi";
 import { useGranularPermission } from "@/hooks/useGranularPermission";
 import { useTimezone } from "@/contexts/TimezoneContext";
-import { getOfficeDateString } from "@/utils/officeTime";
-
-// Helper to get date string with offset days (uses default timezone for initial state)
-function getDateWithOffset(offsetDays: number, timezone: string = 'Asia/Jayapura'): string {
-  const now = new Date();
-  now.setDate(now.getDate() + offsetDays);
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(now);
-}
+import { getOfficeDateString, getOfficeDateWithOffset } from "@/utils/officeTime";
 
 export default function RetasiPage() {
   const { timezone } = useTimezone();
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState(() => getDateWithOffset(-4));
-  const [dateTo, setDateTo] = useState(() => getDateWithOffset(0));
+  // Default filter: 4 hari lalu sampai hari ini (menggunakan office timezone)
+  // Use Asia/Jayapura as default for initial render, then update when timezone is available
+  const [dateFrom, setDateFrom] = useState(() => getOfficeDateWithOffset(-4, 'Asia/Jayapura'));
+  const [dateTo, setDateTo] = useState(() => getOfficeDateWithOffset(0, 'Asia/Jayapura'));
   const [driverFilter, setDriverFilter] = useState("all");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedRetasi, setSelectedRetasi] = useState<any>(null);
