@@ -446,7 +446,7 @@ export default function DeliveryPage() {
                       <TableHead className="min-w-[140px]">Tanggal Order</TableHead>
                       <TableHead className="min-w-[120px]">Total</TableHead>
                       <TableHead className="min-w-[100px]">Status</TableHead>
-                      <TableHead className="min-w-[100px]">Supir</TableHead>
+                      <TableHead className="min-w-[100px]">Kasir</TableHead>
                       <TableHead className="min-w-[80px]">Item Sisa</TableHead>
                       <TableHead className="w-[100px]">Aksi</TableHead>
                     </TableRow>
@@ -495,23 +495,9 @@ export default function DeliveryPage() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {transaction.deliveries.length > 0 ? (
-                              <div className="text-sm">
-                                {/* Show unique driver names from all deliveries */}
-                                {(() => {
-                                  const driverNames = [...new Set(
-                                    transaction.deliveries
-                                      .map(d => d.driverName)
-                                      .filter(Boolean)
-                                  )];
-                                  return driverNames.length > 0
-                                    ? driverNames.join(', ')
-                                    : <span className="text-muted-foreground">-</span>;
-                                })()}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">-</span>
-                            )}
+                            <div className="text-sm">
+                              {transaction.cashierName || <span className="text-muted-foreground">-</span>}
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">

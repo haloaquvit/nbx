@@ -1208,6 +1208,29 @@ export const useTransactions = (filters?: {
         } else {
           console.log('No deliveries found for this transaction');
         }
+
+        // Also void any orphaned delivery journals by transaction ID pattern in description
+        // This catches cases where delivery was deleted but journal wasn't voided
+        try {
+          const { data: orphanedJournals, error: orphanedError } = await supabase
+            .from('journal_entries')
+            .update({
+              status: 'voided',
+              is_voided: true,
+              voided_at: new Date().toISOString()
+            })
+            .like('description', `Pengantaran ${transactionId}:%`)
+            .eq('is_voided', false)
+            .select();
+
+          if (orphanedError) {
+            console.error('Failed to void orphaned delivery journals:', orphanedError);
+          } else if (orphanedJournals && orphanedJournals.length > 0) {
+            console.log(`✅ Voided ${orphanedJournals.length} orphaned delivery journals by description pattern`);
+          }
+        } catch (orphanedVoidError) {
+          console.error('Error voiding orphaned delivery journals:', orphanedVoidError);
+        }
       } catch (error) {
         console.error('Error deleting deliveries and delivery_items:', error);
         // Don't throw - delivery system might not be set up yet

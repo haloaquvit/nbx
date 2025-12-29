@@ -1089,6 +1089,7 @@ export async function voidJournalEntry(journalId: string, reason: string): Promi
     const { error: updateError } = await supabase
       .from('journal_entries')
       .update({
+        status: 'voided',
         is_voided: true,
         void_reason: reason,
         voided_by: user.id,
