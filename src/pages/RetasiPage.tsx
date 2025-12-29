@@ -115,18 +115,29 @@ export default function RetasiPage() {
   };
 
   const handleConfirmReturn = async (returnData: any) => {
-    if (!selectedRetasi) return;
+    console.log('handleConfirmReturn called with:', returnData);
+    console.log('selectedRetasi:', selectedRetasi);
+
+    if (!selectedRetasi) {
+      console.error('selectedRetasi is null!');
+      toast.error('Data retasi tidak ditemukan');
+      return;
+    }
 
     try {
+      console.log('Calling markRetasiReturned.mutateAsync...');
       await markRetasiReturned.mutateAsync({
         retasiId: selectedRetasi.id,
         ...returnData,
       });
 
+      console.log('markRetasiReturned success');
       toast.success('Retasi berhasil dikembalikan');
       setReturnDialogOpen(false);
       setSelectedRetasi(null);
+      setSelectedRetasiItems([]);
     } catch (error: any) {
+      console.error('markRetasiReturned error:', error);
       toast.error(error.message || 'Gagal mengembalikan retasi');
     }
   };
