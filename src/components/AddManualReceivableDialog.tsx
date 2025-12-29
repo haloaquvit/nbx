@@ -49,6 +49,8 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedCustomerName, setSelectedCustomerName] = useState('');
   const [amount, setAmount] = useState('');
+  const [transactionDate, setTransactionDate] = useState<Date | undefined>(new Date());
+  const [transactionDateOpen, setTransactionDateOpen] = useState(false);
   const [dueDate, setDueDate] = useState<Date | undefined>(undefined);
   const [dueDateOpen, setDueDateOpen] = useState(false);
   const [notes, setNotes] = useState('');
@@ -62,6 +64,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
     setSelectedCustomerId('');
     setSelectedCustomerName('');
     setAmount('');
+    setTransactionDate(new Date());
     setDueDate(undefined);
     setNotes('');
     setImportData([]);
@@ -94,7 +97,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
       });
 
       // Insert as transaction with migration info in items metadata
-      const orderDate = new Date();
+      const orderDate = transactionDate || new Date();
       const migrationMeta = {
         _isMigrationMeta: true,
         source: 'migration',
@@ -419,6 +422,36 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
                   min="0"
                   required
                 />
+              </div>
+
+              {/* Transaction Date */}
+              <div className="space-y-2">
+                <Label>Tanggal Transaksi *</Label>
+                <Popover open={transactionDateOpen} onOpenChange={setTransactionDateOpen} modal={true}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !transactionDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {transactionDate ? format(transactionDate, "d MMMM yyyy", { locale: id }) : "Pilih tanggal"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={transactionDate}
+                      onSelect={(date) => {
+                        setTransactionDate(date);
+                        setTransactionDateOpen(false);
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Due Date */}
