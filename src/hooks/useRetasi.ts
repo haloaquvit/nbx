@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Retasi, RetasiItem, CreateRetasiData, UpdateRetasiData, ReturnItemsData, CreateRetasiItemData } from '@/types/retasi';
 import { useBranch } from '@/contexts/BranchContext';
 import { useAuth } from './useAuth';
+import { useTimezone } from '@/contexts/TimezoneContext';
+import { getOfficeDateString } from '@/utils/officeTime';
 
 // Database to App mapping for RetasiItem
 // Note: Database uses returned_qty/error_qty, App uses returned_quantity/error_quantity
@@ -147,6 +149,7 @@ export const useRetasi = (filters?: {
   const queryClient = useQueryClient();
   const { currentBranch } = useBranch();
   const { user } = useAuth();
+  const { timezone } = useTimezone();
 
   // Get all retasi
   const { data: retasiList, isLoading } = useQuery<Retasi[]>({
@@ -207,7 +210,7 @@ export const useRetasi = (filters?: {
         throw new Error(error.message);
       }
 
-      const today = new Date().toISOString().split('T')[0];
+      const today = getOfficeDateString(timezone);
       const stats = {
         total_retasi: data.length,
         active_retasi: data.filter(d => !d.is_returned).length,
@@ -291,14 +294,13 @@ export const useRetasi = (filters?: {
         console.log('[useRetasi] Driver is available - no active retasi found');
       }
       
-      // Generate simple retasi number
-      const today = new Date();
-      const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+      // Generate simple retasi number using OFFICE timezone from settings
+      const todayDate = getOfficeDateString(timezone); // YYYY-MM-DD format in office timezone
+      const dateStr = todayDate.replace(/-/g, '');
       const timeStr = Date.now().toString().slice(-3);
       const retasiNumber = `RET-${dateStr}-${timeStr}`;
-      
-      // Get next retasi_ke for this driver TODAY
-      const todayDate = today.toISOString().slice(0, 10); // YYYY-MM-DD format
+
+      // Get next retasi_ke for this driver TODAY (using office timezone)
       
       console.log('[useRetasi] Getting retasi_ke for driver:', mainData.driver_name, 'on date:', todayDate);
       
