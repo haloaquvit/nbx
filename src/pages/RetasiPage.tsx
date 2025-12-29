@@ -102,7 +102,13 @@ export default function RetasiPage() {
   }, [filteredRetasi]);
 
   const handleReturnRetasi = async (retasi: any) => {
+    if (!retasi || !retasi.id) {
+      toast.error('Data retasi tidak valid');
+      return;
+    }
+
     setSelectedRetasi(retasi);
+
     // Fetch items for this retasi
     try {
       const items = await getRetasiItems(retasi.id);
@@ -111,6 +117,7 @@ export default function RetasiPage() {
       console.error('Failed to fetch retasi items:', error);
       setSelectedRetasiItems([]);
     }
+
     setReturnDialogOpen(true);
   };
 
@@ -444,7 +451,11 @@ export default function RetasiPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleReturnRetasi(retasi)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                handleReturnRetasi(retasi);
+                              }}
                               className="text-green-600 hover:text-green-700"
                               title="Tandai Kembali"
                             >
