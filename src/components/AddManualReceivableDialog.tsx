@@ -411,10 +411,19 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
                 <Label htmlFor="amount">Jumlah Piutang *</Label>
                 <Input
                   id="amount"
+                  type="text"
+                  inputMode="numeric"
                   value={amount}
                   onChange={(e) => {
-                    const value = e.target.value.replace(/[^\d]/g, '');
-                    setAmount(formatNumberWithCommas(value));
+                    // Remove all non-digit characters first (including dots from Indonesian format)
+                    const rawValue = e.target.value.replace(/[^\d]/g, '');
+                    // Format with thousand separators
+                    if (rawValue === '') {
+                      setAmount('');
+                    } else {
+                      const numValue = parseInt(rawValue, 10);
+                      setAmount(numValue.toLocaleString('id-ID'));
+                    }
                   }}
                   placeholder="0"
                   required

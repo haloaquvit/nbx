@@ -36,15 +36,17 @@ export function formatNumber(value: number | string | null | undefined): string 
 
 /**
  * Parse formatted number string back to number
- * @param value - Formatted string with commas
+ * @param value - Formatted string with commas or dots as thousand separator
  * @returns Number value
  *
  * Example:
  * parseFormattedNumber("1,000,000") => 1000000
+ * parseFormattedNumber("1.000.000") => 1000000 (Indonesian format)
  */
 export function parseFormattedNumber(value: string): number {
   if (!value) return 0;
-  const cleaned = value.replace(/,/g, '');
+  // Remove both dots and commas (thousand separators for different locales)
+  const cleaned = value.replace(/[.,]/g, '');
   const parsed = parseFloat(cleaned);
   return isNaN(parsed) ? 0 : parsed;
 }
