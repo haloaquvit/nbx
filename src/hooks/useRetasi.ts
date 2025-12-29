@@ -399,6 +399,8 @@ export const useRetasi = (filters?: {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retasi'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
+      // Also invalidate active-retasi cache so driver can access POS after status change
+      queryClient.invalidateQueries({ queryKey: ['active-retasi'] });
     }
   });
 
