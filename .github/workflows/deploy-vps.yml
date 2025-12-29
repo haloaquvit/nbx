@@ -39,13 +39,9 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to VPS (NBX)
+      - name: Deploy to VPS
         run: |
-          rsync -avz --delete dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/aquvit/nbx/
-
-      - name: Deploy to VPS (MKW)
-        run: |
-          rsync -avz --delete dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/aquvit/mkw/
+          rsync -avz --delete dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/var/www/aquvit/
 
       - name: Notify deployment
-        run: echo "Deployed successfully to nbx.aquvit.id and mkw.aquvit.id"
+        run: echo "Deployed successfully to aquvit.id"
