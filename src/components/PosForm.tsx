@@ -98,6 +98,8 @@ export const PosForm = () => {
   const [loadingPrices, setLoadingPrices] = useState<{[key: number]: boolean}>({});
   const productSearchInputRef = useRef<HTMLInputElement>(null);
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({});
+  // Cache for product pricing data to avoid repeated fetches
+  const pricingCache = useRef<Record<string, { bonusPricings: any[], stockPricings: any[], fetchedAt: number }>>({});
 
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
@@ -182,35 +184,70 @@ export const PosForm = () => {
     }
   };
 
-  // Function to calculate dynamic pricing for a product
-  const calculateDynamicPrice = async (product: Product, quantity: number) => {
+  // Function to get cached pricing data for a product
+  const getCachedPricing = async (productId: string, basePrice: number) => {
+    const CACHE_DURATION = 60000; // 1 minute cache
+    const cached = pricingCache.current[productId];
+    const now = Date.now();
+
+    // Return cached data if valid
+    if (cached && (now - cached.fetchedAt) < CACHE_DURATION) {
+      return cached;
+    }
+
+    // Fetch fresh data
+    let productPricing = await PricingService.getProductPricing(productId);
+
+    // If no pricing data exists, create sample pricing rules (for testing)
+    if (!productPricing || (productPricing.bonusPricings.length === 0 && productPricing.stockPricings.length === 0)) {
+      console.log('🎯 No pricing rules found, creating sample rules...');
+      await createSamplePricingRules(productId, basePrice);
+      productPricing = await PricingService.getProductPricing(productId);
+    }
+
+    const cacheData = {
+      bonusPricings: productPricing?.bonusPricings || [],
+      stockPricings: productPricing?.stockPricings || [],
+      fetchedAt: now
+    };
+    pricingCache.current[productId] = cacheData;
+    return cacheData;
+  };
+
+  // Function to calculate dynamic pricing for a product (uses cache)
+  const calculateDynamicPrice = async (product: Product, quantity: number, skipFetch: boolean = false) => {
     try {
-      console.log('🔄 Calculating price for product:', product.name, 'quantity:', quantity);
-      let productPricing = await PricingService.getProductPricing(product.id)
-      
-      // If no pricing data exists, create sample pricing rules (for testing)
-      if (!productPricing || (productPricing.bonusPricings.length === 0 && productPricing.stockPricings.length === 0)) {
-        console.log('🎯 No pricing rules found, creating sample rules...');
-        await createSamplePricingRules(product.id, product.basePrice);
-        productPricing = await PricingService.getProductPricing(product.id);
-      }
-      
-      if (productPricing) {
-        // Calculate price based on QUANTITY purchased, NOT stock level
-        // Pass empty stockPricings to ignore stock-based pricing
-        const priceCalculation = PricingService.calculatePrice(
-          product.basePrice,
-          product.currentStock,
-          quantity,
-          [], // Ignore stock pricing - we only want quantity-based pricing
-          productPricing.bonusPricings
-        )
-        console.log('💰 Price calculation:', priceCalculation);
-        return {
-          // Use finalPrice which includes quantity-based discounts
-          price: priceCalculation.finalPrice,
-          calculation: priceCalculation
+      // If skipFetch, use cached data only (for qty changes) - no logging
+      if (skipFetch) {
+        const cached = pricingCache.current[product.id];
+        if (cached) {
+          const priceCalculation = PricingService.calculatePrice(
+            product.basePrice,
+            product.currentStock,
+            quantity,
+            [], // Ignore stock pricing
+            cached.bonusPricings
+          );
+          return { price: priceCalculation.finalPrice, calculation: priceCalculation };
         }
+        // If no cache, fall through to fetch
+      }
+
+      console.log('🔄 Fetching pricing for product:', product.name);
+      const cachedPricing = await getCachedPricing(product.id, product.basePrice);
+
+      // Calculate price based on QUANTITY purchased, NOT stock level
+      const priceCalculation = PricingService.calculatePrice(
+        product.basePrice,
+        product.currentStock,
+        quantity,
+        [], // Ignore stock pricing - we only want quantity-based pricing
+        cachedPricing.bonusPricings
+      )
+      return {
+        // Use finalPrice which includes quantity-based discounts
+        price: priceCalculation.finalPrice,
+        calculation: priceCalculation
       }
     } catch (error) {
       console.error('❌ Error calculating dynamic price:', error)
@@ -510,10 +547,8 @@ export const PosForm = () => {
   };
 
   const updateItemWithBonuses = async (existingItem: FormTransactionItem, newQty: number) => {
-    const { price, calculation } = await calculateDynamicPrice(existingItem.product!, newQty);
-    
-    console.log('🎯 Price calculation result:', calculation);
-    console.log('🎯 Product:', existingItem.product?.name, 'Qty:', newQty, 'Price:', price);
+    // Use skipFetch=true to use cached pricing data (no database fetch)
+    const { price, calculation } = await calculateDynamicPrice(existingItem.product!, newQty, true);
     
     // Remove existing bonus items for this product
     let newItems = items.filter(item => item.parentItemId !== existingItem.id);
@@ -527,11 +562,9 @@ export const PosForm = () => {
     
     // Add bonus items if any
     if (calculation?.bonuses && calculation.bonuses.length > 0) {
-      console.log('🎁 Processing bonuses:', calculation.bonuses);
       for (const bonus of calculation.bonuses) {
         // Only add quantity-based bonuses as separate items
         if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
-          console.log('🎁 Adding bonus item:', bonus);
           const bonusItem: FormTransactionItem = {
             id: Date.now() + Math.random(),
             product: existingItem.product,
@@ -547,8 +580,6 @@ export const PosForm = () => {
         }
         // For discount bonuses, we don't add separate items as the price is already adjusted
       }
-    } else {
-      console.log('❌ No bonuses found in calculation:', calculation);
     }
     
     setItems(newItems);

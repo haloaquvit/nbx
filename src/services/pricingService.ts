@@ -69,7 +69,7 @@ export class PricingService {
         return 0
       })[0]
 
-      console.log('🎯 Selected best bonus rule:', bestBonus, 'for quantity:', quantity);
+      // Best bonus selected based on highest minQuantity threshold
 
       if (bestBonus.bonusType === 'percentage') {
         const discountAmount = (stockAdjustedPrice * bestBonus.bonusValue) / 100
