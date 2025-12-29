@@ -72,6 +72,18 @@ export default function DriverPosPage() {
     }
   }, [user?.id, accounts, paymentAccount, getEmployeeCashAccount]);
   const [paidAmount, setPaidAmount] = useState(0)
+
+  // Auto-set paidAmount to total when items change (default to full payment)
+  useEffect(() => {
+    if (items.length > 0) {
+      const newTotal = items
+        .filter(item => !item.isBonus)
+        .reduce((sum, item) => sum + (item.price * item.quantity), 0)
+      setPaidAmount(newTotal)
+    } else {
+      setPaidAmount(0)
+    }
+  }, [items])
   const [dueDate, setDueDate] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() + 30);
@@ -615,7 +627,29 @@ export default function DriverPosPage() {
 
           {/* Payment Amount Input - Primary */}
           <div className="mb-4">
-            <Label className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-2 block">Jumlah Bayar</Label>
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-base font-semibold text-gray-700 dark:text-gray-200">Jumlah Bayar</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={paidAmount === total ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 px-3 text-sm font-semibold"
+                  onClick={() => setPaidAmount(total)}
+                >
+                  Lunas
+                </Button>
+                <Button
+                  type="button"
+                  variant={paidAmount === 0 ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 px-3 text-sm font-semibold"
+                  onClick={() => setPaidAmount(0)}
+                >
+                  Kredit
+                </Button>
+              </div>
+            </div>
             <Input
               type="number"
               inputMode="numeric"
@@ -635,6 +669,11 @@ export default function DriverPosPage() {
               placeholder="Masukkan jumlah pembayaran..."
               className="h-16 text-2xl font-bold text-center"
             />
+            {paidAmount > 0 && paidAmount < total && (
+              <div className="text-sm text-orange-600 dark:text-orange-400 mt-1 text-center">
+                Sisa piutang: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(total - paidAmount)}
+              </div>
+            )}
           </div>
 
           {/* Payment Account - Highlighted */}

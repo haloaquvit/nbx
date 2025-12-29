@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar, Trash2, Loader2 } from "lucide-react"
+import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar, Trash2, Loader2, Pencil } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { useTransactionsReadyForDelivery, useDeliveryHistory, useDeliveries } from "@/hooks/useDeliveries"
@@ -39,6 +39,7 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
+import { EditDeliveryDialog } from "@/components/EditDeliveryDialog"
 import { Delivery } from "@/types/delivery"
 import { PhotoUploadService } from "@/services/photoUploadService"
 
@@ -80,6 +81,9 @@ export default function DeliveryPage() {
   const [deliveryToDelete, setDeliveryToDelete] = useState<any>(null)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+
+  // Edit delivery state
+  const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null)
 
   // Check if user is owner (for delete permission)
   const isOwner = user?.role === 'owner'
@@ -817,6 +821,17 @@ export default function DeliveryPage() {
                                     <Eye className="h-3 w-3 sm:mr-1" />
                                     <span className="hidden sm:inline">Detail</span>
                                   </Button>
+                                  {/* Owner-only edit button */}
+                                  {isOwner && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-xs px-2 py-1"
+                                      onClick={() => setEditingDelivery(delivery)}
+                                    >
+                                      <Pencil className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                   {/* Owner-only delete button */}
                                   {isOwner && (
                                     <Button
@@ -990,6 +1005,20 @@ export default function DeliveryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Delivery Dialog (Owner only) */}
+      {editingDelivery && (
+        <EditDeliveryDialog
+          delivery={editingDelivery}
+          open={!!editingDelivery}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditingDelivery(null)
+              refetchHistory()
+            }
+          }}
+        />
+      )}
     </div>
   )
 }
