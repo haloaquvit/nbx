@@ -415,14 +415,22 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
                   inputMode="numeric"
                   value={amount}
                   onChange={(e) => {
-                    // Remove all non-digit characters first (including dots from Indonesian format)
-                    const rawValue = e.target.value.replace(/[^\d]/g, '');
-                    // Format with thousand separators
+                    // Get cursor position before formatting
+                    const input = e.target;
+                    const oldLength = amount.length;
+
+                    // Remove all non-digit characters (dots, commas, spaces)
+                    const rawValue = e.target.value.replace(/\D/g, '');
+
                     if (rawValue === '') {
                       setAmount('');
                     } else {
-                      const numValue = parseInt(rawValue, 10);
-                      setAmount(numValue.toLocaleString('id-ID'));
+                      // Format with thousand separators using Intl for consistency
+                      const numValue = Number(rawValue);
+                      if (!isNaN(numValue) && numValue <= Number.MAX_SAFE_INTEGER) {
+                        const formatted = new Intl.NumberFormat('id-ID').format(numValue);
+                        setAmount(formatted);
+                      }
                     }
                   }}
                   placeholder="0"
