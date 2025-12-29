@@ -137,12 +137,17 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
 
       setStorePhoto(compressedFile)
 
-      // Create preview
+      // Create preview IMMEDIATELY after compression (before upload)
       const reader = new FileReader()
       reader.onload = (e) => {
         setPhotoPreview(e.target?.result as string)
       }
       reader.readAsDataURL(compressedFile)
+
+      toast({
+        title: "Foto dikompres",
+        description: `Ukuran: ${formatFileSize(compressedFile.size)}. Sedang mengupload...`,
+      })
 
       // Get customer name from form, fallback to timestamp if empty
       const customerName = watch('name')?.trim() || `customer-${Date.now()}`
@@ -159,9 +164,14 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
 
       toast({
         title: "Sukses!",
-        description: `Foto toko berhasil diupload (${formatFileSize(compressedFile.size)}).`,
+        description: `Foto toko berhasil diupload.`,
       })
     } catch (error: any) {
+      console.error('Photo upload error:', error)
+      // Reset photo states on error
+      setStorePhoto(null)
+      setStorePhotoFilename('')
+      setPhotoPreview(null)
       toast({
         variant: "destructive",
         title: "Error",
