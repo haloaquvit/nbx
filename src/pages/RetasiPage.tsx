@@ -1193,7 +1193,7 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
   );
 }
 
-// Edit Retasi Dialog component
+// Edit Retasi Dialog component - now supports marking retasi as returned
 function EditRetasiDialog({
   retasi,
   drivers,
@@ -1214,11 +1214,14 @@ function EditRetasiDialog({
   const [truckNumber, setTruckNumber] = useState(retasi?.truck_number || "");
   const [notes, setNotes] = useState(retasi?.notes || "");
 
-  // Return quantities (only editable if retasi is_returned)
+  // Return quantities - now editable for both returned and active retasi
   const [returnedCount, setReturnedCount] = useState(retasi?.returned_items_count || 0);
   const [errorCount, setErrorCount] = useState(retasi?.error_items_count || 0);
   const [lakuCount, setLakuCount] = useState(retasi?.barang_laku || 0);
   const [tidakLakuCount, setTidakLakuCount] = useState(retasi?.barang_tidak_laku || 0);
+
+  // Option to mark as returned (only for active retasi)
+  const [markAsReturned, setMarkAsReturned] = useState(false);
 
   // Reset form when retasi changes
   React.useEffect(() => {
@@ -1231,8 +1234,12 @@ function EditRetasiDialog({
       setErrorCount(retasi.error_items_count || 0);
       setLakuCount(retasi.barang_laku || 0);
       setTidakLakuCount(retasi.barang_tidak_laku || 0);
+      setMarkAsReturned(false);
     }
   }, [retasi]);
+
+  const totalInput = returnedCount + lakuCount + tidakLakuCount + errorCount;
+  const selisih = (retasi?.total_items || 0) - totalInput;
 
   const handleSave = async () => {
     const data: any = {
@@ -1242,8 +1249,9 @@ function EditRetasiDialog({
       notes: notes || undefined,
     };
 
-    // Include return quantities if retasi is returned
-    if (retasi?.is_returned) {
+    // Include return quantities if retasi is already returned OR if marking as returned
+    if (retasi?.is_returned || markAsReturned) {
+      data.is_returned = true;
       data.returned_items_count = returnedCount;
       data.error_items_count = errorCount;
       data.barang_laku = lakuCount;
@@ -1255,7 +1263,7 @@ function EditRetasiDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Retasi</DialogTitle>
           <DialogDescription>
@@ -1321,13 +1329,33 @@ function EditRetasiDialog({
             />
           </div>
 
-          {/* Return quantities - only show if retasi is_returned */}
-          {retasi?.is_returned && (
+          {/* Mark as Returned checkbox - only show if retasi is not returned yet */}
+          {!retasi?.is_returned && (
+            <div className="flex items-center space-x-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <input
+                type="checkbox"
+                id="markAsReturned"
+                checked={markAsReturned}
+                onChange={(e) => setMarkAsReturned(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="markAsReturned" className="text-amber-800 cursor-pointer">
+                Tandai sebagai Armada Kembali
+              </Label>
+            </div>
+          )}
+
+          {/* Return quantities - show if retasi is_returned OR if markAsReturned is checked */}
+          {(retasi?.is_returned || markAsReturned) && (
             <div className="space-y-3 border-t pt-3">
-              <Label className="text-sm font-medium">Edit Jumlah Kembali</Label>
+              <Label className="text-sm font-medium">
+                {retasi?.is_returned ? 'Edit Jumlah Kembali' : 'Input Jumlah Kembali'}
+              </Label>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs text-green-600">Kembali</Label>
+                  <Label className="text-xs text-green-600 flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3" /> Kembali
+                  </Label>
                   <Input
                     type="number"
                     min={0}
@@ -1336,7 +1364,9 @@ function EditRetasiDialog({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-blue-600">Laku</Label>
+                  <Label className="text-xs text-blue-600 flex items-center gap-1">
+                    <ShoppingCart className="h-3 w-3" /> Laku
+                  </Label>
                   <Input
                     type="number"
                     min={0}
@@ -1345,7 +1375,9 @@ function EditRetasiDialog({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-orange-600">Tidak Laku</Label>
+                  <Label className="text-xs text-orange-600 flex items-center gap-1">
+                    <Package className="h-3 w-3" /> Tidak Laku
+                  </Label>
                   <Input
                     type="number"
                     min={0}
@@ -1354,7 +1386,9 @@ function EditRetasiDialog({
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-red-600">Error</Label>
+                  <Label className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> Error
+                  </Label>
                   <Input
                     type="number"
                     min={0}
@@ -1363,8 +1397,10 @@ function EditRetasiDialog({
                   />
                 </div>
               </div>
-              <div className="text-xs text-slate-500">
-                Total: {returnedCount + lakuCount + tidakLakuCount + errorCount} / Bawa: {retasi?.total_items || 0} / Selisih: {(retasi?.total_items || 0) - (returnedCount + lakuCount + tidakLakuCount + errorCount)}
+              <div className={`text-xs p-2 rounded ${selisih === 0 ? 'bg-green-50 text-green-700' : selisih > 0 ? 'bg-orange-50 text-orange-700' : 'bg-red-50 text-red-700'}`}>
+                Total: {totalInput} / Bawa: {retasi?.total_items || 0} / Selisih: {selisih}
+                {selisih > 0 && ' (ada barang belum diinput)'}
+                {selisih < 0 && ' (melebihi jumlah bawa!)'}
               </div>
             </div>
           )}
@@ -1383,8 +1419,8 @@ function EditRetasiDialog({
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Status:</span>
-              <span className={`font-medium ${retasi?.is_returned ? 'text-green-600' : 'text-amber-600'}`}>
-                {retasi?.is_returned ? 'Armada Kembali' : 'Armada Berangkat'}
+              <span className={`font-medium ${retasi?.is_returned || markAsReturned ? 'text-green-600' : 'text-amber-600'}`}>
+                {retasi?.is_returned ? 'Armada Kembali' : markAsReturned ? 'Akan Ditandai Kembali' : 'Armada Berangkat'}
               </span>
             </div>
           </div>
@@ -1394,8 +1430,12 @@ function EditRetasiDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Batal
           </Button>
-          <Button onClick={handleSave} disabled={isLoading}>
-            {isLoading ? "Menyimpan..." : "Simpan Perubahan"}
+          <Button
+            onClick={handleSave}
+            disabled={isLoading || (markAsReturned && selisih < 0)}
+            className={markAsReturned ? 'bg-green-600 hover:bg-green-700' : ''}
+          >
+            {isLoading ? "Menyimpan..." : markAsReturned ? "Simpan & Tandai Kembali" : "Simpan Perubahan"}
           </Button>
         </div>
       </DialogContent>
