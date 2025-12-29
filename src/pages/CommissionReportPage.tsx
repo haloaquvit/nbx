@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,24 +23,11 @@ import {
   Filter,
   Loader2,
   Trash2,
-  AlertTriangle,
   FileSpreadsheet,
   RefreshCw,
-  Coins
 } from "lucide-react"
-import { regenerateDeliveryCommission } from "@/utils/commissionUtils"
-import { supabase } from "@/integrations/supabase/client"
+import { recalculateCommissionsForPeriod } from "@/utils/commissionUtils"
 import { useToast } from "@/components/ui/use-toast"
-
-
-interface MissingCommissionDelivery {
-  id: string
-  delivery_number: number
-  delivery_date: string
-  driver_name: string | null
-  helper_name: string | null
-  items_count: number
-}
 
 export default function CommissionReportPage() {
   const { user } = useAuth()
@@ -48,13 +35,8 @@ export default function CommissionReportPage() {
   const { users, isLoading: usersLoading } = useUsers()
   const deleteCommissionMutation = useDeleteCommissionEntry()
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null)
+  const [isRecalculating, setIsRecalculating] = useState(false)
 
-  // Missing commission state
-  const [missingCommissions, setMissingCommissions] = useState<MissingCommissionDelivery[]>([])
-  const [isCheckingMissing, setIsCheckingMissing] = useState(false)
-  const [isRegenerating, setIsRegenerating] = useState<string | null>(null)
-  const [showMissingSection, setShowMissingSection] = useState(false)
-  
   // Date filters
   const [startDate, setStartDate] = useState(() => {
     const date = new Date()
@@ -173,125 +155,33 @@ export default function CommissionReportPage() {
     });
   };
 
-  // Check for deliveries without commissions
-  const checkMissingCommissions = async () => {
-    setIsCheckingMissing(true)
+  // Recalculate commissions for the selected period
+  const handleRecalculate = async () => {
+    if (!confirm(`Recalculate komisi untuk periode ${format(start, 'dd MMM yyyy', { locale: id })} - ${format(end, 'dd MMM yyyy', { locale: id })}?\n\nIni akan:\n• Generate komisi untuk delivery yang belum ada komisinya\n• Update komisi jika rate berubah\n• Komisi yang sudah PAID tidak akan diubah`)) {
+      return;
+    }
+
+    setIsRecalculating(true);
     try {
-      // Get all deliveries with driver/helper assigned
-      const { data: deliveries, error: deliveriesError } = await supabase
-        .from('deliveries')
-        .select(`
-          id,
-          delivery_number,
-          delivery_date,
-          driver_id,
-          helper_id,
-          driver:profiles!driver_id(full_name),
-          helper:profiles!helper_id(full_name),
-          items:delivery_items(id)
-        `)
-        .or('driver_id.not.is.null,helper_id.not.is.null')
-        .order('delivery_date', { ascending: false })
+      const result = await recalculateCommissionsForPeriod(start, end);
 
-      if (deliveriesError) throw deliveriesError
+      toast({
+        title: "Recalculate Selesai",
+        description: `${result.created} komisi baru dibuat, ${result.updated} diupdate, ${result.skipped} dilewati (sudah paid)`,
+      });
 
-      // Get all commission entries with delivery_id
-      const { data: commissions, error: commissionsError } = await supabase
-        .from('commission_entries')
-        .select('delivery_id')
-        .not('delivery_id', 'is', null)
-
-      if (commissionsError) throw commissionsError
-
-      // Find deliveries that have no commission entries
-      const commissionDeliveryIds = new Set(commissions?.map(c => c.delivery_id) || [])
-
-      const missing = (deliveries || [])
-        .filter(d => !commissionDeliveryIds.has(d.id) && (d.items?.length || 0) > 0)
-        .map(d => ({
-          id: d.id,
-          delivery_number: d.delivery_number,
-          delivery_date: d.delivery_date,
-          driver_name: (d.driver as any)?.full_name || null,
-          helper_name: (d.helper as any)?.full_name || null,
-          items_count: d.items?.length || 0
-        }))
-
-      setMissingCommissions(missing)
-      setShowMissingSection(true)
-
-      if (missing.length === 0) {
-        toast({
-          title: "Semua Komisi Lengkap",
-          description: "Tidak ada pengantaran yang kehilangan komisi"
-        })
-      } else {
-        toast({
-          title: `Ditemukan ${missing.length} Pengantaran`,
-          description: "Pengantaran tanpa komisi ditemukan. Klik tombol generate untuk membuat komisinya.",
-          variant: "destructive"
-        })
-      }
+      // Refresh data
+      window.location.reload();
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Gagal Memeriksa",
-        description: error.message || "Terjadi kesalahan saat memeriksa komisi"
-      })
+        title: "Gagal Recalculate",
+        description: error.message || "Terjadi kesalahan saat recalculate komisi",
+      });
     } finally {
-      setIsCheckingMissing(false)
+      setIsRecalculating(false);
     }
-  }
-
-  // Regenerate commission for a delivery
-  const handleRegenerateCommission = async (deliveryId: string) => {
-    setIsRegenerating(deliveryId)
-    try {
-      const result = await regenerateDeliveryCommission(deliveryId)
-      toast({
-        title: "Berhasil",
-        description: result.message
-      })
-      // Remove from missing list
-      setMissingCommissions(prev => prev.filter(d => d.id !== deliveryId))
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Gagal Generate Komisi",
-        description: error.message || "Terjadi kesalahan saat generate komisi"
-      })
-    } finally {
-      setIsRegenerating(null)
-    }
-  }
-
-  // Regenerate all missing commissions
-  const handleRegenerateAll = async () => {
-    if (!confirm(`Apakah Anda yakin ingin generate komisi untuk ${missingCommissions.length} pengantaran?`)) {
-      return
-    }
-
-    let successCount = 0
-    let failCount = 0
-
-    for (const delivery of missingCommissions) {
-      setIsRegenerating(delivery.id)
-      try {
-        await regenerateDeliveryCommission(delivery.id)
-        successCount++
-      } catch (error) {
-        failCount++
-      }
-    }
-
-    setIsRegenerating(null)
-    setMissingCommissions([])
-
-    toast({
-      title: "Selesai",
-      description: `Berhasil generate ${successCount} komisi${failCount > 0 ? `, gagal ${failCount}` : ''}`
-    })
-  }
+  };
 
   const exportToPDF = () => {
     const doc = new jsPDF('landscape', 'pt', 'a4')
@@ -599,89 +489,30 @@ export default function CommissionReportPage() {
               </div>
             </div>
 
-            {/* Check Missing Commissions Button - Owner only */}
+            {/* Recalculate Button - Owner/Admin only */}
             {(user?.role === 'owner' || user?.role === 'admin') && (
               <div className="mt-4 pt-4 border-t">
                 <Button
-                  onClick={checkMissingCommissions}
-                  disabled={isCheckingMissing}
+                  onClick={handleRecalculate}
+                  disabled={isRecalculating}
                   variant="outline"
                   className="bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
                 >
-                  {isCheckingMissing ? (
+                  {isRecalculating ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
                     <RefreshCw className="h-4 w-4 mr-2" />
                   )}
-                  Cek Komisi yang Hilang
+                  Recalculate Komisi Periode Ini
                 </Button>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Generate/update komisi untuk delivery dalam periode yang dipilih berdasarkan commission rules terbaru
+                </p>
               </div>
             )}
+
           </CardContent>
         </Card>
-
-        {/* Missing Commissions Section */}
-        {showMissingSection && missingCommissions.length > 0 && (
-          <Card className="border-amber-200 bg-amber-50">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-amber-800">
-                  <AlertTriangle className="h-5 w-5" />
-                  Pengantaran Tanpa Komisi ({missingCommissions.length})
-                </CardTitle>
-                <Button
-                  onClick={handleRegenerateAll}
-                  disabled={!!isRegenerating}
-                  size="sm"
-                  className="bg-amber-600 hover:bg-amber-700"
-                >
-                  <Coins className="h-4 w-4 mr-2" />
-                  Generate Semua
-                </Button>
-              </div>
-              <CardDescription className="text-amber-700">
-                Pengantaran berikut memiliki driver/helper tetapi tidak memiliki entri komisi
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {missingCommissions.map(delivery => (
-                  <div
-                    key={delivery.id}
-                    className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200"
-                  >
-                    <div>
-                      <div className="font-medium">
-                        Pengantaran #{delivery.delivery_number}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {format(new Date(delivery.delivery_date), "dd MMM yyyy HH:mm", { locale: id })}
-                        {" • "}
-                        {delivery.driver_name || "Tanpa Driver"}
-                        {delivery.helper_name && ` / ${delivery.helper_name}`}
-                        {" • "}
-                        {delivery.items_count} item
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => handleRegenerateCommission(delivery.id)}
-                      disabled={isRegenerating === delivery.id}
-                      size="sm"
-                      variant="outline"
-                      className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                    >
-                      {isRegenerating === delivery.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Coins className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

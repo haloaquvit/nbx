@@ -341,6 +341,203 @@ export async function regenerateDeliveryCommission(deliveryId: string) {
   }
 }
 
+/**
+ * Recalculate commissions for all deliveries in a date range
+ * - Creates new commission entries for deliveries without commissions
+ * - Updates commission amounts if rates changed (only for 'pending' status)
+ * - Skips deliveries with 'paid' commissions
+ */
+export async function recalculateCommissionsForPeriod(startDate: Date, endDate: Date) {
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  try {
+    // Get all deliveries in the date range
+    const { data: deliveries, error: deliveriesError } = await supabase
+      .from('deliveries')
+      .select(`
+        id,
+        transaction_id,
+        delivery_date,
+        driver_id,
+        helper_id,
+        branch_id,
+        items:delivery_items(id, product_id, product_name, quantity_delivered, is_bonus),
+        driver:profiles!driver_id(full_name),
+        helper:profiles!helper_id(full_name)
+      `)
+      .gte('delivery_date', startDate.toISOString())
+      .lte('delivery_date', endDate.toISOString())
+      .or('driver_id.not.is.null,helper_id.not.is.null');
+
+    if (deliveriesError) throw deliveriesError;
+
+    if (!deliveries || deliveries.length === 0) {
+      return { created: 0, updated: 0, skipped: 0, message: 'Tidak ada pengantaran dalam periode ini' };
+    }
+
+    // Get all commission rules
+    const { data: rules, error: rulesError } = await supabase
+      .from('commission_rules')
+      .select('*')
+      .in('role', ['driver', 'helper']);
+
+    if (rulesError) throw rulesError;
+
+    if (!rules || rules.length === 0) {
+      return { created: 0, updated: 0, skipped: 0, message: 'Tidak ada aturan komisi untuk driver/helper' };
+    }
+
+    // Get existing commission entries for these deliveries
+    const deliveryIds = deliveries.map(d => d.id);
+    const { data: existingCommissions, error: existingError } = await supabase
+      .from('commission_entries')
+      .select('id, delivery_id, product_id, role, status, amount, rate_per_qty')
+      .in('delivery_id', deliveryIds);
+
+    if (existingError) throw existingError;
+
+    // Create a map of existing commissions: delivery_id -> product_id -> role -> commission
+    const existingMap = new Map<string, any>();
+    for (const c of (existingCommissions || [])) {
+      const key = `${c.delivery_id}-${c.product_id}-${c.role}`;
+      existingMap.set(key, c);
+    }
+
+    const newEntries: any[] = [];
+    const updateEntries: { id: string; amount: number; rate_per_qty: number }[] = [];
+
+    // Process each delivery
+    for (const delivery of deliveries) {
+      for (const item of (delivery.items || [])) {
+        // Skip bonus items
+        if (item.is_bonus || item.product_name?.includes('(Bonus)') || item.product_name?.includes('BONUS')) {
+          continue;
+        }
+
+        // Check driver commission
+        if (delivery.driver_id) {
+          const driverRule = rules.find(r => r.product_id === item.product_id && r.role === 'driver');
+          const key = `${delivery.id}-${item.product_id}-driver`;
+          const existing = existingMap.get(key);
+
+          if (driverRule && driverRule.rate_per_qty > 0) {
+            const newAmount = item.quantity_delivered * driverRule.rate_per_qty;
+
+            if (existing) {
+              if (existing.status === 'paid') {
+                skipped++;
+              } else if (existing.amount !== newAmount || existing.rate_per_qty !== driverRule.rate_per_qty) {
+                updateEntries.push({
+                  id: existing.id,
+                  amount: newAmount,
+                  rate_per_qty: driverRule.rate_per_qty
+                });
+                updated++;
+              }
+            } else {
+              newEntries.push({
+                user_id: delivery.driver_id,
+                user_name: (delivery.driver as any)?.full_name || 'Unknown Driver',
+                role: 'driver',
+                product_id: item.product_id,
+                product_name: item.product_name,
+                quantity: item.quantity_delivered,
+                rate_per_qty: driverRule.rate_per_qty,
+                amount: newAmount,
+                transaction_id: delivery.transaction_id,
+                delivery_id: delivery.id,
+                ref: `DEL-${delivery.id}`,
+                status: 'pending',
+                created_at: delivery.delivery_date,
+                branch_id: delivery.branch_id || null
+              });
+              created++;
+            }
+          }
+        }
+
+        // Check helper commission
+        if (delivery.helper_id) {
+          const helperRule = rules.find(r => r.product_id === item.product_id && r.role === 'helper');
+          const key = `${delivery.id}-${item.product_id}-helper`;
+          const existing = existingMap.get(key);
+
+          if (helperRule && helperRule.rate_per_qty > 0) {
+            const newAmount = item.quantity_delivered * helperRule.rate_per_qty;
+
+            if (existing) {
+              if (existing.status === 'paid') {
+                skipped++;
+              } else if (existing.amount !== newAmount || existing.rate_per_qty !== helperRule.rate_per_qty) {
+                updateEntries.push({
+                  id: existing.id,
+                  amount: newAmount,
+                  rate_per_qty: helperRule.rate_per_qty
+                });
+                updated++;
+              }
+            } else {
+              newEntries.push({
+                user_id: delivery.helper_id,
+                user_name: (delivery.helper as any)?.full_name || 'Unknown Helper',
+                role: 'helper',
+                product_id: item.product_id,
+                product_name: item.product_name,
+                quantity: item.quantity_delivered,
+                rate_per_qty: helperRule.rate_per_qty,
+                amount: newAmount,
+                transaction_id: delivery.transaction_id,
+                delivery_id: delivery.id,
+                ref: `DEL-${delivery.id}`,
+                status: 'pending',
+                created_at: delivery.delivery_date,
+                branch_id: delivery.branch_id || null
+              });
+              created++;
+            }
+          }
+        }
+      }
+    }
+
+    // Insert new entries in batches
+    if (newEntries.length > 0) {
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < newEntries.length; i += BATCH_SIZE) {
+        const batch = newEntries.slice(i, i + BATCH_SIZE);
+        const { error: insertError } = await supabase
+          .from('commission_entries')
+          .insert(batch);
+
+        if (insertError) {
+          console.error('Error inserting commission entries batch:', insertError);
+        }
+      }
+    }
+
+    // Update existing entries
+    for (const entry of updateEntries) {
+      const { error: updateError } = await supabase
+        .from('commission_entries')
+        .update({ amount: entry.amount, rate_per_qty: entry.rate_per_qty })
+        .eq('id', entry.id);
+
+      if (updateError) {
+        console.error('Error updating commission entry:', updateError);
+      }
+    }
+
+    console.log(`✅ Recalculate complete: ${created} created, ${updated} updated, ${skipped} skipped`);
+    return { created, updated, skipped };
+
+  } catch (error: any) {
+    console.error('Error recalculating commissions:', error);
+    throw error;
+  }
+}
+
 export async function getCommissionSummary(userId?: string, startDate?: Date, endDate?: Date) {
   try {
     let query = supabase

@@ -737,6 +737,7 @@ export function useDeliveries() {
         await generateDeliveryCommission(result);
       } catch (commissionError) {
         // Don't fail delivery creation if commission generation fails
+        console.warn('Failed to generate commission:', commissionError);
       }
 
       // ============================================================================
