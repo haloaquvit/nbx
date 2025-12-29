@@ -110,9 +110,21 @@ export const useProducts = () => {
         const oldCurrentStock = existing?.current_stock || 0;
 
         if (dbData.initial_stock !== undefined && existing) {
-          if (oldCurrentStock === 0 || oldCurrentStock === oldInitialStock) {
-            dbData.current_stock = dbData.initial_stock;
-            logDebug('Syncing current_stock with initial_stock', { oldInitialStock, oldCurrentStock, newInitialStock: dbData.initial_stock });
+          const newInitialStock = dbData.initial_stock;
+          const stockDiff = newInitialStock - oldInitialStock;
+
+          if (stockDiff !== 0) {
+            // Add the difference to current_stock
+            // Example: oldInitial=10, oldCurrent=8 (sold 2), newInitial=15
+            // stockDiff = 15-10 = 5, newCurrent = 8+5 = 13
+            dbData.current_stock = oldCurrentStock + stockDiff;
+            logDebug('Adjusting current_stock based on initial_stock change', {
+              oldInitialStock,
+              newInitialStock,
+              oldCurrentStock,
+              stockDiff,
+              newCurrentStock: dbData.current_stock
+            });
           }
         }
 
