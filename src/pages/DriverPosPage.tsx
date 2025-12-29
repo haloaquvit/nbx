@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Plus, Trash2, ShoppingCart, User, Package, CreditCard, AlertCircle, Phone, MapPin, Calendar, Minus, Gift, UserPlus } from "lucide-react"
+import { Truck, Plus, Trash2, ShoppingCart, User, Package, CreditCard, AlertCircle, Phone, MapPin, Calendar, Minus, Gift, UserPlus, Pencil, Check } from "lucide-react"
 import { useCustomers } from "@/hooks/useCustomers"
 import { useProducts } from "@/hooks/useProducts"
 import { useAccounts } from "@/hooks/useAccounts"
@@ -97,6 +97,10 @@ export default function DriverPosPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isCustomerAddOpen, setIsCustomerAddOpen] = useState(false)
 
+  // Price editing state
+  const [editingPriceIndex, setEditingPriceIndex] = useState<number | null>(null)
+  const [editPriceValue, setEditPriceValue] = useState<string>('')
+
   // Memoized values
   const filteredCustomers = useMemo(() => {
     if (!customers) return [];
@@ -131,20 +135,23 @@ export default function DriverPosPage() {
   const isHelper = user?.role === 'helper' || user?.role === 'pembantu'
   const hasAccess = isAdminOwner || isHelper || (isDriver && activeRetasi !== null)
 
-  // Calculate price with bonus
+  // Calculate price with bonus based on QUANTITY (not stock)
   const calculatePriceWithBonus = async (product: Product, quantity: number) => {
     try {
       const productPricing = await PricingService.getProductPricing(product.id)
       if (productPricing) {
+        // Calculate price based on quantity purchased, NOT stock level
+        // Pass empty stockPricings to ignore stock-based pricing
         const priceCalculation = PricingService.calculatePrice(
           product.basePrice,
           product.currentStock || 0,
           quantity,
-          productPricing.stockPricings,
+          [], // Ignore stock pricing - we only want quantity-based pricing
           productPricing.bonusPricings
         )
         return {
-          price: priceCalculation.stockAdjustedPrice,
+          // Use finalPrice which includes quantity-based discounts
+          price: priceCalculation.finalPrice,
           bonuses: priceCalculation.bonuses || []
         }
       }
@@ -285,6 +292,32 @@ export default function DriverPosPage() {
     const item = items[index]
     // Remove item and its bonuses
     setItems(items.filter((i, idx) => idx !== index && i.parentProductId !== item.product.id))
+  }
+
+  // Start editing price for an item
+  const startEditingPrice = (index: number) => {
+    const item = items[index]
+    if (item.isBonus) return // Don't edit bonus items
+    setEditingPriceIndex(index)
+    setEditPriceValue(item.price.toString())
+  }
+
+  // Save edited price
+  const saveEditedPrice = (index: number) => {
+    const newPrice = parseInt(editPriceValue) || 0
+    if (newPrice >= 0) {
+      setItems(items.map((item, idx) =>
+        idx === index ? { ...item, price: newPrice } : item
+      ))
+    }
+    setEditingPriceIndex(null)
+    setEditPriceValue('')
+  }
+
+  // Cancel editing price
+  const cancelEditingPrice = () => {
+    setEditingPriceIndex(null)
+    setEditPriceValue('')
   }
 
   const handleSubmit = async () => {
@@ -570,8 +603,47 @@ export default function DriverPosPage() {
                   <div className="text-sm text-gray-500 mt-1">
                     {item.isBonus ? (
                       <span className="text-green-600 font-medium">{item.bonusDescription || 'Gratis'}</span>
+                    ) : editingPriceIndex === index ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-500">Rp</span>
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          value={editPriceValue}
+                          onChange={(e) => setEditPriceValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') saveEditedPrice(index)
+                            if (e.key === 'Escape') cancelEditingPrice()
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          className="w-24 h-8 text-sm p-1"
+                          autoFocus
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-green-600"
+                          onClick={() => saveEditedPrice(index)}
+                        >
+                          <Check className="h-4 w-4" />
+                        </Button>
+                      </div>
                     ) : (
-                      <span className="font-medium">{new Intl.NumberFormat("id-ID").format(item.price)} × {item.quantity}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="font-medium">{new Intl.NumberFormat("id-ID").format(item.price)} × {item.quantity}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-blue-600 hover:text-blue-700"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            startEditingPrice(index)
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>

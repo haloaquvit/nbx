@@ -36,11 +36,12 @@ interface SoldProduct {
 }
 
 export const TransactionItemsReport = () => {
-  const [filterType, setFilterType] = useState<'monthly' | 'dateRange'>('monthly')
+  // Default filter: hari ini (dateRange dengan start dan end = hari ini)
+  const [filterType, setFilterType] = useState<'monthly' | 'dateRange'>('dateRange')
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
+  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'))
+  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [itemFilter, setItemFilter] = useState<'all' | 'regular' | 'bonus'>('all')
   const [sourceFilter, setSourceFilter] = useState<'all' | 'delivery' | 'office_sale' | 'retasi'>('all')
   const [driverKasirFilter, setDriverKasirFilter] = useState<string>('all')

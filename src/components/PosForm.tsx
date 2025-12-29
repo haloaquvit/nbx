@@ -196,16 +196,19 @@ export const PosForm = () => {
       }
       
       if (productPricing) {
+        // Calculate price based on QUANTITY purchased, NOT stock level
+        // Pass empty stockPricings to ignore stock-based pricing
         const priceCalculation = PricingService.calculatePrice(
           product.basePrice,
           product.currentStock,
           quantity,
-          productPricing.stockPricings,
+          [], // Ignore stock pricing - we only want quantity-based pricing
           productPricing.bonusPricings
         )
         console.log('💰 Price calculation:', priceCalculation);
         return {
-          price: priceCalculation.stockAdjustedPrice,
+          // Use finalPrice which includes quantity-based discounts
+          price: priceCalculation.finalPrice,
           calculation: priceCalculation
         }
       }

@@ -50,12 +50,14 @@ import { useAuth } from "@/hooks/useAuth"
 import { UserRole } from "@/types/user"
 import { EditTransactionDialog } from "./EditTransactionDialog"
 import { isOwner } from '@/utils/roleUtils'
+import { useAccounts } from "@/hooks/useAccounts"
 
 
 export function TransactionTable() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { accounts } = useAccounts();
 
   // Check if mobile view
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
@@ -73,6 +75,7 @@ export function TransactionTable() {
   const [deliveryFilter, setDeliveryFilter] = React.useState<'all' | 'pending-delivery'>('all');
   const [paymentFilter, setPaymentFilter] = React.useState<'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang'>('all');
   const [retasiFilter, setRetasiFilter] = React.useState<string>('all'); // 'all' or retasi_number
+  const [paymentAccountFilter, setPaymentAccountFilter] = React.useState<string>('all'); // 'all' or account_id
   const [filteredTransactions, setFilteredTransactions] = React.useState<Transaction[]>([]);
   
   const { transactions, isLoading, deleteTransaction } = useTransactions();
@@ -170,6 +173,13 @@ export function TransactionTable() {
       });
     }
 
+    // Filter by payment account
+    if (paymentAccountFilter !== 'all') {
+      filtered = filtered.filter(transaction => {
+        return transaction.paymentAccountId === paymentAccountFilter;
+      });
+    }
+
     // Sort: ascending (oldest first) for mobile, descending (newest first) for desktop
     filtered.sort((a, b) => {
       const dateA = new Date(a.orderDate || 0).getTime();
@@ -178,7 +188,7 @@ export function TransactionTable() {
     });
 
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, isMobile]);
+  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, paymentAccountFilter, isMobile]);
 
   const clearFilters = () => {
     setDateRange({ from: undefined, to: undefined });
@@ -186,6 +196,7 @@ export function TransactionTable() {
     setDeliveryFilter('all');
     setPaymentFilter('all');
     setRetasiFilter('all');
+    setPaymentAccountFilter('all');
   };
 
   // Get unique retasi numbers from transactions
@@ -199,6 +210,18 @@ export function TransactionTable() {
     });
     return Array.from(retasiSet).sort();
   }, [transactions]);
+
+  // Get unique payment accounts used in transactions
+  const uniquePaymentAccounts = React.useMemo(() => {
+    if (!transactions || !accounts) return [];
+    const accountIds = new Set<string>();
+    transactions.forEach(t => {
+      if (t.paymentAccountId) {
+        accountIds.add(t.paymentAccountId);
+      }
+    });
+    return accounts.filter(acc => accountIds.has(acc.id));
+  }, [transactions, accounts]);
   
 
 
@@ -245,16 +268,15 @@ export function TransactionTable() {
       ),
     },
     {
-      accessorKey: "retasiNumber",
-      header: "Retasi",
+      accessorKey: "cashierName",
+      header: "Kasir",
       cell: ({ row }) => {
-        const retasiNumber = row.getValue("retasiNumber") as string | null;
-        if (!retasiNumber) return <span className="text-xs text-muted-foreground">-</span>;
+        const cashierName = row.getValue("cashierName") as string | null;
+        if (!cashierName) return <span className="text-xs text-muted-foreground">-</span>;
         return (
-          <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-            <Truck className="h-3 w-3 mr-1" />
-            {retasiNumber}
-          </Badge>
+          <div className="max-w-[120px] truncate text-sm" title={cashierName}>
+            {cashierName}
+          </div>
         );
       },
     },
@@ -635,7 +657,7 @@ export function TransactionTable() {
             Filter Transaksi
             {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
-          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all') && (
+          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all' || paymentAccountFilter !== 'all') && (
             <Badge variant="secondary" className="ml-2">
               Filter aktif
             </Badge>
@@ -759,6 +781,26 @@ export function TransactionTable() {
                   {uniqueRetasiNumbers.map(retasiNum => (
                     <SelectItem key={retasiNum} value={retasiNum}>
                       {retasiNum}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Payment Account/Method Filter */}
+          {uniquePaymentAccounts.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Metode Pembayaran</label>
+              <Select value={paymentAccountFilter} onValueChange={(value: string) => setPaymentAccountFilter(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Metode Pembayaran" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Metode</SelectItem>
+                  {uniquePaymentAccounts.map(acc => (
+                    <SelectItem key={acc.id} value={acc.id}>
+                      {acc.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
