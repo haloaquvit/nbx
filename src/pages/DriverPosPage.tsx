@@ -782,6 +782,7 @@ export default function DriverPosPage() {
             onOpenChange={setDeliveryDialogOpen}
             transaction={createdTransaction}
             onDeliveryComplete={() => { setDeliveryDialogOpen(false); setPrintDialogOpen(true); }}
+            activeRetasi={activeRetasi}
           />
           <DriverPrintDialog
             open={printDialogOpen}

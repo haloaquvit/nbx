@@ -15,6 +15,7 @@ export interface Retasi {
   returned_items_count?: number;
   error_items_count?: number;
   barang_laku?: number; // Jumlah barang yang laku terjual
+  barang_tidak_laku?: number; // Jumlah barang yang tidak laku (kembali utuh)
   return_notes?: string;
   created_by?: string;
   created_at: Date;
@@ -31,6 +32,7 @@ export interface RetasiItem {
   returned_quantity?: number;
   sold_quantity?: number;
   error_quantity?: number;
+  unsold_quantity?: number; // Barang tidak laku (kembali utuh)
   weight?: number;
   volume?: number;
   notes?: string;
@@ -71,6 +73,7 @@ export interface UpdateRetasiData {
   returned_items_count?: number;
   error_items_count?: number;
   barang_laku?: number;
+  barang_tidak_laku?: number;
   return_notes?: string;
 }
 
@@ -78,6 +81,7 @@ export interface ReturnItemsData {
   returned_items_count: number;
   error_items_count: number;
   barang_laku: number;
+  barang_tidak_laku: number;
   return_notes?: string;
   // Detail per produk
   item_returns?: {
@@ -88,5 +92,6 @@ export interface ReturnItemsData {
     returned_quantity: number;
     sold_quantity: number;
     error_quantity: number;
+    unsold_quantity: number;
   }[];
 }

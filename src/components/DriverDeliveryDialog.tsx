@@ -25,19 +25,22 @@ import { CreateDeliveryRequest } from "@/types/delivery"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
+import { Retasi } from "@/types/retasi"
 
 interface DriverDeliveryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   transaction: Transaction
   onDeliveryComplete: () => void
+  activeRetasi?: Retasi | null // Active retasi for auto-filling helper
 }
 
 export function DriverDeliveryDialog({
   open,
   onOpenChange,
   transaction,
-  onDeliveryComplete
+  onDeliveryComplete,
+  activeRetasi
 }: DriverDeliveryDialogProps) {
   const { toast } = useToast()
   const { user } = useAuth()
@@ -69,6 +72,21 @@ export function DriverDeliveryDialog({
       }
     }
   }, [open, user, drivers, isAdminOwner])
+
+  // Auto-fill helper from active retasi
+  useEffect(() => {
+    if (open && activeRetasi?.helper_name && drivers && drivers.length > 0) {
+      // Find helper by name from retasi
+      const helperFromRetasi = (drivers as Driver[]).find(
+        (d: Driver) => d.name === activeRetasi.helper_name
+      )
+
+      if (helperFromRetasi) {
+        setHelperId(helperFromRetasi.id)
+        console.log(`[DriverDelivery] Auto-filled helper "${activeRetasi.helper_name}" from retasi`)
+      }
+    }
+  }, [open, activeRetasi, drivers])
 
   // Initialize item quantities
   useEffect(() => {
@@ -338,7 +356,12 @@ export function DriverDeliveryDialog({
             </div>
 
             <div>
-              <Label>Helper (Opsional)</Label>
+              <Label className="flex items-center gap-2">
+                Helper (Opsional)
+                {activeRetasi?.helper_name && helperId && (
+                  <span className="text-xs text-blue-600">(Dari Retasi)</span>
+                )}
+              </Label>
               <Select value={helperId} onValueChange={setHelperId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih Helper" />

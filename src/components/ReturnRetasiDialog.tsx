@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ReturnItemsData, RetasiItem } from '@/types/retasi';
-import { Package, CheckCircle, XCircle, ShoppingCart } from 'lucide-react';
+import { Package, CheckCircle, XCircle, ShoppingCart, Ban } from 'lucide-react';
 
 interface ReturnRetasiDialogProps {
   isOpen: boolean;
@@ -34,6 +34,7 @@ interface ItemReturn {
   returned_quantity: number;
   sold_quantity: number;
   error_quantity: number;
+  unsold_quantity: number;
 }
 
 export function ReturnRetasiDialog({
@@ -59,6 +60,7 @@ export function ReturnRetasiDialog({
         returned_quantity: item.returned_quantity || 0,
         sold_quantity: item.sold_quantity || 0,
         error_quantity: item.error_quantity || 0,
+        unsold_quantity: item.unsold_quantity || 0,
       })));
     } else {
       setItemReturns([]);
@@ -70,10 +72,11 @@ export function ReturnRetasiDialog({
     bawa: acc.bawa + item.quantity,
     kembali: acc.kembali + item.returned_quantity,
     laku: acc.laku + item.sold_quantity,
+    tidakLaku: acc.tidakLaku + item.unsold_quantity,
     error: acc.error + item.error_quantity,
-  }), { bawa: 0, kembali: 0, laku: 0, error: 0 });
+  }), { bawa: 0, kembali: 0, laku: 0, tidakLaku: 0, error: 0 });
 
-  const totalInput = totals.kembali + totals.laku + totals.error;
+  const totalInput = totals.kembali + totals.laku + totals.tidakLaku + totals.error;
   const selisih = totals.bawa - totalInput;
 
   const handleItemChange = (index: number, field: keyof ItemReturn, value: number) => {
@@ -85,10 +88,11 @@ export function ReturnRetasiDialog({
     const otherFields = {
       returned_quantity: field === 'returned_quantity' ? newValue : item.returned_quantity,
       sold_quantity: field === 'sold_quantity' ? newValue : item.sold_quantity,
+      unsold_quantity: field === 'unsold_quantity' ? newValue : item.unsold_quantity,
       error_quantity: field === 'error_quantity' ? newValue : item.error_quantity,
     };
 
-    const total = otherFields.returned_quantity + otherFields.sold_quantity + otherFields.error_quantity;
+    const total = otherFields.returned_quantity + otherFields.sold_quantity + otherFields.unsold_quantity + otherFields.error_quantity;
 
     if (total <= item.quantity) {
       newItems[index] = { ...item, ...otherFields };
@@ -101,7 +105,7 @@ export function ReturnRetasiDialog({
 
     // Validate
     const hasOverflow = itemReturns.some(item => {
-      const total = item.returned_quantity + item.sold_quantity + item.error_quantity;
+      const total = item.returned_quantity + item.sold_quantity + item.unsold_quantity + item.error_quantity;
       return total > item.quantity;
     });
 
@@ -114,6 +118,7 @@ export function ReturnRetasiDialog({
       returned_items_count: totals.kembali,
       error_items_count: totals.error,
       barang_laku: totals.laku,
+      barang_tidak_laku: totals.tidakLaku,
       return_notes: notes.trim() || undefined,
       item_returns: itemReturns,
     });
@@ -181,24 +186,30 @@ export function ReturnRetasiDialog({
                       Kembali
                     </div>
                   </TableHead>
-                  <TableHead className="text-center w-[100px]">
+                  <TableHead className="text-center w-[90px]">
                     <div className="flex items-center justify-center gap-1">
                       <ShoppingCart className="h-4 w-4 text-blue-600" />
                       Laku
                     </div>
                   </TableHead>
-                  <TableHead className="text-center w-[100px]">
+                  <TableHead className="text-center w-[90px]">
+                    <div className="flex items-center justify-center gap-1">
+                      <Ban className="h-4 w-4 text-orange-600" />
+                      Tdk Laku
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-center w-[90px]">
                     <div className="flex items-center justify-center gap-1">
                       <XCircle className="h-4 w-4 text-red-600" />
                       Error
                     </div>
                   </TableHead>
-                  <TableHead className="text-center w-[80px]">Selisih</TableHead>
+                  <TableHead className="text-center w-[70px]">Selisih</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {itemReturns.map((item, index) => {
-                  const itemTotal = item.returned_quantity + item.sold_quantity + item.error_quantity;
+                  const itemTotal = item.returned_quantity + item.sold_quantity + item.unsold_quantity + item.error_quantity;
                   const itemSelisih = item.quantity - itemTotal;
 
                   return (
@@ -212,7 +223,7 @@ export function ReturnRetasiDialog({
                           max={item.quantity}
                           value={item.returned_quantity || ''}
                           onChange={(e) => handleItemChange(index, 'returned_quantity', parseInt(e.target.value) || 0)}
-                          className="w-20 mx-auto text-center"
+                          className="w-16 mx-auto text-center"
                           placeholder="0"
                         />
                       </TableCell>
@@ -223,7 +234,18 @@ export function ReturnRetasiDialog({
                           max={item.quantity}
                           value={item.sold_quantity || ''}
                           onChange={(e) => handleItemChange(index, 'sold_quantity', parseInt(e.target.value) || 0)}
-                          className="w-20 mx-auto text-center"
+                          className="w-16 mx-auto text-center"
+                          placeholder="0"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          min="0"
+                          max={item.quantity}
+                          value={item.unsold_quantity || ''}
+                          onChange={(e) => handleItemChange(index, 'unsold_quantity', parseInt(e.target.value) || 0)}
+                          className="w-16 mx-auto text-center"
                           placeholder="0"
                         />
                       </TableCell>
@@ -234,7 +256,7 @@ export function ReturnRetasiDialog({
                           max={item.quantity}
                           value={item.error_quantity || ''}
                           onChange={(e) => handleItemChange(index, 'error_quantity', parseInt(e.target.value) || 0)}
-                          className="w-20 mx-auto text-center"
+                          className="w-16 mx-auto text-center"
                           placeholder="0"
                         />
                       </TableCell>
@@ -261,29 +283,33 @@ export function ReturnRetasiDialog({
           </div>
 
           {/* Summary */}
-          <div className="grid grid-cols-6 gap-2 p-3 bg-gray-50 rounded-lg text-sm">
+          <div className="grid grid-cols-7 gap-2 p-3 bg-gray-50 rounded-lg text-sm">
             <div className="text-center">
-              <div className="text-muted-foreground">Dibawa</div>
+              <div className="text-muted-foreground text-xs">Dibawa</div>
               <div className="font-bold text-lg">{totals.bawa}</div>
             </div>
             <div className="text-center">
-              <div className="text-green-600">Kembali</div>
+              <div className="text-green-600 text-xs">Kembali</div>
               <div className="font-bold text-lg text-green-600">{totals.kembali}</div>
             </div>
             <div className="text-center">
-              <div className="text-blue-600">Laku</div>
+              <div className="text-blue-600 text-xs">Laku</div>
               <div className="font-bold text-lg text-blue-600">{totals.laku}</div>
             </div>
             <div className="text-center">
-              <div className="text-red-600">Error</div>
+              <div className="text-orange-600 text-xs">Tdk Laku</div>
+              <div className="font-bold text-lg text-orange-600">{totals.tidakLaku}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-red-600 text-xs">Error</div>
               <div className="font-bold text-lg text-red-600">{totals.error}</div>
             </div>
             <div className="text-center">
-              <div className="text-muted-foreground">Total Input</div>
+              <div className="text-muted-foreground text-xs">Total</div>
               <div className="font-bold text-lg">{totalInput}</div>
             </div>
             <div className="text-center">
-              <div className={selisih === 0 ? 'text-green-600' : 'text-orange-600'}>Selisih</div>
+              <div className={`text-xs ${selisih === 0 ? 'text-green-600' : 'text-orange-600'}`}>Selisih</div>
               <div className={`font-bold text-lg ${selisih === 0 ? 'text-green-600' : 'text-orange-600'}`}>{selisih}</div>
             </div>
           </div>

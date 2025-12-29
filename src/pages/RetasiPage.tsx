@@ -89,15 +89,16 @@ export default function RetasiPage() {
 
   const filteredRetasi = retasiList || [];
 
-  // Calculate totals with correct formula: Bawa = Kembali + Error + Laku + Selisih
+  // Calculate totals with correct formula: Bawa = Kembali + Error + Laku + Tidak Laku + Selisih
   const totals = useMemo(() => {
     const bawa = filteredRetasi.reduce((sum, r) => sum + (r.total_items || 0), 0);
     const kembali = filteredRetasi.reduce((sum, r) => sum + (r.returned_items_count || 0), 0);
     const error = filteredRetasi.reduce((sum, r) => sum + (r.error_items_count || 0), 0);
     const laku = filteredRetasi.reduce((sum, r) => sum + (r.barang_laku || 0), 0);
-    const selisih = bawa - kembali - error - laku;
-    
-    return { bawa, kembali, error, laku, selisih };
+    const tidakLaku = filteredRetasi.reduce((sum, r) => sum + (r.barang_tidak_laku || 0), 0);
+    const selisih = bawa - kembali - error - laku - tidakLaku;
+
+    return { bawa, kembali, error, laku, tidakLaku, selisih };
   }, [filteredRetasi]);
 
   const handleReturnRetasi = async (retasi: any) => {
@@ -164,7 +165,8 @@ export default function RetasiPage() {
       "Kembali": r.returned_items_count || 0,
       "Error": r.error_items_count || 0,
       "Laku": r.barang_laku || 0,
-      "Selisih": (r.total_items || 0) - (r.returned_items_count || 0) - (r.error_items_count || 0) - (r.barang_laku || 0),
+      "Tidak Laku": r.barang_tidak_laku || 0,
+      "Selisih": (r.total_items || 0) - (r.returned_items_count || 0) - (r.error_items_count || 0) - (r.barang_laku || 0) - (r.barang_tidak_laku || 0),
       "Catatan": r.return_notes || r.notes || "-",
     }));
 
@@ -179,6 +181,7 @@ export default function RetasiPage() {
       "Kembali": totals.kembali,
       "Error": totals.error,
       "Laku": totals.laku,
+      "Tidak Laku": totals.tidakLaku,
       "Selisih": totals.selisih,
       "Catatan": "",
     } as any);
@@ -217,7 +220,7 @@ export default function RetasiPage() {
 
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Bawa</CardTitle>
@@ -243,6 +246,15 @@ export default function RetasiPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{totals.error}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Tidak Laku</CardTitle>
+            <ShoppingCart className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">{totals.tidakLaku}</div>
           </CardContent>
         </Card>
         <Card>
@@ -334,6 +346,7 @@ export default function RetasiPage() {
                   <TableHead>Kembali</TableHead>
                   <TableHead>Error</TableHead>
                   <TableHead>Laku</TableHead>
+                  <TableHead>Tdk Laku</TableHead>
                   <TableHead>Selisih</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
@@ -342,14 +355,14 @@ export default function RetasiPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={11}>
+                      <TableCell colSpan={12}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : filteredRetasi.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-muted-foreground">
+                    <TableCell colSpan={12} className="text-center text-muted-foreground">
                       Tidak ada data
                     </TableCell>
                   </TableRow>
@@ -401,12 +414,17 @@ export default function RetasiPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700">
+                          {retasi.barang_tidak_laku || 0}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
                         <span className={`font-medium ${
-                          ((retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)) >= 0
+                          ((retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0) - (retasi.barang_tidak_laku || 0)) >= 0
                             ? 'text-blue-600'
                             : 'text-red-600'
                         }`}>
-                          {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
+                          {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0) - (retasi.barang_tidak_laku || 0)}
                         </span>
                       </TableCell>
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -556,6 +574,7 @@ function AddRetasiDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [driverId, setDriverId] = useState(drivers[0]?.id || "");
+  const [helperId, setHelperId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [retasiItems, setRetasiItems] = useState<CreateRetasiItemData[]>([]);
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -686,9 +705,13 @@ function AddRetasiDialog({
       return;
     }
 
+    // Get helper name if selected
+    const helper = helperId ? drivers.find(d => d.id === helperId) : null;
+
     try {
       await createRetasi.mutateAsync({
         driver_name: driver.name,
+        helper_name: helper?.name || undefined,
         departure_date: new Date(),
         total_items: totalBawa,
         notes: notes || undefined,
@@ -708,6 +731,7 @@ function AddRetasiDialog({
   const resetForm = () => {
     setRetasiItems([]);
     setNotes("");
+    setHelperId("");
     setSelectedProductId("");
     setItemQuantity(1);
   };
@@ -745,20 +769,40 @@ function AddRetasiDialog({
             </div>
           </div>
 
-          <div>
-            <Label className="text-xs text-slate-600">Supir</Label>
-            <Select value={driverId} onValueChange={setDriverId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih Supir" />
-              </SelectTrigger>
-              <SelectContent>
-                {drivers.map((driver) => (
-                  <SelectItem key={driver.id} value={driver.id}>
-                    {driver.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs text-slate-600">Supir</Label>
+              <Select value={driverId} onValueChange={setDriverId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Supir" />
+                </SelectTrigger>
+                <SelectContent>
+                  {drivers.map((driver) => (
+                    <SelectItem key={driver.id} value={driver.id}>
+                      {driver.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-slate-600">Helper (Opsional)</Label>
+              <Select value={helperId || "no-helper"} onValueChange={(v) => setHelperId(v === "no-helper" ? "" : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Helper" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="no-helper">Tidak ada helper</SelectItem>
+                  {drivers
+                    .filter((driver) => driver.id !== driverId)
+                    .map((driver) => (
+                      <SelectItem key={driver.id} value={driver.id}>
+                        {driver.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {/* Product Selection */}
@@ -972,7 +1016,7 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
           </div>
 
           {/* Summary */}
-          <div className="grid grid-cols-5 gap-2 text-center border rounded-lg p-3 bg-slate-50">
+          <div className="grid grid-cols-6 gap-2 text-center border rounded-lg p-3 bg-slate-50">
             <div>
               <p className="text-xs text-slate-500">Bawa</p>
               <p className="font-bold text-blue-600">{retasi.total_items || 0}</p>
@@ -990,9 +1034,13 @@ function RetasiDetailDialog({ retasi }: { retasi: any }) {
               <p className="font-bold text-green-600">{retasi.barang_laku || 0}</p>
             </div>
             <div>
+              <p className="text-xs text-slate-500">Tdk Laku</p>
+              <p className="font-bold text-orange-600">{retasi.barang_tidak_laku || 0}</p>
+            </div>
+            <div>
               <p className="text-xs text-slate-500">Selisih</p>
               <p className="font-bold">
-                {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
+                {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0) - (retasi.barang_tidak_laku || 0)}
               </p>
             </div>
           </div>
@@ -1155,6 +1203,12 @@ function EditRetasiDialog({
   const [truckNumber, setTruckNumber] = useState(retasi?.truck_number || "");
   const [notes, setNotes] = useState(retasi?.notes || "");
 
+  // Return quantities (only editable if retasi is_returned)
+  const [returnedCount, setReturnedCount] = useState(retasi?.returned_items_count || 0);
+  const [errorCount, setErrorCount] = useState(retasi?.error_items_count || 0);
+  const [lakuCount, setLakuCount] = useState(retasi?.barang_laku || 0);
+  const [tidakLakuCount, setTidakLakuCount] = useState(retasi?.barang_tidak_laku || 0);
+
   // Reset form when retasi changes
   React.useEffect(() => {
     if (retasi) {
@@ -1162,16 +1216,30 @@ function EditRetasiDialog({
       setHelperName(retasi.helper_name || "");
       setTruckNumber(retasi.truck_number || "");
       setNotes(retasi.notes || "");
+      setReturnedCount(retasi.returned_items_count || 0);
+      setErrorCount(retasi.error_items_count || 0);
+      setLakuCount(retasi.barang_laku || 0);
+      setTidakLakuCount(retasi.barang_tidak_laku || 0);
     }
   }, [retasi]);
 
   const handleSave = async () => {
-    await onSave({
+    const data: any = {
       driver_name: driverName || undefined,
       helper_name: helperName || undefined,
       truck_number: truckNumber || undefined,
       notes: notes || undefined,
-    });
+    };
+
+    // Include return quantities if retasi is returned
+    if (retasi?.is_returned) {
+      data.returned_items_count = returnedCount;
+      data.error_items_count = errorCount;
+      data.barang_laku = lakuCount;
+      data.barang_tidak_laku = tidakLakuCount;
+    }
+
+    await onSave(data);
   };
 
   return (
@@ -1241,6 +1309,54 @@ function EditRetasiDialog({
               placeholder="Catatan retasi"
             />
           </div>
+
+          {/* Return quantities - only show if retasi is_returned */}
+          {retasi?.is_returned && (
+            <div className="space-y-3 border-t pt-3">
+              <Label className="text-sm font-medium">Edit Jumlah Kembali</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-green-600">Kembali</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={returnedCount}
+                    onChange={(e) => setReturnedCount(Number(e.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-blue-600">Laku</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={lakuCount}
+                    onChange={(e) => setLakuCount(Number(e.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-orange-600">Tidak Laku</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={tidakLakuCount}
+                    onChange={(e) => setTidakLakuCount(Number(e.target.value) || 0)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-red-600">Error</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={errorCount}
+                    onChange={(e) => setErrorCount(Number(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">
+                Total: {returnedCount + lakuCount + tidakLakuCount + errorCount} / Bawa: {retasi?.total_items || 0} / Selisih: {(retasi?.total_items || 0) - (returnedCount + lakuCount + tidakLakuCount + errorCount)}
+              </div>
+            </div>
+          )}
 
           {/* Summary info */}
           <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
@@ -1353,7 +1469,7 @@ function RetasiDetailDialogControlled({ retasi, open, onOpenChange }: {
           </div>
 
           {/* Summary */}
-          <div className="grid grid-cols-5 gap-2 text-center border rounded-lg p-3 bg-slate-50">
+          <div className="grid grid-cols-6 gap-2 text-center border rounded-lg p-3 bg-slate-50">
             <div>
               <p className="text-xs text-slate-500">Bawa</p>
               <p className="font-bold text-blue-600">{retasi.total_items || 0}</p>
@@ -1371,9 +1487,13 @@ function RetasiDetailDialogControlled({ retasi, open, onOpenChange }: {
               <p className="font-bold text-green-600">{retasi.barang_laku || 0}</p>
             </div>
             <div>
+              <p className="text-xs text-slate-500">Tdk Laku</p>
+              <p className="font-bold text-orange-600">{retasi.barang_tidak_laku || 0}</p>
+            </div>
+            <div>
               <p className="text-xs text-slate-500">Selisih</p>
               <p className="font-bold">
-                {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0)}
+                {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0) - (retasi.barang_tidak_laku || 0)}
               </p>
             </div>
           </div>

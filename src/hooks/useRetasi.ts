@@ -16,6 +16,7 @@ const fromDbItem = (dbItem: any): RetasiItem => ({
   returned_quantity: dbItem.returned_qty || dbItem.returned_quantity || 0,
   sold_quantity: dbItem.sold_qty || dbItem.sold_quantity || 0,
   error_quantity: dbItem.error_qty || dbItem.error_quantity || 0,
+  unsold_quantity: dbItem.unsold_qty || dbItem.unsold_quantity || 0,
   weight: dbItem.weight,
   volume: dbItem.volume,
   notes: dbItem.notes,
@@ -40,6 +41,7 @@ const fromDb = (dbRetasi: any): Retasi => ({
   returned_items_count: dbRetasi.returned_items_count || 0,
   error_items_count: dbRetasi.error_items_count || 0,
   barang_laku: dbRetasi.barang_laku || 0, // Jumlah barang yang laku terjual
+  barang_tidak_laku: dbRetasi.barang_tidak_laku || 0, // Jumlah barang yang tidak laku
   return_notes: dbRetasi.return_notes,
   created_by: dbRetasi.created_by,
   created_at: new Date(dbRetasi.created_at),
@@ -411,6 +413,7 @@ export const useRetasi = (filters?: {
           returned_items_count: returnData.returned_items_count || 0,
           error_items_count: returnData.error_items_count || 0,
           barang_laku: returnData.barang_laku || 0,
+          barang_tidak_laku: returnData.barang_tidak_laku || 0,
           return_notes: returnData.return_notes || null,
           updated_at: new Date().toISOString()
         })
@@ -431,6 +434,7 @@ export const useRetasi = (filters?: {
               returned_qty: itemReturn.returned_quantity || 0,
               sold_qty: itemReturn.sold_quantity || 0,
               error_qty: itemReturn.error_quantity || 0,
+              unsold_qty: itemReturn.unsold_quantity || 0,
             })
             .eq('id', itemReturn.item_id);
 

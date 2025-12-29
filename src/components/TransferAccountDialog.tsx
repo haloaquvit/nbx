@@ -16,7 +16,8 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useBranch } from "@/contexts/BranchContext"
 import { ArrowRightLeft } from "lucide-react"
 import { createTransferJournal } from "@/services/journalService"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { formatNumber, parseFormattedNumber } from "@/utils/formatNumber"
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -50,7 +51,8 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
   const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  
+  const [amountDisplay, setAmountDisplay] = useState('')
+
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<TransferFormData>({
     resolver: zodResolver(transferSchema),
     defaultValues: {
@@ -64,6 +66,21 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
   const fromAccountId = watch('fromAccountId')
   const toAccountId = watch('toAccountId')
   const amount = watch('amount')
+
+  // Reset display when dialog opens
+  useEffect(() => {
+    if (open) {
+      setAmountDisplay('')
+    }
+  }, [open])
+
+  // Handle amount input with formatting
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/[^0-9]/g, '')
+    const numValue = parseInt(rawValue) || 0
+    setValue('amount', numValue)
+    setAmountDisplay(numValue > 0 ? formatNumber(numValue) : '')
+  }
 
   // ============================================================================
   // FILTER: Hanya akun dengan isPaymentAccount = true (Kas/Bank)
@@ -178,6 +195,7 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
       })
 
       reset()
+      setAmountDisplay('')
       onOpenChange(false)
     } catch (error) {
       toast({
@@ -254,11 +272,11 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
             <Label htmlFor="amount">Jumlah Transfer (Rp)</Label>
             <Input
               id="amount"
-              type="number"
-              min="1"
-              step="1"
+              type="text"
+              inputMode="numeric"
               placeholder="Masukkan jumlah transfer..."
-              {...register("amount")}
+              value={amountDisplay}
+              onChange={handleAmountChange}
             />
             {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
             {fromAccount && amount > 0 && amount > fromAccount.balance && (
