@@ -202,7 +202,8 @@
       "Bash(NBX_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ1c2VyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiZW1haWwiOiJvd25lckBhcXV2aXQuaWQiLCJyb2xlIjoib3duZXIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwicGNhIjoxNzY2NzUwMDczLCJzaWQiOiIzOTU3ODg1ODJlY2FiZTViMzUzNTZjZWVhMTVmZjkwYWM3ZTIwZjlhNDE1MGNlMjMwZDM2Zjc2NjFmMDQ1ZDkyIiwiaWF0IjoxNzY2OTQ1MDE2LCJleHAiOjE3Njc1NDk4MTZ9.FNtrc3o3ujZwkJ_2oLbZ2WDupUGrnPrWBKBz59CgFAo\")",
       "Bash(BRANCH_ID=\"00000000-0000-0000-0000-000000000001\")",
       "Bash(git -C \"d:/App/Aquvit Fix - Copy\" add -A)",
-      "Bash(git -C \"d:/App/Aquvit Fix - Copy\" commit -m \"$(cat <<''EOF''\nfix: Add semicolons to EditTransactionDialog to prevent minification error\n\nThe missing semicolons after array spread and assignment caused minifier to merge statements incorrectly, resulting in \"Cannot access 'o' before initialization\" error in production.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git -C \"d:/App/Aquvit Fix - Copy\" commit -m \"$(cat <<''EOF''\nfix: Add semicolons to EditTransactionDialog to prevent minification error\n\nThe missing semicolons after array spread and assignment caused minifier to merge statements incorrectly, resulting in \"Cannot access 'o' before initialization\" error in production.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git -C \"d:/App/Aquvit Fix - Copy\" push)"
     ],
     "deny": [],
     "ask": [],

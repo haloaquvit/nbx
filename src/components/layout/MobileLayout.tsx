@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, MapPin, Warehouse } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, MapPin, Warehouse, Navigation } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
@@ -138,6 +138,22 @@ const MobileLayout = () => {
       textColor: 'text-white'
     }] : []),
     {
+      title: 'Retasi',
+      icon: Navigation,
+      path: '/retasi',
+      description: 'Input & kelola retasi',
+      color: 'bg-teal-500 hover:bg-teal-600',
+      textColor: 'text-white'
+    },
+    {
+      title: 'Produk Laku',
+      icon: Package,
+      path: '/sold-items',
+      description: 'Laporan produk terjual',
+      color: 'bg-emerald-500 hover:bg-emerald-600',
+      textColor: 'text-white'
+    },
+    {
       title: 'Absensi',
       icon: Clock,
       path: '/attendance',
@@ -183,6 +199,10 @@ const MobileLayout = () => {
         return 'Input Produksi'
       case '/attendance':
         return 'Absensi'
+      case '/retasi':
+        return 'Retasi'
+      case '/sold-items':
+        return 'Produk Laku'
       default:
         return 'ERP System'
     }

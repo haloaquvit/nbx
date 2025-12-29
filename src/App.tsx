@@ -67,6 +67,8 @@ const MaterialUsageSummaryPage = lazy(() => import("@/pages/MaterialUsageSummary
 const WebManagementPage = lazy(() => import("@/pages/WebManagementPage"));
 const CustomerMapPage = lazy(() => import("@/pages/CustomerMapPage"));
 const WarehousePage = lazy(() => import("@/pages/WarehousePage"));
+const MobileRetasiPage = lazy(() => import("@/pages/MobileRetasiPage"));
+const MobileSoldItemsPage = lazy(() => import("@/pages/MobileSoldItemsPage"));
 
 const SERVERS = [
   {
@@ -265,6 +267,8 @@ function WebApp() {
                   <Route path="/customer-map" element={<CustomerMapPage />} />
                   <Route path="/production" element={<ProductionPage />} />
                   <Route path="/warehouse" element={<WarehousePage />} />
+                  <Route path="/retasi" element={<MobileRetasiPage />} />
+                  <Route path="/sold-items" element={<MobileSoldItemsPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               ) : (
