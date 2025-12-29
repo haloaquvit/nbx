@@ -28,6 +28,7 @@ interface CartItem extends TransactionItem {
   isBonus?: boolean
   bonusDescription?: string
   parentProductId?: string
+  isManualPrice?: boolean  // Flag to preserve manually edited price
 }
 
 export default function DriverPosPage() {
@@ -224,9 +225,9 @@ export default function DriverPosPage() {
     // Remove existing bonus items for this product
     let newItems = items.filter(i => i.parentProductId !== item.product.id)
 
-    // Update main item
+    // Update main item - preserve manually edited price
     newItems = newItems.map((i, idx) =>
-      idx === index ? { ...i, quantity: newQty, price } : i
+      idx === index ? { ...i, quantity: newQty, price: i.isManualPrice ? i.price : price } : i
     )
 
     // Add new bonus items
@@ -307,7 +308,7 @@ export default function DriverPosPage() {
     const newPrice = parseInt(editPriceValue) || 0
     if (newPrice >= 0) {
       setItems(items.map((item, idx) =>
-        idx === index ? { ...item, price: newPrice } : item
+        idx === index ? { ...item, price: newPrice, isManualPrice: true } : item
       ))
     }
     setEditingPriceIndex(null)
@@ -616,6 +617,7 @@ export default function DriverPosPage() {
                             if (e.key === 'Enter') saveEditedPrice(index)
                             if (e.key === 'Escape') cancelEditingPrice()
                           }}
+                          onBlur={() => saveEditedPrice(index)}
                           onFocus={(e) => e.target.select()}
                           className="w-24 h-8 text-sm p-1"
                           autoFocus
