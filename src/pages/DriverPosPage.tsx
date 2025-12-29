@@ -136,15 +136,30 @@ export default function DriverPosPage() {
   const isHelper = user?.role === 'helper' || user?.role === 'pembantu'
   const hasAccess = isAdminOwner || isHelper || (isDriver && activeRetasi !== null)
 
-  // Calculate price with bonus based on QUANTITY (not stock)
+  // Calculate price with bonus based on QUANTITY and CUSTOMER CLASSIFICATION
   const calculatePriceWithBonus = async (product: Product, quantity: number) => {
     try {
+      let basePrice = product.basePrice
+
+      // First check for customer-specific or classification-based pricing
+      if (selectedCustomerData) {
+        const customerPricing = await PricingService.getCustomerProductPrice(
+          product.id,
+          selectedCustomerData.id,
+          selectedCustomerData.classification as any
+        )
+        if (customerPricing && customerPricing.customerAdjustedPrice !== basePrice) {
+          basePrice = customerPricing.customerAdjustedPrice
+          console.log(`[DriverPOS] Customer pricing applied for ${selectedCustomerData.name} (${selectedCustomerData.classification}): ${product.basePrice} -> ${basePrice}`)
+        }
+      }
+
       const productPricing = await PricingService.getProductPricing(product.id)
       if (productPricing) {
         // Calculate price based on quantity purchased, NOT stock level
         // Pass empty stockPricings to ignore stock-based pricing
         const priceCalculation = PricingService.calculatePrice(
-          product.basePrice,
+          basePrice, // Use customer-adjusted base price
           product.currentStock || 0,
           quantity,
           [], // Ignore stock pricing - we only want quantity-based pricing
@@ -156,11 +171,13 @@ export default function DriverPosPage() {
           bonuses: priceCalculation.bonuses || []
         }
       }
+      return { price: basePrice, bonuses: [] }
     } catch (error) {
       console.error('Error calculating price:', error)
     }
     return { price: product.basePrice, bonuses: [] }
   }
+
 
   // Quick add product to cart with bonus calculation
   const quickAddProduct = async (product: typeof availableProducts[0]) => {
