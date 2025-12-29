@@ -130,7 +130,7 @@ function SimpleReturnForm({
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-4 gap-2 p-3 bg-gray-50 rounded-lg text-sm mx-4">
+      <div className="grid grid-cols-3 gap-2 p-3 bg-gray-50 rounded-lg text-sm mx-4">
         <div className="text-center">
           <div className="text-muted-foreground text-xs">Dibawa</div>
           <div className="font-bold text-lg">{totalItems}</div>
