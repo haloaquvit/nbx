@@ -51,12 +51,23 @@ const fromDb = (dbRetasi: any): Retasi => ({
 });
 
 // App to Database mapping
-const toDb = (appRetasi: CreateRetasiData | UpdateRetasiData) => {
+// Note: This function doesn't have access to timezone context,
+// so departure_date conversion is handled in createRetasi mutation
+const toDb = (appRetasi: CreateRetasiData | UpdateRetasiData, overrideDate?: string) => {
   const dbData: any = { ...appRetasi };
 
   if ('departure_date' in appRetasi && appRetasi.departure_date) {
     const depDate = appRetasi.departure_date;
-    dbData.departure_date = depDate.toISOString().split('T')[0];
+    // Use overrideDate if provided (from office timezone), otherwise use local date
+    if (overrideDate) {
+      dbData.departure_date = overrideDate;
+    } else {
+      // Fallback to local date format
+      const year = depDate.getFullYear();
+      const month = String(depDate.getMonth() + 1).padStart(2, '0');
+      const day = String(depDate.getDate()).padStart(2, '0');
+      dbData.departure_date = `${year}-${month}-${day}`;
+    }
 
     // Auto-set departure_time from departure_date if not provided
     if (!dbData.departure_time) {
@@ -325,8 +336,9 @@ export const useRetasi = (filters?: {
       console.log('[useRetasi] Next retasi_ke will be:', nextRetasiKe);
       
       // Prepare insert data (use user from context, works with both Supabase and PostgREST)
+      // Pass todayDate to toDb to ensure departure_date uses office timezone
       const insertData = {
-        ...toDb(mainData),
+        ...toDb(mainData, todayDate),
         retasi_number: retasiNumber,
         retasi_ke: nextRetasiKe,
         created_by: user?.id || null,
