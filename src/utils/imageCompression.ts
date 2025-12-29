@@ -23,10 +23,16 @@ export async function compressImage(
     const ctx = canvas.getContext('2d');
     const img = new Image();
 
+    // Create object URL for the image
+    const objectUrl = URL.createObjectURL(file);
+
     img.onload = () => {
+      // Clean up object URL
+      URL.revokeObjectURL(objectUrl);
+
       // Calculate new dimensions while maintaining aspect ratio
       let { width, height } = img;
-      
+
       if (width > height) {
         if (width > maxWidth) {
           height = (height * maxWidth) / width;
@@ -68,15 +74,15 @@ export async function compressImage(
               }
             }
 
-            // Create new file with compressed blob
-            const compressedFile = new File([blob], file.name, {
-              type: file.type,
+            // Create new file with compressed blob - always use JPEG for better compression
+            const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+              type: 'image/jpeg',
               lastModified: Date.now()
             });
 
             resolve(compressedFile);
           },
-          file.type,
+          'image/jpeg', // Always use JPEG for compression
           quality
         );
       };
@@ -85,18 +91,11 @@ export async function compressImage(
     };
 
     img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
       reject(new Error('Failed to load image'));
     };
 
-    // Create object URL for the image
-    const objectUrl = URL.createObjectURL(file);
     img.src = objectUrl;
-
-    // Clean up object URL after image loads
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      img.onload(); // Call the original onload
-    };
   });
 }
 
