@@ -605,6 +605,7 @@ function AddRetasiDialog({
 
   const { createRetasi, checkDriverAvailability } = useRetasi();
   const { products, isLoading: isLoadingProducts } = useProducts();
+  const { timezone } = useTimezone();
   const [nextSeq, setNextSeq] = useState<number>(1);
 
   // Filter products: semua produk harus punya stock > 0
