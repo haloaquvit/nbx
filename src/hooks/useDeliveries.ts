@@ -1053,9 +1053,9 @@ export function useDeliveries() {
         const { error: voidError } = await supabase
           .from('journal_entries')
           .update({
+            status: 'voided',
             is_voided: true,
-            voided_at: new Date().toISOString(),
-            voided_reason: 'Pengantaran dihapus'
+            voided_at: new Date().toISOString()
           })
           .eq('reference_id', deliveryId)
           .eq('reference_type', 'adjustment')

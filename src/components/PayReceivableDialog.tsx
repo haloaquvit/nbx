@@ -271,16 +271,7 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
               >
                 <SelectTrigger><SelectValue placeholder="Pilih Akun..." /></SelectTrigger>
                 <SelectContent>
-                  {accounts?.filter(a => {
-                    // Must be payment account
-                    if (!a.isPaymentAccount) return false;
-                    // If account has no employee assigned, show to everyone
-                    if (!a.employeeId) return true;
-                    // If account is assigned to current user, show it
-                    if (a.employeeId === user?.id) return true;
-                    // Account is assigned to someone else, hide it
-                    return false;
-                  }).map(acc => {
+                  {accounts?.filter(a => a.isPaymentAccount).map(acc => {
                     const isMyAccount = acc.employeeId === user?.id;
                     return (
                       <SelectItem key={acc.id} value={acc.id}>

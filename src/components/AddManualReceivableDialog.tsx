@@ -93,27 +93,26 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
         branchId: currentBranch?.id || null,
       });
 
-      // Insert as transaction with source = 'migration'
+      // Insert as transaction with migration info in items metadata
       const orderDate = new Date();
+      const migrationMeta = {
+        _isMigrationMeta: true,
+        source: 'migration',
+        notes: notes || 'Piutang migrasi dari sistem lain',
+      };
       const { error } = await supabase.from('transactions').insert({
         id: transactionId,
         customer_id: selectedCustomerId,
         customer_name: selectedCustomerName,
         order_date: orderDate.toISOString().split('T')[0],
         due_date: dueDate ? dueDate.toISOString().split('T')[0] : null,
-        items: [],
+        items: [migrationMeta], // Store migration info in items
         subtotal: parsedAmount,
-        discount: 0,
-        tax: 0,
         total: parsedAmount,
         paid_amount: 0,
-        change: 0,
-        payment_method: 'credit',
         payment_status: 'Belum Lunas',
-        sales_person: 'Migrasi Data',
-        notes: notes || 'Piutang migrasi dari sistem lain',
+        status: 'Selesai',
         branch_id: currentBranch?.id || null,
-        source: 'migration',
       });
 
       if (error) throw error;
@@ -237,25 +236,24 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
             if (isNaN(parsedDueDate.getTime())) parsedDueDate = null;
           }
 
+          const importMigrationMeta = {
+            _isMigrationMeta: true,
+            source: 'migration',
+            notes: row.notes || 'Piutang migrasi dari import Excel',
+          };
           const { error } = await supabase.from('transactions').insert({
             id: transactionId,
             customer_id: row.customerId,
             customer_name: row.customerName,
             order_date: orderDate.toISOString().split('T')[0],
             due_date: parsedDueDate ? parsedDueDate.toISOString().split('T')[0] : null,
-            items: [],
+            items: [importMigrationMeta], // Store migration info in items
             subtotal: row.amount,
-            discount: 0,
-            tax: 0,
             total: row.amount,
             paid_amount: 0,
-            change: 0,
-            payment_method: 'credit',
             payment_status: 'Belum Lunas',
-            sales_person: 'Import Migrasi',
-            notes: row.notes || 'Piutang migrasi dari import Excel',
+            status: 'Selesai',
             branch_id: currentBranch?.id || null,
-            source: 'migration',
           });
 
           if (error) throw error;

@@ -30,6 +30,7 @@ interface SoldProduct {
   source: 'delivery' | 'office_sale' | 'retasi' // Sumber: pengantaran, laku kantor, atau retasi
   driverName?: string
   retasiNumber?: string
+  retasiKe?: number // Retasi ke-berapa (1, 2, 3, dst)
   cashierName: string
   isBonus: boolean
 }
@@ -44,6 +45,8 @@ export const TransactionItemsReport = () => {
   const [sourceFilter, setSourceFilter] = useState<'all' | 'delivery' | 'office_sale' | 'retasi'>('all')
   const [driverKasirFilter, setDriverKasirFilter] = useState<string>('all')
   const [availableDriversKasir, setAvailableDriversKasir] = useState<string[]>([])
+  const [retasiKeFilter, setRetasiKeFilter] = useState<string>('all')
+  const [availableRetasiKe, setAvailableRetasiKe] = useState<{value: string, label: string}[]>([])
   const [reportData, setReportData] = useState<SoldProduct[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
@@ -185,6 +188,7 @@ export const TransactionItemsReport = () => {
                 source: 'delivery',
                 driverName: delivery.driver?.full_name,
                 retasiNumber: retasiNumberDisplay,
+                retasiKe: retasiInfo?.retasi_ke,
                 cashierName: transaction?.cashier?.full_name || 'Unknown',
                 isBonus: isBonus
               })
@@ -343,6 +347,7 @@ export const TransactionItemsReport = () => {
                 total: quantity * price,
                 source: 'retasi',
                 retasiNumber: retasiNumberDisplay,
+                retasiKe: retasiInfo?.retasi_ke,
                 driverName: retasiInfo?.driver_name || transaction.cashier_name,
                 cashierName: transaction.cashier_name || 'Unknown',
                 isBonus: isBonus
@@ -366,15 +371,34 @@ export const TransactionItemsReport = () => {
       )].sort()
       setAvailableDriversKasir(uniqueDriversKasir)
 
-      // Apply driver/kasir filter if selected
+      // Extract unique retasi_ke values for filter dropdown
+      const uniqueRetasiKe = [...new Set(
+        items
+          .filter(item => item.retasiKe !== undefined && item.retasiKe !== null)
+          .map(item => item.retasiKe as number)
+      )].sort((a, b) => a - b)
+      setAvailableRetasiKe(uniqueRetasiKe.map(ke => ({
+        value: ke.toString(),
+        label: `Retasi Ke-${ke}`
+      })))
+
+      // Apply filters
       let filteredItems = items
+
+      // Apply driver/kasir filter if selected
       if (driverKasirFilter !== 'all') {
-        filteredItems = items.filter(item => {
+        filteredItems = filteredItems.filter(item => {
           if (item.source === 'delivery' || item.source === 'retasi') {
             return item.driverName === driverKasirFilter
           }
           return item.cashierName === driverKasirFilter
         })
+      }
+
+      // Apply retasi ke filter if selected
+      if (retasiKeFilter !== 'all') {
+        const filterKe = parseInt(retasiKeFilter)
+        filteredItems = filteredItems.filter(item => item.retasiKe === filterKe)
       }
 
       setReportData(filteredItems)
@@ -608,7 +632,7 @@ export const TransactionItemsReport = () => {
         <CardContent className="space-y-4">
           <div className="space-y-4">
             {/* Filter Type Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Jenis Filter</Label>
                 <Select value={filterType} onValueChange={(value: 'monthly' | 'dateRange') => setFilterType(value)}>
@@ -647,6 +671,26 @@ export const TransactionItemsReport = () => {
                     <SelectItem value="delivery">Pengantaran</SelectItem>
                     <SelectItem value="office_sale">Laku Kantor</SelectItem>
                     <SelectItem value="retasi">Retasi</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-1">
+                  <Navigation className="h-3 w-3" />
+                  Retasi Ke
+                </Label>
+                <Select value={retasiKeFilter} onValueChange={setRetasiKeFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Semua" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Retasi</SelectItem>
+                    {availableRetasiKe.map(item => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

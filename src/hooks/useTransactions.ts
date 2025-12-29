@@ -1160,8 +1160,7 @@ export const useTransactions = (filters?: {
                 .update({
                   status: 'voided',
                   is_voided: true,
-                  voided_at: new Date().toISOString(),
-                  voided_reason: 'Transaksi induk dihapus'
+                  voided_at: new Date().toISOString()
                 })
                 .eq('reference_id', delivery.id)
                 .eq('reference_type', 'adjustment');
