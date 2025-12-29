@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ReturnItemsData, RetasiItem } from '@/types/retasi';
 import { Package, CheckCircle, XCircle, ShoppingCart, Ban } from 'lucide-react';
@@ -42,7 +41,6 @@ function SimpleReturnForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('SimpleReturnForm handleSubmit called');
 
     if (totalInput > totalItems) {
       alert('Total input melebihi jumlah barang yang dibawa!');
@@ -58,7 +56,6 @@ function SimpleReturnForm({
       item_returns: [],
     };
 
-    console.log('Calling onConfirm with:', returnData);
     onConfirm(returnData);
   };
 
@@ -274,9 +271,6 @@ export function ReturnRetasiDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('ReturnRetasiDialog handleSubmit called');
-    console.log('itemReturns:', itemReturns);
-    console.log('totals:', totals);
 
     // Validate
     const hasOverflow = itemReturns.some(item => {
@@ -297,7 +291,6 @@ export function ReturnRetasiDialog({
       return_notes: notes.trim() || undefined,
       item_returns: itemReturns,
     };
-    console.log('Calling onConfirm with:', returnData);
     onConfirm(returnData);
   };
 
@@ -305,9 +298,6 @@ export function ReturnRetasiDialog({
     setNotes('');
     onClose();
   };
-
-  // Debug log
-  console.log('ReturnRetasiDialog render - items:', items, 'isOpen:', isOpen);
 
   // If no items, show simple form with manual input (backward compatibility)
   if (items.length === 0) {
@@ -336,183 +326,161 @@ export function ReturnRetasiDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh]">
-        <DialogHeader>
-          <DialogTitle>Konfirmasi Barang Kembali</DialogTitle>
-          <DialogDescription>
-            Retasi: {retasiNumber} | Total Barang: {totalItems} | {items.length} Produk
+      <DialogContent className="sm:max-w-lg max-h-[90vh] p-0">
+        <DialogHeader className="p-4 pb-2 border-b">
+          <DialogTitle className="text-base">Konfirmasi Barang Kembali</DialogTitle>
+          <DialogDescription className="text-xs">
+            {retasiNumber} | {totalItems} item | {items.length} produk
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Product Items Table */}
-          <ScrollArea className="h-[300px] rounded-md border">
-            <Table>
-              <TableHeader className="sticky top-0 bg-background">
-                <TableRow>
-                  <TableHead className="w-[200px]">Produk</TableHead>
-                  <TableHead className="text-center w-[80px]">Dibawa</TableHead>
-                  <TableHead className="text-center w-[100px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                      Kembali
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-center w-[90px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <ShoppingCart className="h-4 w-4 text-blue-600" />
-                      Laku
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-center w-[90px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <Ban className="h-4 w-4 text-orange-600" />
-                      Tdk Laku
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-center w-[90px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <XCircle className="h-4 w-4 text-red-600" />
-                      Error
-                    </div>
-                  </TableHead>
-                  <TableHead className="text-center w-[70px]">Selisih</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {itemReturns.map((item, index) => {
-                  const itemTotal = item.returned_quantity + item.sold_quantity + item.unsold_quantity + item.error_quantity;
-                  const itemSelisih = item.quantity - itemTotal;
+        <form onSubmit={handleSubmit}>
+          {/* Mobile-optimized Product Items */}
+          <ScrollArea className="max-h-[45vh] px-4">
+            <div className="space-y-3 py-2">
+              {itemReturns.map((item, index) => {
+                const itemTotal = item.returned_quantity + item.sold_quantity + item.unsold_quantity + item.error_quantity;
+                const itemSelisih = item.quantity - itemTotal;
 
-                  return (
-                    <TableRow key={item.item_id}>
-                      <TableCell className="font-medium">{item.product_name}</TableCell>
-                      <TableCell className="text-center font-semibold">{item.quantity}</TableCell>
-                      <TableCell>
+                return (
+                  <div key={item.item_id} className="border rounded-lg p-3 bg-white">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-sm">{item.product_name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Bawa: {item.quantity}</span>
+                        <span className={`text-xs font-medium ${itemSelisih === 0 ? 'text-green-600' : itemSelisih < 0 ? 'text-red-600' : 'text-orange-600'}`}>
+                          ({itemSelisih >= 0 ? '+' : ''}{-itemSelisih})
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-green-600 flex items-center gap-0.5">
+                          <CheckCircle className="h-3 w-3" />Kembali
+                        </Label>
                         <Input
                           type="number"
                           min="0"
                           max={item.quantity}
                           value={item.returned_quantity || ''}
                           onChange={(e) => handleItemChange(index, 'returned_quantity', parseInt(e.target.value) || 0)}
-                          className="w-16 mx-auto text-center"
+                          className="h-9 text-center text-sm"
                           placeholder="0"
                         />
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-blue-600 flex items-center gap-0.5">
+                          <ShoppingCart className="h-3 w-3" />Laku
+                        </Label>
                         <Input
                           type="number"
                           min="0"
                           max={item.quantity}
                           value={item.sold_quantity || ''}
                           onChange={(e) => handleItemChange(index, 'sold_quantity', parseInt(e.target.value) || 0)}
-                          className="w-16 mx-auto text-center"
+                          className="h-9 text-center text-sm"
                           placeholder="0"
                         />
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-orange-600 flex items-center gap-0.5">
+                          <Ban className="h-3 w-3" />Tdk Laku
+                        </Label>
                         <Input
                           type="number"
                           min="0"
                           max={item.quantity}
                           value={item.unsold_quantity || ''}
                           onChange={(e) => handleItemChange(index, 'unsold_quantity', parseInt(e.target.value) || 0)}
-                          className="w-16 mx-auto text-center"
+                          className="h-9 text-center text-sm"
                           placeholder="0"
                         />
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] text-red-600 flex items-center gap-0.5">
+                          <XCircle className="h-3 w-3" />Error
+                        </Label>
                         <Input
                           type="number"
                           min="0"
                           max={item.quantity}
                           value={item.error_quantity || ''}
                           onChange={(e) => handleItemChange(index, 'error_quantity', parseInt(e.target.value) || 0)}
-                          className="w-16 mx-auto text-center"
+                          className="h-9 text-center text-sm"
                           placeholder="0"
                         />
-                      </TableCell>
-                      <TableCell className={`text-center font-semibold ${itemSelisih > 0 ? 'text-orange-600' : itemSelisih < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {itemSelisih}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </ScrollArea>
 
-          {/* Notes */}
-          <div className="space-y-2">
-            <Label htmlFor="notes">Catatan (Opsional)</Label>
+          <div className="p-4 pt-2 space-y-3 border-t">
+            {/* Notes */}
             <Textarea
-              id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Catatan tambahan mengenai kondisi barang..."
+              placeholder="Catatan (opsional)..."
               rows={2}
+              className="resize-none text-sm"
             />
+
+            {/* Compact Summary */}
+            <div className="grid grid-cols-5 gap-1 p-2 bg-gray-50 rounded-lg text-center text-xs">
+              <div>
+                <div className="text-muted-foreground">Bawa</div>
+                <div className="font-bold text-base">{totals.bawa}</div>
+              </div>
+              <div>
+                <div className="text-green-600">Kembali</div>
+                <div className="font-bold text-base text-green-600">{totals.kembali}</div>
+              </div>
+              <div>
+                <div className="text-blue-600">Laku</div>
+                <div className="font-bold text-base text-blue-600">{totals.laku}</div>
+              </div>
+              <div>
+                <div className="text-orange-600">Error</div>
+                <div className="font-bold text-base text-orange-600">{totals.error + totals.tidakLaku}</div>
+              </div>
+              <div>
+                <div className={selisih === 0 ? 'text-green-600' : 'text-orange-600'}>Selisih</div>
+                <div className={`font-bold text-base ${selisih === 0 ? 'text-green-600' : 'text-orange-600'}`}>{selisih}</div>
+              </div>
+            </div>
+
+            {selisih > 0 && (
+              <div className="text-orange-600 text-xs text-center">
+                Masih ada {selisih} barang belum diinput
+              </div>
+            )}
+            {selisih < 0 && (
+              <div className="text-red-600 text-xs text-center">
+                Total melebihi jumlah yang dibawa!
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClose}
+                disabled={isLoading}
+                className="flex-1 h-11"
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                disabled={isLoading || selisih < 0}
+                className="flex-1 h-11 bg-green-600 hover:bg-green-700"
+              >
+                {isLoading ? 'Menyimpan...' : 'Simpan'}
+              </Button>
+            </div>
           </div>
-
-          {/* Summary */}
-          <div className="grid grid-cols-7 gap-2 p-3 bg-gray-50 rounded-lg text-sm">
-            <div className="text-center">
-              <div className="text-muted-foreground text-xs">Dibawa</div>
-              <div className="font-bold text-lg">{totals.bawa}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-green-600 text-xs">Kembali</div>
-              <div className="font-bold text-lg text-green-600">{totals.kembali}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-blue-600 text-xs">Laku</div>
-              <div className="font-bold text-lg text-blue-600">{totals.laku}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-orange-600 text-xs">Tdk Laku</div>
-              <div className="font-bold text-lg text-orange-600">{totals.tidakLaku}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-red-600 text-xs">Error</div>
-              <div className="font-bold text-lg text-red-600">{totals.error}</div>
-            </div>
-            <div className="text-center">
-              <div className="text-muted-foreground text-xs">Total</div>
-              <div className="font-bold text-lg">{totalInput}</div>
-            </div>
-            <div className="text-center">
-              <div className={`text-xs ${selisih === 0 ? 'text-green-600' : 'text-orange-600'}`}>Selisih</div>
-              <div className={`font-bold text-lg ${selisih === 0 ? 'text-green-600' : 'text-orange-600'}`}>{selisih}</div>
-            </div>
-          </div>
-
-          {selisih > 0 && (
-            <div className="text-orange-600 text-sm text-center">
-              Masih ada {selisih} barang belum diinput
-            </div>
-          )}
-          {selisih < 0 && (
-            <div className="text-red-600 text-sm text-center">
-              Total input melebihi jumlah barang yang dibawa!
-            </div>
-          )}
-
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={isLoading}
-            >
-              Batal
-            </Button>
-            <Button
-              type="submit"
-              disabled={isLoading || selisih < 0}
-            >
-              {isLoading ? 'Menyimpan...' : 'Simpan'}
-            </Button>
-          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

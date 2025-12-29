@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { ShoppingCart, Truck, Store, Navigation, Loader2, Package, RefreshCw } from 'lucide-react'
+import { ShoppingCart, Truck, Store, Navigation, Loader2, Package, RefreshCw, Search } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 import { supabase } from '@/integrations/supabase/client'

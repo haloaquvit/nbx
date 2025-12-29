@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, BookOpen, Filter, RefreshCw, List, FileText } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Plus, BookOpen, Filter, RefreshCw, List, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -25,10 +25,14 @@ import { JournalEntryFormData } from '@/types/journal';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
+const ITEMS_PER_PAGE = 20;
+
 export function JournalPage() {
   const [showForm, setShowForm] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [mainTab, setMainTab] = useState<string>('entries');
+  const [entriesPage, setEntriesPage] = useState(1);
+  const [linesPage, setLinesPage] = useState(1);
 
   const {
     journalEntries,
@@ -56,11 +60,33 @@ export function JournalPage() {
   };
 
   // Filter entries by status
-  const filteredEntries = (journalEntries || []).filter(entry => {
-    if (statusFilter === 'all') return true;
-    if (statusFilter === 'voided') return entry.isVoided;
-    return entry.status === statusFilter && !entry.isVoided;
-  });
+  const filteredEntries = useMemo(() => {
+    return (journalEntries || []).filter(entry => {
+      if (statusFilter === 'all') return true;
+      if (statusFilter === 'voided') return entry.isVoided;
+      return entry.status === statusFilter && !entry.isVoided;
+    });
+  }, [journalEntries, statusFilter]);
+
+  // Reset to page 1 when filter changes
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value);
+    setEntriesPage(1);
+  };
+
+  // Pagination for entries
+  const entriesTotalPages = Math.ceil(filteredEntries.length / ITEMS_PER_PAGE);
+  const paginatedEntries = useMemo(() => {
+    const start = (entriesPage - 1) * ITEMS_PER_PAGE;
+    return filteredEntries.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredEntries, entriesPage]);
+
+  // Pagination for lines
+  const linesTotalPages = Math.ceil((allJournalLines?.length || 0) / ITEMS_PER_PAGE);
+  const paginatedLines = useMemo(() => {
+    const start = (linesPage - 1) * ITEMS_PER_PAGE;
+    return (allJournalLines || []).slice(start, start + ITEMS_PER_PAGE);
+  }, [allJournalLines, linesPage]);
 
   // Count by status
   const counts = {
@@ -131,7 +157,7 @@ export function JournalPage() {
           {/* Filter & List Section */}
           <div className="space-y-4">
             {/* Tabs for quick filter */}
-            <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+            <Tabs value={statusFilter} onValueChange={handleStatusFilterChange}>
               <div className="flex items-center justify-between">
                 <TabsList>
                   <TabsTrigger value="all">
@@ -151,7 +177,7 @@ export function JournalPage() {
 
               <TabsContent value={statusFilter} className="mt-4">
                 <JournalEntryTable
-                  entries={filteredEntries}
+                  entries={paginatedEntries}
                   isLoading={isLoading}
                   onPost={postJournalEntry}
                   onVoid={(id, reason) => voidJournalEntry({ id, reason })}
@@ -160,6 +186,60 @@ export function JournalPage() {
                   isVoiding={isVoiding}
                   isDeleting={isDeleting}
                 />
+
+                {/* Pagination for Entries */}
+                {entriesTotalPages > 1 && (
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      Menampilkan {((entriesPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(entriesPage * ITEMS_PER_PAGE, filteredEntries.length)} dari {filteredEntries.length} jurnal
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEntriesPage(p => Math.max(1, p - 1))}
+                        disabled={entriesPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Prev
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, entriesTotalPages) }, (_, i) => {
+                          let pageNum;
+                          if (entriesTotalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (entriesPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (entriesPage >= entriesTotalPages - 2) {
+                            pageNum = entriesTotalPages - 4 + i;
+                          } else {
+                            pageNum = entriesPage - 2 + i;
+                          }
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={entriesPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              className="w-8 h-8 p-0"
+                              onClick={() => setEntriesPage(pageNum)}
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEntriesPage(p => Math.min(entriesTotalPages, p + 1))}
+                        disabled={entriesPage === entriesTotalPages}
+                      >
+                        Next
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </TabsContent>
             </Tabs>
           </div>
@@ -242,7 +322,7 @@ export function JournalPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    allJournalLines.map((line) => (
+                    paginatedLines.map((line) => (
                       <TableRow key={line.id} className={line.isVoided ? 'bg-red-50 opacity-60' : ''}>
                         <TableCell className="font-mono text-xs">{line.entryNumber}</TableCell>
                         <TableCell className="text-sm">
@@ -282,6 +362,60 @@ export function JournalPage() {
                 </TableBody>
               </Table>
             </div>
+
+            {/* Pagination for Lines */}
+            {linesTotalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Menampilkan {((linesPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(linesPage * ITEMS_PER_PAGE, allJournalLines?.length || 0)} dari {allJournalLines?.length || 0} baris
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLinesPage(p => Math.max(1, p - 1))}
+                    disabled={linesPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Prev
+                  </Button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, linesTotalPages) }, (_, i) => {
+                      let pageNum;
+                      if (linesTotalPages <= 5) {
+                        pageNum = i + 1;
+                      } else if (linesPage <= 3) {
+                        pageNum = i + 1;
+                      } else if (linesPage >= linesTotalPages - 2) {
+                        pageNum = linesTotalPages - 4 + i;
+                      } else {
+                        pageNum = linesPage - 2 + i;
+                      }
+                      return (
+                        <Button
+                          key={pageNum}
+                          variant={linesPage === pageNum ? "default" : "outline"}
+                          size="sm"
+                          className="w-8 h-8 p-0"
+                          onClick={() => setLinesPage(pageNum)}
+                        >
+                          {pageNum}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLinesPage(p => Math.min(linesTotalPages, p + 1))}
+                    disabled={linesPage === linesTotalPages}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Balance Check */}
             {allJournalLines && allJournalLines.length > 0 && (

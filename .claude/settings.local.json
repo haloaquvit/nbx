@@ -203,7 +203,16 @@
       "Bash(BRANCH_ID=\"00000000-0000-0000-0000-000000000001\")",
       "Bash(git -C \"d:/App/Aquvit Fix - Copy\" add -A)",
       "Bash(git -C \"d:/App/Aquvit Fix - Copy\" commit -m \"$(cat <<''EOF''\nfix: Add semicolons to EditTransactionDialog to prevent minification error\n\nThe missing semicolons after array spread and assignment caused minifier to merge statements incorrectly, resulting in \"Cannot access 'o' before initialization\" error in production.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git -C \"d:/App/Aquvit Fix - Copy\" push)"
+      "Bash(git -C \"d:/App/Aquvit Fix - Copy\" push)",
+      "Bash(wmic cpu get loadpercentage)",
+      "Bash(systeminfo:*)",
+      "Bash(tasklist /FI 'IMAGENAME eq node.exe')",
+      "Bash(echo 'Checking headers...' curl -sI https://mkw.aquvit.id/)",
+      "Bash(python -c:*)",
+      "Bash(cmd /c dir \"C:\\Users\\Aquvit\")",
+      "Bash(cmd /c \"dir /s /b C:\\*.pem 2>nul | findstr /i aquvit\")",
+      "Bash(cmd /c \"dir /s /b D:\\*.pem 2>nul\")",
+      "Bash(ssh-add:*)"
     ],
     "deny": [],
     "ask": [],

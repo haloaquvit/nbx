@@ -122,13 +122,6 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
 
   const isLoadingItems = isLoadingMaterials || isLoadingProducts;
 
-  // Debug: log purchasable items
-  React.useEffect(() => {
-    if (open) {
-      console.log('[PO Dialog] Purchasable items:', purchasableItems.length, purchasableItems);
-    }
-  }, [open, purchasableItems]);
-
   // State for PO items
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
 

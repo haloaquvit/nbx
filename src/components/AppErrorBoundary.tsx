@@ -23,22 +23,38 @@ class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('AppErrorBoundary caught an error:', error, errorInfo);
-    
+
     // Log error details for debugging
     console.log('Error name:', error.name);
     console.log('Error message:', error.message);
     console.log('Error stack:', error.stack);
-    
+
     this.setState({ errorInfo });
-    
-    // Check if it's a refresh-related error
-    if (error.message.includes('fetch') || 
-        error.message.includes('network') || 
-        error.message.includes('connection') ||
-        error.message.includes('Failed to fetch') ||
-        error.message.includes('ChunkLoadError') ||
-        error.message.includes('Loading chunk')) {
-      console.log('Refresh/Network error detected');
+
+    // Check if it's a chunk loading error (dynamic import failure)
+    // This happens when browser has cached old index.html referencing non-existent chunks
+    const isChunkError = error.message.includes('Failed to fetch dynamically imported module') ||
+                         error.message.includes('ChunkLoadError') ||
+                         error.message.includes('Loading chunk') ||
+                         error.message.includes('Loading CSS chunk') ||
+                         (error.message.includes('Failed to fetch') && error.message.includes('/assets/'));
+
+    if (isChunkError) {
+      console.log('Chunk loading error detected - auto reloading to get fresh index.html');
+
+      // Check if we already tried reloading recently (within 5 seconds)
+      const lastReloadTime = sessionStorage.getItem('lastChunkErrorReload');
+      const now = Date.now();
+
+      if (!lastReloadTime || (now - parseInt(lastReloadTime)) > 5000) {
+        // Record this reload attempt
+        sessionStorage.setItem('lastChunkErrorReload', now.toString());
+        // Force reload to get fresh index.html with correct chunk hashes
+        window.location.reload();
+        return;
+      } else {
+        console.log('Already reloaded recently, showing error UI instead');
+      }
     }
   }
 
@@ -66,10 +82,15 @@ class AppErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       const { error, retryCount } = this.state;
-      const isNetworkError = error?.message.includes('fetch') || 
-                            error?.message.includes('network') || 
+      const isChunkError = error?.message.includes('Failed to fetch dynamically imported module') ||
+                           error?.message.includes('ChunkLoadError') ||
+                           error?.message.includes('Loading chunk') ||
+                           (error?.message.includes('Failed to fetch') && error?.message.includes('/assets/'));
+      const isNetworkError = !isChunkError && (
+                            error?.message.includes('fetch') ||
+                            error?.message.includes('network') ||
                             error?.message.includes('connection') ||
-                            error?.message.includes('Failed to fetch');
+                            error?.message.includes('Failed to fetch'));
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -91,10 +112,12 @@ class AppErrorBoundary extends Component<Props, State> {
                 </svg>
               </div>
               <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
-                {isNetworkError ? 'Masalah Koneksi' : 'Terjadi Kesalahan'}
+                {isChunkError ? 'Aplikasi Diperbarui' : isNetworkError ? 'Masalah Koneksi' : 'Terjadi Kesalahan'}
               </h3>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                {isNetworkError 
+                {isChunkError
+                  ? 'Aplikasi telah diperbarui. Halaman akan dimuat ulang secara otomatis.'
+                  : isNetworkError
                   ? 'Terjadi masalah koneksi. Silakan coba lagi.'
                   : 'Maaf, terjadi kesalahan saat memuat halaman. Silakan coba refresh halaman.'
                 }

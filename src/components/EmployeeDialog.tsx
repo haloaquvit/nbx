@@ -88,15 +88,10 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
   }, [employee, open, form, roles, currentBranch])
 
   const onSubmit = async (data: CreateEmployeeFormData | UpdateEmployeeFormData) => {
-    console.log('[EmployeeDialog] Form submitted:', { isEditing, data });
-    
     if (isEditing) {
       // Update logic with better error handling
-      console.log('[EmployeeDialog] Updating employee:', employee.id, data);
-      
       updateEmployee.mutate({ ...(data as UpdateEmployeeFormData), id: employee.id }, {
-        onSuccess: (result) => {
-          console.log('[EmployeeDialog] Update successful:', result);
+        onSuccess: () => {
           toast({ title: "Sukses!", description: `Data karyawan "${data.name}" berhasil diperbarui.` })
           onOpenChange(false)
         },
@@ -122,8 +117,6 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
       })
     } else {
       // Create logic with better error handling
-      console.log('[EmployeeDialog] Creating employee:', data);
-      
       const createData = data as CreateEmployeeFormData;
       createEmployee.mutate({
         email: createData.email,
@@ -136,8 +129,7 @@ export function EmployeeDialog({ open, onOpenChange, employee }: EmployeeDialogP
         status: createData.status,
         branch_id: createData.branchId,
       }, {
-        onSuccess: (result) => {
-          console.log('[EmployeeDialog] Create successful:', result);
+        onSuccess: () => {
           toast({ title: "Sukses!", description: `Karyawan "${data.name}" berhasil dibuat.` })
           onOpenChange(false)
         },

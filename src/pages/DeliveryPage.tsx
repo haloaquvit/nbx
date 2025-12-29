@@ -508,18 +508,42 @@ export default function DeliveryPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Button 
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setSelectedDeliveryTransaction(transaction)
-                                setIsDeliveryDialogOpen(true)
-                              }}
-                              size="sm"
-                              className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
-                            >
-                              <Truck className="h-3 w-3 sm:mr-1" />
-                              <span className="hidden sm:inline">Antar</span>
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedDeliveryTransaction(transaction)
+                                  setIsDeliveryDialogOpen(true)
+                                }}
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
+                              >
+                                <Truck className="h-3 w-3 sm:mr-1" />
+                                <span className="hidden sm:inline">Antar</span>
+                              </Button>
+                              {/* Owner-only: Delete last delivery button */}
+                              {isOwner && transaction.deliveries.length > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    // Delete the most recent delivery for this transaction
+                                    const lastDelivery = transaction.deliveries[transaction.deliveries.length - 1]
+                                    setDeliveryToDelete({
+                                      ...lastDelivery,
+                                      customerName: transaction.customerName,
+                                      transactionTotal: transaction.total
+                                    })
+                                    setIsDeleteDialogOpen(true)
+                                  }}
+                                  title={`Hapus pengantaran terakhir (${transaction.deliveries.length} pengantaran)`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       )

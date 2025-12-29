@@ -172,21 +172,21 @@ const getTypeLabel = (item: CashHistory) => {
 const isIncomeType = (item: CashHistory) => {
   // Handle new format with 'type' field
   if (item.type) {
-    return ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang'].includes(item.type);
+    return ['orderan', 'kas_masuk_manual', 'panjar_pelunasan', 'pembayaran_piutang', 'transfer_masuk'].includes(item.type);
   }
-  
+
   // Handle format with 'transaction_type' field
   if (item.transaction_type) {
     return item.transaction_type === 'income';
   }
-  
+
   return false;
 }
 
 const isExpenseType = (item: CashHistory) => {
   // Handle new format with 'type' field
   if (item.type) {
-    return ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji', 'pembayaran_hutang'].includes(item.type);
+    return ['pengeluaran', 'panjar_pengambilan', 'pembayaran_po', 'kas_keluar_manual', 'gaji_karyawan', 'pembayaran_gaji', 'pembayaran_hutang', 'transfer_keluar'].includes(item.type);
   }
 
   // Handle format with 'transaction_type' field

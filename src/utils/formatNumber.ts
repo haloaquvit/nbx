@@ -16,7 +16,9 @@ export function formatCurrency(value: number | string | null | undefined, decima
 
   if (isNaN(numValue)) return '0';
 
-  return new Intl.NumberFormat('id-ID', {
+  // Use en-US locale to get comma as thousand separator (not dot like id-ID)
+  // This is consistent with input parsing which expects commas
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(numValue);
@@ -72,7 +74,8 @@ export function formatMoney(value: number | string | null | undefined): string {
   // Check if it has decimal part
   const hasDecimals = numValue % 1 !== 0;
 
-  return new Intl.NumberFormat('id-ID', {
+  // Use en-US locale for comma thousand separator (consistent with input parsing)
+  return new Intl.NumberFormat('en-US', {
     minimumFractionDigits: hasDecimals ? 2 : 0,
     maximumFractionDigits: 2,
   }).format(numValue);

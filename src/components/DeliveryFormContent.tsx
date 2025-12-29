@@ -6,14 +6,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { useToast } from "@/components/ui/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
@@ -244,50 +236,52 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
   }
 
   return (
-    <div className="grid gap-6">
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <Label htmlFor="deliveryDate">Waktu Pengantaran</Label>
+    <div className="grid gap-4">
+      {/* Mobile-optimized form fields */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="space-y-1">
+          <Label htmlFor="deliveryDate" className="text-sm">Waktu Pengantaran</Label>
           <Input
             id="deliveryDate"
             type="datetime-local"
             value={formData.deliveryDate}
             onChange={(e) => setFormData(prev => ({ ...prev, deliveryDate: e.target.value }))}
+            className="h-9"
           />
         </div>
-        <div>
-          <Label>Supir *</Label>
+        <div className="space-y-1">
+          <Label className="text-sm">Supir *</Label>
           <Select
             value={formData.driverId}
             onValueChange={(value) => setFormData(prev => ({ ...prev, driverId: value }))}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-9">
               <SelectValue placeholder="Pilih Supir" />
             </SelectTrigger>
             <SelectContent>
               {employees?.filter(emp => emp.role?.toLowerCase() === 'supir').map((driver) => (
                 <SelectItem key={driver.id} value={driver.id}>
-                  {driver.name} - {driver.position}
+                  {driver.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {isLoadingEmployees && <div className="text-sm text-muted-foreground">Loading employees...</div>}
+          {isLoadingEmployees && <div className="text-xs text-muted-foreground">Loading...</div>}
         </div>
-        <div>
-          <Label>Helper (Opsional)</Label>
+        <div className="space-y-1">
+          <Label className="text-sm">Helper (Opsional)</Label>
           <Select
             value={formData.helperId || "no-helper"}
             onValueChange={(value) => setFormData(prev => ({ ...prev, helperId: value === "no-helper" ? "" : value }))}
           >
-            <SelectTrigger>
+            <SelectTrigger className="h-9">
               <SelectValue placeholder="Pilih Helper" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="no-helper">Tidak ada helper</SelectItem>
+              <SelectItem value="no-helper">Tidak ada</SelectItem>
               {employees?.filter(emp => ['helper', 'supir'].includes(emp.role?.toLowerCase())).map((helper) => (
                 <SelectItem key={helper.id} value={helper.id}>
-                  {helper.name} - {helper.position}
+                  {helper.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -295,83 +289,66 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
         </div>
       </div>
 
-      <div>
-        <Label>Item yang Diantar</Label>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Produk</TableHead>
-              <TableHead>Dipesan</TableHead>
-              <TableHead>Sudah Diantar</TableHead>
-              <TableHead>Sisa</TableHead>
-              <TableHead>Antar Sekarang</TableHead>
-              <TableHead>Catatan</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {formData.items.map((item, index) => (
-              <TableRow key={item.itemId} className={item.isBonus ? "bg-orange-50" : ""}>
-                <TableCell>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{item.productName}</span>
-                      {item.isBonus && (
-                        <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 border-orange-300">
-                          BONUS
-                        </Badge>
-                      )}
-                    </div>
+      {/* Mobile-optimized items list */}
+      <div className="space-y-2">
+        <Label className="text-sm">Item yang Diantar</Label>
+        <div className="border rounded-lg divide-y max-h-[40vh] overflow-y-auto">
+          {formData.items.map((item) => (
+            <div key={item.itemId} className={`p-3 ${item.isBonus ? "bg-orange-50" : ""}`}>
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="font-medium text-sm">{item.productName}</span>
+                    {item.isBonus && (
+                      <Badge className="text-[10px] bg-orange-100 text-orange-800 px-1">BONUS</Badge>
+                    )}
                   </div>
-                </TableCell>
-                <TableCell>{item.orderedQuantity} {item.unit}</TableCell>
-                <TableCell>{item.deliveredQuantity} {item.unit}</TableCell>
-                <TableCell>{item.remainingQuantity} {item.unit}</TableCell>
-                <TableCell>
-                  <div className="space-y-1">
-                    <Input
-                      type="number"
-                      min="0"
-                      max={item.remainingQuantity}
-                      value={item.quantityToDeliver}
-                      onChange={(e) => handleItemQuantityChange(item.itemId, parseInt(e.target.value) || 0)}
-                      placeholder={`0`}
-                      className={`w-24 ${item.quantityToDeliver > item.remainingQuantity ? 'border-red-500' : ''}`}
-                      disabled={item.remainingQuantity === 0}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Maks: {item.remainingQuantity} {item.unit}
-                    </p>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Pesan: {item.orderedQuantity} | Diantar: {item.deliveredQuantity} | Sisa: <span className="font-medium text-blue-600">{item.remainingQuantity}</span> {item.unit}
                   </div>
-                </TableCell>
-                <TableCell>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
                   <Input
-                    value={item.notes}
-                    onChange={(e) => handleItemNotesChange(item.itemId, e.target.value)}
-                    placeholder="Catatan..."
-                    className="w-32"
+                    type="number"
+                    min="0"
+                    max={item.remainingQuantity}
+                    value={item.quantityToDeliver || ''}
+                    onChange={(e) => handleItemQuantityChange(item.itemId, parseInt(e.target.value) || 0)}
+                    placeholder="Antar"
+                    className={`h-9 text-center ${item.quantityToDeliver > item.remainingQuantity ? 'border-red-500' : ''}`}
+                    disabled={item.remainingQuantity === 0}
                   />
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                </div>
+                <Input
+                  value={item.notes}
+                  onChange={(e) => handleItemNotesChange(item.itemId, e.target.value)}
+                  placeholder="Catatan..."
+                  className="flex-1 h-9 text-sm"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div>
-        <Label htmlFor="notes">Catatan Pengantaran</Label>
+      <div className="space-y-1">
+        <Label htmlFor="notes" className="text-sm">Catatan Pengantaran</Label>
         <Textarea
           id="notes"
           value={formData.notes}
           onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-          placeholder="Catatan tambahan untuk pengantaran ini..."
-          rows={3}
+          placeholder="Catatan tambahan..."
+          rows={2}
+          className="resize-none"
         />
       </div>
 
-      <div>
-        <Label>Foto Laporan Pengantaran (Opsional)</Label>
+      <div className="space-y-1">
+        <Label className="text-sm">Foto Pengantaran (Opsional)</Label>
         {!photoPreview ? (
-          <div className="mt-2">
+          <div className="mt-1">
             <Input
               type="file"
               accept="image/*"
@@ -381,34 +358,31 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
               id="delivery-photo-upload"
             />
             <div
-              className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
+              className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-400 transition-colors"
               onClick={() => document.getElementById('delivery-photo-upload')?.click()}
             >
-              <div className="text-4xl mb-2">📷</div>
-              <p className="text-sm text-gray-600">Klik untuk mengambil/pilih foto</p>
+              <div className="text-2xl mb-1">📷</div>
+              <p className="text-xs text-gray-600">Tap untuk ambil foto</p>
             </div>
           </div>
         ) : (
-          <div className="mt-2 space-y-3">
+          <div className="mt-1 space-y-2">
             <div className="relative">
               <img
                 src={photoPreview}
-                alt="Preview foto pengantaran"
-                className="w-full max-h-64 object-contain rounded-lg border"
+                alt="Preview"
+                className="w-full max-h-32 object-contain rounded-lg border"
               />
               <Button
                 type="button"
                 variant="destructive"
                 size="sm"
                 onClick={removePhoto}
-                className="absolute top-2 right-2"
+                className="absolute top-1 right-1 h-6 w-6 p-0"
               >
                 ✕
               </Button>
             </div>
-            <p className="text-sm text-muted-foreground">
-              File: {formData.photo?.name}
-            </p>
             <Input
               type="file"
               accept="image/*"
@@ -422,7 +396,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
               variant="outline"
               size="sm"
               onClick={() => document.getElementById('delivery-photo-upload')?.click()}
-              className="w-full"
+              className="w-full h-8 text-xs"
             >
               Ganti Foto
             </Button>
@@ -430,15 +404,13 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
         )}
       </div>
 
-      <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
-        <Button 
-          onClick={handleSubmit} 
-          disabled={isSubmitting}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          {isSubmitting ? "Menyimpan..." : "Simpan Pengantaran"}
-        </Button>
-      </div>
+      <Button
+        onClick={handleSubmit}
+        disabled={isSubmitting}
+        className="w-full h-12 text-base font-semibold bg-green-600 hover:bg-green-700"
+      >
+        {isSubmitting ? "Menyimpan..." : "Simpan Pengantaran"}
+      </Button>
     </div>
   )
 }

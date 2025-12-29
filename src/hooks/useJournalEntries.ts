@@ -89,7 +89,7 @@ export const useJournalEntries = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch all journal entries
+  // Fetch all journal entries with lines in a single query (avoid N+1 problem)
   const {
     data: journalEntries,
     isLoading,
@@ -98,9 +98,13 @@ export const useJournalEntries = () => {
   } = useQuery({
     queryKey: ['journalEntries', currentBranch?.id],
     queryFn: async () => {
+      // Fetch entries with nested lines in ONE query
       let query = supabase
         .from('journal_entries')
-        .select('*')
+        .select(`
+          *,
+          journal_entry_lines (*)
+        `)
         .order('created_at', { ascending: false });
 
       if (currentBranch?.id) {
@@ -111,32 +115,21 @@ export const useJournalEntries = () => {
 
       if (error) throw error;
 
-      // Fetch lines for each entry
-      const entries: JournalEntry[] = [];
-      for (const entry of data || []) {
-        const { data: lines, error: linesError } = await supabase
-          .from('journal_entry_lines')
-          .select('*')
-          .eq('journal_entry_id', entry.id)
-          .order('line_number');
+      // Transform to app format - lines are already included
+      const entries: JournalEntry[] = (data || []).map((entry: any) => {
+        const lines = (entry.journal_entry_lines || []).sort(
+          (a: any, b: any) => a.line_number - b.line_number
+        );
+        return fromDbToApp(entry as DbJournalEntry, lines as DbJournalEntryLine[]);
+      });
 
-        if (linesError) {
-          console.error(`[useJournalEntries] Error fetching lines for journal ${entry.id}:`, linesError);
-        }
-
-        if (!lines || lines.length === 0) {
-          console.warn(`[useJournalEntries] No lines found for journal ${entry.id} (${entry.entry_number})`);
-        } else {
-          console.log(`[useJournalEntries] Found ${lines.length} lines for journal ${entry.id}`);
-        }
-
-        entries.push(fromDbToApp(entry as DbJournalEntry, (lines || []) as DbJournalEntryLine[]));
-      }
-
+      console.log(`[useJournalEntries] Loaded ${entries.length} journal entries`);
       return entries;
     },
     enabled: !!currentBranch,
     staleTime: 1000 * 60 * 2, // 2 minutes
+    gcTime: 1000 * 60 * 5, // 5 minutes cache
+    refetchOnWindowFocus: false,
   });
 
   // Fetch single journal entry
@@ -420,6 +413,8 @@ export const useJournalEntries = () => {
     },
     enabled: !!currentBranch,
     staleTime: 1000 * 60 * 2, // 2 minutes
+    gcTime: 1000 * 60 * 5, // 5 minutes cache
+    refetchOnWindowFocus: false,
   });
 
   return {

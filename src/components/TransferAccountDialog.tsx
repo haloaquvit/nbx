@@ -17,7 +17,7 @@ import { useBranch } from "@/contexts/BranchContext"
 import { ArrowRightLeft } from "lucide-react"
 import { createTransferJournal } from "@/services/journalService"
 import { useState, useEffect } from "react"
-import { formatNumber, parseFormattedNumber } from "@/utils/formatNumber"
+import { formatNumber } from "@/utils/formatNumber"
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -76,7 +76,8 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
 
   // Handle amount input with formatting
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawValue = e.target.value.replace(/[^0-9]/g, '')
+    // Remove all non-digit characters (commas, dots, spaces, etc)
+    const rawValue = e.target.value.replace(/\D/g, '')
     const numValue = parseInt(rawValue) || 0
     setValue('amount', numValue)
     setAmountDisplay(numValue > 0 ? formatNumber(numValue) : '')

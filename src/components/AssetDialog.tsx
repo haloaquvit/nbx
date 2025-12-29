@@ -23,25 +23,6 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
   const { accounts = [], isLoading } = useAccounts()
   const { currentBranch } = useBranch()
 
-  // Debug: Log accounts data
-  useEffect(() => {
-    console.log('AssetDialog - Total accounts:', accounts.length)
-    console.log('AssetDialog - All accounts:', accounts)
-
-    // Check each filter condition separately
-    const activeAccounts = accounts.filter(a => a.isActive !== false)
-    const nonHeaderAccounts = accounts.filter(a => !a.isHeader)
-    const filteredAccounts = accounts.filter(account => account.isActive !== false && !account.isHeader)
-
-    console.log('AssetDialog - Active accounts:', activeAccounts.length)
-    console.log('AssetDialog - Non-header accounts:', nonHeaderAccounts.length)
-    console.log('AssetDialog - Active AND Non-header accounts:', filteredAccounts.length)
-    console.log('AssetDialog - Filtered accounts detail:', filteredAccounts)
-
-    // Show some header accounts to understand the data structure
-    const headerAccounts = accounts.filter(a => a.isHeader)
-    console.log('AssetDialog - Sample header accounts:', headerAccounts.slice(0, 3))
-  }, [accounts])
 
   // Generate unique asset code
   const generateAssetCode = () => {

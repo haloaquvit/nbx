@@ -331,7 +331,13 @@ const MobileLayout = () => {
           {currentPath !== '/' && (
             <Button
               variant="outline"
-              className="w-full justify-start h-auto p-4 text-left overflow-hidden mb-4 border-gray-300 dark:border-gray-600 transition-all duration-150 active:scale-95 active:opacity-80"
+              className={cn(
+                "w-full justify-start h-auto p-4 text-left overflow-hidden mb-4",
+                "border-gray-300 dark:border-gray-600",
+                "transition-all duration-150 ease-out",
+                "active:scale-[0.97] active:bg-gray-200 dark:active:bg-gray-700",
+                "touch-manipulation select-none"
+              )}
               onClick={() => {
                 handleBack()
                 setIsSidebarOpen(false)
@@ -357,8 +363,12 @@ const MobileLayout = () => {
           <Button
             variant={currentPath === '/' ? "default" : "ghost"}
             className={cn(
-              "w-full justify-start h-auto p-4 text-left overflow-hidden mb-4 transition-all duration-150 active:scale-95 active:opacity-80",
-              currentPath === '/' && "bg-primary text-white"
+              "w-full justify-start h-auto p-4 text-left overflow-hidden mb-4",
+              "transition-all duration-150 ease-out",
+              "active:scale-[0.97] active:bg-blue-100 dark:active:bg-blue-900/40",
+              "hover:bg-gray-100 dark:hover:bg-gray-800",
+              "touch-manipulation select-none",
+              currentPath === '/' && "bg-primary text-white active:bg-primary/90"
             )}
             onClick={() => {
               navigate('/')
@@ -400,8 +410,12 @@ const MobileLayout = () => {
                 ref={isActive ? activeMenuRef : undefined}
                 variant={isActive ? "default" : "ghost"}
                 className={cn(
-                  "w-full justify-start h-auto p-4 text-left overflow-hidden transition-all duration-150 active:scale-95 active:opacity-80",
-                  isActive && "bg-primary text-white ring-2 ring-primary/30"
+                  "w-full justify-start h-auto p-4 text-left overflow-hidden",
+                  "transition-all duration-150 ease-out",
+                  "active:scale-[0.97] active:bg-blue-100 dark:active:bg-blue-900/40",
+                  "hover:bg-gray-100 dark:hover:bg-gray-800",
+                  "touch-manipulation select-none",
+                  isActive && "bg-primary text-white ring-2 ring-primary/30 active:bg-primary/90"
                 )}
                 onClick={() => {
                   navigate(item.path)
@@ -410,7 +424,7 @@ const MobileLayout = () => {
               >
                 <div className="flex items-center space-x-3 w-full overflow-hidden">
                   <div className={cn(
-                    "p-2 rounded-lg flex-shrink-0",
+                    "p-2 rounded-lg flex-shrink-0 transition-transform duration-150",
                     isActive ? "bg-white/20" : item.color
                   )}>
                     <Icon className={cn(
@@ -550,14 +564,19 @@ const MobileLayout = () => {
                 {menuItems.map((item) => {
                   const Icon = item.icon
                   return (
-                    <Card 
+                    <Card
                       key={item.path}
-                      className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+                      className={cn(
+                        "cursor-pointer transition-all duration-200",
+                        "hover:shadow-lg hover:scale-[1.02]",
+                        "active:scale-[0.97] active:shadow-inner active:bg-blue-50 dark:active:bg-blue-900/30",
+                        "touch-manipulation select-none"
+                      )}
                       onClick={() => navigate(item.path)}
                     >
                       <CardContent className="p-6">
                         <div className="flex items-center space-x-4">
-                          <div className={cn("p-4 rounded-xl", item.color)}>
+                          <div className={cn("p-4 rounded-xl transition-transform duration-150", item.color)}>
                             <Icon className={cn("h-8 w-8", item.textColor)} />
                           </div>
                           <div className="flex-1">

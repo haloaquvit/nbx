@@ -55,9 +55,15 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function fourDaysAgoStr() {
+  const date = new Date();
+  date.setDate(date.getDate() - 4);
+  return date.toISOString().slice(0, 10);
+}
+
 export default function RetasiPage() {
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState(todayStr());
+  const [dateFrom, setDateFrom] = useState(fourDaysAgoStr());
   const [dateTo, setDateTo] = useState(todayStr());
   const [driverFilter, setDriverFilter] = useState("all");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);

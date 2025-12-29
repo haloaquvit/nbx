@@ -21,11 +21,6 @@ export function MaintenanceDialog({ open, onOpenChange, maintenance }: Maintenan
   const updateMaintenance = useUpdateMaintenance()
   const { data: assets = [], isLoading: assetsLoading } = useAssets()
 
-  // Debug: log assets
-  useEffect(() => {
-    console.log('MaintenanceDialog - Assets loaded:', assets.length, assets)
-    console.log('MaintenanceDialog - Assets loading:', assetsLoading)
-  }, [assets, assetsLoading])
 
   const [formData, setFormData] = useState<Partial<MaintenanceFormData>>({
     maintenanceType: "preventive",

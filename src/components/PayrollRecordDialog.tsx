@@ -54,10 +54,7 @@ export function PayrollRecordDialog({
   // Debug logging (removed to reduce console spam)
 
   const handleCalculate = async () => {
-    console.log('handleCalculate called', { selectedEmployeeId, selectedYear, selectedMonth });
-
     if (!selectedEmployeeId) {
-      console.log('No employee selected');
       toast({
         variant: "destructive",
         title: "Error",
@@ -66,23 +63,14 @@ export function PayrollRecordDialog({
       return
     }
 
-    console.log('Starting calculation...');
     setIsCalculating(true)
 
     try {
-      console.log('Calling calculatePayrollWithAdvances.mutateAsync');
       const result = await calculatePayrollWithAdvances.mutateAsync({
         employeeId: selectedEmployeeId,
         year: selectedYear,
         month: selectedMonth
       })
-
-      console.log('🎯 RPC RESPONSE DETAIL:');
-      console.log('Full result object:', JSON.stringify(result, null, 2));
-      console.log('Result keys:', Object.keys(result || {}));
-      console.log('Base salary value:', result?.baseSalary);
-      console.log('Commission value:', result?.commissionAmount);
-      console.log('Outstanding advances value:', result?.outstandingAdvances);
 
       setCalculation(result)
       setBonusAmount(result.bonusAmount || result.bonus_amount || 0)
@@ -99,7 +87,6 @@ export function PayrollRecordDialog({
         description: error.message || "Gagal menghitung gaji"
       })
     } finally {
-      console.log('Calculation finished, setting isCalculating to false');
       setIsCalculating(false)
     }
   }
@@ -221,10 +208,7 @@ export function PayrollRecordDialog({
             </div>
 
             <Button
-              onClick={() => {
-                console.log('Button clicked!');
-                handleCalculate();
-              }}
+              onClick={handleCalculate}
               disabled={!selectedEmployeeId || isCalculating}
               className="w-full"
             >

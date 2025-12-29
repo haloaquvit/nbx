@@ -113,15 +113,82 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
       return
     }
 
-    // Fetch PO items if not already loaded
+    // If items not loaded yet, fetch first and wait for render
     if (!hasLoadedItems) {
-      await fetchPoItems()
+      setIsLoadingItems(true)
+      try {
+        const { data, error } = await supabase
+          .from('purchase_order_items')
+          .select(`
+            id,
+            material_id,
+            quantity,
+            unit_price,
+            quantity_received,
+            notes,
+            materials:material_id (
+              name,
+              unit
+            )
+          `)
+          .eq('purchase_order_id', purchaseOrder.id)
+
+        let items: PurchaseOrderItem[] = []
+
+        if (error) {
+          console.error('Error fetching PO items:', error)
+          if (purchaseOrder.materialId) {
+            items = [{
+              materialId: purchaseOrder.materialId,
+              materialName: purchaseOrder.materialName,
+              unit: purchaseOrder.unit,
+              quantity: purchaseOrder.quantity || 0,
+              unitPrice: purchaseOrder.unitPrice || 0,
+            }]
+          }
+        } else if (data && data.length > 0) {
+          items = data.map((item: any) => ({
+            id: item.id,
+            materialId: item.material_id,
+            materialName: item.materials?.name,
+            unit: item.materials?.unit,
+            quantity: item.quantity,
+            unitPrice: item.unit_price,
+            quantityReceived: item.quantity_received,
+            notes: item.notes,
+          }))
+        } else if (purchaseOrder.materialId) {
+          items = [{
+            materialId: purchaseOrder.materialId,
+            materialName: purchaseOrder.materialName,
+            unit: purchaseOrder.unit,
+            quantity: purchaseOrder.quantity || 0,
+            unitPrice: purchaseOrder.unitPrice || 0,
+          }]
+        }
+
+        if (items.length === 0) {
+          alert('Error: Tidak ada item untuk dicetak')
+          setIsLoadingItems(false)
+          return
+        }
+
+        setPoItems(items)
+        setHasLoadedItems(true)
+        setIsLoadingItems(false)
+
+        // Wait for React to render the items
+        await new Promise(resolve => setTimeout(resolve, 200))
+      } catch (error) {
+        console.error('Error fetching PO items:', error)
+        setIsLoadingItems(false)
+        alert('Error: Gagal memuat data item')
+        return
+      }
     }
 
-    // Wait a bit for state to update
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    if (poItems.length === 0) {
+    // Check if items are available
+    if (poItems.length === 0 && !hasLoadedItems) {
       alert('Error: Tidak ada item untuk dicetak')
       return
     }
@@ -129,14 +196,12 @@ export function PurchaseOrderPDF({ purchaseOrder, children }: PurchaseOrderPDFPr
     setIsGeneratingPdf(true)
 
     try {
-      console.log('Starting PDF generation...')
       await createCompressedPDF(
         printRef.current,
         `PO-${purchaseOrder.id}.pdf`,
         [210, 297], // A4 format
         100 // Max 100KB
       )
-      console.log('PDF generated successfully!')
     } catch (error) {
       console.error('Error generating PDF:', error)
       alert(`Gagal membuat PDF: ${error instanceof Error ? error.message : 'Unknown error'}`)
