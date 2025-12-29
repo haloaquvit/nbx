@@ -106,15 +106,15 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
   }
 
   const handleItemChange = (index: number, field: keyof FormTransactionItem, value: any) => {
-    const newItems = [...items]
-    (newItems[index] as any)[field] = value
+    const newItems = [...items];
+    (newItems[index] as any)[field] = value;
 
     if (field === 'product' && value) {
-      newItems[index].harga = value.basePrice || 0
-      newItems[index].unit = value.unit || 'pcs'
+      newItems[index].harga = value.basePrice || 0;
+      newItems[index].unit = value.unit || 'pcs';
     }
-    
-    setItems(newItems)
+
+    setItems(newItems);
   }
 
   const handleRemoveItem = (index: number) => {
