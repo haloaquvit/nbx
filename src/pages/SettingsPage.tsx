@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
 import { Upload, Image as ImageIcon, MapPin, Printer } from 'lucide-react'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
+import { compressImage } from '@/utils/imageCompression'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
 import { VPSServerSettings } from '@/components/VPSServerSettings'
@@ -73,14 +74,24 @@ export default function SettingsPage() {
     setLocalInfo(prev => ({ ...prev, [id]: value === '' ? null : Number(value) }));
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setLocalInfo(prev => ({ ...prev, logo: reader.result as string }));
-      };
-      reader.readAsDataURL(file);
+      try {
+        // Compress image to max 100KB
+        const compressedFile = await compressImage(file, 100);
+        console.log(`Logo compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB`);
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setLocalInfo(prev => ({ ...prev, logo: reader.result as string }));
+          toast({ title: "Logo berhasil diupload", description: `Ukuran: ${(compressedFile.size / 1024).toFixed(1)}KB` });
+        };
+        reader.readAsDataURL(compressedFile);
+      } catch (error) {
+        console.error('Error compressing logo:', error);
+        toast({ variant: "destructive", title: "Gagal", description: "Gagal mengkompresi gambar" });
+      }
     }
   };
 

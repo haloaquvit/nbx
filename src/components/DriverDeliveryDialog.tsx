@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
 import { Truck, Package, User, MapPin, Check, Camera, Image } from "lucide-react"
 import { Transaction } from "@/types/transaction"
+import { compressImage, isImageFile } from "@/utils/imageCompression"
 import { useDrivers, Driver } from "@/hooks/useDrivers"
 import { useDeliveries } from "@/hooks/useDeliveries"
 import { CreateDeliveryRequest } from "@/types/delivery"
@@ -90,11 +91,11 @@ export function DriverDeliveryDialog({
     }))
   }
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       // Validate file type
-      if (!file.type.startsWith('image/')) {
+      if (!isImageFile(file)) {
         toast({
           variant: "destructive",
           title: "Error",
@@ -103,24 +104,42 @@ export function DriverDeliveryDialog({
         return
       }
 
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
+      // Validate file size (max 10MB before compression)
+      if (file.size > 10 * 1024 * 1024) {
         toast({
-          variant: "destructive", 
+          variant: "destructive",
           title: "Error",
-          description: "Ukuran file maksimal 5MB"
+          description: "Ukuran file maksimal 10MB"
         })
         return
       }
 
-      setDeliveryPhoto(file)
-      
-      // Create preview
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setPhotoPreview(e.target?.result as string)
+      try {
+        // Compress image to max 100KB
+        const compressedFile = await compressImage(file, 100)
+        console.log(`Photo compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB`)
+
+        setDeliveryPhoto(compressedFile)
+
+        // Create preview
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setPhotoPreview(e.target?.result as string)
+        }
+        reader.readAsDataURL(compressedFile)
+
+        toast({
+          title: "Foto dikompres",
+          description: `Ukuran: ${(compressedFile.size / 1024).toFixed(1)}KB`
+        })
+      } catch (error) {
+        console.error('Error compressing image:', error)
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Gagal mengkompresi gambar"
+        })
       }
-      reader.readAsDataURL(file)
     }
   }
 
