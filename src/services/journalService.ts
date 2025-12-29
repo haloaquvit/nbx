@@ -396,13 +396,34 @@ export async function createSalesJournal(params: {
   subtotal?: number; // Amount before PPN
   // Office Sale flag - determines if stock reduces immediately or on delivery
   isOfficeSale?: boolean;
+  // Optional: specific payment account for cash payment (e.g., driver's cash account)
+  paymentAccountId?: string;
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
-  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale } = params;
+  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale, paymentAccountId } = params;
 
   // Find accounts - using actual database codes (1120, 1210, etc.)
-  console.log('[JournalService] createSalesJournal - Finding accounts for branchId:', branchId);
+  console.log('[JournalService] createSalesJournal - Finding accounts for branchId:', branchId, 'paymentAccountId:', paymentAccountId);
 
-  const kasAccount = await getAccountByCode('1120', branchId) || await findAccountByPattern('kas', 'Aset', branchId);
+  // If paymentAccountId is provided, use that specific account for cash payment
+  let kasAccount: { id: string; code: string; name: string } | null = null;
+  if (paymentAccountId && paymentMethod !== 'credit') {
+    // Fetch the specific payment account
+    const { data: paymentAccRaw } = await supabase
+      .from('accounts')
+      .select('id, code, name')
+      .eq('id', paymentAccountId)
+      .order('id').limit(1);
+    const paymentAcc = Array.isArray(paymentAccRaw) ? paymentAccRaw[0] : paymentAccRaw;
+    if (paymentAcc) {
+      kasAccount = { id: paymentAcc.id, code: paymentAcc.code || '', name: paymentAcc.name };
+      console.log('[JournalService] Using specified payment account:', kasAccount.name);
+    }
+  }
+  // Fallback to default Kas account if not specified or not found
+  if (!kasAccount) {
+    kasAccount = await getAccountByCode('1120', branchId) || await findAccountByPattern('kas', 'Aset', branchId);
+  }
+
   const piutangAccount = await getAccountByCode('1210', branchId) || await findAccountByPattern('piutang', 'Aset', branchId);
   const pendapatanAccount = await getAccountByCode('4100', branchId) || await findAccountByPattern('penjualan', 'Pendapatan', branchId);
 

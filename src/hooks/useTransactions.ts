@@ -505,6 +505,8 @@ export const useTransactions = (filters?: {
             // - isOfficeSale=true: Cr. Persediaan (stok langsung berkurang)
             // - isOfficeSale=false: Cr. Hutang Barang Dagang (kewajiban kirim)
             isOfficeSale: newTransaction.isOfficeSale || false,
+            // Use specific payment account if provided (e.g., driver's cash account)
+            paymentAccountId: newTransaction.paymentAccountId || undefined,
           });
 
           if (journalResult.success) {
