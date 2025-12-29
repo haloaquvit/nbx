@@ -1233,6 +1233,8 @@ function EditRetasiDialog({
 
   // Option to mark as returned (only for active retasi)
   const [markAsReturned, setMarkAsReturned] = useState(false);
+  // Option to unmark as returned (only for returned retasi)
+  const [unmarkAsReturned, setUnmarkAsReturned] = useState(false);
 
   // Reset form when retasi changes
   React.useEffect(() => {
@@ -1246,6 +1248,7 @@ function EditRetasiDialog({
       setLakuCount(retasi.barang_laku || 0);
       setTidakLakuCount(retasi.barang_tidak_laku || 0);
       setMarkAsReturned(false);
+      setUnmarkAsReturned(false);
     }
   }, [retasi]);
 
@@ -1260,8 +1263,17 @@ function EditRetasiDialog({
       notes: notes || undefined,
     };
 
-    // Include return quantities if retasi is already returned OR if marking as returned
-    if (retasi?.is_returned || markAsReturned) {
+    // Handle unmark as returned (change from Kembali to Berangkat)
+    if (unmarkAsReturned) {
+      data.is_returned = false;
+      data.returned_items_count = 0;
+      data.error_items_count = 0;
+      data.barang_laku = 0;
+      data.barang_tidak_laku = 0;
+      data.return_notes = null;
+    }
+    // Include return quantities if retasi is already returned (and not unmarking) OR if marking as returned
+    else if ((retasi?.is_returned && !unmarkAsReturned) || markAsReturned) {
       data.is_returned = true;
       data.returned_items_count = returnedCount;
       data.error_items_count = errorCount;
@@ -1356,8 +1368,24 @@ function EditRetasiDialog({
             </div>
           )}
 
-          {/* Return quantities - show if retasi is_returned OR if markAsReturned is checked */}
-          {(retasi?.is_returned || markAsReturned) && (
+          {/* Unmark as Returned checkbox - only show if retasi is already returned */}
+          {retasi?.is_returned && (
+            <div className="flex items-center space-x-2 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <input
+                type="checkbox"
+                id="unmarkAsReturned"
+                checked={unmarkAsReturned}
+                onChange={(e) => setUnmarkAsReturned(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="unmarkAsReturned" className="text-orange-800 cursor-pointer">
+                Ubah status menjadi Armada Berangkat (batalkan kembali)
+              </Label>
+            </div>
+          )}
+
+          {/* Return quantities - show if retasi is_returned (and not unmarking) OR if markAsReturned is checked */}
+          {((retasi?.is_returned && !unmarkAsReturned) || markAsReturned) && (
             <div className="space-y-3 border-t pt-3">
               <Label className="text-sm font-medium">
                 {retasi?.is_returned ? 'Edit Jumlah Kembali' : 'Input Jumlah Kembali'}
@@ -1430,8 +1458,13 @@ function EditRetasiDialog({
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Status:</span>
-              <span className={`font-medium ${retasi?.is_returned || markAsReturned ? 'text-green-600' : 'text-amber-600'}`}>
-                {retasi?.is_returned ? 'Armada Kembali' : markAsReturned ? 'Akan Ditandai Kembali' : 'Armada Berangkat'}
+              <span className={`font-medium ${
+                unmarkAsReturned ? 'text-orange-600' :
+                (retasi?.is_returned || markAsReturned) ? 'text-green-600' : 'text-amber-600'
+              }`}>
+                {unmarkAsReturned ? 'Akan Diubah ke Berangkat' :
+                 retasi?.is_returned ? 'Armada Kembali' :
+                 markAsReturned ? 'Akan Ditandai Kembali' : 'Armada Berangkat'}
               </span>
             </div>
           </div>
@@ -1444,9 +1477,14 @@ function EditRetasiDialog({
           <Button
             onClick={handleSave}
             disabled={isLoading || (markAsReturned && selisih < 0)}
-            className={markAsReturned ? 'bg-green-600 hover:bg-green-700' : ''}
+            className={
+              unmarkAsReturned ? 'bg-orange-600 hover:bg-orange-700' :
+              markAsReturned ? 'bg-green-600 hover:bg-green-700' : ''
+            }
           >
-            {isLoading ? "Menyimpan..." : markAsReturned ? "Simpan & Tandai Kembali" : "Simpan Perubahan"}
+            {isLoading ? "Menyimpan..." :
+             unmarkAsReturned ? "Ubah ke Berangkat" :
+             markAsReturned ? "Simpan & Tandai Kembali" : "Simpan Perubahan"}
           </Button>
         </div>
       </DialogContent>
