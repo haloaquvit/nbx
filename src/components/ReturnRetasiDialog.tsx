@@ -16,6 +16,178 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ReturnItemsData, RetasiItem } from '@/types/retasi';
 import { Package, CheckCircle, XCircle, ShoppingCart, Ban } from 'lucide-react';
 
+// Simple form component for retasi without item details
+function SimpleReturnForm({
+  totalItems,
+  notes,
+  setNotes,
+  onConfirm,
+  onClose,
+  isLoading,
+}: {
+  totalItems: number;
+  notes: string;
+  setNotes: (notes: string) => void;
+  onConfirm: (data: ReturnItemsData) => void;
+  onClose: () => void;
+  isLoading: boolean;
+}) {
+  const [kembali, setKembali] = React.useState(0);
+  const [laku, setLaku] = React.useState(0);
+  const [tidakLaku, setTidakLaku] = React.useState(0);
+  const [error, setError] = React.useState(0);
+
+  const totalInput = kembali + laku + tidakLaku + error;
+  const selisih = totalItems - totalInput;
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log('SimpleReturnForm handleSubmit called');
+
+    if (totalInput > totalItems) {
+      alert('Total input melebihi jumlah barang yang dibawa!');
+      return;
+    }
+
+    const returnData: ReturnItemsData = {
+      returned_items_count: kembali,
+      error_items_count: error,
+      barang_laku: laku,
+      barang_tidak_laku: tidakLaku,
+      return_notes: notes.trim() || undefined,
+      item_returns: [],
+    };
+
+    console.log('Calling onConfirm with:', returnData);
+    onConfirm(returnData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="p-4 text-center text-muted-foreground border-b">
+        <Package className="mx-auto h-8 w-8 mb-2 opacity-50" />
+        <p className="text-sm">Input manual jumlah barang kembali</p>
+      </div>
+
+      {/* Input Fields */}
+      <div className="grid grid-cols-2 gap-4 px-4">
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+            Kembali
+          </Label>
+          <Input
+            type="number"
+            min="0"
+            max={totalItems}
+            value={kembali || ''}
+            onChange={(e) => setKembali(parseInt(e.target.value) || 0)}
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1">
+            <ShoppingCart className="h-4 w-4 text-blue-600" />
+            Laku
+          </Label>
+          <Input
+            type="number"
+            min="0"
+            max={totalItems}
+            value={laku || ''}
+            onChange={(e) => setLaku(parseInt(e.target.value) || 0)}
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1">
+            <Ban className="h-4 w-4 text-orange-600" />
+            Tidak Laku
+          </Label>
+          <Input
+            type="number"
+            min="0"
+            max={totalItems}
+            value={tidakLaku || ''}
+            onChange={(e) => setTidakLaku(parseInt(e.target.value) || 0)}
+            placeholder="0"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label className="flex items-center gap-1">
+            <XCircle className="h-4 w-4 text-red-600" />
+            Error
+          </Label>
+          <Input
+            type="number"
+            min="0"
+            max={totalItems}
+            value={error || ''}
+            onChange={(e) => setError(parseInt(e.target.value) || 0)}
+            placeholder="0"
+          />
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-4 gap-2 p-3 bg-gray-50 rounded-lg text-sm mx-4">
+        <div className="text-center">
+          <div className="text-muted-foreground text-xs">Dibawa</div>
+          <div className="font-bold text-lg">{totalItems}</div>
+        </div>
+        <div className="text-center">
+          <div className="text-muted-foreground text-xs">Total Input</div>
+          <div className="font-bold text-lg">{totalInput}</div>
+        </div>
+        <div className="text-center">
+          <div className={`text-xs ${selisih === 0 ? 'text-green-600' : 'text-orange-600'}`}>Selisih</div>
+          <div className={`font-bold text-lg ${selisih === 0 ? 'text-green-600' : 'text-orange-600'}`}>{selisih}</div>
+        </div>
+      </div>
+
+      {selisih > 0 && (
+        <div className="text-orange-600 text-sm text-center">
+          Masih ada {selisih} barang belum diinput
+        </div>
+      )}
+      {selisih < 0 && (
+        <div className="text-red-600 text-sm text-center">
+          Total input melebihi jumlah barang yang dibawa!
+        </div>
+      )}
+
+      {/* Notes */}
+      <div className="space-y-2 px-4">
+        <Label htmlFor="simple-notes">Catatan (Opsional)</Label>
+        <Textarea
+          id="simple-notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Catatan tambahan..."
+          rows={2}
+        />
+      </div>
+
+      <DialogFooter className="gap-2 px-4 pb-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onClose}
+          disabled={isLoading}
+        >
+          Batal
+        </Button>
+        <Button
+          type="submit"
+          disabled={isLoading || selisih < 0}
+        >
+          {isLoading ? 'Menyimpan...' : 'Simpan'}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
 interface ReturnRetasiDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -102,6 +274,9 @@ export function ReturnRetasiDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('ReturnRetasiDialog handleSubmit called');
+    console.log('itemReturns:', itemReturns);
+    console.log('totals:', totals);
 
     // Validate
     const hasOverflow = itemReturns.some(item => {
@@ -114,14 +289,16 @@ export function ReturnRetasiDialog({
       return;
     }
 
-    onConfirm({
+    const returnData = {
       returned_items_count: totals.kembali,
       error_items_count: totals.error,
       barang_laku: totals.laku,
       barang_tidak_laku: totals.tidakLaku,
       return_notes: notes.trim() || undefined,
       item_returns: itemReturns,
-    });
+    };
+    console.log('Calling onConfirm with:', returnData);
+    onConfirm(returnData);
   };
 
   const handleClose = () => {
@@ -129,7 +306,10 @@ export function ReturnRetasiDialog({
     onClose();
   };
 
-  // If no items, show simple form (backward compatibility)
+  // Debug log
+  console.log('ReturnRetasiDialog render - items:', items, 'isOpen:', isOpen);
+
+  // If no items, show simple form with manual input (backward compatibility)
   if (items.length === 0) {
     return (
       <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -141,22 +321,14 @@ export function ReturnRetasiDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-4 text-center text-muted-foreground">
-            <Package className="mx-auto h-12 w-12 mb-2 opacity-50" />
-            <p>Tidak ada data produk untuk retasi ini.</p>
-            <p className="text-sm">Silakan input manual atau cek data retasi.</p>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={isLoading}
-            >
-              Tutup
-            </Button>
-          </DialogFooter>
+          <SimpleReturnForm
+            totalItems={totalItems}
+            notes={notes}
+            setNotes={setNotes}
+            onConfirm={onConfirm}
+            onClose={handleClose}
+            isLoading={isLoading}
+          />
         </DialogContent>
       </Dialog>
     );
