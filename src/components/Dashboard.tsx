@@ -93,6 +93,9 @@ export function Dashboard() {
     // Analyze product sales and profits (this month)
     const productStats = thisMonthTransactions.reduce((acc, transaction) => {
       transaction.items.forEach(item => {
+        // Skip items without valid product reference
+        if (!item.product?.id) return;
+
         const productId = item.product.id;
         const productName = item.product.name;
         
