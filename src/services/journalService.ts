@@ -407,16 +407,24 @@ export async function createSalesJournal(params: {
   // If paymentAccountId is provided, use that specific account for cash payment
   let kasAccount: { id: string; code: string; name: string } | null = null;
   if (paymentAccountId && paymentMethod !== 'credit') {
-    // Fetch the specific payment account
-    const { data: paymentAccRaw } = await supabase
+    console.log('[JournalService] Looking up payment account by ID:', paymentAccountId);
+    const { data: paymentAccRaw, error: paymentAccError } = await supabase
       .from('accounts')
       .select('id, code, name')
       .eq('id', paymentAccountId)
       .order('id').limit(1);
+
+    if (paymentAccError) {
+      console.error('[JournalService] Error fetching payment account:', paymentAccError);
+    }
+
     const paymentAcc = Array.isArray(paymentAccRaw) ? paymentAccRaw[0] : paymentAccRaw;
+    console.log('[JournalService] Payment account query result:', paymentAcc);
     if (paymentAcc) {
       kasAccount = { id: paymentAcc.id, code: paymentAcc.code || '', name: paymentAcc.name };
-      console.log('[JournalService] Using specified payment account:', kasAccount.name);
+      console.log('[JournalService] Using specified payment account:', kasAccount.code, '-', kasAccount.name);
+    } else {
+      console.warn('[JournalService] Payment account not found for ID:', paymentAccountId);
     }
   }
   // Fallback to default Kas account if not specified or not found

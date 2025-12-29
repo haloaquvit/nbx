@@ -76,7 +76,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
       return;
     }
 
-    const parsedAmount = parseNumberWithCommas(amount);
+    const parsedAmount = Number(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       toast.error('Jumlah piutang harus lebih dari 0');
       return;
@@ -411,29 +411,12 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
                 <Label htmlFor="amount">Jumlah Piutang *</Label>
                 <Input
                   id="amount"
-                  type="text"
+                  type="number"
                   inputMode="numeric"
                   value={amount}
-                  onChange={(e) => {
-                    // Get cursor position before formatting
-                    const input = e.target;
-                    const oldLength = amount.length;
-
-                    // Remove all non-digit characters (dots, commas, spaces)
-                    const rawValue = e.target.value.replace(/\D/g, '');
-
-                    if (rawValue === '') {
-                      setAmount('');
-                    } else {
-                      // Format with thousand separators using Intl for consistency
-                      const numValue = Number(rawValue);
-                      if (!isNaN(numValue) && numValue <= Number.MAX_SAFE_INTEGER) {
-                        const formatted = new Intl.NumberFormat('id-ID').format(numValue);
-                        setAmount(formatted);
-                      }
-                    }
-                  }}
+                  onChange={(e) => setAmount(e.target.value)}
                   placeholder="0"
+                  min="0"
                   required
                 />
               </div>

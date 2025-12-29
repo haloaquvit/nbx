@@ -106,11 +106,20 @@ export const useProducts = () => {
           .limit(1);
 
         const existing = Array.isArray(currentProduct) ? currentProduct[0] : currentProduct;
-        const oldInitialStock = existing?.initial_stock || 0;
-        const oldCurrentStock = existing?.current_stock || 0;
+        const oldInitialStock = Number(existing?.initial_stock) || 0;
+        const oldCurrentStock = Number(existing?.current_stock) || 0;
 
+        console.log('[Product Update] Stock check:', {
+          'product.initialStock': product.initialStock,
+          'dbData.initial_stock': dbData.initial_stock,
+          oldInitialStock,
+          oldCurrentStock,
+          existing
+        });
+
+        // Always recalculate current_stock when initial_stock is provided (even if 0)
         if (dbData.initial_stock !== undefined && existing) {
-          const newInitialStock = dbData.initial_stock;
+          const newInitialStock = Number(dbData.initial_stock);
           const stockDiff = newInitialStock - oldInitialStock;
 
           if (stockDiff !== 0) {

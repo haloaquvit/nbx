@@ -438,7 +438,7 @@ export default function DeliveryPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <Table className="min-w-[800px]">
+                <Table className="min-w-[900px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[100px]">Order ID</TableHead>
@@ -446,6 +446,7 @@ export default function DeliveryPage() {
                       <TableHead className="min-w-[140px]">Tanggal Order</TableHead>
                       <TableHead className="min-w-[120px]">Total</TableHead>
                       <TableHead className="min-w-[100px]">Status</TableHead>
+                      <TableHead className="min-w-[100px]">Supir</TableHead>
                       <TableHead className="min-w-[80px]">Item Sisa</TableHead>
                       <TableHead className="w-[100px]">Aksi</TableHead>
                     </TableRow>
@@ -492,6 +493,25 @@ export default function DeliveryPage() {
                               <StatusIcon className="h-3 w-3" />
                               <span className="hidden sm:inline">{overallStatus.status}</span>
                             </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {transaction.deliveries.length > 0 ? (
+                              <div className="text-sm">
+                                {/* Show unique driver names from all deliveries */}
+                                {(() => {
+                                  const driverNames = [...new Set(
+                                    transaction.deliveries
+                                      .map(d => d.driverName)
+                                      .filter(Boolean)
+                                  )];
+                                  return driverNames.length > 0
+                                    ? driverNames.join(', ')
+                                    : <span className="text-muted-foreground">-</span>;
+                                })()}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">
