@@ -50,21 +50,26 @@ import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
 import { CreateRetasiItemData } from "@/types/retasi";
 import { useGranularPermission } from "@/hooks/useGranularPermission";
+import { useTimezone } from "@/contexts/TimezoneContext";
+import { getOfficeDateString } from "@/utils/officeTime";
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function fourDaysAgoStr() {
-  const date = new Date();
-  date.setDate(date.getDate() - 4);
-  return date.toISOString().slice(0, 10);
+// Helper to get date string with offset days (uses default timezone for initial state)
+function getDateWithOffset(offsetDays: number, timezone: string = 'Asia/Jayapura'): string {
+  const now = new Date();
+  now.setDate(now.getDate() + offsetDays);
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
 }
 
 export default function RetasiPage() {
+  const { timezone } = useTimezone();
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState(fourDaysAgoStr());
-  const [dateTo, setDateTo] = useState(todayStr());
+  const [dateFrom, setDateFrom] = useState(() => getDateWithOffset(-4));
+  const [dateTo, setDateTo] = useState(() => getDateWithOffset(0));
   const [driverFilter, setDriverFilter] = useState("all");
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedRetasi, setSelectedRetasi] = useState<any>(null);
@@ -633,8 +638,8 @@ function AddRetasiDialog({
       const isBlocked = !(await checkDriverAvailability(driver.name));
       setBlocked(isBlocked);
 
-      // Get actual next retasi_ke from backend
-      const todayDate = new Date().toISOString().slice(0, 10);
+      // Get actual next retasi_ke from backend using office timezone
+      const todayDate = getOfficeDateString(timezone);
       const { data: todayRetasi } = await supabase
         .from('retasi')
         .select('retasi_ke')
@@ -644,6 +649,7 @@ function AddRetasiDialog({
       const nextRetasiKe = (todayRetasi?.length || 0) + 1;
       setNextSeq(nextRetasiKe);
 
+      console.log('[RetasiPage] Today date (office timezone):', todayDate);
       console.log('[RetasiPage] Today retasi for', driver.name, ':', todayRetasi);
       console.log('[RetasiPage] Next retasi_ke will be:', nextRetasiKe);
     } catch (error) {
