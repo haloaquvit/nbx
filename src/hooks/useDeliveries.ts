@@ -1202,9 +1202,149 @@ export function useDeliveries() {
     },
   })
 
+  // Update delivery (owner only)
+  const updateDelivery = useMutation({
+    mutationFn: async (request: {
+      deliveryId: string;
+      driverId?: string;
+      helperId?: string;
+      notes?: string;
+      items?: Array<{
+        id: string;
+        quantityDelivered: number;
+        notes?: string;
+      }>;
+    }): Promise<void> => {
+      // Check user permission (owner only)
+      if (!user) {
+        throw new Error('User tidak terautentikasi')
+      }
+
+      const userRole = user.role || 'user'
+
+      if (userRole !== 'owner') {
+        throw new Error('Hanya owner yang dapat mengedit pengantaran')
+      }
+
+      // Get current delivery data for stock adjustment
+      const { data: deliveryRawData, error: deliveryError } = await supabase
+        .from('deliveries')
+        .select(`
+          *,
+          items:delivery_items(*)
+        `)
+        .eq('id', request.deliveryId)
+        .order('id').limit(1)
+
+      if (deliveryError) {
+        throw new Error(`Gagal mengambil data pengantaran: ${deliveryError.message}`)
+      }
+
+      const deliveryData = Array.isArray(deliveryRawData) ? deliveryRawData[0] : deliveryRawData
+
+      if (!deliveryData) {
+        throw new Error('Data pengantaran tidak ditemukan')
+      }
+
+      // Update delivery record (driver, helper, notes)
+      const updateData: any = {}
+      if (request.driverId !== undefined) updateData.driver_id = request.driverId || null
+      if (request.helperId !== undefined) updateData.helper_id = request.helperId || null
+      if (request.notes !== undefined) updateData.notes = request.notes
+
+      if (Object.keys(updateData).length > 0) {
+        const { error: updateError } = await supabase
+          .from('deliveries')
+          .update(updateData)
+          .eq('id', request.deliveryId)
+
+        if (updateError) {
+          throw new Error(`Gagal update pengantaran: ${updateError.message}`)
+        }
+      }
+
+      // Update delivery items if provided
+      if (request.items && request.items.length > 0) {
+        for (const item of request.items) {
+          // Find original item
+          const originalItem = deliveryData.items?.find((i: any) => i.id === item.id)
+          if (!originalItem) continue
+
+          const quantityDiff = item.quantityDelivered - originalItem.quantity_delivered
+
+          // Update item
+          const itemUpdateData: any = {
+            quantity_delivered: item.quantityDelivered
+          }
+          if (item.notes !== undefined) itemUpdateData.notes = item.notes
+
+          const { error: itemError } = await supabase
+            .from('delivery_items')
+            .update(itemUpdateData)
+            .eq('id', item.id)
+
+          if (itemError) {
+            throw new Error(`Gagal update item pengantaran: ${itemError.message}`)
+          }
+
+          // Adjust stock if quantity changed
+          if (quantityDiff !== 0) {
+            const { data: productRawData } = await supabase
+              .from('products')
+              .select('current_stock, name')
+              .eq('id', originalItem.product_id)
+              .order('id').limit(1)
+
+            const productData = Array.isArray(productRawData) ? productRawData[0] : productRawData
+
+            if (productData) {
+              // If quantity increased, reduce more stock. If decreased, restore stock.
+              const newStock = productData.current_stock - quantityDiff
+
+              const { error: stockError } = await supabase
+                .from('products')
+                .update({ current_stock: newStock })
+                .eq('id', originalItem.product_id)
+
+              if (stockError) {
+                console.error(`Failed to adjust stock for ${productData.name}:`, stockError)
+              } else {
+                console.log(`📦 Stock adjusted for ${productData.name}: ${productData.current_stock} → ${newStock} (diff: ${quantityDiff})`)
+
+                // Create stock movement record
+                await supabase.from('stock_movements').insert({
+                  product_id: originalItem.product_id,
+                  product_name: originalItem.product_name,
+                  movement_type: quantityDiff > 0 ? 'out' : 'in',
+                  quantity: Math.abs(quantityDiff),
+                  reference_id: request.deliveryId,
+                  reference_type: 'delivery_edit',
+                  notes: `Delivery edit adjustment: ${quantityDiff > 0 ? 'increased' : 'decreased'} by ${Math.abs(quantityDiff)}`,
+                  created_by: user?.id || null,
+                  created_by_name: user?.name || user?.email || 'Unknown User'
+                })
+              }
+            }
+          }
+        }
+      }
+
+      console.log('✅ Delivery updated successfully:', request.deliveryId)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions-ready-for-delivery'] })
+      queryClient.invalidateQueries({ queryKey: ['transaction-delivery-info'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-history'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
+    },
+  })
+
   return {
     createDelivery,
     deleteDelivery,
+    updateDelivery,
   }
 }
 

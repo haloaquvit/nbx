@@ -32,8 +32,10 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle, FileText, Trash2 } from "lucide-react"
+import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle, FileText, Trash2, Pencil } from "lucide-react"
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
+import { EditDeliveryDialog } from "@/components/EditDeliveryDialog"
+import { isOwner } from "@/utils/roleUtils"
 import { format, isValid } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
@@ -56,9 +58,12 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
   const [isOpen, setIsOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null)
   
   // Check if user is admin or owner
   const canDeleteDelivery = user?.role === 'admin' || user?.role === 'owner'
+  // Check if user is owner (for edit)
+  const canEditDelivery = isOwner(user?.role)
   
   const [formData, setFormData] = useState<DeliveryFormData>({
     transactionId: transaction.id,
@@ -550,6 +555,16 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                               Lihat Foto
                             </Button>
                           )}
+                          {canEditDelivery && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setEditingDelivery(delivery)}
+                            >
+                              <Pencil className="h-4 w-4 mr-1" />
+                              Edit
+                            </Button>
+                          )}
                           {canDeleteDelivery && (
                             <Button
                               variant="destructive"
@@ -600,6 +615,15 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
           )}
         </div>
       </CardContent>
+
+      {/* Edit Delivery Dialog (Owner only) */}
+      {editingDelivery && (
+        <EditDeliveryDialog
+          delivery={editingDelivery}
+          open={!!editingDelivery}
+          onOpenChange={(open) => !open && setEditingDelivery(null)}
+        />
+      )}
     </Card>
   )
 }
