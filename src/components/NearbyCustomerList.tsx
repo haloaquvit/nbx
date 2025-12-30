@@ -19,7 +19,7 @@ import {
   getTodayVisitCountAsync
 } from '@/utils/customerVisitUtils'
 import { useBranch } from '@/contexts/BranchContext'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuthContext } from '@/contexts/AuthContext'
 import { PhotoUploadService } from '@/services/photoUploadService'
 import { useGranularPermission } from '@/hooks/useGranularPermission'
 
@@ -51,7 +51,7 @@ export function NearbyCustomerList({
   const { toast } = useToast()
   const { hasGranularPermission } = useGranularPermission()
   const { currentBranch } = useBranch()
-  const { user } = useAuth()
+  const { user } = useAuthContext()
 
   // Check permissions
   const canAccessDriverPos = hasGranularPermission('pos_driver_access')
