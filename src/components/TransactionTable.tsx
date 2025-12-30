@@ -50,14 +50,12 @@ import { useAuth } from "@/hooks/useAuth"
 import { UserRole } from "@/types/user"
 import { EditTransactionDialog } from "./EditTransactionDialog"
 import { isOwner } from '@/utils/roleUtils'
-import { useAccounts } from "@/hooks/useAccounts"
 
 
 export function TransactionTable() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { accounts } = useAccounts();
 
   // Check if mobile view
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
@@ -75,7 +73,7 @@ export function TransactionTable() {
   const [deliveryFilter, setDeliveryFilter] = React.useState<'all' | 'pending-delivery'>('all');
   const [paymentFilter, setPaymentFilter] = React.useState<'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang'>('all');
   const [retasiFilter, setRetasiFilter] = React.useState<string>('all'); // 'all' or retasi_number
-  const [paymentAccountFilter, setPaymentAccountFilter] = React.useState<string>('all'); // 'all' or account_id
+  const [cashierFilter, setCashierFilter] = React.useState<string>('all'); // 'all' or cashier_name
   const [filteredTransactions, setFilteredTransactions] = React.useState<Transaction[]>([]);
   
   const { transactions, isLoading, deleteTransaction } = useTransactions();
@@ -173,10 +171,10 @@ export function TransactionTable() {
       });
     }
 
-    // Filter by payment account
-    if (paymentAccountFilter !== 'all') {
+    // Filter by cashier
+    if (cashierFilter !== 'all') {
       filtered = filtered.filter(transaction => {
-        return transaction.paymentAccountId === paymentAccountFilter;
+        return transaction.cashierName === cashierFilter;
       });
     }
 
@@ -188,7 +186,7 @@ export function TransactionTable() {
     });
 
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, paymentAccountFilter, isMobile]);
+  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, cashierFilter, isMobile]);
 
   const clearFilters = () => {
     setDateRange({ from: undefined, to: undefined });
@@ -196,7 +194,7 @@ export function TransactionTable() {
     setDeliveryFilter('all');
     setPaymentFilter('all');
     setRetasiFilter('all');
-    setPaymentAccountFilter('all');
+    setCashierFilter('all');
   };
 
   // Get unique retasi numbers from transactions
@@ -211,17 +209,17 @@ export function TransactionTable() {
     return Array.from(retasiSet).sort();
   }, [transactions]);
 
-  // Get unique payment accounts used in transactions
-  const uniquePaymentAccounts = React.useMemo(() => {
-    if (!transactions || !accounts) return [];
-    const accountIds = new Set<string>();
+  // Get unique cashier names from transactions
+  const uniqueCashiers = React.useMemo(() => {
+    if (!transactions) return [];
+    const cashierSet = new Set<string>();
     transactions.forEach(t => {
-      if (t.paymentAccountId) {
-        accountIds.add(t.paymentAccountId);
+      if (t.cashierName) {
+        cashierSet.add(t.cashierName);
       }
     });
-    return accounts.filter(acc => accountIds.has(acc.id));
-  }, [transactions, accounts]);
+    return Array.from(cashierSet).sort();
+  }, [transactions]);
   
 
 
@@ -788,19 +786,19 @@ export function TransactionTable() {
             </div>
           )}
 
-          {/* Payment Account/Method Filter */}
-          {uniquePaymentAccounts.length > 0 && (
+          {/* Cashier Filter */}
+          {uniqueCashiers.length > 0 && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Metode Pembayaran</label>
-              <Select value={paymentAccountFilter} onValueChange={(value: string) => setPaymentAccountFilter(value)}>
+              <label className="text-sm font-medium">Kasir</label>
+              <Select value={cashierFilter} onValueChange={(value: string) => setCashierFilter(value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Pilih Metode Pembayaran" />
+                  <SelectValue placeholder="Pilih Kasir" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Metode</SelectItem>
-                  {uniquePaymentAccounts.map(acc => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      {acc.name}
+                  <SelectItem value="all">Semua Kasir</SelectItem>
+                  {uniqueCashiers.map(cashier => (
+                    <SelectItem key={cashier} value={cashier}>
+                      {cashier}
                     </SelectItem>
                   ))}
                 </SelectContent>

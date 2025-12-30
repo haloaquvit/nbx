@@ -213,7 +213,8 @@
       "Bash(cmd /c \"dir /s /b C:\\*.pem 2>nul | findstr /i aquvit\")",
       "Bash(cmd /c \"dir /s /b D:\\*.pem 2>nul\")",
       "Bash(ssh-add:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Add image compression to DeliveryFormContent and DeliveryManagement\n\n- Added compressImage() to DeliveryFormContent.tsx handlePhotoCapture\n- Added compressImage() to DeliveryManagement.tsx handlePhotoCapture  \n- Images are now compressed to max 100KB before upload\n- Added file validation (image type, max 10MB before compression)\n- Shows toast notification with compressed file size\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Add image compression to DeliveryFormContent and DeliveryManagement\n\n- Added compressImage() to DeliveryFormContent.tsx handlePhotoCapture\n- Added compressImage() to DeliveryManagement.tsx handlePhotoCapture  \n- Images are now compressed to max 100KB before upload\n- Added file validation (image type, max 10MB before compression)\n- Shows toast notification with compressed file size\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nrefactor: Change payment method filter to cashier filter in TransactionTable\n\n- Replaced paymentAccountFilter with cashierFilter\n- Removed useAccounts hook (no longer needed)\n- Filter now shows unique cashier names instead of payment methods\n- Updated UI label from \"Metode Pembayaran\" to \"Kasir\"\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": [],
