@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { ShoppingCart, Truck, Store, Navigation, Loader2, Package, RefreshCw, Search } from 'lucide-react'
+import { ShoppingCart, Truck, Store, Navigation, Loader2, Package, RefreshCw, Search, ChevronDown, ChevronUp, Filter } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 import { supabase } from '@/integrations/supabase/client'
@@ -22,6 +22,7 @@ interface SoldProduct {
   total: number
   source: 'delivery' | 'office_sale' | 'retasi'
   driverName?: string
+  cashierName?: string
   retasiKe?: number
   isBonus: boolean
 }
@@ -31,6 +32,10 @@ export default function MobileSoldItemsPage() {
   const [startDate, setStartDate] = useState(todayStr)
   const [endDate, setEndDate] = useState(todayStr)
   const [sourceFilter, setSourceFilter] = useState<'all' | 'delivery' | 'office_sale' | 'retasi'>('all')
+  const [itemFilter, setItemFilter] = useState<'all' | 'regular' | 'bonus'>('all')
+  const [driverFilter, setDriverFilter] = useState<string>('all')
+  const [retasiKeFilter, setRetasiKeFilter] = useState<string>('all')
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [reportData, setReportData] = useState<SoldProduct[]>([])
   const [isLoading, setIsLoading] = useState(true) // Start with loading true
   const [hasSearched, setHasSearched] = useState(true) // Start with searched true
@@ -116,7 +121,10 @@ export default function MobileSoldItemsPage() {
       if (source === 'all' || source === 'office_sale') {
         let officeSaleQuery = supabase
           .from('transactions')
-          .select('id, customer_name, order_date, items')
+          .select(`
+            id, customer_name, order_date, items,
+            cashier:profiles!transactions_cashier_id_fkey(full_name)
+          `)
           .eq('is_office_sale', true)
           .gte('order_date', fromDate.toISOString())
           .lte('order_date', toDate.toISOString())
@@ -131,6 +139,7 @@ export default function MobileSoldItemsPage() {
           officeSaleData.forEach((transaction: any) => {
             const orderDate = new Date(transaction.order_date)
             const transactionItems = transaction.items || []
+            const cashierName = transaction.cashier?.full_name || 'Unknown'
 
             transactionItems.forEach((item: any) => {
               const productName = item.product?.name || item.name || 'Unknown'
@@ -148,6 +157,7 @@ export default function MobileSoldItemsPage() {
                 price,
                 total: quantity * price,
                 source: 'office_sale',
+                cashierName,
                 isBonus
               })
             })
@@ -236,17 +246,66 @@ export default function MobileSoldItemsPage() {
     generateReport(startDate, endDate, sourceFilter)
   }
 
-  // Summary calculations
+  // Available filter options (derived from data)
+  const availableDrivers = useMemo(() => {
+    const drivers = new Set<string>()
+    reportData.forEach(item => {
+      if (item.driverName) drivers.add(item.driverName)
+      if (item.cashierName) drivers.add(item.cashierName)
+    })
+    return Array.from(drivers).sort()
+  }, [reportData])
+
+  const availableRetasiKe = useMemo(() => {
+    const retasiKes = new Set<number>()
+    reportData.forEach(item => {
+      if (item.retasiKe) retasiKes.add(item.retasiKe)
+    })
+    return Array.from(retasiKes).sort((a, b) => a - b)
+  }, [reportData])
+
+  // Filtered data
+  const filteredData = useMemo(() => {
+    return reportData.filter(item => {
+      // Item type filter
+      if (itemFilter === 'regular' && item.isBonus) return false
+      if (itemFilter === 'bonus' && !item.isBonus) return false
+
+      // Driver/Cashier filter
+      if (driverFilter !== 'all') {
+        const name = item.driverName || item.cashierName || ''
+        if (name !== driverFilter) return false
+      }
+
+      // Retasi Ke filter
+      if (retasiKeFilter !== 'all') {
+        if (item.retasiKe !== parseInt(retasiKeFilter)) return false
+      }
+
+      return true
+    })
+  }, [reportData, itemFilter, driverFilter, retasiKeFilter])
+
+  // Summary calculations (using filtered data)
   const summary = useMemo(() => {
-    const totalItems = reportData.length
-    const totalQty = reportData.reduce((sum, item) => sum + item.quantity, 0)
-    const totalValue = reportData.reduce((sum, item) => sum + item.total, 0)
-    const deliveryCount = reportData.filter(i => i.source === 'delivery').length
-    const officeCount = reportData.filter(i => i.source === 'office_sale').length
-    const retasiCount = reportData.filter(i => i.source === 'retasi').length
+    const totalItems = filteredData.length
+    const totalQty = filteredData.reduce((sum, item) => sum + item.quantity, 0)
+    const totalValue = filteredData.reduce((sum, item) => sum + item.total, 0)
+    const deliveryCount = filteredData.filter(i => i.source === 'delivery').length
+    const officeCount = filteredData.filter(i => i.source === 'office_sale').length
+    const retasiCount = filteredData.filter(i => i.source === 'retasi').length
 
     return { totalItems, totalQty, totalValue, deliveryCount, officeCount, retasiCount }
-  }, [reportData])
+  }, [filteredData])
+
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0
+    if (itemFilter !== 'all') count++
+    if (driverFilter !== 'all') count++
+    if (retasiKeFilter !== 'all') count++
+    return count
+  }, [itemFilter, driverFilter, retasiKeFilter])
 
   const getSourceBadge = (source: 'delivery' | 'office_sale' | 'retasi', retasiKe?: number) => {
     if (source === 'delivery') {
@@ -324,6 +383,19 @@ export default function MobileSoldItemsPage() {
             </SelectContent>
           </Select>
 
+          <Button
+            variant="outline"
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className="h-9 px-3 relative"
+          >
+            <Filter className="h-4 w-4" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">
+                {activeFilterCount}
+              </span>
+            )}
+          </Button>
+
           <Button onClick={handleGenerateReport} disabled={isLoading} className="h-9 px-4">
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -334,6 +406,82 @@ export default function MobileSoldItemsPage() {
             )}
           </Button>
         </div>
+
+        {/* Advanced Filters */}
+        {showAdvancedFilters && (
+          <Card className="bg-gray-50 border-dashed">
+            <CardContent className="p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-600">Filter Tambahan</span>
+                {activeFilterCount > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-blue-600"
+                    onClick={() => {
+                      setItemFilter('all')
+                      setDriverFilter('all')
+                      setRetasiKeFilter('all')
+                    }}
+                  >
+                    Reset
+                  </Button>
+                )}
+              </div>
+
+              {/* Item Type Filter */}
+              <div className="space-y-1">
+                <Label className="text-xs">Tipe Item</Label>
+                <Select value={itemFilter} onValueChange={(v: any) => setItemFilter(v)}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Item</SelectItem>
+                    <SelectItem value="regular">Regular (Non-Bonus)</SelectItem>
+                    <SelectItem value="bonus">Bonus Saja</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Driver/Cashier Filter */}
+              {availableDrivers.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Driver / Kasir</Label>
+                  <Select value={driverFilter} onValueChange={setDriverFilter}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua</SelectItem>
+                      {availableDrivers.map(name => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Retasi Ke Filter */}
+              {availableRetasiKe.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Retasi Ke</Label>
+                  <Select value={retasiKeFilter} onValueChange={setRetasiKeFilter}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Retasi</SelectItem>
+                      {availableRetasiKe.map(ke => (
+                        <SelectItem key={ke} value={ke.toString()}>Retasi {ke}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Summary Cards */}
@@ -363,7 +511,7 @@ export default function MobileSoldItemsPage() {
       )}
 
       {/* Source breakdown */}
-      {hasSearched && !isLoading && reportData.length > 0 && (
+      {hasSearched && !isLoading && filteredData.length > 0 && (
         <div className="px-4 mb-3">
           <div className="flex gap-2 text-xs">
             <span className="text-blue-600">{summary.deliveryCount} Antar</span>
@@ -388,16 +536,20 @@ export default function MobileSoldItemsPage() {
               <p className="text-sm">Pilih tanggal dan tap tombol cari</p>
             </CardContent>
           </Card>
-        ) : reportData.length === 0 ? (
+        ) : filteredData.length === 0 ? (
           <Card className="bg-white">
             <CardContent className="p-8 text-center text-muted-foreground">
               <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Tidak ada produk laku di periode ini</p>
+              <p className="text-sm">
+                {reportData.length > 0
+                  ? 'Tidak ada data yang sesuai dengan filter'
+                  : 'Tidak ada produk laku di periode ini'}
+              </p>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-2">
-            {reportData.map((item, index) => (
+            {filteredData.map((item, index) => (
               <Card key={`${item.transactionId}-${index}`} className="bg-white">
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between mb-1">
