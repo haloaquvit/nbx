@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -101,6 +101,10 @@ export default function DriverPosPage() {
   // Price editing state
   const [editingPriceIndex, setEditingPriceIndex] = useState<number | null>(null)
   const [editPriceValue, setEditPriceValue] = useState<string>('')
+
+  // Quantity editing state with debounce
+  const [pendingQuantities, setPendingQuantities] = useState<Record<number, number>>({})
+  const quantityDebounceRef = useRef<Record<number, NodeJS.Timeout>>({})
 
   // Memoized values
   const filteredCustomers = useMemo(() => {
@@ -289,22 +293,50 @@ export default function DriverPosPage() {
     }
   }
 
-  const setQuantityDirect = async (index: number, qty: number) => {
+  // Debounced quantity update - immediate UI feedback, delayed API call
+  const setQuantityDirect = useCallback((index: number, qty: number) => {
     const item = items[index]
-    if (item.isBonus) return
+    if (!item || item.isBonus) return
 
-    if (qty <= 0) {
-      setItems(items.filter((i, idx) => idx !== index && i.parentProductId !== item.product.id))
-    } else if (qty <= (item.product.currentStock || 0)) {
-      await updateItemWithBonus(index, qty)
-    } else {
-      toast({
-        variant: "destructive",
-        title: "Stock Tidak Cukup",
-        description: `Stock tersedia: ${item.product.currentStock} ${item.product.unit || 'pcs'}`
-      })
+    // Immediately update pending quantity for responsive UI
+    setPendingQuantities(prev => ({ ...prev, [index]: qty }))
+
+    // Clear existing debounce timer
+    if (quantityDebounceRef.current[index]) {
+      clearTimeout(quantityDebounceRef.current[index])
     }
-  }
+
+    // Debounce the actual update
+    quantityDebounceRef.current[index] = setTimeout(async () => {
+      if (qty <= 0) {
+        setItems(prev => prev.filter((i, idx) => idx !== index && i.parentProductId !== item.product.id))
+        setPendingQuantities(prev => {
+          const newPending = { ...prev }
+          delete newPending[index]
+          return newPending
+        })
+      } else if (qty <= (item.product.currentStock || 0)) {
+        await updateItemWithBonus(index, qty)
+        setPendingQuantities(prev => {
+          const newPending = { ...prev }
+          delete newPending[index]
+          return newPending
+        })
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Stock Tidak Cukup",
+          description: `Stock tersedia: ${item.product.currentStock} ${item.product.unit || 'pcs'}`
+        })
+        // Revert to actual quantity
+        setPendingQuantities(prev => {
+          const newPending = { ...prev }
+          delete newPending[index]
+          return newPending
+        })
+      }
+    }, 300) // 300ms debounce
+  }, [items, toast, updateItemWithBonus])
 
   const removeItem = (index: number) => {
     const item = items[index]
@@ -669,26 +701,26 @@ export default function DriverPosPage() {
                 {item.isBonus ? (
                   <div className="text-base font-bold text-green-600">{item.quantity} {item.unit}</div>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="lg" className="h-12 w-12 p-0 text-xl font-bold" onClick={() => updateQuantity(index, -1)}>
-                      <Minus className="h-5 w-5" />
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-lg font-bold" onClick={() => updateQuantity(index, -1)}>
+                      <Minus className="h-4 w-4" />
                     </Button>
                     <Input
                       type="number"
                       inputMode="numeric"
                       pattern="[0-9]*"
-                      value={item.quantity}
+                      value={pendingQuantities[index] ?? item.quantity}
                       onChange={(e) => setQuantityDirect(index, parseInt(e.target.value) || 0)}
                       onFocus={(e) => e.target.select()}
-                      className="w-16 h-12 text-center text-xl font-bold p-0"
+                      className="w-12 h-8 text-center text-base font-bold p-0"
                       min={1}
                       max={item.product.currentStock || 999}
                     />
-                    <Button variant="outline" size="lg" className="h-12 w-12 p-0 text-xl font-bold" onClick={() => updateQuantity(index, 1)}>
-                      <Plus className="h-5 w-5" />
+                    <Button variant="outline" size="sm" className="h-8 w-8 p-0 text-lg font-bold" onClick={() => updateQuantity(index, 1)}>
+                      <Plus className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="lg" className="h-12 w-12 p-0 text-red-500" onClick={() => removeItem(index)}>
-                      <Trash2 className="h-5 w-5" />
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500" onClick={() => removeItem(index)}>
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 )}
