@@ -9,17 +9,14 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart, CheckCircle2, Eye, EyeOff } from 'lucide-react'
+import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart, Eye, EyeOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { useToast } from '@/components/ui/use-toast'
 import {
-  markAsVisitedAsync,
   getVisitedCustomerIdsAsync,
   cleanExpiredVisits,
   getTodayVisitCountAsync
 } from '@/utils/customerVisitUtils'
 import { useBranch } from '@/contexts/BranchContext'
-import { useAuthContext } from '@/contexts/AuthContext'
 import { PhotoUploadService } from '@/services/photoUploadService'
 import { useGranularPermission } from '@/hooks/useGranularPermission'
 
@@ -48,10 +45,8 @@ export function NearbyCustomerList({
   onCustomerSelect
 }: NearbyCustomerListProps) {
   const navigate = useNavigate()
-  const { toast } = useToast()
   const { hasGranularPermission } = useGranularPermission()
   const { currentBranch } = useBranch()
-  const { user } = useAuthContext()
 
   // Check permissions
   const canAccessDriverPos = hasGranularPermission('pos_driver_access')
@@ -104,31 +99,6 @@ export function NearbyCustomerList({
 
     return filtered
   }, [customers, userLocation, radiusMeters, hideVisited, visitedIds])
-
-  // Handle mark as visited - SAVE TO DATABASE
-  const handleMarkVisited = async (customer: Customer, e: React.MouseEvent) => {
-    e.stopPropagation()
-
-    // Save to database so all drivers can see
-    await markAsVisitedAsync(
-      customer.id,
-      user?.id,
-      user?.name,
-      currentBranch?.id
-    )
-
-    // Refresh the list
-    const dbVisitedIds = await getVisitedCustomerIdsAsync(currentBranch?.id)
-    setVisitedIds(dbVisitedIds)
-
-    const dbVisitCount = await getTodayVisitCountAsync(currentBranch?.id)
-    setVisitCount(dbVisitCount)
-
-    toast({
-      title: 'Ditandai Dikunjungi',
-      description: `${customer.name} akan tersembunyi untuk semua driver selama 24 jam`
-    })
-  }
 
   const handleOpenMaps = (customer: Customer) => {
     if (userLocation) {
@@ -344,19 +314,6 @@ export function NearbyCustomerList({
                         <Navigation className="h-3 w-3" />
                       </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant={visitedIds.has(customer.id) ? "secondary" : "outline"}
-                      className={`h-8 px-2 text-xs ${
-                        visitedIds.has(customer.id)
-                          ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/50 dark:text-green-300 dark:border-green-700'
-                          : 'border-dashed dark:border-slate-600'
-                      }`}
-                      onClick={e => handleMarkVisited(customer as Customer, e)}
-                    >
-                      <CheckCircle2 className="h-3 w-3 mr-1" />
-                      Dikunjungi
-                    </Button>
                   </div>
                 </CardContent>
               </Card>

@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, MapPin, Warehouse, Navigation, Coins } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, Warehouse, Navigation, Coins } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
@@ -109,14 +109,6 @@ const MobileLayout = () => {
       path: '/customers',
       description: 'Kelola data pelanggan',
       color: 'bg-cyan-500 hover:bg-cyan-600',
-      textColor: 'text-white'
-    },
-    {
-      title: 'Pelanggan Terdekat',
-      icon: MapPin,
-      path: '/customer-map',
-      description: 'Lihat pelanggan di sekitar Anda',
-      color: 'bg-rose-500 hover:bg-rose-600',
       textColor: 'text-white'
     },
     // Input Produksi - controlled by production_view or production_create permission
