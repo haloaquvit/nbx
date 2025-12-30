@@ -82,6 +82,7 @@ const FEATURES = [
       { id: 'customers_create', name: 'Tambah Pelanggan', icon: Plus },
       { id: 'customers_edit', name: 'Edit Pelanggan', icon: Edit },
       { id: 'customers_delete', name: 'Hapus Pelanggan', icon: Trash2 },
+      { id: 'customer_map_access', name: 'Akses Pelanggan Terdekat (GPS)', icon: Eye },
       { id: 'employees_view', name: 'Lihat Karyawan', icon: Eye },
       { id: 'employees_create', name: 'Tambah Karyawan', icon: Plus },
       { id: 'employees_edit', name: 'Edit Karyawan', icon: Edit },
