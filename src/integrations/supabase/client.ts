@@ -144,7 +144,7 @@ export function getCurrentServerUrl(): string | null {
 
 // Get the base URL for API calls - works for both web and APK
 function getBaseUrl(): string {
-  if (typeof window === 'undefined') return 'https://nbx.aquvit.id';
+  if (typeof window === 'undefined') return 'http://localhost:8080';
 
   // Check if we're on a production domain (web browser)
   const origin = window.location.origin;
@@ -168,8 +168,8 @@ function getBaseUrl(): string {
     return '';
   }
 
-  // For localhost/development, always use Nabire server
-  return 'https://nbx.aquvit.id';
+  // For localhost/development, use Manokwari server for testing
+  return 'http://localhost:8080';
 }
 
 function getTenantConfig(): TenantConfig {

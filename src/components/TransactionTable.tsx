@@ -655,7 +655,7 @@ export function TransactionTable() {
             Filter Transaksi
             {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
-          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all' || paymentAccountFilter !== 'all') && (
+          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all' || cashierFilter !== 'all') && (
             <Badge variant="secondary" className="ml-2">
               Filter aktif
             </Badge>

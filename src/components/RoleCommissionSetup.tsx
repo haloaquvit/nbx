@@ -349,6 +349,8 @@ export function RoleCommissionSetup() {
               <li>• Komisi akan otomatis dihitung saat transaksi/pengantaran berdasarkan role karyawan</li>
               <li>• <strong>Driver & Helper:</strong> Komisi dihitung saat pengantaran selesai</li>
               <li>• <strong>Sales:</strong> Komisi dihitung saat transaksi dibuat</li>
+              <li>• <strong>Operator:</strong> Mendapatkan komisi dari produk yang laku dengan aturan produksi</li>
+              <li>• <strong>Supervisor:</strong> Mendapatkan komisi dari setiap produk yang dijual di luar bonus</li>
             </ul>
           </div>
         </CardContent>
