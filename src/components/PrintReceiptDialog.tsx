@@ -894,9 +894,8 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     printWindow?.document.close();
   };
 
-  // Fungsi cetak Rawbt Thermal - ukuran sesuai setting (58mm atau 80mm)
-  // RawBT URL Scheme: rawbt:base64,[base64_encoded_data]
-  // Dokumentasi: https://rawbt.ru/en/docs/
+  // Fungsi cetak Rawbt Thermal - menggunakan ESC/POS commands
+  // Ukuran sesuai setting (58mm atau 80mm)
   const handleRawbtPrint = () => {
     if (!transaction) return;
 
@@ -908,82 +907,112 @@ export function PrintReceiptDialog({ open, onOpenChange, transaction, template, 
     const separator = '='.repeat(charWidth);
     const separatorDash = '-'.repeat(charWidth);
 
-    // Format teks untuk printer thermal - PLAIN TEXT (RawBT akan handle ESC/POS)
-    let receiptText = '';
+    // ESC/POS Commands
+    const ESC = '\x1B';
+    const GS = '\x1D';
+    const INIT = ESC + '@';           // Initialize printer
+    const CENTER = ESC + 'a\x01';     // Center alignment
+    const LEFT = ESC + 'a\x00';       // Left alignment
+    const RIGHT = ESC + 'a\x02';      // Right alignment
+    const BOLD_ON = ESC + 'E\x01';    // Bold on
+    const BOLD_OFF = ESC + 'E\x00';   // Bold off
+    const DOUBLE_HEIGHT = ESC + '!\x10';  // Double height
+    const NORMAL_SIZE = ESC + '!\x00';    // Normal size
+    const CUT = GS + 'V\x00';         // Cut paper
 
-    // Header - center
-    receiptText += '[C]<b>' + (companyInfo?.name || 'Nota Transaksi') + '</b>\n';
+    // Helper untuk format 2 kolom (kiri dan kanan)
+    const formatLine = (left: string, right: string) => {
+      const spaces = charWidth - left.length - right.length;
+      return left + ' '.repeat(Math.max(1, spaces)) + right;
+    };
+
+    // Build receipt dengan ESC/POS
+    let receipt = '';
+
+    // Initialize
+    receipt += INIT;
+
+    // Header - center, bold
+    receipt += CENTER;
+    receipt += BOLD_ON + DOUBLE_HEIGHT;
+    receipt += (companyInfo?.name || 'Nota Transaksi') + '\n';
+    receipt += BOLD_OFF + NORMAL_SIZE;
+
     if (companyInfo?.address) {
-      receiptText += '[C]' + companyInfo.address + '\n';
+      receipt += companyInfo.address + '\n';
     }
     if (companyInfo?.phone) {
-      receiptText += '[C]' + String(companyInfo.phone).replace(/,/g, '') + '\n';
+      receipt += String(companyInfo.phone).replace(/,/g, '') + '\n';
     }
-    receiptText += '[C]' + separator + '\n';
+    receipt += separator + '\n';
 
-    // Transaction info section - left align
-    receiptText += '[L]No: ' + transaction.id + '\n';
-    receiptText += '[L]Tgl: ' + safeFormatDate(orderDate, "dd/MM/yy HH:mm") + '\n';
-    receiptText += '[L]Plgn: ' + transaction.customerName + '\n';
-    receiptText += '[L]Kasir: ' + transaction.cashierName + '\n';
-    receiptText += '[C]' + separator + '\n';
+    // Transaction info - left align
+    receipt += LEFT;
+    receipt += 'No: ' + transaction.id + '\n';
+    receipt += 'Tgl: ' + safeFormatDate(orderDate, "dd/MM/yy HH:mm") + '\n';
+    receipt += 'Plgn: ' + transaction.customerName + '\n';
+    receipt += 'Kasir: ' + transaction.cashierName + '\n';
+    receipt += CENTER + separator + '\n';
 
     // Items header
-    receiptText += '[L]<b>Item</b>[R]<b>Total</b>\n';
-    receiptText += '[C]' + separatorDash + '\n';
+    receipt += LEFT;
+    receipt += BOLD_ON + formatLine('Item', 'Total') + BOLD_OFF + '\n';
+    receipt += CENTER + separatorDash + '\n';
 
-    // Items - format seperti struk
+    // Items
+    receipt += LEFT;
     transaction.items.filter(item => item.product?.name).forEach((item) => {
-      // Product name
-      receiptText += '[L]' + item.product.name + '\n';
-      // Quantity x price = total
-      const qtyPrice = item.quantity + 'x @' + new Intl.NumberFormat("id-ID").format(item.price);
+      receipt += item.product.name + '\n';
+      const qtyPrice = '  ' + item.quantity + 'x @' + new Intl.NumberFormat("id-ID").format(item.price);
       const itemTotal = new Intl.NumberFormat("id-ID").format(item.price * item.quantity);
-      receiptText += '[L]  ' + qtyPrice + '[R]' + itemTotal + '\n';
+      receipt += formatLine(qtyPrice, itemTotal) + '\n';
     });
 
-    receiptText += '[C]' + separatorDash + '\n';
+    receipt += CENTER + separatorDash + '\n';
 
     // Subtotal
-    const subtotalAmount = new Intl.NumberFormat("id-ID").format(transaction.subtotal);
-    receiptText += '[L]Subtotal:[R]Rp ' + subtotalAmount + '\n';
+    receipt += LEFT;
+    const subtotalAmount = 'Rp ' + new Intl.NumberFormat("id-ID").format(transaction.subtotal);
+    receipt += formatLine('Subtotal:', subtotalAmount) + '\n';
 
     // PPN if enabled
     if (transaction.ppnEnabled) {
-      const ppnAmount = new Intl.NumberFormat("id-ID").format(transaction.ppnAmount);
-      receiptText += '[L]PPN (' + transaction.ppnPercentage + '%):[R]Rp ' + ppnAmount + '\n';
+      const ppnAmount = 'Rp ' + new Intl.NumberFormat("id-ID").format(transaction.ppnAmount);
+      receipt += formatLine('PPN (' + transaction.ppnPercentage + '%):', ppnAmount) + '\n';
     }
 
-    receiptText += '[C]' + separator + '\n';
+    receipt += CENTER + separator + '\n';
 
     // Total - bold
-    const totalAmount = new Intl.NumberFormat("id-ID").format(transaction.total);
-    receiptText += '[L]<b>TOTAL:</b>[R]<b>Rp ' + totalAmount + '</b>\n';
+    receipt += LEFT + BOLD_ON;
+    const totalAmount = 'Rp ' + new Intl.NumberFormat("id-ID").format(transaction.total);
+    receipt += formatLine('TOTAL:', totalAmount) + '\n';
+    receipt += BOLD_OFF;
 
     // Payment info
-    receiptText += '[C]' + separatorDash + '\n';
+    receipt += CENTER + separatorDash + '\n';
+    receipt += LEFT;
     if (transaction.paidAmount > 0) {
-      const paidAmount = new Intl.NumberFormat("id-ID").format(transaction.paidAmount);
-      receiptText += '[L]Dibayar:[R]Rp ' + paidAmount + '\n';
+      const paidAmount = 'Rp ' + new Intl.NumberFormat("id-ID").format(transaction.paidAmount);
+      receipt += formatLine('Dibayar:', paidAmount) + '\n';
     }
     const sisaBayar = transaction.total - (transaction.paidAmount || 0);
     if (sisaBayar > 0) {
-      const sisaAmount = new Intl.NumberFormat("id-ID").format(sisaBayar);
-      receiptText += '[L]<b>Sisa:</b>[R]<b>Rp ' + sisaAmount + '</b>\n';
+      const sisaAmount = 'Rp ' + new Intl.NumberFormat("id-ID").format(sisaBayar);
+      receipt += BOLD_ON + formatLine('Sisa:', sisaAmount) + BOLD_OFF + '\n';
     }
-    receiptText += '[L]Status:[R]' + (transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS') + '\n';
+    receipt += formatLine('Status:', transaction.paymentStatus === 'Lunas' ? 'LUNAS' : 'BELUM LUNAS') + '\n';
 
     // Thank you message
-    receiptText += '[C]' + separator + '\n';
-    receiptText += '[C]<b>Terima kasih!</b>\n';
-    receiptText += '[C]' + format(new Date(), "dd/MM/yy HH:mm", { locale: id }) + '\n';
-    receiptText += '\n\n\n'; // Feed paper
+    receipt += CENTER + separator + '\n';
+    receipt += BOLD_ON + 'Terima kasih!' + BOLD_OFF + '\n';
+    receipt += format(new Date(), "dd/MM/yy HH:mm", { locale: id }) + '\n';
+    receipt += '\n\n\n'; // Feed paper
 
     // Convert to Base64 for RawBT URL scheme
-    const base64Data = btoa(unescape(encodeURIComponent(receiptText)));
+    const base64Data = btoa(unescape(encodeURIComponent(receipt)));
 
     // RawBT URL scheme format: rawbt:base64,{base64_data}
-    // Alternative format: intent://... for Android
     const rawbtUrl = 'rawbt:base64,' + base64Data;
 
     // Try to open RawBT app
