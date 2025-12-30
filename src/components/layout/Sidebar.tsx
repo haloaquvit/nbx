@@ -1,6 +1,6 @@
 "use client"
 
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,7 +38,6 @@ import {
   X,
   Wrench,
   Sparkles,
-  HandHeart,
   Building2,
   Server,
   MapPin,
@@ -48,6 +47,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
+
+// Section color configuration for modern gradient look
+const sectionColors: Record<string, { bg: string; text: string; activeBg: string }> = {
+  "Utama": { bg: "bg-blue-50", text: "text-blue-700", activeBg: "bg-blue-600" },
+  "Manajemen Data": { bg: "bg-emerald-50", text: "text-emerald-700", activeBg: "bg-emerald-600" },
+  "Keuangan": { bg: "bg-amber-50", text: "text-amber-700", activeBg: "bg-amber-600" },
+  "Aset & Zakat": { bg: "bg-purple-50", text: "text-purple-700", activeBg: "bg-purple-600" },
+  "Laporan": { bg: "bg-rose-50", text: "text-rose-700", activeBg: "bg-rose-600" },
+  "Pengaturan": { bg: "bg-slate-100", text: "text-slate-700", activeBg: "bg-slate-600" },
+};
 
 /*
  * Sidebar menu configuration.
@@ -152,6 +161,7 @@ interface SidebarProps {
 
 export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { settings } = useCompanySettings();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
@@ -161,6 +171,7 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-expand on hover state
   const [isHoverExpanded, setIsHoverExpanded] = useState(false);
@@ -178,6 +189,10 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
       // Expand after 150ms delay
       hoverTimeoutRef.current = setTimeout(() => {
         setIsHoverExpanded(true);
+        // Auto focus search input after expand
+        setTimeout(() => {
+          searchInputRef.current?.focus();
+        }, 100);
       }, 150);
     }
   }, [isCollapsed, isHoverExpanded]);
@@ -233,6 +248,24 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
         )
       })).filter(section => section.items.length > 0);
 
+  // Get first search result for Enter key navigation
+  const firstSearchResult = filteredMenuItems.length > 0 && filteredMenuItems[0].items.length > 0
+    ? filteredMenuItems[0].items[0]
+    : null;
+
+  // Handle search input keydown - navigate on Enter
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && firstSearchResult) {
+      e.preventDefault();
+      setSearchQuery("");
+      setIsHoverExpanded(false);
+      navigate(firstSearchResult.href);
+    }
+    if (e.key === 'Escape') {
+      setSearchQuery("");
+    }
+  };
+
   // Auto-expand sections with search results
   useEffect(() => {
     if (searchQuery.trim() !== "") {
@@ -273,87 +306,108 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  ref={searchInputRef}
                   type="text"
-                  placeholder="Cari menu..."
+                  placeholder="Ketik & Enter..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
                   className="w-full rounded-md border border-input bg-background pl-8 pr-8 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 />
-                {searchQuery && (
+                {searchQuery ? (
                   <button
                     onClick={() => setSearchQuery("")}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-4 w-4" />
                   </button>
+                ) : (
+                  <kbd className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60 bg-muted px-1 py-0.5 rounded">
+                    ↵
+                  </kbd>
                 )}
               </div>
+              {/* Show first result hint when searching */}
+              {searchQuery && firstSearchResult && (
+                <div className="mt-1.5 text-xs text-muted-foreground flex items-center gap-1">
+                  <span>Enter →</span>
+                  <span className="font-medium text-foreground">{firstSearchResult.label}</span>
+                </div>
+              )}
             </div>
           )}
 
           <nav className={cn(
-            "flex-1 space-y-2 overflow-auto py-4 px-2",
+            "flex-1 space-y-3 overflow-auto py-4 px-2",
             showExpanded && "min-w-[220px]"
           )}>
-            {filteredMenuItems.map((section) => (
-              <div key={section.title} className="space-y-1">
-                {/* Section header */}
-                {showExpanded && (
-                  <button
-                    type="button"
-                    className="mb-1 flex w-full items-center justify-between px-2 text-sm font-semibold tracking-tight text-muted-foreground hover:text-primary"
-                    onClick={() => toggleSection(section.title)}
-                  >
-                    <span>{section.title}</span>
-                    {openSections[section.title] ? (
-                      <ChevronUp className="h-4 w-4" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4" />
+            {filteredMenuItems.map((section) => {
+              const colors = sectionColors[section.title] || sectionColors["Utama"];
+
+              return (
+                <div key={section.title} className="space-y-1">
+                  {/* Section header with gradient */}
+                  {showExpanded && (
+                    <button
+                      type="button"
+                      className={cn(
+                        "mb-1 flex w-full items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors",
+                        colors.bg,
+                        colors.text
+                      )}
+                      onClick={() => toggleSection(section.title)}
+                    >
+                      <span>{section.title}</span>
+                      {openSections[section.title] ? (
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                  <div
+                    className={cn(
+                      !showExpanded && "flex flex-col items-center",
+                      !openSections[section.title] && showExpanded && "hidden"
                     )}
-                  </button>
-                )}
-                <div
-                  className={cn(
-                    !showExpanded && "flex flex-col items-center",
-                    !openSections[section.title] && showExpanded && "hidden"
-                  )}
-                >
-                  {section.items.map((item) =>
-                    !showExpanded ? (
-                      <Tooltip key={item.href}>
-                        <TooltipTrigger asChild>
-                          <Link
-                            to={item.href}
-                            className={cn(
-                              "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:text-primary",
-                              location.pathname === item.href &&
-                                "bg-primary text-primary-foreground"
-                            )}
-                          >
-                            <item.icon className="h-5 w-5" />
-                            <span className="sr-only">{item.label}</span>
-                          </Link>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">{item.label}</TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Link
-                        key={item.href}
-                        to={item.href}
-                        className={cn(
-                          "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary whitespace-nowrap",
-                          location.pathname === item.href &&
-                            "bg-primary text-primary-foreground hover:text-primary-foreground"
-                        )}
-                      >
-                        <item.icon className="h-4 w-4" />
-                        {item.label}
-                      </Link>
-                    )
-                  )}
+                  >
+                    {section.items.map((item) => {
+                      const isActive = location.pathname === item.href;
+
+                      return !showExpanded ? (
+                        <Tooltip key={item.href}>
+                          <TooltipTrigger asChild>
+                            <Link
+                              to={item.href}
+                              className={cn(
+                                "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-all hover:scale-105",
+                                isActive && cn(colors.activeBg, "text-white shadow-md")
+                              )}
+                            >
+                              <item.icon className="h-5 w-5" />
+                              <span className="sr-only">{item.label}</span>
+                            </Link>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">{item.label}</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Link
+                          key={item.href}
+                          to={item.href}
+                          className={cn(
+                            "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:bg-muted/50 whitespace-nowrap",
+                            isActive && cn(colors.activeBg, "text-white shadow-md hover:opacity-90")
+                          )}
+                        >
+                          <item.icon className="h-4 w-4" />
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </nav>
           <div className="mt-auto border-t p-2">
             <div className={cn("flex", !showExpanded && "justify-center")}>

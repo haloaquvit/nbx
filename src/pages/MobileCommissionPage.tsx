@@ -268,7 +268,9 @@ export default function MobileCommissionPage() {
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       {getRoleBadge(entry.role)}
-                      <span className="text-muted-foreground">{entry.ref}</span>
+                      <span className="text-muted-foreground truncate max-w-[120px]">
+                        {entry.customerName || entry.ref}
+                      </span>
                     </div>
                     <span className="text-muted-foreground">
                       {format(entry.createdAt, 'dd/MM HH:mm', { locale: id })}

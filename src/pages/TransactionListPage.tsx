@@ -1,7 +1,33 @@
 import { TransactionTable } from "@/components/TransactionTable";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useGranularPermission } from "@/hooks/useGranularPermission";
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 export default function TransactionListPage() {
+  const { hasGranularPermission, isLoading } = useGranularPermission();
+
+  // Check transactions_view permission
+  if (!isLoading && !hasGranularPermission('transactions_view')) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-6">
+        <AlertTriangle className="h-16 w-16 text-orange-500 mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Akses Ditolak</h2>
+        <p className="text-gray-600 dark:text-gray-400 max-w-md">
+          Anda tidak memiliki izin untuk melihat halaman Transaksi.
+        </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => window.history.back()}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Kembali
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>

@@ -67,8 +67,29 @@ export default function RetasiPage() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [detailRetasi, setDetailRetasi] = useState<any>(null);
 
-  // Get granular permissions for retasi create, edit, delete
-  const { canCreateRetasi, canEditRetasi, canDeleteRetasi } = useGranularPermission();
+  // Get granular permissions for retasi view, create, edit, delete
+  const { canViewRetasi, canCreateRetasi, canEditRetasi, canDeleteRetasi, isLoading: permissionLoading } = useGranularPermission();
+
+  // Access denied if user doesn't have retasi_view permission
+  if (!permissionLoading && !canViewRetasi()) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-center p-6">
+        <AlertTriangle className="h-16 w-16 text-orange-500 mb-4" />
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Akses Ditolak</h2>
+        <p className="text-gray-600 max-w-md">
+          Anda tidak memiliki izin untuk melihat halaman Retasi. Hubungi administrator untuk mendapatkan akses.
+        </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => window.history.back()}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Kembali
+        </Button>
+      </div>
+    );
+  }
 
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);

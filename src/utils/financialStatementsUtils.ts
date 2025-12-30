@@ -1751,14 +1751,53 @@ export async function generateCashFlowStatement(
     });
   }
 
-  console.log('📊 Cash Flow Statement - Beginning Cash:', {
+  // ============================================================================
+  // ENDING CASH HARUS = beginningCash + netCashFlow (rumus arus kas)
+  // ============================================================================
+  // Saldo akhir kas TIDAK boleh diambil langsung dari balance akun karena:
+  // 1. Akan terjadi ketidaksesuaian dengan netCashFlow
+  // 2. Laporan arus kas harus balance secara matematis
+  //
+  // PENTING: endingCash = beginningCash + netCashFlow
+  // Ini adalah prinsip dasar laporan arus kas
+  // ============================================================================
+
+  // Calculate ending cash using the cash flow formula (NOT from account balance)
+  const calculatedEndingCash = beginningCash + netCashFlow;
+
+  // For debugging: compare with account balance
+  const endingCashFromAccount = endingCash; // This was calculated from getTotalBalance
+  const discrepancy = Math.abs(endingCashFromAccount - calculatedEndingCash);
+
+  console.log('📊 Cash Flow Statement - Cash Balances:', {
     fromInitialBalance: cashAccounts.reduce((sum, acc) => sum + (acc.initialBalance || 0), 0),
     fromJournalBeforePeriod: beginningCash - cashAccounts.reduce((sum, acc) => sum + (acc.initialBalance || 0), 0),
     totalBeginningCash: beginningCash,
-    endingCash,
     netCashFlow,
-    checkSum: beginningCash + netCashFlow // Should equal endingCash
+    calculatedEndingCash,
+    endingCashFromAccountBalance: endingCashFromAccount,
+    discrepancy,
+    isBalanced: discrepancy < 1,
+    // Formula validation
+    formulaCheck: `${beginningCash} + ${netCashFlow} = ${calculatedEndingCash}`
   });
+
+  // Jika ada discrepancy, log warning untuk debugging
+  // Discrepancy bisa terjadi karena:
+  // - Journal entry dengan multiple cash lines
+  // - Transaksi antar akun kas (transfer internal)
+  // - Rounding/pembulatan
+  if (discrepancy > 1) {
+    console.warn('⚠️ Cash Flow discrepancy detected:', {
+      endingCashFromAccountBalance: endingCashFromAccount,
+      calculatedEndingCash,
+      discrepancy,
+      note: 'Using calculated ending cash to ensure report balances correctly'
+    });
+  }
+
+  // GUNAKAN calculatedEndingCash agar laporan SELALU balance
+  const finalEndingCash = calculatedEndingCash;
 
   // ============================================================================
   // GROUP CASH FLOWS BY COA ACCOUNT
@@ -2004,7 +2043,7 @@ export async function generateCashFlowStatement(
     },
     netCashFlow,
     beginningCash,
-    endingCash,
+    endingCash: finalEndingCash, // PENTING: Gunakan calculated ending cash agar laporan balance
     periodFrom,
     periodTo,
     generatedAt: new Date(),

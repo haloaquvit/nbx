@@ -39,7 +39,28 @@ export default function MobileRetasiPage() {
   const [selectedRetasiItems, setSelectedRetasiItems] = useState<any[]>([]);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
-  const { canCreateRetasi, canEditRetasi } = useGranularPermission();
+  const { canViewRetasi, canCreateRetasi, canEditRetasi, isLoading: permissionLoading } = useGranularPermission();
+
+  // Access denied if user doesn't have retasi_view permission
+  if (!permissionLoading && !canViewRetasi()) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
+        <AlertTriangle className="h-16 w-16 text-orange-500 mb-4" />
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Akses Ditolak</h2>
+        <p className="text-gray-600 dark:text-gray-400 max-w-md text-sm">
+          Anda tidak memiliki izin untuk melihat halaman Retasi. Hubungi administrator untuk mendapatkan akses.
+        </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => window.history.back()}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Kembali
+        </Button>
+      </div>
+    );
+  }
 
   const filters = {
     date_from: todayStr(),

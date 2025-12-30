@@ -104,6 +104,23 @@ export function useOptimizedCommissionEntries(
         })) || []
       });
 
+      // Get customer names from transactions for commission entries
+      const transactionIds = [...new Set(data?.filter(e => e.transaction_id).map(e => e.transaction_id) || [])]
+      let customerMap: Record<string, string> = {}
+
+      if (transactionIds.length > 0) {
+        const { data: transactions } = await supabase
+          .from('transactions')
+          .select('id, customer_name')
+          .in('id', transactionIds)
+
+        if (transactions) {
+          transactions.forEach((t: any) => {
+            customerMap[t.id] = t.customer_name
+          })
+        }
+      }
+
       // Transform data
       const formattedEntries: CommissionEntry[] = data?.map(entry => ({
         id: entry.id,
@@ -118,6 +135,7 @@ export function useOptimizedCommissionEntries(
         transactionId: entry.transaction_id,
         deliveryId: entry.delivery_id,
         ref: entry.ref,
+        customerName: entry.transaction_id ? customerMap[entry.transaction_id] : undefined,
         createdAt: new Date(entry.created_at),
         status: entry.status
       })) || []

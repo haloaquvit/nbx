@@ -169,7 +169,10 @@ function getBaseUrl(): string {
   }
 
   // For localhost/development, use Manokwari server for testing
-  return 'http://localhost:8080';
+  // IMPORTANT: Change this to match server you want to test against
+  // 'https://nbx.aquvit.id' for Nabire
+  // 'https://mkw.aquvit.id' for Manokwari
+  return 'https://mkw.aquvit.id';
 }
 
 function getTenantConfig(): TenantConfig {

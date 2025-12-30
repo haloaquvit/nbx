@@ -7,32 +7,46 @@ export function useNotifications(userId?: string) {
   return useQuery({
     queryKey: ['notifications', userId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50); // Limit to recent 50 notifications
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50); // Limit to recent 50 notifications
 
-      if (error) throw error;
+        // Handle table not exist error gracefully
+        if (error) {
+          // If table doesn't exist or permission denied, return empty array
+          if (error.code === '42P01' || error.code === 'PGRST204' || error.message?.includes('does not exist')) {
+            console.warn('Notifications table not available:', error.message);
+            return [];
+          }
+          throw error;
+        }
 
-      return (data || []).map((notif: any) => ({
-        id: notif.id,
-        title: notif.title,
-        message: notif.message,
-        type: notif.type,
-        referenceType: notif.reference_type,
-        referenceId: notif.reference_id,
-        referenceUrl: notif.reference_url,
-        priority: notif.priority,
-        isRead: notif.is_read,
-        readAt: notif.read_at ? new Date(notif.read_at) : undefined,
-        userId: notif.user_id,
-        createdAt: new Date(notif.created_at),
-        expiresAt: notif.expires_at ? new Date(notif.expires_at) : undefined,
-      })) as Notification[];
+        return (data || []).map((notif: any) => ({
+          id: notif.id,
+          title: notif.title,
+          message: notif.message,
+          type: notif.type,
+          referenceType: notif.reference_type,
+          referenceId: notif.reference_id,
+          referenceUrl: notif.reference_url,
+          priority: notif.priority,
+          isRead: notif.is_read,
+          readAt: notif.read_at ? new Date(notif.read_at) : undefined,
+          userId: notif.user_id,
+          createdAt: new Date(notif.created_at),
+          expiresAt: notif.expires_at ? new Date(notif.expires_at) : undefined,
+        })) as Notification[];
+      } catch (err) {
+        console.warn('Error fetching notifications:', err);
+        return []; // Return empty array on any error
+      }
     },
     staleTime: 30 * 1000, // 30 seconds
     enabled: !!userId,
+    retry: false, // Don't retry if table doesn't exist
   });
 }
 
@@ -41,16 +55,28 @@ export function useUnreadNotificationsCount(userId?: string) {
   return useQuery({
     queryKey: ['notifications', 'unread-count', userId],
     queryFn: async () => {
-      const { count, error } = await supabase
-        .from('notifications')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_read', false);
+      try {
+        const { count, error } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_read', false);
 
-      if (error) throw error;
-      return count || 0;
+        // Handle table not exist error gracefully
+        if (error) {
+          if (error.code === '42P01' || error.code === 'PGRST204' || error.message?.includes('does not exist')) {
+            return 0;
+          }
+          throw error;
+        }
+        return count || 0;
+      } catch (err) {
+        console.warn('Error fetching unread count:', err);
+        return 0;
+      }
     },
     staleTime: 30 * 1000, // 30 seconds
     enabled: !!userId,
+    retry: false,
   });
 }
 

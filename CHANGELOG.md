@@ -139,6 +139,77 @@ sudo tail -f /var/log/nginx/error.log
 
 ---
 
+## [v4.1] 2025-12-31 - Permission System & Notification Enhancement
+
+### New Features
+
+50. **Low Stock Notification System**
+    - Service: `src/services/lowStockNotificationService.ts`
+    - Hook: `src/hooks/useLowStockCheck.ts`
+    - Cek otomatis stock rendah setiap 30 menit
+    - Mendukung produk DAN bahan (materials)
+    - Notifikasi dikirim ke Owner, Supervisor, Admin, Manager
+    - Threshold: `min_stock_level` dari database
+
+51. **Mobile Notification Bell**
+    - Component: `src/components/MobileNotificationBell.tsx`
+    - Ditambahkan ke header MobileLayout
+    - Sheet-based notification view (mobile-friendly)
+    - Real-time badge untuk unread count
+    - Support mark as read, mark all as read
+
+52. **Enhanced Permission System**
+    - Semua menu mobile sekarang dikontrol oleh permission
+    - Permission mapping:
+      - POS Kasir = `transactions_create` atau `pos_access`
+      - POS Supir = `delivery_create` atau `pos_driver_access`
+      - Data Transaksi = `transactions_view`
+      - Data Pelanggan = `customers_view`
+      - Input Produksi = `production_view` atau `production_create`
+      - Gudang = `warehouse_access`
+      - Retasi = `retasi_view`
+      - Produk Laku = `transaction_items_report`
+      - Komisi = `commission_view` atau `commission_report`
+      - Absensi = `attendance_access` atau `attendance_view`
+
+53. **Page-Level Permission Check**
+    - RetasiPage & MobileRetasiPage: cek `retasi_view`
+    - TransactionListPage: cek `transactions_view`
+    - Menampilkan "Akses Ditolak" jika tidak punya izin
+
+54. **Commission Report Enhancement**
+    - Menampilkan nama pelanggan (customer name) dari transaksi
+    - Fallback ke ref ID jika customer name tidak tersedia
+    - Updated: `src/hooks/useOptimizedCommissions.ts`
+    - Updated: `src/pages/MobileCommissionPage.tsx`
+
+### Bug Fixes
+
+- Fix: Menu mobile tidak mengikuti permission yang diatur
+- Fix: Retasi masih bisa diakses meskipun permission dimatikan
+- Fix: Laporan komisi menampilkan delivery ID bukan nama pelanggan
+- Fix: Laporan Arus Kas tidak balance (Kas Awal + Kenaikan Kas ≠ Kas Akhir)
+  - Masalah: `endingCash` diambil langsung dari saldo akun COA, bukan dihitung dari rumus arus kas
+  - Solusi: `endingCash` sekarang dihitung dengan rumus: `beginningCash + netCashFlow`
+  - File: `src/utils/financialStatementsUtils.ts`
+
+### Files Changed
+
+- `src/services/lowStockNotificationService.ts` (NEW)
+- `src/hooks/useLowStockCheck.ts` (NEW)
+- `src/components/MobileNotificationBell.tsx` (NEW)
+- `src/components/layout/MobileLayout.tsx` (MODIFIED)
+- `src/components/layout/Layout.tsx` (MODIFIED)
+- `src/hooks/useGranularPermission.ts` (MODIFIED)
+- `src/hooks/useOptimizedCommissions.ts` (MODIFIED)
+- `src/pages/RetasiPage.tsx` (MODIFIED)
+- `src/pages/MobileRetasiPage.tsx` (MODIFIED)
+- `src/pages/TransactionListPage.tsx` (MODIFIED)
+- `src/pages/MobileCommissionPage.tsx` (MODIFIED)
+- `src/types/commission.ts` (MODIFIED)
+
+---
+
 ## [v4] 2025-12-28 - APK Build & Bluetooth Printer Support
 
 ### New Features

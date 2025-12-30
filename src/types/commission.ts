@@ -21,6 +21,7 @@ export interface CommissionEntry {
   transactionId?: string
   deliveryId?: string
   ref: string
+  customerName?: string // Customer name from linked transaction
   createdAt: Date
   status: 'pending' | 'paid' | 'cancelled'
 }

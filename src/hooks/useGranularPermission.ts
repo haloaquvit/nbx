@@ -11,17 +11,11 @@ export const useGranularPermission = () => {
   const [rolePermissions, setRolePermissions] = useState<Record<string, Record<string, boolean>>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load role permissions from database
+  // Load role permissions from database - ALWAYS fetch from DB first
   useEffect(() => {
     const loadPermissions = async () => {
       try {
-        // First try localStorage for faster initial load
-        const cachedPerms = localStorage.getItem('rolePermissions');
-        if (cachedPerms) {
-          setRolePermissions(JSON.parse(cachedPerms));
-        }
-
-        // Then fetch from database
+        // ALWAYS fetch from database first (tidak pakai cache sebagai prioritas)
         const dbPerms = await getRolePermissions();
         if (dbPerms && dbPerms.length > 0) {
           const permsByRole: Record<string, Record<string, boolean>> = {};
@@ -29,12 +23,12 @@ export const useGranularPermission = () => {
             permsByRole[rp.role_id] = rp.permissions;
           });
           setRolePermissions(permsByRole);
-          // Update localStorage cache
+          // Update localStorage cache sebagai backup
           localStorage.setItem('rolePermissions', JSON.stringify(permsByRole));
         }
       } catch (error) {
-        console.warn('Error loading granular permissions:', error);
-        // Fallback to localStorage
+        console.warn('Error loading granular permissions from DB, using cache:', error);
+        // Fallback to localStorage only if DB fails
         try {
           const saved = localStorage.getItem('rolePermissions');
           if (saved) {
@@ -50,7 +44,10 @@ export const useGranularPermission = () => {
 
     loadPermissions();
 
-    // Listen for changes
+    // Refresh permissions setiap 5 menit untuk mendapat update terbaru
+    const refreshInterval = setInterval(loadPermissions, 5 * 60 * 1000);
+
+    // Listen for changes from other tabs
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'rolePermissions') {
         try {
@@ -63,7 +60,10 @@ export const useGranularPermission = () => {
     };
 
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(refreshInterval);
+    };
   }, []);
 
   /**
@@ -143,6 +143,20 @@ export const useGranularPermission = () => {
     return hasGranularPermission('retasi_delete');
   };
 
+  /**
+   * Check if user can view retasi
+   */
+  const canViewRetasi = (): boolean => {
+    return hasGranularPermission('retasi_view');
+  };
+
+  /**
+   * Check if user can view delivery
+   */
+  const canViewDelivery = (): boolean => {
+    return hasGranularPermission('delivery_view');
+  };
+
   return {
     hasGranularPermission,
     userGranularPermissions,
@@ -153,5 +167,7 @@ export const useGranularPermission = () => {
     canCreateDelivery,
     canEditRetasi,
     canDeleteRetasi,
+    canViewRetasi,
+    canViewDelivery,
   };
 };

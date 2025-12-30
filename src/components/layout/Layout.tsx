@@ -6,6 +6,7 @@ import { Sidebar } from "./Sidebar"
 import { cn } from "@/lib/utils"
 import { useAuthContext } from "@/contexts/AuthContext"
 import { AlertTriangle } from "lucide-react"
+import { useLowStockCheck } from "@/hooks/useLowStockCheck"
 
 // Idle Warning Banner Component
 function IdleWarningBanner() {
@@ -31,6 +32,9 @@ function IdleWarningBanner() {
 
 export function Layout() {
   const [isCollapsed, setIsCollapsed] = useState(true) // Default minimize
+
+  // Low stock check for owner/supervisor/admin
+  useLowStockCheck()
 
   return (
     <div className="grid min-h-screen w-full grid-cols-[auto_1fr]">

@@ -14,6 +14,9 @@ import { useBranch } from '@/contexts/BranchContext'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useGranularPermission } from '@/hooks/useGranularPermission'
+import { useUnreadNotificationsCount } from '@/hooks/useNotifications'
+import { useLowStockCheck } from '@/hooks/useLowStockCheck'
+import { MobileNotificationBell } from '@/components/MobileNotificationBell'
 
 const MobileLayout = () => {
   const { user, signOut } = useAuth()
@@ -24,6 +27,9 @@ const MobileLayout = () => {
   const { theme, setTheme } = useTheme()
   const { currentBranch, availableBranches, canAccessAllBranches, switchBranch } = useBranch()
   const { hasGranularPermission } = useGranularPermission()
+
+  // Low stock check for owner/supervisor/admin
+  useLowStockCheck()
 
   // Ref for active menu item to scroll into view
   const activeMenuRef = useRef<HTMLButtonElement>(null)
@@ -71,10 +77,18 @@ const MobileLayout = () => {
   const isOwner = user?.role?.toLowerCase() === 'owner'
 
   // Permission checks for mobile features
-  const canAccessPOS = hasGranularPermission('pos_access')
-  const canAccessDriverPOS = hasGranularPermission('pos_driver_access')
+  // POS Kasir = transactions_create (bisa buat transaksi)
+  const canAccessPOS = hasGranularPermission('transactions_create') || hasGranularPermission('pos_access')
+  // POS Supir = delivery_create atau pos_driver_access
+  const canAccessDriverPOS = hasGranularPermission('delivery_create') || hasGranularPermission('pos_driver_access')
   const canAccessWarehouse = hasGranularPermission('warehouse_access')
   const canAccessProduction = hasGranularPermission('production_view') || hasGranularPermission('production_create')
+  const canViewTransactions = hasGranularPermission('transactions_view')
+  const canViewCustomers = hasGranularPermission('customers_view')
+  const canViewRetasi = hasGranularPermission('retasi_view')
+  const canViewSoldItems = hasGranularPermission('transaction_items_report')
+  const canViewCommission = hasGranularPermission('commission_view') || hasGranularPermission('commission_report')
+  const canAccessAttendance = hasGranularPermission('attendance_access') || hasGranularPermission('attendance_view')
 
   const menuItems = [
     // POS Kasir - controlled by pos_access permission
@@ -95,22 +109,24 @@ const MobileLayout = () => {
       color: 'bg-orange-500 hover:bg-orange-600',
       textColor: 'text-white'
     }] : []),
-    {
+    // Data Transaksi - controlled by transactions_view permission
+    ...(canViewTransactions ? [{
       title: 'Data Transaksi',
       icon: List,
       path: '/transactions',
       description: 'Lihat riwayat transaksi & cetak',
       color: 'bg-purple-500 hover:bg-purple-600',
       textColor: 'text-white'
-    },
-    {
+    }] : []),
+    // Data Pelanggan - controlled by customers_view permission
+    ...(canViewCustomers ? [{
       title: 'Data Pelanggan',
       icon: Users,
       path: '/customers',
       description: 'Kelola data pelanggan',
       color: 'bg-cyan-500 hover:bg-cyan-600',
       textColor: 'text-white'
-    },
+    }] : []),
     // Input Produksi - controlled by production_view or production_create permission
     ...(canAccessProduction ? [{
       title: 'Input Produksi',
@@ -129,38 +145,42 @@ const MobileLayout = () => {
       color: 'bg-indigo-500 hover:bg-indigo-600',
       textColor: 'text-white'
     }] : []),
-    {
+    // Retasi - controlled by retasi_view permission
+    ...(canViewRetasi ? [{
       title: 'Retasi',
       icon: Navigation,
       path: '/retasi',
       description: 'Input & kelola retasi',
       color: 'bg-teal-500 hover:bg-teal-600',
       textColor: 'text-white'
-    },
-    {
+    }] : []),
+    // Produk Laku - controlled by transaction_items_report permission
+    ...(canViewSoldItems ? [{
       title: 'Produk Laku',
       icon: Package,
       path: '/sold-items',
       description: 'Laporan produk terjual',
       color: 'bg-emerald-500 hover:bg-emerald-600',
       textColor: 'text-white'
-    },
-    {
+    }] : []),
+    // Komisi - controlled by commission_view or commission_report permission
+    ...(canViewCommission ? [{
       title: 'Komisi Saya',
       icon: Coins,
       path: '/my-commission',
       description: 'Lihat laporan komisi',
       color: 'bg-yellow-500 hover:bg-yellow-600',
       textColor: 'text-white'
-    },
-    {
+    }] : []),
+    // Absensi - controlled by attendance_access permission
+    ...(canAccessAttendance ? [{
       title: 'Absensi',
       icon: Clock,
       path: '/attendance',
       description: 'Clock In / Clock Out',
       color: 'bg-green-500 hover:bg-green-600',
       textColor: 'text-white'
-    }
+    }] : [])
   ]
 
   const handleLogout = async () => {
@@ -261,7 +281,8 @@ const MobileLayout = () => {
           </div>
           
           {/* Right - User Actions */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-1">
+            <MobileNotificationBell />
             <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(true)} className="h-10 w-10 rounded-full p-0">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user?.avatar} />
