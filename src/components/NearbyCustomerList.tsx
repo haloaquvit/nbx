@@ -13,11 +13,13 @@ import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart, Chec
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '@/components/ui/use-toast'
 import {
-  markAsVisited,
-  getVisitedCustomerIds,
+  markAsVisitedAsync,
+  getVisitedCustomerIdsAsync,
   cleanExpiredVisits,
-  getTodayVisitCount
+  getTodayVisitCountAsync
 } from '@/utils/customerVisitUtils'
+import { useBranch } from '@/contexts/BranchContext'
+import { useAuth } from '@/contexts/AuthContext'
 import { PhotoUploadService } from '@/services/photoUploadService'
 import { useGranularPermission } from '@/hooks/useGranularPermission'
 
@@ -48,6 +50,8 @@ export function NearbyCustomerList({
   const navigate = useNavigate()
   const { toast } = useToast()
   const { hasGranularPermission } = useGranularPermission()
+  const { currentBranch } = useBranch()
+  const { user } = useAuth()
 
   // Check permissions
   const canAccessDriverPos = hasGranularPermission('pos_driver_access')
@@ -56,13 +60,30 @@ export function NearbyCustomerList({
   const [hideVisited, setHideVisited] = useState(true)
   const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set())
   const [visitCount, setVisitCount] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Load visited customers on mount
+  // Load visited customers from DATABASE on mount
   useEffect(() => {
-    cleanExpiredVisits()
-    setVisitedIds(getVisitedCustomerIds())
-    setVisitCount(getTodayVisitCount())
-  }, [])
+    const loadVisits = async () => {
+      setIsLoading(true)
+      cleanExpiredVisits()
+
+      // Load from database (shared across all drivers)
+      const dbVisitedIds = await getVisitedCustomerIdsAsync(currentBranch?.id)
+      setVisitedIds(dbVisitedIds)
+
+      const dbVisitCount = await getTodayVisitCountAsync(currentBranch?.id)
+      setVisitCount(dbVisitCount)
+
+      setIsLoading(false)
+    }
+
+    loadVisits()
+
+    // Refresh every 30 seconds to get updates from other drivers
+    const interval = setInterval(loadVisits, 30000)
+    return () => clearInterval(interval)
+  }, [currentBranch?.id])
 
   // Sort and filter customers by distance
   const nearbyCustomers = useMemo(() => {
@@ -84,15 +105,28 @@ export function NearbyCustomerList({
     return filtered
   }, [customers, userLocation, radiusMeters, hideVisited, visitedIds])
 
-  // Handle mark as visited
-  const handleMarkVisited = (customer: Customer, e: React.MouseEvent) => {
+  // Handle mark as visited - SAVE TO DATABASE
+  const handleMarkVisited = async (customer: Customer, e: React.MouseEvent) => {
     e.stopPropagation()
-    markAsVisited(customer.id)
-    setVisitedIds(getVisitedCustomerIds())
-    setVisitCount(getTodayVisitCount())
+
+    // Save to database so all drivers can see
+    await markAsVisitedAsync(
+      customer.id,
+      user?.id,
+      user?.name,
+      currentBranch?.id
+    )
+
+    // Refresh the list
+    const dbVisitedIds = await getVisitedCustomerIdsAsync(currentBranch?.id)
+    setVisitedIds(dbVisitedIds)
+
+    const dbVisitCount = await getTodayVisitCountAsync(currentBranch?.id)
+    setVisitCount(dbVisitCount)
+
     toast({
       title: 'Ditandai Dikunjungi',
-      description: `${customer.name} akan tersembunyi selama 24 jam`
+      description: `${customer.name} akan tersembunyi untuk semua driver selama 24 jam`
     })
   }
 

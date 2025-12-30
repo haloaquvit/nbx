@@ -9,6 +9,7 @@ import { useBranch } from '@/contexts/BranchContext'
 import { findAccountByLookup, findAllAccountsByLookup, AccountLookupType } from '@/services/accountLookupService'
 import { Account } from '@/types/account'
 import { createSalesJournal, createReceivablePaymentJournal } from '@/services/journalService'
+import { markAsVisitedAsync } from '@/utils/customerVisitUtils'
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -298,10 +299,27 @@ export const useTransactions = (filters?: {
           id: savedTransaction.id,
           createdAt: new Date()
         };
-        
+
         await generateSalesCommission(transactionWithCreatedAt);
       } catch (commissionError) {
         // Note: We don't throw here to avoid breaking the transaction creation
+      }
+
+      // Mark customer as visited (for nearby customers feature)
+      // This saves to DATABASE so all drivers can see the customer is already visited
+      if (newTransaction.customerId) {
+        try {
+          await markAsVisitedAsync(
+            newTransaction.customerId,
+            newTransaction.cashierId,
+            newTransaction.cashierName,
+            currentBranch?.id
+          );
+          console.log('[useTransactions] Customer marked as visited (DB):', newTransaction.customerId);
+        } catch (visitError) {
+          // Don't throw - visit marking is not critical
+          console.warn('[useTransactions] Failed to mark customer as visited:', visitError);
+        }
       }
 
       // If it came from a quotation, update the quotation

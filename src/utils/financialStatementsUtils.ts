@@ -1458,7 +1458,30 @@ export async function generateCashFlowStatement(
 
       // Find counterpart account (the other side of the transaction)
       const counterpart = counterpartLines[0]; // Usually there's one counterpart
-      const counterpartAccount = counterpart ? accountById[counterpart.account_id] : null;
+
+      // Try to get account info from accountById lookup, fallback to journal line data
+      let counterpartAccount: { id: string; code: string; name: string; type: string } | null = null;
+
+      if (counterpart) {
+        // First try: lookup from accounts table
+        counterpartAccount = accountById[counterpart.account_id] || null;
+
+        // Fallback: use data stored in journal_entry_lines (account_code, account_name)
+        // This handles cases where the account was deleted or is from a different branch
+        if (!counterpartAccount && (counterpart.account_code || counterpart.account_name)) {
+          const code = counterpart.account_code || '';
+          counterpartAccount = {
+            id: counterpart.account_id,
+            code: code,
+            name: counterpart.account_name || `Akun ${code}`,
+            type: code.startsWith('1') ? 'Aset' :
+                  code.startsWith('2') ? 'Kewajiban' :
+                  code.startsWith('3') ? 'Modal' :
+                  code.startsWith('4') ? 'Pendapatan' :
+                  code.startsWith('5') || code.startsWith('6') ? 'Beban' : 'Unknown'
+          };
+        }
+      }
 
       // Classify based on counterpart account code
       let category: 'operating' | 'investing' | 'financing' = 'operating';
@@ -1748,13 +1771,15 @@ export async function generateCashFlowStatement(
 
   operatingReceipts.forEach(e => {
     const account = e.counterpartAccount;
-    const key = account?.code || 'unknown';
+    // Use account code as key, fallback to 'other' for entries without counterpart
+    const key = account?.code || 'other-receipts';
 
     if (!receiptsByAccount[key]) {
       receiptsByAccount[key] = {
         accountId: account?.id || '',
-        accountCode: account?.code || 'unknown',
-        accountName: account?.name || 'Unknown',
+        accountCode: account?.code || '-',
+        // Use account name if available, otherwise use description from journal or generic label
+        accountName: account?.name || (e.description ? `Lainnya: ${e.description.substring(0, 50)}` : 'Penerimaan Lainnya'),
         amount: 0,
         transactions: 0
       };
@@ -1768,13 +1793,15 @@ export async function generateCashFlowStatement(
 
   operatingPayments.forEach(e => {
     const account = e.counterpartAccount;
-    const key = account?.code || 'unknown';
+    // Use account code as key, fallback to 'other' for entries without counterpart
+    const key = account?.code || 'other-payments';
 
     if (!paymentsByAccount[key]) {
       paymentsByAccount[key] = {
         accountId: account?.id || '',
-        accountCode: account?.code || 'unknown',
-        accountName: account?.name || 'Unknown',
+        accountCode: account?.code || '-',
+        // Use account name if available, otherwise use description from journal or generic label
+        accountName: account?.name || (e.description ? `Lainnya: ${e.description.substring(0, 50)}` : 'Pengeluaran Lainnya'),
         amount: 0,
         transactions: 0
       };
@@ -1805,13 +1832,13 @@ export async function generateCashFlowStatement(
 
   investingFlows.forEach(e => {
     const account = e.counterpartAccount;
-    const key = account?.code || 'unknown';
+    const key = account?.code || 'other-investing';
 
     if (!investingByAccount[key]) {
       investingByAccount[key] = {
         accountId: account?.id || '',
-        accountCode: account?.code || 'unknown',
-        accountName: account?.name || 'Unknown',
+        accountCode: account?.code || '-',
+        accountName: account?.name || (e.description ? `Lainnya: ${e.description.substring(0, 50)}` : 'Investasi Lainnya'),
         amount: 0,
         transactions: 0
       };
@@ -1832,13 +1859,13 @@ export async function generateCashFlowStatement(
 
   financingFlows.forEach(e => {
     const account = e.counterpartAccount;
-    const key = account?.code || 'unknown';
+    const key = account?.code || 'other-financing';
 
     if (!financingByAccount[key]) {
       financingByAccount[key] = {
         accountId: account?.id || '',
-        accountCode: account?.code || 'unknown',
-        accountName: account?.name || 'Unknown',
+        accountCode: account?.code || '-',
+        accountName: account?.name || (e.description ? `Lainnya: ${e.description.substring(0, 50)}` : 'Pendanaan Lainnya'),
         amount: 0,
         transactions: 0
       };
