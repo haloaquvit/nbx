@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
 import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
+import { compressImage, isImageFile } from "@/utils/imageCompression"
 
 interface DeliveryFormContentProps {
   transaction: TransactionDeliveryInfo;
@@ -126,17 +127,55 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
     }))
   }
 
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      setFormData(prev => ({ ...prev, photo: file }))
+    if (!file) return
+
+    // Validate image file
+    if (!isImageFile(file)) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "File harus berupa gambar"
+      })
+      return
+    }
+
+    // Validate file size (max 10MB before compression)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Ukuran file maksimal 10MB"
+      })
+      return
+    }
+
+    try {
+      // Compress image to max 100KB
+      const compressedFile = await compressImage(file, 100)
+      console.log(`Photo compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB`)
+
+      setFormData(prev => ({ ...prev, photo: compressedFile }))
 
       // Create preview
       const reader = new FileReader()
       reader.onload = (e) => {
         setPhotoPreview(e.target?.result as string)
       }
-      reader.readAsDataURL(file)
+      reader.readAsDataURL(compressedFile)
+
+      toast({
+        title: "Foto dikompres",
+        description: `Ukuran: ${(compressedFile.size / 1024).toFixed(1)}KB`
+      })
+    } catch (error) {
+      console.error('Error compressing image:', error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Gagal mengkompresi gambar"
+      })
     }
   }
 

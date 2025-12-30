@@ -212,7 +212,8 @@
       "Bash(cmd /c dir \"C:\\Users\\Aquvit\")",
       "Bash(cmd /c \"dir /s /b C:\\*.pem 2>nul | findstr /i aquvit\")",
       "Bash(cmd /c \"dir /s /b D:\\*.pem 2>nul\")",
-      "Bash(ssh-add:*)"
+      "Bash(ssh-add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Add image compression to DeliveryFormContent and DeliveryManagement\n\n- Added compressImage() to DeliveryFormContent.tsx handlePhotoCapture\n- Added compressImage() to DeliveryManagement.tsx handlePhotoCapture  \n- Images are now compressed to max 100KB before upload\n- Added file validation (image type, max 10MB before compression)\n- Shows toast notification with compressed file size\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": [],
