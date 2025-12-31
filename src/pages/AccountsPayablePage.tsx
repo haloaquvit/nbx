@@ -127,29 +127,63 @@ export default function AccountsPayablePage() {
   const handleDelete = async () => {
     if (!deleteDialog.payable) return
 
-    // Check if debt has been paid
-    if (deleteDialog.payable.status === 'Paid' || (deleteDialog.payable.paidAmount && deleteDialog.payable.paidAmount > 0)) {
-      toast({
-        variant: "destructive",
-        title: "Tidak Dapat Dihapus",
-        description: "Hutang yang sudah dibayar (sebagian/lunas) tidak dapat dihapus"
-      })
-      setDeleteDialog({ open: false, payable: null })
-      return
-    }
-
     setIsDeleting(true)
     try {
-      const { error } = await supabase
+      const debtId = deleteDialog.payable.id
+      let voidedJournals = 0
+
+      // 1. Void all related journal entries (pencatatan hutang + pembayaran)
+      const { data: relatedJournals, error: journalFetchError } = await supabase
+        .from('journal_entries')
+        .select('id, entry_number')
+        .eq('reference_id', debtId)
+        .eq('is_voided', false)
+
+      if (journalFetchError) {
+        console.warn('Error fetching related journals:', journalFetchError)
+      }
+
+      if (relatedJournals && relatedJournals.length > 0) {
+        // Void each journal entry
+        for (const journal of relatedJournals) {
+          const { error: voidError } = await supabase
+            .from('journal_entries')
+            .update({
+              is_voided: true,
+              voided_at: new Date().toISOString(),
+              voided_reason: `Hutang dihapus - ${deleteDialog.payable.supplierName || 'Unknown'}`
+            })
+            .eq('id', journal.id)
+
+          if (!voidError) {
+            voidedJournals++
+          }
+        }
+      }
+
+      // 2. Delete related debt installments
+      const { error: installmentError } = await supabase
+        .from('debt_installments')
+        .delete()
+        .eq('debt_id', debtId)
+
+      if (installmentError) {
+        console.warn('Error deleting installments:', installmentError)
+      }
+
+      // 3. Delete the debt record
+      const { error: deleteError } = await supabase
         .from('accounts_payable')
         .delete()
-        .eq('id', deleteDialog.payable.id)
+        .eq('id', debtId)
 
-      if (error) throw error
+      if (deleteError) throw deleteError
 
       toast({
         title: "Sukses",
-        description: "Hutang berhasil dihapus"
+        description: voidedJournals > 0
+          ? `Hutang berhasil dihapus. ${voidedJournals} jurnal terkait di-void.`
+          : "Hutang berhasil dihapus"
       })
 
       setDeleteDialog({ open: false, payable: null })
@@ -531,16 +565,16 @@ export default function AccountsPayablePage() {
           <DialogHeader>
             <DialogTitle>Hapus Hutang</DialogTitle>
             <DialogDescription>
-              Apakah Anda yakin ingin menghapus hutang ini? Tindakan ini tidak dapat dibatalkan.
+              Apakah Anda yakin ingin menghapus hutang ini? Semua jurnal terkait (pencatatan hutang & pembayaran) akan di-void. Tindakan ini tidak dapat dibatalkan.
             </DialogDescription>
           </DialogHeader>
 
           {deleteDialog.payable && (
             <div className="bg-muted p-3 rounded">
               <div className="space-y-1 text-sm">
-                <div><strong>ID:</strong> {deleteDialog.payable.id}</div>
                 <div><strong>Kreditor:</strong> {deleteDialog.payable.supplierName}</div>
                 <div><strong>Jumlah:</strong> {formatCurrency(deleteDialog.payable.amount)}</div>
+                <div><strong>Terbayar:</strong> {formatCurrency(deleteDialog.payable.paidAmount || 0)}</div>
                 <div><strong>Deskripsi:</strong> {deleteDialog.payable.description}</div>
               </div>
             </div>

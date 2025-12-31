@@ -699,77 +699,51 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     assetsByAccountId[accountId].totalValue += value;
   });
 
-  // Build fixed assets - include all accounts with code 14xx, 15xx, 16xx (Aset Tetap)
+  // ============================================================================
+  // ASET TETAP - PSAK 16: Nilai berdasarkan JURNAL (COA), bukan tabel assets
+  // Nilai aset tetap = Harga Perolehan (dari jurnal) - Akumulasi Penyusutan
+  // Tabel assets hanya untuk inventaris/tracking, bukan untuk nilai di neraca
+  // ============================================================================
   const peralatan = assetAccounts
     .filter(acc => {
       // Include accounts with code starting with 14, 15, 16 (fixed assets range)
+      // Exclude akumulasi penyusutan (will be handled separately)
       if (acc.code) {
         const codePrefix = acc.code.substring(0, 2);
-        if (['14', '15', '16'].includes(codePrefix)) return true;
+        if (['14', '15', '16'].includes(codePrefix)) {
+          // Exclude akumulasi penyusutan (usually 1430, 1530, etc.)
+          return !acc.name.toLowerCase().includes('akumulasi');
+        }
       }
 
       // Fallback: also include by name for accounts without codes
-      return acc.name.toLowerCase().includes('peralatan') ||
-             acc.name.toLowerCase().includes('kendaraan') ||
-             acc.name.toLowerCase().includes('mesin') ||
-             acc.name.toLowerCase().includes('bangunan') ||
-             acc.name.toLowerCase().includes('tanah') ||
-             acc.name.toLowerCase().includes('komputer') ||
-             acc.name.toLowerCase().includes('furniture') ||
-             acc.name.toLowerCase().includes('aset tetap') ||
-             acc.name.toLowerCase().includes('gedung');
+      const nameLower = acc.name.toLowerCase();
+      return (nameLower.includes('peralatan') ||
+             nameLower.includes('kendaraan') ||
+             nameLower.includes('mesin') ||
+             nameLower.includes('bangunan') ||
+             nameLower.includes('tanah') ||
+             nameLower.includes('komputer') ||
+             nameLower.includes('furniture') ||
+             nameLower.includes('aset tetap') ||
+             nameLower.includes('gedung')) &&
+             !nameLower.includes('akumulasi');
     })
-    .filter(acc => {
-      // Check if account has balance OR has linked assets
-      const hasBalance = (acc.balance || 0) !== 0;
-      const hasLinkedAssets = assetsByAccountId[acc.id]?.totalValue > 0;
-      return hasBalance || hasLinkedAssets;
-    })
-    .map(acc => {
-      // Use account balance if available, otherwise use linked assets total
-      const accountBalance = acc.balance || 0;
-      const linkedAssetsValue = assetsByAccountId[acc.id]?.totalValue || 0;
-      // Use the larger value (account balance should include assets, but if not, use assets value)
-      const balance = Math.max(accountBalance, linkedAssetsValue);
+    .filter(acc => (acc.balance || 0) !== 0) // Only show accounts with balance from journal
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: acc.balance || 0, // Use journal balance ONLY (PSAK compliant)
+      formattedBalance: formatCurrency(acc.balance || 0)
+    }));
 
-      return {
-        accountId: acc.id,
-        accountCode: acc.code,
-        accountName: acc.name,
-        balance: balance,
-        formattedBalance: formatCurrency(balance)
-      };
-    });
-
-  // Add unlinked assets (assets without account_id in COA)
-  const unlinkedAssetsValue = assetsByAccountId['unlinked']?.totalValue || 0;
-  if (unlinkedAssetsValue > 0) {
-    peralatan.push({
-      accountId: 'unlinked-assets',
-      accountCode: '1499',
-      accountName: 'Aset Tetap Lainnya',
-      balance: unlinkedAssetsValue,
-      formattedBalance: formatCurrency(unlinkedAssetsValue)
-    });
-  }
-
-  // Check for assets linked to accounts not in the filter (edge case)
-  Object.entries(assetsByAccountId).forEach(([accountId, data]) => {
-    if (accountId === 'unlinked') return;
-
-    // Check if this account is already included
-    const alreadyIncluded = peralatan.some(p => p.accountId === accountId);
-    if (!alreadyIncluded && data.totalValue > 0) {
-      // Add this as a separate entry
-      peralatan.push({
-        accountId: accountId,
-        accountCode: '',
-        accountName: data.name,
-        balance: data.totalValue,
-        formattedBalance: formatCurrency(data.totalValue)
-      });
-    }
-  });
+  // NOTE: Tidak lagi menambahkan aset dari tabel assets ke neraca
+  // Nilai aset tetap HARUS dari jurnal (COA) agar sesuai PSAK 16
+  // Tabel assets hanya untuk tracking/inventaris, bukan nilai neraca
+  //
+  // Jika aset belum dijurnal, gunakan fitur "Sinkron Aset Tetap" di halaman COA
+  // untuk membuat jurnal pencatatan aset.
 
   const akumulasiPenyusutan = assetAccounts
     .filter(acc => acc.name.toLowerCase().includes('akumulasi'))
