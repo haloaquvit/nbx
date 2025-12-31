@@ -2215,6 +2215,62 @@ export async function createSpoilageJournal(params: {
   });
 }
 
+// ============================================
+// OPENING BALANCE JOURNAL HELPERS
+// ============================================
+
+/**
+ * Void existing opening balance journals matching a description pattern
+ * This enables "auto-void old sync" functionality where new sync will
+ * automatically void old journals instead of rejecting.
+ *
+ * @param branchId - Branch to search for journals
+ * @param descriptionPattern - Pattern to match (ILIKE search)
+ * @returns Object with count of voided journals and their IDs
+ */
+async function voidExistingOpeningJournals(
+  branchId: string,
+  descriptionPattern: string
+): Promise<{ voidedCount: number; voidedIds: string[]; voidedNumbers: string[] }> {
+  // Find existing opening journals matching the pattern
+  const { data: existingJournals, error } = await supabase
+    .from('journal_entries')
+    .select('id, entry_number')
+    .eq('branch_id', branchId)
+    .eq('reference_type', 'opening')
+    .ilike('description', descriptionPattern)
+    .eq('is_voided', false);
+
+  if (error || !existingJournals || existingJournals.length === 0) {
+    return { voidedCount: 0, voidedIds: [], voidedNumbers: [] };
+  }
+
+  const voidedIds: string[] = [];
+  const voidedNumbers: string[] = [];
+
+  // Void each existing journal
+  for (const journal of existingJournals) {
+    const { error: voidError } = await supabase
+      .from('journal_entries')
+      .update({
+        is_voided: true,
+        voided_at: new Date().toISOString(),
+        void_reason: 'Auto-void: Diganti dengan sinkronisasi baru',
+      })
+      .eq('id', journal.id);
+
+    if (!voidError) {
+      voidedIds.push(journal.id);
+      voidedNumbers.push(journal.entry_number);
+      console.log(`[JournalService] Auto-voided journal: ${journal.entry_number}`);
+    } else {
+      console.warn(`[JournalService] Failed to void journal ${journal.entry_number}:`, voidError.message);
+    }
+  }
+
+  return { voidedCount: voidedIds.length, voidedIds, voidedNumbers };
+}
+
 /**
  * Create Inventory Opening Balance Journal
  *
@@ -2226,6 +2282,8 @@ export async function createSpoilageJournal(params: {
  * Karena saldo awal persediaan bukan hasil dari operasional (laba),
  * melainkan modal/investasi awal dari pemilik.
  *
+ * AUTO-VOID: Jika ada jurnal saldo awal persediaan sebelumnya, akan di-void otomatis.
+ *
  * Dr. Persediaan Barang Dagang (1310)     xxx
  * Dr. Persediaan Bahan Baku (1320)        xxx
  *   Cr. Modal Disetor (3100)                  xxx
@@ -2235,13 +2293,24 @@ export async function createInventoryOpeningBalanceJournal(params: {
   materialsInventoryValue: number;
   branchId: string;
   openingDate?: Date;
-}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+}): Promise<{ success: boolean; journalId?: string; error?: string; voidedJournals?: string[] }> {
   const { productsInventoryValue, materialsInventoryValue, branchId, openingDate } = params;
 
   const totalAmount = productsInventoryValue + materialsInventoryValue;
 
   if (totalAmount <= 0) {
     return { success: false, error: 'Tidak ada nilai persediaan yang perlu dijurnal' };
+  }
+
+  // ============================================================================
+  // AUTO-VOID: Void existing inventory opening journals before creating new one
+  // ============================================================================
+  const { voidedCount, voidedNumbers } = await voidExistingOpeningJournals(
+    branchId,
+    '%Saldo Awal Persediaan%'
+  );
+  if (voidedCount > 0) {
+    console.log(`[JournalService] Auto-voided ${voidedCount} existing inventory opening journals: ${voidedNumbers.join(', ')}`);
   }
 
   // Find Persediaan Barang Dagang account (1310)
@@ -2310,7 +2379,7 @@ export async function createInventoryOpeningBalanceJournal(params: {
   const entryDate = openingDate || new Date();
   const description = `Saldo Awal Persediaan - Sinkronisasi nilai persediaan dengan jurnal akuntansi`;
 
-  return createJournalEntry({
+  const result = await createJournalEntry({
     entryDate,
     description,
     referenceType: 'opening',
@@ -2319,12 +2388,19 @@ export async function createInventoryOpeningBalanceJournal(params: {
     autoPost: true,
     lines,
   });
+
+  return {
+    ...result,
+    voidedJournals: voidedNumbers.length > 0 ? voidedNumbers : undefined,
+  };
 }
 
 /**
  * Generate opening balance journal for all accounts with initial_balance
  * This creates balancing entries for Kas/Bank and other accounts that have initial_balance
  * but no corresponding journal entries.
+ *
+ * AUTO-VOID: Jika ada jurnal saldo awal sebelumnya, akan di-void otomatis.
  *
  * Jurnal:
  * Dr. [Akun dengan initial_balance positif - Aset]
@@ -2336,27 +2412,30 @@ export async function createInventoryOpeningBalanceJournal(params: {
 export async function createAllOpeningBalanceJournal(params: {
   branchId: string;
   openingDate?: Date;
-}): Promise<{ success: boolean; journalId?: string; error?: string; summary?: any }> {
+}): Promise<{ success: boolean; journalId?: string; error?: string; summary?: any; voidedJournals?: string[] }> {
   const { branchId, openingDate } = params;
 
   // ============================================================================
-  // PREVENT DUPLICATE: Check if opening balance journal already exists
+  // AUTO-VOID: Void existing opening balance journals before creating new one
+  // Mencari jurnal dengan berbagai pattern deskripsi saldo awal
   // ============================================================================
-  const { data: existingJournal } = await supabase
-    .from('journal_entries')
-    .select('id, entry_number, entry_date')
-    .eq('branch_id', branchId)
-    .eq('reference_type', 'opening')
-    .ilike('description', '%migrasi saldo awal%')
-    .eq('is_voided', false)
-    .limit(1);
+  const patternsToVoid = [
+    '%migrasi saldo awal%',
+    '%Saldo Awal Akun%',
+    '%saldo awal akun%',
+  ];
 
-  if (existingJournal && existingJournal.length > 0) {
-    return {
-      success: false,
-      error: `Jurnal saldo awal sudah ada: ${existingJournal[0].entry_number} (${existingJournal[0].entry_date}). Hapus jurnal tersebut terlebih dahulu jika ingin membuat ulang.`,
-      journalId: existingJournal[0].id
-    };
+  let totalVoidedCount = 0;
+  const allVoidedNumbers: string[] = [];
+
+  for (const pattern of patternsToVoid) {
+    const { voidedCount, voidedNumbers } = await voidExistingOpeningJournals(branchId, pattern);
+    totalVoidedCount += voidedCount;
+    allVoidedNumbers.push(...voidedNumbers);
+  }
+
+  if (totalVoidedCount > 0) {
+    console.log(`[JournalService] Auto-voided ${totalVoidedCount} existing opening balance journals: ${allVoidedNumbers.join(', ')}`);
   }
 
   // Get all accounts with initial_balance for this branch
@@ -2472,8 +2551,8 @@ export async function createAllOpeningBalanceJournal(params: {
   });
 
   // NOTE: Tidak reset initial_balance agar user masih bisa edit di COA.
-  // Pengecekan duplikasi di atas sudah mencegah jurnal saldo awal dibuat 2x.
-  // Jika ada ketidaksesuaian, user bisa void jurnal lama dan sinkron ulang.
+  // Auto-void sekarang menggantikan pengecekan duplikasi lama.
+  // Jurnal lama akan otomatis di-void saat sinkronisasi ulang.
 
   return {
     ...result,
@@ -2482,6 +2561,7 @@ export async function createAllOpeningBalanceJournal(params: {
       totalDebit,
       totalCredit,
       labaDitahanAdjustment: netAmount,
-    }
+    },
+    voidedJournals: allVoidedNumbers.length > 0 ? allVoidedNumbers : undefined,
   };
 }

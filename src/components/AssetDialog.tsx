@@ -231,15 +231,15 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
               >
-                <option value="equipment">Peralatan → Akun 1410 Peralatan Produksi</option>
-                <option value="vehicle">Kendaraan → Akun 1420 Kendaraan</option>
-                <option value="building">Bangunan → Akun 1440 Bangunan</option>
-                <option value="computer">Komputer → Akun 1410 Peralatan Produksi</option>
-                <option value="furniture">Furnitur → Akun 1430 Tanah</option>
-                <option value="other">Lainnya → Akun 1400 Aset Tetap</option>
+                <option value="vehicle">Kendaraan → Cari akun "Kendaraan"</option>
+                <option value="equipment">Peralatan/Mesin → Cari akun "Peralatan" atau "Mesin"</option>
+                <option value="building">Bangunan → Cari akun "Bangunan" atau "Gedung"</option>
+                <option value="computer">Komputer → Cari akun "Komputer" atau "Perangkat TI"</option>
+                <option value="furniture">Furnitur → Cari akun "Furniture" atau "Inventaris"</option>
+                <option value="other">Lainnya → Akun Aset Tetap Lainnya</option>
               </select>
               <p className="text-xs text-muted-foreground">
-                Aset akan otomatis masuk ke akun keuangan sesuai kategori di atas
+                Aset otomatis masuk ke akun berdasarkan NAMA akun (bukan kode), sehingga tetap akurat meski kode berubah
               </p>
             </div>
 
