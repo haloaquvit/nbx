@@ -24,9 +24,13 @@ export class PricingService {
     stockPricings: StockPricing[],
     bonusPricings: BonusPricing[]
   ): PriceCalculationResult {
-    
+
+    // Ensure arrays are defined
+    const safeStockPricings = stockPricings || [];
+    const safeBonusPricings = bonusPricings || [];
+
     // Find applicable stock pricing rule
-    const applicableStockRule = stockPricings
+    const applicableStockRule = safeStockPricings
       .filter(rule => rule.isActive)
       .find(rule => {
         const meetsMin = currentStock >= rule.minStock
@@ -37,7 +41,7 @@ export class PricingService {
     const stockAdjustedPrice = applicableStockRule?.price || basePrice
 
     // Find available bonuses for the quantity
-    const availableBonuses = bonusPricings
+    const availableBonuses = safeBonusPricings
       .filter(bonus => bonus.isActive)
       .filter(bonus => {
         const meetsMin = quantity >= bonus.minQuantity

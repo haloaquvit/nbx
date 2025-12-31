@@ -55,7 +55,7 @@ export const STANDARD_COA_TEMPLATE: CoATemplate[] = [
   { code: '2110', name: 'Hutang Usaha', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2110 },
   { code: '2120', name: 'Hutang Gaji', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2120 },
   { code: '2130', name: 'Hutang Pajak', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2130 },
-  { code: '2140', name: 'Hutang Barang Dagang', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2140 },
+  { code: '2140', name: 'Modal Barang Dagang Tertahan', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2100', sortOrder: 2140 },
 
   // Kewajiban Jangka Panjang (22xx)
   { code: '2200', name: 'Kewajiban Jangka Panjang', category: 'KEWAJIBAN', level: 2, normalBalance: 'CREDIT', isHeader: true, parentCode: '2000', sortOrder: 2200 },
@@ -80,6 +80,7 @@ export const STANDARD_COA_TEMPLATE: CoATemplate[] = [
   { code: '5000', name: 'HARGA POKOK PENJUALAN', category: 'HPP', level: 1, normalBalance: 'DEBIT', isHeader: true, sortOrder: 5000 },
   { code: '5100', name: 'Harga Pokok Produk', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5100 },
   { code: '5200', name: 'Biaya Bahan Baku', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5200 },
+  { code: '5210', name: 'HPP Bonus', category: 'HPP', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '5200', sortOrder: 5210 },
 
   // ========== BEBAN OPERASIONAL (6xxx) ==========
   { code: '6000', name: 'BEBAN OPERASIONAL', category: 'BEBAN_OPERASIONAL', level: 1, normalBalance: 'DEBIT', isHeader: true, sortOrder: 6000 },

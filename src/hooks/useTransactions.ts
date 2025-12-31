@@ -399,7 +399,10 @@ export const useTransactions = (filters?: {
         try {
           // Calculate HPP (Cost of Goods Sold) for non-bonus items
           let totalHPP = 0;
+          // Calculate HPP for bonus items separately (goes to 5210 HPP Bonus account)
+          let totalHPPBonus = 0;
           const regularItems = newTransaction.items?.filter((item: any) => !item.isBonus) || [];
+          const bonusItems = newTransaction.items?.filter((item: any) => item.isBonus) || [];
 
           if (regularItems.length > 0) {
             // Use FIFO method to calculate HPP from inventory batches
@@ -505,6 +508,33 @@ export const useTransactions = (filters?: {
             }
           }
 
+          // Calculate HPP for BONUS items (goes to account 5210 - HPP Bonus)
+          // Bonus items reduce inventory but don't generate revenue
+          if (bonusItems.length > 0) {
+            for (const item of bonusItems) {
+              const productId = item.product?.id;
+              const quantity = item.quantity || 0;
+
+              if (productId && quantity > 0) {
+                try {
+                  // Get cost_price directly for bonus items (no FIFO consumption needed as stock already reduced)
+                  const { data: productDataRaw } = await supabase
+                    .from('products')
+                    .select('cost_price, base_price')
+                    .eq('id', productId)
+                    .order('id').limit(1);
+                  const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                  const costPrice = productData?.cost_price || productData?.base_price || 0;
+                  totalHPPBonus += costPrice * quantity;
+                  console.log('HPP Bonus calculated:', { productId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                } catch (err) {
+                  console.error('Error calculating HPP Bonus:', err);
+                }
+              }
+            }
+            console.log('Total HPP Bonus:', totalHPPBonus);
+          }
+
           const paymentMethod = newTransaction.paymentStatus === 'Lunas' ? 'cash' : 'credit';
           const journalResult = await createSalesJournal({
             transactionId: savedTransaction.id,
@@ -515,6 +545,7 @@ export const useTransactions = (filters?: {
             customerName: newTransaction.customerName,
             branchId: currentBranch.id,
             hppAmount: totalHPP, // Include HPP for proper accounting
+            hppBonusAmount: totalHPPBonus, // Include HPP Bonus to account 5210
             // PPN (Sales Tax) data
             ppnEnabled: newTransaction.ppnEnabled,
             ppnAmount: newTransaction.ppnAmount,
@@ -530,6 +561,7 @@ export const useTransactions = (filters?: {
           if (journalResult.success) {
             console.log('✅ Jurnal penjualan auto-generated:', journalResult.journalId, {
               totalHPP,
+              totalHPPBonus,
               ppnEnabled: newTransaction.ppnEnabled,
               ppnAmount: newTransaction.ppnAmount,
               subtotal: newTransaction.subtotal

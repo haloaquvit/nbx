@@ -390,6 +390,8 @@ export async function createSalesJournal(params: {
   branchId: string;
   // Optional: HPP (Cost of Goods Sold) data
   hppAmount?: number;
+  // Optional: HPP Bonus (Cost of Goods Sold for bonus items) - ke akun 5210
+  hppBonusAmount?: number;
   // Optional: PPN (Sales Tax) data
   ppnEnabled?: boolean;
   ppnAmount?: number;
@@ -399,7 +401,7 @@ export async function createSalesJournal(params: {
   // Optional: specific payment account for cash payment (e.g., driver's cash account)
   paymentAccountId?: string;
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
-  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale, paymentAccountId } = params;
+  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, hppBonusAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale, paymentAccountId } = params;
 
   // Find accounts - using actual database codes (1120, 1210, etc.)
   console.log('[JournalService] createSalesJournal - Finding accounts for branchId:', branchId, 'paymentAccountId:', paymentAccountId);
@@ -444,12 +446,14 @@ export async function createSalesJournal(params: {
   // HPP & Persediaan accounts (optional, for COGS recording)
   // Saat penjualan, yang berkurang adalah Persediaan Barang Dagang (1310), bukan Bahan Baku (1320)
   const hppAccount = await getAccountByCode('5100', branchId) || await findAccountByPattern('hpp', 'Beban', branchId);
+  const hppBonusAccount = await getAccountByCode('5210', branchId) || await findAccountByPattern('hpp bonus', 'Beban', branchId);
   const persediaanAccount = await getAccountByCode('1310', branchId)
     || await findAccountByPattern('barang dagang', 'Aset', branchId)
     || await findAccountByPattern('persediaan', 'Aset', branchId);
 
-  // Hutang Barang Dagang (2140) - untuk non-office sale (kewajiban kirim barang)
+  // Modal Barang Dagang Tertahan (2140) - untuk non-office sale (HPP tertahan sampai barang dikirim)
   const hutangBarangDagangAccount = await getAccountByCode('2140', branchId)
+    || await findAccountByPattern('modal barang dagang tertahan', 'Kewajiban', branchId)
     || await findAccountByPattern('hutang barang dagang', 'Kewajiban', branchId);
 
   // PPN (Sales Tax) account - Hutang Pajak (2130)
@@ -541,15 +545,15 @@ export async function createSalesJournal(params: {
         description: 'Pengurangan persediaan (laku kantor)',
       });
     } else if (!isOfficeSale && hutangBarangDagangAccount) {
-      // NON-OFFICE SALE: Barang perlu diantar → Cr. Hutang Barang Dagang
-      // Kewajiban menyerahkan barang ke pelanggan
+      // NON-OFFICE SALE: Barang perlu diantar → Cr. Modal Barang Dagang Tertahan
+      // HPP tertahan sampai barang dikirim ke pelanggan
       lines.push({
         accountId: hutangBarangDagangAccount.id,
         accountCode: hutangBarangDagangAccount.code,
         accountName: hutangBarangDagangAccount.name,
         debitAmount: 0,
         creditAmount: hppAmount,
-        description: 'Hutang barang dagang (kewajiban kirim)',
+        description: 'Modal barang dagang tertahan (belum dikirim)',
       });
     } else if (persediaanAccount) {
       // Fallback: use Persediaan if Hutang Barang Dagang not found
@@ -560,6 +564,66 @@ export async function createSalesJournal(params: {
         debitAmount: 0,
         creditAmount: hppAmount,
         description: 'Pengurangan persediaan',
+      });
+    }
+  }
+
+  // Add HPP Bonus entries if bonus items exist
+  // Bonus items mengurangi persediaan tapi tidak menghasilkan pendapatan
+  // Dr. HPP Bonus (5210)  xxx
+  //   Cr. Persediaan / Hutang Barang Dagang  xxx
+  if (hppBonusAmount && hppBonusAmount > 0 && persediaanAccount) {
+    // Get or create HPP Bonus account (5210)
+    const hppBonusAcc = hppBonusAccount || hppAccount;
+
+    if (hppBonusAcc) {
+      // Dr. HPP Bonus (Cost of Goods Sold for bonus items)
+      lines.push({
+        accountId: hppBonusAcc.id,
+        accountCode: hppBonusAcc.code,
+        accountName: hppBonusAcc.name,
+        debitAmount: hppBonusAmount,
+        creditAmount: 0,
+        description: 'HPP Bonus (barang gratis)',
+      });
+
+      // Credit account depends on isOfficeSale flag
+      if (isOfficeSale) {
+        // LAKU KANTOR: Bonus langsung diambil → Cr. Persediaan Barang Dagang
+        lines.push({
+          accountId: persediaanAccount.id,
+          accountCode: persediaanAccount.code,
+          accountName: persediaanAccount.name,
+          debitAmount: 0,
+          creditAmount: hppBonusAmount,
+          description: 'Pengurangan persediaan bonus (laku kantor)',
+        });
+      } else if (hutangBarangDagangAccount) {
+        // NON-OFFICE SALE: Bonus perlu diantar → Cr. Modal Barang Dagang Tertahan
+        lines.push({
+          accountId: hutangBarangDagangAccount.id,
+          accountCode: hutangBarangDagangAccount.code,
+          accountName: hutangBarangDagangAccount.name,
+          debitAmount: 0,
+          creditAmount: hppBonusAmount,
+          description: 'Modal barang bonus tertahan (belum dikirim)',
+        });
+      } else {
+        // Fallback: use Persediaan
+        lines.push({
+          accountId: persediaanAccount.id,
+          accountCode: persediaanAccount.code,
+          accountName: persediaanAccount.name,
+          debitAmount: 0,
+          creditAmount: hppBonusAmount,
+          description: 'Pengurangan persediaan bonus',
+        });
+      }
+
+      console.log('[JournalService] HPP Bonus entry added:', {
+        amount: hppBonusAmount,
+        account: hppBonusAcc.code,
+        creditTo: isOfficeSale ? 'Persediaan' : 'Hutang Barang Dagang'
       });
     }
   }

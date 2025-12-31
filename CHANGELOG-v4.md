@@ -237,6 +237,75 @@ Perbaikan nginx config - menghapus trailing slash pada proxy_pass yang menyebabk
 
 ---
 
+## 2025-12-31 - HPP Bonus, Arus Kas Fix, Mobile POS Improvement
+
+### 50. HPP Bonus - Akun Terpisah untuk Barang Gratis
+
+Barang bonus (gratis) sekarang dicatat terpisah dari HPP biasa agar laporan laba rugi lebih akurat.
+
+**Perubahan:**
+- Tambah akun **5210 HPP Bonus** di `chartOfAccountsUtils.ts`
+- Rename akun **2140** dari "Hutang Barang Dagang" menjadi "Modal Barang Dagang Tertahan"
+- Modifikasi `journalService.ts` untuk menghitung dan mencatat HPP Bonus secara terpisah
+- Modifikasi `useTransactions.ts` untuk menghitung HPP dari item bonus
+
+**Jurnal Penjualan dengan Bonus:**
+```
+Dr. Kas/Piutang          xxx  (pembayaran)
+Dr. HPP                  xxx  (cost barang terjual)
+Dr. HPP Bonus            xxx  (cost barang gratis)
+    Cr. Penjualan        xxx
+    Cr. Persediaan       xxx  (total cost semua barang)
+```
+
+### 51. Fix Arus Kas - Exclude Transfer Internal
+
+Perbaikan laporan arus kas yang sebelumnya menghitung transfer antar akun kas sebagai arus kas.
+
+**Masalah:**
+- Transfer dari Kas Kecil ke Kas Besar tercatat sebagai kas masuk DAN kas keluar
+- Jurnal penyesuaian internal muncul di arus kas
+
+**Solusi di `financialStatementsUtils.ts`:**
+- Skip jurnal dimana counterpart juga akun Kas/Bank (internal transfer)
+- Skip jurnal yang hanya melibatkan akun kas tanpa counterpart
+
+### 52. Mobile POS - Perbaikan UI & Logika
+
+**Fix Error:**
+- Fix `Cannot read properties of undefined (reading 'filter')` di `pricingService.ts`
+- Tambah defensive check `|| []` untuk array parameters
+- Perbaiki pemanggilan `PricingService.calculatePrice` di `MobilePosForm.tsx` dan `PosForm.tsx`
+
+**UI Improvement:**
+- Tampilan pembayaran sekarang sama dengan Driver POS (input-first flow)
+- Bisa simpan transaksi tanpa pembayaran (kredit)
+- Auto-select akun pembayaran pertama jika ada jumlah bayar
+- Tombol "Lunas" dan "Kredit" untuk quick select
+- Status pembayaran visual (Lunas/Kredit)
+
+**Dark Mode:**
+- Tambah dark mode styling untuk product selection sheet
+- Fix text visibility di dark mode
+
+**Touch Support:**
+- Tambah `onTouchEnd` handler untuk product selection
+- Tambah `touch-manipulation` dan `select-none` class
+
+### Files Modified
+
+| File | Perubahan |
+|------|-----------|
+| `src/utils/chartOfAccountsUtils.ts` | Tambah akun 5210 HPP Bonus, rename 2140 |
+| `src/services/journalService.ts` | Tambah parameter hppBonusAmount, jurnal HPP Bonus |
+| `src/hooks/useTransactions.ts` | Hitung HPP Bonus untuk item bonus |
+| `src/utils/financialStatementsUtils.ts` | Exclude internal transfer dari arus kas |
+| `src/services/pricingService.ts` | Defensive check untuk array undefined |
+| `src/components/PosForm.tsx` | Defensive check untuk calculatePrice |
+| `src/components/MobilePosForm.tsx` | UI pembayaran baru, fix pricing, dark mode |
+
+---
+
 ## Forecast / Roadmap
 
 | Fitur | Status | Deskripsi |

@@ -233,12 +233,22 @@ export const MobilePosForm = () => {
   const updateItemWithBonuses = async (existingItem: FormTransactionItem, newQty: number) => {
     if (!existingItem.product) return;
 
-    const calculation = await PricingService.calculatePrice(existingItem.product.id, newQty);
+    // Get pricing data first
+    const productPricing = await PricingService.getProductPricing(existingItem.product.id);
+
+    // Calculate price with proper parameters
+    const calculation = productPricing ? PricingService.calculatePrice(
+      existingItem.product.basePrice || 0,
+      existingItem.product.currentStock || 0,
+      newQty,
+      [], // Ignore stock pricing for mobile POS
+      productPricing.bonusPricings || []
+    ) : null;
 
     // Update main item
     let newItems = items.map(item =>
       item.id === existingItem.id
-        ? { ...item, qty: newQty, harga: calculation?.unitPrice || item.harga }
+        ? { ...item, qty: newQty, harga: calculation?.finalPrice || item.harga }
         : item
     );
 
@@ -271,7 +281,17 @@ export const MobilePosForm = () => {
 
   // Add new item with bonus calculation
   const addNewItemWithBonuses = async (product: Product, quantity: number) => {
-    const calculation = await PricingService.calculatePrice(product.id, quantity);
+    // Get pricing data first
+    const productPricing = await PricingService.getProductPricing(product.id);
+
+    // Calculate price with proper parameters
+    const calculation = productPricing ? PricingService.calculatePrice(
+      product.basePrice || 0,
+      product.currentStock || 0,
+      quantity,
+      [], // Ignore stock pricing for mobile POS
+      productPricing.bonusPricings || []
+    ) : null;
 
     const newItems: FormTransactionItem[] = [...items];
 
@@ -281,7 +301,7 @@ export const MobilePosForm = () => {
       product: product,
       keterangan: '',
       qty: quantity,
-      harga: calculation?.unitPrice || product.basePrice || 0,
+      harga: calculation?.finalPrice || product.basePrice || 0,
       unit: product.unit || 'pcs',
       isBonus: false,
     };
@@ -360,9 +380,16 @@ export const MobilePosForm = () => {
       return;
     }
 
+    // Determine payment account - auto-select first if needed
+    let finalPaymentAccountId = paymentAccountId;
     if (paidAmount > 0 && !paymentAccountId) {
-      toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap pilih Kas/Bank untuk menerima pembayaran." });
-      return;
+      const firstAccount = accounts?.find(a => a.isPaymentAccount);
+      if (firstAccount) {
+        finalPaymentAccountId = firstAccount.id;
+      } else {
+        toast({ variant: "destructive", title: "Validasi Gagal", description: "Tidak ada akun pembayaran tersedia." });
+        return;
+      }
     }
 
     const transactionItems: TransactionItem[] = validItems.map(item => ({
@@ -392,7 +419,7 @@ export const MobilePosForm = () => {
       salesName: selectedSales && selectedSales !== 'none' ? salesEmployees?.find(s => s.id === selectedSales)?.name || null : null,
       designerId: designerId || null,
       operatorId: operatorId || null,
-      paymentAccountId: paymentAccountId || null,
+      paymentAccountId: finalPaymentAccountId || null,
       orderDate: orderDate || new Date(),
       finishDate: finishDate || null,
       items: transactionItems,
@@ -608,10 +635,10 @@ export const MobilePosForm = () => {
                     <Plus className="mr-1 h-4 w-4" /> Tambah
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="bottom" className="h-[85vh]">
+                <SheetContent side="bottom" className="h-[85vh] dark:bg-gray-900">
                   <SheetHeader>
-                    <SheetTitle>Pilih Produk</SheetTitle>
-                    <SheetDescription>
+                    <SheetTitle className="dark:text-white">Pilih Produk</SheetTitle>
+                    <SheetDescription className="dark:text-gray-400">
                       Ketuk produk untuk menambahkan ke keranjang
                     </SheetDescription>
                   </SheetHeader>
@@ -622,7 +649,7 @@ export const MobilePosForm = () => {
                       placeholder="🔍 Cari produk..."
                       value={productSearch}
                       onChange={(e) => setProductSearch(e.target.value)}
-                      className="text-lg py-6"
+                      className="text-lg py-6 dark:bg-gray-800 dark:border-gray-700 dark:text-white"
                     />
                     {/* Product Grid */}
                     <div className="grid grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pb-4">
@@ -635,20 +662,24 @@ export const MobilePosForm = () => {
                               addProductToCart(product);
                               // Tidak tutup sheet agar bisa tambah banyak produk
                             }}
+                            onTouchEnd={(e) => {
+                              e.preventDefault();
+                              addProductToCart(product);
+                            }}
                             className={cn(
-                              "p-3 rounded-lg border-2 cursor-pointer transition-all active:scale-95",
+                              "p-3 rounded-lg border-2 cursor-pointer transition-all active:scale-95 select-none touch-manipulation",
                               inCart
-                                ? "border-green-500 bg-green-50"
-                                : "border-gray-200 bg-white hover:border-blue-300"
+                                ? "border-green-500 bg-green-50 dark:bg-green-900/30 dark:border-green-600"
+                                : "border-gray-200 bg-white dark:bg-gray-800 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500"
                             )}
                           >
-                            <p className="font-semibold text-sm truncate">{product.name}</p>
-                            <p className="text-green-600 font-bold mt-1">
+                            <p className="font-semibold text-sm truncate dark:text-white">{product.name}</p>
+                            <p className="text-green-600 dark:text-green-400 font-bold mt-1">
                               {new Intl.NumberFormat("id-ID").format(product.basePrice || 0)}
                             </p>
-                            <p className="text-xs text-gray-500">/{product.unit}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">/{product.unit}</p>
                             {inCart && (
-                              <div className="mt-2 flex items-center justify-center bg-green-600 text-white rounded-full px-2 py-1 text-xs">
+                              <div className="mt-2 flex items-center justify-center bg-green-600 dark:bg-green-700 text-white rounded-full px-2 py-1 text-xs">
                                 ✓ {inCart.qty} di keranjang
                               </div>
                             )}
@@ -870,109 +901,105 @@ export const MobilePosForm = () => {
         </CardContent>
       </Card>
 
-      {/* Payment Summary - Simplified */}
-      <Card className="dark:bg-gray-800 dark:border-gray-700">
-        <CardHeader className="pb-2 pt-3 px-3">
-          <CardTitle className="text-base flex items-center gap-2 dark:text-white">
-            <Wallet className="h-4 w-4" />
-            Pembayaran
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 px-3 pb-3">
-          {/* Total */}
-          <div className="flex justify-between items-center py-2 border-b dark:border-gray-600">
-            <span className="text-base font-medium dark:text-white">Total</span>
-            <span className="text-lg font-bold text-green-600 dark:text-green-400">
-              {new Intl.NumberFormat("id-ID").format(totalTagihan)}
+      {/* Payment - Input First Flow (seperti Driver POS) */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-md">
+        <div className="flex items-center gap-2 mb-4">
+          <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <span className="text-base font-semibold text-gray-900 dark:text-white">Pembayaran</span>
+        </div>
+
+        {/* Total Display */}
+        <div className="bg-blue-50 dark:bg-blue-900/30 rounded-xl p-3 mb-4">
+          <div className="flex justify-between items-center">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Total Belanja:</span>
+            <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+              {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalTagihan)}
             </span>
           </div>
+        </div>
 
-          {/* Metode Pembayaran - Quick Select Buttons */}
-          <div>
-            <Label className="text-xs text-muted-foreground dark:text-gray-400 mb-1.5 block">Bayar dengan:</Label>
-            {accounts?.filter(a => a.isPaymentAccount).length === 0 ? (
-              <div className="p-2 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg text-center">
-                <p className="text-xs text-red-600 dark:text-red-400 font-medium">⚠️ Tidak ada akun pembayaran</p>
-                <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">Buka Chart of Accounts → Import COA Standar</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5">
-                {accounts?.filter(a => a.isPaymentAccount).slice(0, 4).map(acc => (
-                  <Button
-                    key={acc.id}
-                    type="button"
-                    variant={paymentAccountId === acc.id ? "default" : "outline"}
-                    size="sm"
-                    className={cn(
-                      "h-8 text-xs",
-                      paymentAccountId === acc.id && "bg-green-600 hover:bg-green-700"
-                    )}
-                    onClick={() => setPaymentAccountId(acc.id)}
-                  >
-                    <Wallet className="mr-1 h-3.5 w-3.5" />
+        {/* Payment Amount Input - Primary */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <Label className="text-sm font-semibold text-gray-700 dark:text-gray-200">Jumlah Bayar</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={paidAmount === totalTagihan ? "default" : "outline"}
+                size="sm"
+                className="h-8 px-3 text-xs font-semibold"
+                onClick={() => setPaidAmount(totalTagihan)}
+              >
+                Lunas
+              </Button>
+              <Button
+                type="button"
+                variant={paidAmount === 0 ? "default" : "outline"}
+                size="sm"
+                className="h-8 px-3 text-xs font-semibold"
+                onClick={() => setPaidAmount(0)}
+              >
+                Kredit
+              </Button>
+            </div>
+          </div>
+          <Input
+            type="number"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={paidAmount || ''}
+            onChange={(e) => {
+              const val = parseInt(e.target.value) || 0
+              setPaidAmount(Math.min(val, totalTagihan))
+              // Auto-select payment account when entering amount
+              if (val > 0 && !paymentAccountId) {
+                const firstAccount = accounts?.find(a => a.isPaymentAccount)
+                if (firstAccount) setPaymentAccountId(firstAccount.id)
+              }
+              if (val === 0) setPaymentAccountId('')
+            }}
+            onFocus={(e) => e.target.select()}
+            placeholder="Masukkan jumlah pembayaran..."
+            className="h-14 text-xl font-bold text-center dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          />
+          {paidAmount > 0 && paidAmount < totalTagihan && (
+            <div className="text-sm text-orange-600 dark:text-orange-400 mt-1 text-center">
+              Sisa piutang: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(sisaTagihan)}
+            </div>
+          )}
+        </div>
+
+        {/* Payment Account - Highlighted (only show when paidAmount > 0) */}
+        {paidAmount > 0 && (
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-xl border-2 border-blue-400 dark:border-blue-600">
+            <Label className="text-sm font-semibold text-blue-800 dark:text-blue-300 mb-2 block">Metode Pembayaran</Label>
+            <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+              <SelectTrigger className="h-12 text-base bg-white dark:bg-gray-700 border-2 border-blue-400 dark:border-blue-500 dark:text-white">
+                <SelectValue placeholder="Pilih Kas/Bank" />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts?.filter(a => a.isPaymentAccount).map((acc) => (
+                  <SelectItem key={acc.id} value={acc.id} className="text-base py-2">
                     {acc.name}
-                  </Button>
+                  </SelectItem>
                 ))}
-              </div>
-            )}
+              </SelectContent>
+            </Select>
           </div>
+        )}
 
-          {/* Bayar Penuh / Sebagian Toggle */}
-          <div className="flex gap-1.5">
-            <Button
-              type="button"
-              variant={paidAmount === totalTagihan ? "default" : "outline"}
-              size="sm"
-              className={cn(
-                "flex-1 h-8 text-xs",
-                paidAmount === totalTagihan && "bg-green-600 hover:bg-green-700"
-              )}
-              onClick={() => setPaidAmount(totalTagihan)}
-            >
-              Lunas
-            </Button>
-            <Button
-              type="button"
-              variant={paidAmount !== totalTagihan && paidAmount > 0 ? "default" : "outline"}
-              size="sm"
-              className={cn(
-                "flex-1 h-8 text-xs",
-                paidAmount !== totalTagihan && paidAmount > 0 && "bg-orange-500 hover:bg-orange-600"
-              )}
-              onClick={() => setPaidAmount(0)}
-            >
-              Belum Bayar
-            </Button>
+        {/* Status Pembayaran */}
+        {paidAmount === totalTagihan && totalTagihan > 0 && (
+          <div className="text-center py-2 bg-green-100 dark:bg-green-900/30 rounded-lg text-green-700 dark:text-green-300 font-medium text-sm">
+            ✓ Pembayaran Lunas
           </div>
-
-          {/* Input Bayar Sebagian (hanya muncul jika tidak lunas) */}
-          {paidAmount !== totalTagihan && (
-            <div className="flex items-center gap-1.5 p-2 bg-orange-50 dark:bg-orange-900/30 rounded-lg border border-orange-200 dark:border-orange-700">
-              <span className="text-xs dark:text-white">Bayar:</span>
-              <Input
-                type="number"
-                value={paidAmount || ''}
-                onChange={handlePaidAmountChange}
-                onFocus={(e) => e.target.select()}
-                className="flex-1 h-8 text-right font-bold text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                placeholder="0"
-                min="0"
-              />
-              <span className="text-xs text-muted-foreground dark:text-gray-400">Sisa:</span>
-              <span className="font-bold text-orange-600 dark:text-orange-400 min-w-[70px] text-right text-sm">
-                {new Intl.NumberFormat("id-ID").format(sisaTagihan)}
-              </span>
-            </div>
-          )}
-
-          {/* Status Pembayaran */}
-          {paidAmount === totalTagihan && totalTagihan > 0 && (
-            <div className="text-center py-1.5 bg-green-100 dark:bg-green-900/30 rounded-lg text-green-700 dark:text-green-300 font-medium text-sm">
-              ✓ Pembayaran Lunas
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        )}
+        {paidAmount === 0 && totalTagihan > 0 && (
+          <div className="text-center py-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg text-orange-700 dark:text-orange-300 font-medium text-sm">
+            📝 Transaksi Kredit (Belum Bayar)
+          </div>
+        )}
+      </div>
 
       {/* Submit Button */}
       <Button

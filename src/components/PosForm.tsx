@@ -222,11 +222,11 @@ export const PosForm = () => {
         const cached = pricingCache.current[product.id];
         if (cached) {
           const priceCalculation = PricingService.calculatePrice(
-            product.basePrice,
-            product.currentStock,
+            product.basePrice || 0,
+            product.currentStock || 0,
             quantity,
             [], // Ignore stock pricing
-            cached.bonusPricings
+            cached.bonusPricings || []
           );
           return { price: priceCalculation.finalPrice, calculation: priceCalculation };
         }
@@ -238,11 +238,11 @@ export const PosForm = () => {
 
       // Calculate price based on QUANTITY purchased, NOT stock level
       const priceCalculation = PricingService.calculatePrice(
-        product.basePrice,
-        product.currentStock,
+        product.basePrice || 0,
+        product.currentStock || 0,
         quantity,
         [], // Ignore stock pricing - we only want quantity-based pricing
-        cachedPricing.bonusPricings
+        cachedPricing?.bonusPricings || []
       )
       return {
         // Use finalPrice which includes quantity-based discounts

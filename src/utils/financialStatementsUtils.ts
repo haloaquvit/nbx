@@ -1459,6 +1459,44 @@ export async function generateCashFlowStatement(
       // Find counterpart account (the other side of the transaction)
       const counterpart = counterpartLines[0]; // Usually there's one counterpart
 
+      // ============================================================================
+      // EXCLUDE: Transfer antar akun Kas/Bank (internal transfer)
+      // ============================================================================
+      // Jika counterpart juga akun Kas/Bank, ini adalah transfer internal
+      // dan TIDAK boleh dihitung sebagai arus kas karena tidak ada kas yang
+      // masuk/keluar dari perusahaan - hanya berpindah antar akun kas.
+      //
+      // Contoh: Transfer dari Kas Kecil ke Kas Besar
+      // Dr. Kas Besar (debit = kas masuk)
+      // Cr. Kas Kecil (credit = kas keluar)
+      // Net effect = 0 (tidak ada arus kas nyata)
+      // ============================================================================
+      if (counterpart && cashAccountIds.includes(counterpart.account_id)) {
+        console.log('[CashFlow] Skipping internal transfer:', {
+          journal: journal.id,
+          from: cashLine.account_name,
+          to: counterpart.account_name,
+          amount: cashAmount
+        });
+        return; // Skip this entry - it's internal transfer
+      }
+
+      // ============================================================================
+      // EXCLUDE: Jurnal yang hanya melibatkan akun kas tanpa counterpart
+      // ============================================================================
+      // Jika tidak ada counterpart (semua lines adalah akun kas),
+      // ini mungkin jurnal koreksi internal yang tidak valid
+      // ============================================================================
+      if (!counterpart && counterpartLines.length === 0) {
+        console.log('[CashFlow] Skipping journal without counterpart:', {
+          journal: journal.id,
+          cashLine: cashLine.account_name,
+          amount: cashAmount,
+          note: 'No non-cash counterpart account found'
+        });
+        return; // Skip this entry
+      }
+
       // Try to get account info from accountById lookup, fallback to journal line data
       let counterpartAccount: { id: string; code: string; name: string; type: string } | null = null;
 
