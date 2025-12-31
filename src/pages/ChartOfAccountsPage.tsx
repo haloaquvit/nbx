@@ -46,7 +46,8 @@ import {
   Loader2,
   RefreshCw,
   Package,
-  AlertCircle
+  AlertCircle,
+  Wallet
 } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
 import { createInventoryOpeningBalanceJournal, createAllOpeningBalanceJournal } from "@/services/journalService"
@@ -754,6 +755,189 @@ export default function ChartOfAccountsPage() {
     }
   }
 
+  // ============================================================================
+  // SYNC ALL - Combined function to sync inventory + opening balances
+  // ============================================================================
+  const [isSyncingAll, setIsSyncingAll] = useState(false)
+  const [syncAllDialogOpen, setSyncAllDialogOpen] = useState(false)
+  const [syncAllPreview, setSyncAllPreview] = useState<{
+    inventory: { productsValue: number; materialsValue: number; productsNeedSync: number; materialsNeedSync: number } | null;
+    openingBalances: { accounts: { code: string; name: string; type: string; initialBalance: number }[]; totalAsset: number; totalOther: number } | null;
+  } | null>(null)
+
+  const handleOpenSyncAllDialog = async () => {
+    if (!currentBranch?.id) {
+      toast({ variant: "destructive", title: "Error", description: "Pilih cabang terlebih dahulu" })
+      return
+    }
+
+    setSyncAllDialogOpen(true)
+    setIsSyncingAll(true)
+
+    try {
+      // 1. Get inventory data (products + materials)
+      const { data: products } = await supabase
+        .from('products')
+        .select('id, name, current_stock, cost_price, base_price')
+        .eq('branch_id', currentBranch.id)
+
+      const productsValue = (products || []).reduce((sum, p) => {
+        const costPrice = p.cost_price || p.base_price || 0
+        return sum + ((p.current_stock || 0) * costPrice)
+      }, 0)
+
+      const { data: materials } = await supabase
+        .from('materials')
+        .select('id, name, stock, price_per_unit')
+        .eq('branch_id', currentBranch.id)
+
+      const materialsValue = (materials || []).reduce((sum, m) => {
+        return sum + ((m.stock || 0) * (m.price_per_unit || 0))
+      }, 0)
+
+      // Get current journal values
+      const { data: journalProducts } = await supabase
+        .from('journal_entry_lines')
+        .select('debit_amount, credit_amount, journal_entries!inner(is_voided, branch_id)')
+        .eq('account_code', '1310')
+        .eq('journal_entries.branch_id', currentBranch.id)
+        .eq('journal_entries.is_voided', false)
+
+      const productsJournalValue = (journalProducts || []).reduce((sum, line) => {
+        return sum + (line.debit_amount || 0) - (line.credit_amount || 0)
+      }, 0)
+
+      const { data: journalMaterials } = await supabase
+        .from('journal_entry_lines')
+        .select('debit_amount, credit_amount, journal_entries!inner(is_voided, branch_id)')
+        .eq('account_code', '1320')
+        .eq('journal_entries.branch_id', currentBranch.id)
+        .eq('journal_entries.is_voided', false)
+
+      const materialsJournalValue = (journalMaterials || []).reduce((sum, line) => {
+        return sum + (line.debit_amount || 0) - (line.credit_amount || 0)
+      }, 0)
+
+      // 2. Get opening balance accounts (exclude inventory accounts 1310, 1320)
+      const { data: accountsWithBalance } = await supabase
+        .from('accounts')
+        .select('code, name, type, initial_balance')
+        .eq('branch_id', currentBranch.id)
+        .not('initial_balance', 'is', null)
+        .neq('initial_balance', 0)
+        .not('code', 'in', '("1310","1320")') // Exclude inventory accounts
+        .order('code')
+
+      const openingAccounts = (accountsWithBalance || []).map(acc => ({
+        code: acc.code || '',
+        name: acc.name,
+        type: acc.type,
+        initialBalance: acc.initial_balance || 0
+      }))
+
+      const totalAsset = openingAccounts
+        .filter(acc => acc.type?.toLowerCase().includes('aset'))
+        .reduce((sum, acc) => sum + acc.initialBalance, 0)
+
+      const totalOther = openingAccounts
+        .filter(acc => !acc.type?.toLowerCase().includes('aset'))
+        .reduce((sum, acc) => sum + acc.initialBalance, 0)
+
+      setSyncAllPreview({
+        inventory: {
+          productsValue,
+          materialsValue,
+          productsNeedSync: Math.max(0, productsValue - productsJournalValue),
+          materialsNeedSync: Math.max(0, materialsValue - materialsJournalValue)
+        },
+        openingBalances: {
+          accounts: openingAccounts,
+          totalAsset,
+          totalOther
+        }
+      })
+    } catch (error: any) {
+      console.error('Error loading sync all preview:', error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Gagal memuat data: " + error.message
+      })
+      setSyncAllDialogOpen(false)
+    } finally {
+      setIsSyncingAll(false)
+    }
+  }
+
+  const handleExecuteSyncAll = async () => {
+    if (!currentBranch?.id || !syncAllPreview) return
+
+    setIsSyncingAll(true)
+    const results: string[] = []
+    let hasError = false
+
+    try {
+      // 1. Sync Inventory (if needed)
+      const { productsNeedSync, materialsNeedSync } = syncAllPreview.inventory || { productsNeedSync: 0, materialsNeedSync: 0 }
+
+      if (productsNeedSync > 0 || materialsNeedSync > 0) {
+        const inventoryResult = await createInventoryOpeningBalanceJournal({
+          productsInventoryValue: productsNeedSync,
+          materialsInventoryValue: materialsNeedSync,
+          branchId: currentBranch.id,
+          openingDate: new Date()
+        })
+
+        if (inventoryResult.success) {
+          results.push(`✓ Persediaan: Rp ${(productsNeedSync + materialsNeedSync).toLocaleString('id-ID')}`)
+        } else {
+          results.push(`✗ Persediaan: ${inventoryResult.error}`)
+          hasError = true
+        }
+      } else {
+        results.push('○ Persediaan: Sudah sinkron')
+      }
+
+      // 2. Sync Opening Balances (if needed)
+      if (syncAllPreview.openingBalances && syncAllPreview.openingBalances.accounts.length > 0) {
+        const openingResult = await createAllOpeningBalanceJournal({
+          branchId: currentBranch.id,
+          openingDate: new Date()
+        })
+
+        if (openingResult.success) {
+          results.push(`✓ Saldo Awal: ${openingResult.summary?.accountsProcessed || 0} akun`)
+        } else {
+          results.push(`✗ Saldo Awal: ${openingResult.error}`)
+          hasError = true
+        }
+      } else {
+        results.push('○ Saldo Awal: Tidak ada yang perlu dijurnal')
+      }
+
+      toast({
+        variant: hasError ? "destructive" : "default",
+        title: hasError ? "Sinkronisasi Sebagian Gagal" : "Sinkronisasi Selesai",
+        description: results.join('\n'),
+        duration: 8000
+      })
+
+      if (!hasError) {
+        setSyncAllDialogOpen(false)
+        setSyncAllPreview(null)
+      }
+    } catch (error: any) {
+      console.error('Error executing sync all:', error)
+      toast({
+        variant: "destructive",
+        title: "Sinkronisasi Gagal",
+        description: error.message
+      })
+    } finally {
+      setIsSyncingAll(false)
+    }
+  }
+
   const handleImportClick = () => {
     if (!currentBranch?.id) {
       toast({ variant: "destructive", title: "Error", description: "Pilih cabang terlebih dahulu" })
@@ -1060,20 +1244,12 @@ export default function ChartOfAccountsPage() {
         {userIsAdminOrOwner && (
           <div className="flex gap-2">
             <Button
-              onClick={handleOpenSyncDialog}
-              disabled={isLoadingInventory}
-              variant="outline"
-            >
-              <Package className="h-4 w-4 mr-2" />
-              {isLoadingInventory ? 'Memuat...' : 'Sinkron Persediaan'}
-            </Button>
-            <Button
-              onClick={handleOpenAllOpeningDialog}
-              disabled={isLoadingOpeningBalance}
+              onClick={handleOpenSyncAllDialog}
+              disabled={isSyncingAll}
               variant="outline"
             >
               <RefreshCw className="h-4 w-4 mr-2" />
-              {isLoadingOpeningBalance ? 'Memuat...' : 'Sinkron Saldo Awal'}
+              {isSyncingAll ? 'Memuat...' : 'Sinkron Saldo Awal'}
             </Button>
             <Button
               onClick={handleImportClick}
@@ -1628,7 +1804,134 @@ export default function ChartOfAccountsPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Sync All Opening Balances Dialog */}
+      {/* NEW: Sync All Dialog (Combined Inventory + Opening Balances) */}
+      <AlertDialog open={syncAllDialogOpen} onOpenChange={setSyncAllDialogOpen}>
+        <AlertDialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Sinkronisasi Saldo Awal
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  Fitur ini akan membuat jurnal saldo awal untuk:
+                </p>
+                <ul className="list-disc list-inside text-sm space-y-1">
+                  <li>Persediaan Barang Dagang (produk jual)</li>
+                  <li>Persediaan Bahan Baku (materials)</li>
+                  <li>Akun lain dengan initial balance (Kas, Bank, dll)</li>
+                </ul>
+
+                {isSyncingAll && !syncAllPreview && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+
+                {syncAllPreview && (
+                  <div className="space-y-4">
+                    {/* Inventory Section */}
+                    <div className="bg-muted rounded-lg p-4 space-y-3">
+                      <h4 className="font-semibold flex items-center gap-2">
+                        <Package className="h-4 w-4" />
+                        Persediaan
+                      </h4>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">Barang Dagang (1310)</p>
+                          <p className="font-mono">Nilai: {formatCurrency(syncAllPreview.inventory?.productsValue || 0)}</p>
+                          <p className={`font-mono ${(syncAllPreview.inventory?.productsNeedSync || 0) > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                            {(syncAllPreview.inventory?.productsNeedSync || 0) > 0
+                              ? `Perlu jurnal: ${formatCurrency(syncAllPreview.inventory?.productsNeedSync || 0)}`
+                              : '✓ Sudah sinkron'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Bahan Baku (1320)</p>
+                          <p className="font-mono">Nilai: {formatCurrency(syncAllPreview.inventory?.materialsValue || 0)}</p>
+                          <p className={`font-mono ${(syncAllPreview.inventory?.materialsNeedSync || 0) > 0 ? 'text-amber-600' : 'text-green-600'}`}>
+                            {(syncAllPreview.inventory?.materialsNeedSync || 0) > 0
+                              ? `Perlu jurnal: ${formatCurrency(syncAllPreview.inventory?.materialsNeedSync || 0)}`
+                              : '✓ Sudah sinkron'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Opening Balances Section */}
+                    <div className="bg-muted rounded-lg p-4 space-y-3">
+                      <h4 className="font-semibold flex items-center gap-2">
+                        <Wallet className="h-4 w-4" />
+                        Saldo Awal Akun Lain
+                      </h4>
+                      {syncAllPreview.openingBalances && syncAllPreview.openingBalances.accounts.length > 0 ? (
+                        <>
+                          <div className="max-h-32 overflow-y-auto space-y-1 text-sm">
+                            {syncAllPreview.openingBalances.accounts.map((acc, idx) => (
+                              <div key={idx} className="flex justify-between text-xs">
+                                <span>{acc.code} - {acc.name}</span>
+                                <span className="font-mono">{formatCurrency(acc.initialBalance)}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="border-t pt-2">
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="font-medium">Total:</span>
+                              <span className="font-mono font-bold">
+                                {formatCurrency(syncAllPreview.openingBalances.totalAsset + syncAllPreview.openingBalances.totalOther)}
+                              </span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-green-600">✓ Tidak ada akun lain dengan saldo awal</p>
+                      )}
+                    </div>
+
+                    {/* Summary */}
+                    <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 text-sm">
+                      <p className="font-medium mb-2">Jurnal yang akan dibuat:</p>
+                      <div className="space-y-1 text-xs">
+                        <p>Dr. Persediaan Barang Dagang (1310)</p>
+                        <p>Dr. Persediaan Bahan Baku (1320)</p>
+                        <p>Dr. [Akun Aset lain dengan saldo awal]</p>
+                        <p className="ml-4">Cr. Modal Disetor (3100) - untuk persediaan</p>
+                        <p className="ml-4">Cr. Laba Ditahan (3200) - untuk akun lain</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSyncingAll}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleExecuteSyncAll}
+              disabled={isSyncingAll || !syncAllPreview || (
+                (syncAllPreview.inventory?.productsNeedSync || 0) === 0 &&
+                (syncAllPreview.inventory?.materialsNeedSync || 0) === 0 &&
+                (syncAllPreview.openingBalances?.accounts.length || 0) === 0
+              )}
+            >
+              {isSyncingAll ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Memproses...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Sinkronkan Semua
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Sync All Opening Balances Dialog (OLD - kept for reference) */}
       <AlertDialog open={isAllOpeningDialogOpen} onOpenChange={setIsAllOpeningDialogOpen}>
         <AlertDialogContent className="max-w-lg">
           <AlertDialogHeader>

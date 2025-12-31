@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/use-toast';
 import { DebtInstallmentService } from '@/services/debtInstallmentService';
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
-const INITIAL_DELAY_MS = 5 * 1000; // Wait 5 seconds after app load
+const INITIAL_DELAY_MS = 3 * 1000; // Wait 3 seconds after app load
 
 export interface DuePaymentSummary {
   overdueCount: number;
@@ -44,7 +44,16 @@ export function useDuePaymentCheck() {
 
   // Run the due payment check
   const runCheck = useCallback(async (): Promise<DuePaymentSummary | null> => {
-    if (!shouldCheck() || !currentBranch?.id) return null;
+    console.log('[useDuePaymentCheck] Running check...', {
+      shouldCheck: shouldCheck(),
+      branchId: currentBranch?.id,
+      hasRunInitialCheck: hasRunInitialCheck.current
+    });
+
+    if (!shouldCheck() || !currentBranch?.id) {
+      console.log('[useDuePaymentCheck] Skipped - conditions not met');
+      return null;
+    }
 
     try {
       // First update overdue status
@@ -92,27 +101,37 @@ export function useDuePaymentCheck() {
 
       setSummary(result);
 
-      // Show notification if there are overdue payments
-      if (overdue.length > 0 && !hasRunInitialCheck.current) {
-        const formatCurrency = (amount: number) =>
-          new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
+      console.log('[useDuePaymentCheck] Result:', {
+        overdueCount: overdue.length,
+        dueSoonCount: dueSoon.length,
+        hasRunInitialCheck: hasRunInitialCheck.current
+      });
 
-        toast({
-          title: `${overdue.length} Tagihan Terlambat!`,
-          description: `Total ${formatCurrency(result.overdueAmount)} perlu segera dibayar`,
-          variant: 'destructive',
-        });
-      }
+      // Show notification on initial check (not on periodic checks to avoid spam)
+      const formatCurrency = (amount: number) =>
+        new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
 
-      // Show warning for due soon
-      if (dueSoon.length > 0 && !hasRunInitialCheck.current && overdue.length === 0) {
-        const formatCurrency = (amount: number) =>
-          new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount);
-
-        toast({
-          title: `${dueSoon.length} Tagihan Jatuh Tempo Minggu Ini`,
-          description: `Total ${formatCurrency(result.dueSoonAmount)}`,
-        });
+      // Only show on initial check to avoid repeated toasts
+      if (!hasRunInitialCheck.current) {
+        // Show notification if there are overdue payments
+        if (overdue.length > 0) {
+          console.log('[useDuePaymentCheck] Showing overdue notification');
+          toast({
+            title: `⚠️ ${overdue.length} Tagihan Terlambat!`,
+            description: `Total ${formatCurrency(result.overdueAmount)} perlu segera dibayar`,
+            variant: 'destructive',
+            duration: 10000, // Show longer (10 seconds)
+          });
+        }
+        // Show warning for due soon (only if no overdue)
+        else if (dueSoon.length > 0) {
+          console.log('[useDuePaymentCheck] Showing due soon notification');
+          toast({
+            title: `📅 ${dueSoon.length} Tagihan Jatuh Tempo Minggu Ini`,
+            description: `Total ${formatCurrency(result.dueSoonAmount)}`,
+            duration: 8000, // Show 8 seconds
+          });
+        }
       }
 
       return result;

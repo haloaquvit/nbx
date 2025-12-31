@@ -496,12 +496,14 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     (acc.name.toLowerCase().includes('persediaan') && acc.name.toLowerCase().includes('bahan'))
   );
 
-  // PENTING: Untuk persediaan, gunakan nilai dari products/materials table
-  // karena ini adalah sistem perpetual inventory - stock selalu up-to-date
-  // Jurnal persediaan (HPP, pembelian) sudah tercermin di Laba Ditahan
-  // Jika menggunakan saldo jurnal, akan double counting dengan HPP
-  const productsInventory = actualProductsInventory;
-  const materialsInventory = actualMaterialsInventory;
+  // PENTING: Untuk persediaan, gunakan nilai dari JURNAL (COA) agar neraca balance
+  // Jika menggunakan nilai dari products/materials table, neraca tidak akan balance
+  // karena sisi aset (persediaan) tidak sama dengan sisi ekuitas (belum dijurnal)
+  //
+  // Jika nilai persediaan aktual berbeda dengan jurnal, gunakan fitur "Sinkron Persediaan"
+  // di halaman COA untuk membuat jurnal penyesuaian.
+  const productsInventory = persediaanBarangDagangAccount?.balance || 0;
+  const materialsInventory = persediaanBahanBakuAccount?.balance || 0;
   const totalInventory = productsInventory + materialsInventory;
 
   console.log('📦 Inventory Calculation (from Journal):', {

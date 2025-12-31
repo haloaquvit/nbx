@@ -2339,6 +2339,26 @@ export async function createAllOpeningBalanceJournal(params: {
 }): Promise<{ success: boolean; journalId?: string; error?: string; summary?: any }> {
   const { branchId, openingDate } = params;
 
+  // ============================================================================
+  // PREVENT DUPLICATE: Check if opening balance journal already exists
+  // ============================================================================
+  const { data: existingJournal } = await supabase
+    .from('journal_entries')
+    .select('id, entry_number, entry_date')
+    .eq('branch_id', branchId)
+    .eq('reference_type', 'opening')
+    .ilike('description', '%migrasi saldo awal%')
+    .eq('is_voided', false)
+    .limit(1);
+
+  if (existingJournal && existingJournal.length > 0) {
+    return {
+      success: false,
+      error: `Jurnal saldo awal sudah ada: ${existingJournal[0].entry_number} (${existingJournal[0].entry_date}). Hapus jurnal tersebut terlebih dahulu jika ingin membuat ulang.`,
+      journalId: existingJournal[0].id
+    };
+  }
+
   // Get all accounts with initial_balance for this branch
   const { data: accountsWithBalance, error: accountsError } = await supabase
     .from('accounts')
@@ -2450,6 +2470,10 @@ export async function createAllOpeningBalanceJournal(params: {
     autoPost: true,
     lines,
   });
+
+  // NOTE: Tidak reset initial_balance agar user masih bisa edit di COA.
+  // Pengecekan duplikasi di atas sudah mencegah jurnal saldo awal dibuat 2x.
+  // Jika ada ketidaksesuaian, user bisa void jurnal lama dan sinkron ulang.
 
   return {
     ...result,

@@ -236,6 +236,12 @@ export const MobilePosForm = () => {
     // Get pricing data first
     const productPricing = await PricingService.getProductPricing(existingItem.product.id);
 
+    console.log('[MobilePOS] updateItemWithBonuses:', {
+      productName: existingItem.product.name,
+      newQty,
+      bonusPricings: productPricing?.bonusPricings
+    });
+
     // Calculate price with proper parameters
     const calculation = productPricing ? PricingService.calculatePrice(
       existingItem.product.basePrice || 0,
@@ -244,6 +250,8 @@ export const MobilePosForm = () => {
       [], // Ignore stock pricing for mobile POS
       productPricing.bonusPricings || []
     ) : null;
+
+    console.log('[MobilePOS] Calculation result:', calculation);
 
     // Update main item
     let newItems = items.map(item =>
