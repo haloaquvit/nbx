@@ -13,6 +13,7 @@ export type AccountLookupType =
   // Aset
   | 'KAS_UTAMA'           // Kas utama (Kas Besar, Kas Tunai)
   | 'KAS_KECIL'           // Kas kecil / Petty Cash
+  | 'KAS_DRIVER'          // Kas driver/sales (Kas Salim, Kas Jay, Kas Hajir, dll)
   | 'BANK'                // Semua rekening bank
   | 'PIUTANG_USAHA'       // Piutang dari pelanggan
   | 'PIUTANG_KARYAWAN'    // Kasbon/pinjaman karyawan
@@ -74,6 +75,12 @@ const LOOKUP_PATTERNS: Record<AccountLookupType, LookupPattern> = {
   KAS_KECIL: {
     type: 'Aset',
     namePatterns: ['kas kecil', 'petty cash'],
+    preferPaymentAccount: true,
+  },
+  KAS_DRIVER: {
+    type: 'Aset',
+    namePatterns: ['kas '], // Match "Kas " + nama (Kas Salim, Kas Jay, Kas Hajir, dll)
+    excludePatterns: ['kas kecil', 'kas besar', 'kas utama', 'kas tunai', 'kas operasional', 'petty'],
     preferPaymentAccount: true,
   },
   BANK: {

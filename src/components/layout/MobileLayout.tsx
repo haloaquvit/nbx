@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useGranularPermission } from '@/hooks/useGranularPermission'
 import { useUnreadNotificationsCount } from '@/hooks/useNotifications'
 import { useLowStockCheck } from '@/hooks/useLowStockCheck'
+import { useDuePaymentCheck } from '@/hooks/useDuePaymentCheck'
 import { MobileNotificationBell } from '@/components/MobileNotificationBell'
 
 const MobileLayout = () => {
@@ -30,6 +31,9 @@ const MobileLayout = () => {
 
   // Low stock check for owner/supervisor/admin
   useLowStockCheck()
+
+  // Due payment check for owner/supervisor/admin/finance
+  useDuePaymentCheck()
 
   // Ref for active menu item to scroll into view
   const activeMenuRef = useRef<HTMLButtonElement>(null)

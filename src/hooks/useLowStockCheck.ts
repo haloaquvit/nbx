@@ -3,7 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBranch } from '@/contexts/BranchContext';
 import { LowStockNotificationService, LowStockCheckResult } from '@/services/lowStockNotificationService';
 
-const CHECK_INTERVAL_MS = 30 * 60 * 1000; // Check every 30 minutes
+const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // Check once per day (24 hours)
 const INITIAL_DELAY_MS = 10 * 1000; // Wait 10 seconds after app load
 
 /**

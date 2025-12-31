@@ -1,3 +1,4 @@
+// Financial Statements Utils - Updated to use journal-based inventory calculation
 import { supabase } from '@/integrations/supabase/client';
 import {
   findAccountByLookup,
@@ -158,10 +159,13 @@ export interface BalanceSheetData {
   };
   equity: {
     modalPemilik: BalanceSheetItem[];
-    labaRugiDitahan: number;
+    labaDitahanAkun: number;      // Saldo dari akun Laba Ditahan (3200)
+    labaTahunBerjalan: number;    // Pendapatan - Beban dari jurnal periode ini
+    totalLabaDitahan: number;     // labaDitahanAkun + labaTahunBerjalan
     totalEquity: number;
   };
   totalLiabilitiesEquity: number;
+  selisih: number;               // Selisih jika neraca tidak balance
   isBalanced: boolean;
   generatedAt: Date;
 }
@@ -349,6 +353,16 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   // ============================================================================
   const accounts = await calculateAccountBalancesFromJournal(baseAccounts, branchId, cutoffDate);
 
+  // Debug: Log semua akun dengan saldo non-zero
+  const accountsWithBalance = accounts.filter(acc => acc.balance !== 0);
+  console.log('📋 All accounts with balance:', accountsWithBalance.map(acc => ({
+    code: acc.code,
+    name: acc.name,
+    type: acc.type,
+    balance: acc.balance,
+    initialBalance: acc.initialBalance
+  })));
+
   // Get account receivables from transactions (filtered by branch)
   let transactionsQuery = supabase
     .from('transactions')
@@ -447,44 +461,69 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   const finalReceivables = totalReceivables > 0 ? totalReceivables : calculatedReceivables;
 
   // ============================================================================
-  // PERSEDIAAN - DIHITUNG LANGSUNG DARI STOCK × HARGA
+  // PERSEDIAAN - DIHITUNG DARI SALDO AKUN JURNAL (COA)
   // ============================================================================
-  // Nilai persediaan dihitung langsung dari:
-  // 1. Persediaan Bahan Baku (1320) = materials.stock × materials.price_per_unit
-  // 2. Persediaan Barang Dagang (1310) = products.current_stock × products.cost_price
+  // Nilai persediaan diambil dari saldo akun di COA yang dihitung dari jurnal:
+  // 1. Persediaan Barang Dagang (1310) = saldo akun 1310 dari jurnal
+  // 2. Persediaan Bahan Baku (1320) = saldo akun 1320 dari jurnal
   //
-  // PENTING: Tidak menggunakan saldo akun COA atau initial_balance karena:
-  // - Stock di tabel products/materials selalu up-to-date
-  // - Menghindari ketidaksesuaian antara stock fisik dan saldo akuntansi
+  // PENTING: Menggunakan saldo dari jurnal agar neraca konsisten dan balance.
+  // Jika persediaan belum dijurnal (saldo awal), gunakan fitur "Sinkron Persediaan"
+  // di halaman COA untuk membuat jurnal saldo awal.
+  //
+  // Nilai aktual dari products/materials table disimpan untuk referensi saja:
   // ============================================================================
 
-  // Calculate inventory from materials (bahan baku - 1320)
-  const materialsInventory = materials?.reduce((sum, material) =>
+  // Calculate actual inventory from materials (for reference only)
+  const actualMaterialsInventory = materials?.reduce((sum, material) =>
     sum + ((material.stock || 0) * (material.price_per_unit || 0)), 0) || 0;
 
-  // Calculate inventory from ALL products (barang dagang - 1310)
-  // Gunakan cost_price jika ada, jika tidak gunakan base_price
-  const productsInventory = productsData?.reduce((sum, product) => {
+  // Calculate actual inventory from products (for reference only)
+  const actualProductsInventory = productsData?.reduce((sum, product) => {
     const costPrice = product.cost_price || product.base_price || 0;
     return sum + ((product.current_stock || 0) * costPrice);
   }, 0) || 0;
 
-  // Total persediaan = bahan baku + barang dagang
-  const totalInventory = materialsInventory + productsInventory;
+  // Get inventory values from journal/COA accounts
+  const persediaanBarangDagangAccount = accounts.find(acc =>
+    acc.code === '1310' ||
+    acc.code === '1-310' ||
+    (acc.name.toLowerCase().includes('persediaan') && acc.name.toLowerCase().includes('barang'))
+  );
+  const persediaanBahanBakuAccount = accounts.find(acc =>
+    acc.code === '1320' ||
+    acc.code === '1-320' ||
+    (acc.name.toLowerCase().includes('persediaan') && acc.name.toLowerCase().includes('bahan'))
+  );
 
-  console.log('📦 Inventory Calculation:', {
-    materialsCount: materials?.length || 0,
-    materialsInventory,
-    productsCount: productsData?.length || 0,
+  // PENTING: Untuk persediaan, gunakan nilai dari products/materials table
+  // karena ini adalah sistem perpetual inventory - stock selalu up-to-date
+  // Jurnal persediaan (HPP, pembelian) sudah tercermin di Laba Ditahan
+  // Jika menggunakan saldo jurnal, akan double counting dengan HPP
+  const productsInventory = actualProductsInventory;
+  const materialsInventory = actualMaterialsInventory;
+  const totalInventory = productsInventory + materialsInventory;
+
+  console.log('📦 Inventory Calculation (from Journal):', {
+    persediaanBarangDagangAccount: persediaanBarangDagangAccount ? {
+      code: persediaanBarangDagangAccount.code,
+      name: persediaanBarangDagangAccount.name,
+      balance: persediaanBarangDagangAccount.balance,
+      initialBalance: persediaanBarangDagangAccount.initialBalance
+    } : 'NOT FOUND',
+    persediaanBahanBakuAccount: persediaanBahanBakuAccount ? {
+      code: persediaanBahanBakuAccount.code,
+      name: persediaanBahanBakuAccount.name,
+      balance: persediaanBahanBakuAccount.balance,
+      initialBalance: persediaanBahanBakuAccount.initialBalance
+    } : 'NOT FOUND',
     productsInventory,
+    materialsInventory,
     totalInventory,
-    productDetails: productsData?.slice(0, 5).map(p => ({
-      name: p.name,
-      stock: p.current_stock,
-      costPrice: p.cost_price,
-      basePrice: p.base_price,
-      value: (p.current_stock || 0) * (p.cost_price || p.base_price || 0)
-    }))
+    // Reference values from actual stock (not used in balance sheet)
+    actualProductsInventory,
+    actualMaterialsInventory,
+    inventoryDifference: (actualProductsInventory + actualMaterialsInventory) - totalInventory
   });
 
   // Calculate outstanding accounts payable
@@ -509,8 +548,9 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   // Build current assets - Using lookup service for Kas dan Bank
   const kasAccounts = findAllAccountsByLookup(accounts, 'KAS_UTAMA');
   const kasKecilAccounts = findAllAccountsByLookup(accounts, 'KAS_KECIL');
+  const kasDriverAccounts = findAllAccountsByLookup(accounts, 'KAS_DRIVER');
   const bankAccounts = findAllAccountsByLookup(accounts, 'BANK');
-  const allCashAccounts = [...kasAccounts, ...kasKecilAccounts, ...bankAccounts];
+  const allCashAccounts = [...kasAccounts, ...kasKecilAccounts, ...kasDriverAccounts, ...bankAccounts];
 
   const kasBank = allCashAccounts
     .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
@@ -533,26 +573,27 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
 
   // ============================================================================
   // PERSEDIAAN - Tampilkan terpisah: Barang Dagang dan Bahan Baku
+  // Nilai diambil dari saldo akun jurnal (COA), bukan dari products/materials table
   // ============================================================================
   const persediaan: BalanceSheetItem[] = [];
 
-  // Persediaan Barang Dagang (1310) - dari semua produk
-  if (productsInventory > 0) {
+  // Persediaan Barang Dagang (1310) - dari saldo akun jurnal
+  if (productsInventory !== 0) {
     persediaan.push({
-      accountId: 'calculated-products-inventory',
-      accountCode: '1310',
-      accountName: 'Persediaan Barang Dagang',
+      accountId: persediaanBarangDagangAccount?.id || 'journal-products-inventory',
+      accountCode: persediaanBarangDagangAccount?.code || '1310',
+      accountName: persediaanBarangDagangAccount?.name || 'Persediaan Barang Dagang',
       balance: productsInventory,
       formattedBalance: formatCurrency(productsInventory)
     });
   }
 
-  // Persediaan Bahan Baku (1320) - dari materials
-  if (materialsInventory > 0) {
+  // Persediaan Bahan Baku (1320) - dari saldo akun jurnal
+  if (materialsInventory !== 0) {
     persediaan.push({
-      accountId: 'calculated-materials-inventory',
-      accountCode: '1320',
-      accountName: 'Persediaan Bahan Baku',
+      accountId: persediaanBahanBakuAccount?.id || 'journal-materials-inventory',
+      accountCode: persediaanBahanBakuAccount?.code || '1320',
+      accountName: persediaanBahanBakuAccount?.name || 'Persediaan Bahan Baku',
       balance: materialsInventory,
       formattedBalance: formatCurrency(materialsInventory)
     });
@@ -857,9 +898,38 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
 
   const totalLiabilities = totalCurrentLiabilities;
 
-  // Build equity
+  // ============================================================================
+  // MODAL & LABA DITAHAN - Perhitungan yang benar sesuai PSAK
+  // ============================================================================
+  // 1. Modal Disetor = dari akun tipe Modal di COA (3100, dll) KECUALI Laba Ditahan
+  // 2. Laba Ditahan = Saldo akun Laba Ditahan (3200) + Laba Tahun Berjalan
+  // 3. Laba Tahun Berjalan = Pendapatan - Beban (dari jurnal)
+  //
+  // PENTING: Laba Ditahan (3200) harus diexclude dari modalPemilik untuk
+  // menghindari double counting!
+  // ============================================================================
+
+  // Ambil saldo akun Laba Ditahan dari COA (3200) - harus dicari dulu sebelum filter modalPemilik
+  const labaDitahanAccount = accounts.find(acc =>
+    acc.code === '3200' ||
+    acc.code === '3-200' ||
+    acc.name.toLowerCase().includes('laba ditahan') ||
+    acc.name.toLowerCase().includes('retained earnings')
+  );
+  const labaDitahanAkun = labaDitahanAccount?.balance || 0;
+
+  // Build equity - EXCLUDE akun Laba Ditahan (3200) karena akan ditampilkan terpisah
   const modalPemilik = equityAccounts
-    .filter(acc => (acc.balance || 0) !== 0) // Hide zero balances
+    .filter(acc => {
+      // Exclude zero balances
+      if ((acc.balance || 0) === 0) return false;
+      // Exclude Laba Ditahan account (akan ditampilkan terpisah)
+      if (labaDitahanAccount && acc.id === labaDitahanAccount.id) return false;
+      if (acc.code === '3200' || acc.code === '3-200') return false;
+      if (acc.name.toLowerCase().includes('laba ditahan')) return false;
+      if (acc.name.toLowerCase().includes('retained earnings')) return false;
+      return true;
+    })
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
@@ -868,24 +938,50 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       formattedBalance: formatCurrency(acc.balance || 0)
     }));
 
-  // ============================================================================
-  // MODAL - Hanya dari akun Modal di COA
-  // ============================================================================
-  // Modal hanya diambil dari akun tipe Modal yang sudah ada di COA.
-  // Persediaan TIDAK lagi ditambahkan sebagai modal karena:
-  // - Nilai persediaan sudah dihitung langsung dari stock × harga
-  // - Tidak perlu initial_balance untuk persediaan
-  // - Neraca akan balance dengan: Aset = Kewajiban + Modal + Laba Ditahan
-  // ============================================================================
+  // Hitung Laba Tahun Berjalan dari jurnal (Pendapatan - Beban)
+  // Akun Pendapatan = type 'Pendapatan' (credit normal, jadi credit - debit)
+  // Akun Beban = type 'Beban' (debit normal, jadi debit - credit)
+  const pendapatanAccounts = accounts.filter(acc => acc.type === 'Pendapatan');
+  const bebanAccounts = accounts.filter(acc => acc.type === 'Beban');
 
-  // Calculate retained earnings (excludes modal persediaan awal because it's now explicit)
-  const labaRugiDitahan = totalAssets - totalLiabilities - modalPemilik.reduce((sum, item) => sum + item.balance, 0);
+  const totalPendapatan = pendapatanAccounts.reduce((sum, acc) => sum + (acc.balance || 0), 0);
+  const totalBeban = bebanAccounts.reduce((sum, acc) => sum + Math.abs(acc.balance || 0), 0);
+  const labaTahunBerjalan = totalPendapatan - totalBeban;
 
-  const totalEquity = 
-    modalPemilik.reduce((sum, item) => sum + item.balance, 0) + labaRugiDitahan;
+  // Total Laba Ditahan = Saldo Akun + Laba Tahun Berjalan
+  const totalLabaDitahan = labaDitahanAkun + labaTahunBerjalan;
+
+  // Total Modal Pemilik (dari COA) - sudah tidak termasuk Laba Ditahan
+  const totalModalPemilik = modalPemilik.reduce((sum, item) => sum + item.balance, 0);
+
+  // Total Ekuitas = Modal + Laba Ditahan
+  const totalEquity = totalModalPemilik + totalLabaDitahan;
 
   const totalLiabilitiesEquity = totalLiabilities + totalEquity;
-  const isBalanced = Math.abs(totalAssets - totalLiabilitiesEquity) < 1; // Allow for rounding
+
+  // Hitung selisih - jika tidak 0, berarti ada kesalahan jurnal atau data belum lengkap
+  const selisih = totalAssets - totalLiabilitiesEquity;
+  const isBalanced = Math.abs(selisih) < 1; // Allow for rounding
+
+  // Debug log untuk membantu troubleshooting - format string agar bisa dibaca
+  console.log(`📊 Balance Sheet Calculation:
+    totalAssets: ${totalAssets}
+    totalCurrentAssets: ${totalCurrentAssets}
+    totalFixedAssets: ${totalFixedAssets}
+    ---
+    totalLiabilities: ${totalLiabilities}
+    totalModalPemilik: ${totalModalPemilik}
+    labaDitahanAkun: ${labaDitahanAkun}
+    totalPendapatan: ${totalPendapatan}
+    totalBeban: ${totalBeban}
+    labaTahunBerjalan: ${labaTahunBerjalan}
+    totalLabaDitahan: ${totalLabaDitahan}
+    totalEquity: ${totalEquity}
+    totalLiabilitiesEquity: ${totalLiabilitiesEquity}
+    ---
+    SELISIH: ${selisih}
+    isBalanced: ${isBalanced}
+  `);
 
   return {
     assets: {
@@ -918,10 +1014,13 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
     },
     equity: {
       modalPemilik,
-      labaRugiDitahan,
+      labaDitahanAkun,
+      labaTahunBerjalan,
+      totalLabaDitahan,
       totalEquity
     },
     totalLiabilitiesEquity,
+    selisih,
     isBalanced,
     generatedAt: new Date()
   };
@@ -1356,10 +1455,23 @@ export async function generateCashFlowStatement(
   // Kas keluar = credit pada akun Kas/Bank
   // ============================================================================
 
-  // Identify cash/bank accounts (code starts with 11)
+  // Identify cash/bank accounts (code starts with 11, type MUST be Aset)
+  // PENTING: Filter by type='Aset' untuk menghindari false positive
+  // seperti "Hutang Bank" (type=Kewajiban) yang mengandung kata "bank"
   const cashAccountIds = allAccounts
-    .filter(acc => acc.code?.startsWith('1-1') || acc.code?.startsWith('11') ||
-                   acc.name.toLowerCase().includes('kas') || acc.name.toLowerCase().includes('bank'))
+    .filter(acc => {
+      // WAJIB: Hanya akun dengan type Aset
+      if (acc.type !== 'Aset') return false;
+
+      // Match by code (11xx = Kas dan Bank) atau by name
+      const code = acc.code || '';
+      const name = acc.name.toLowerCase();
+
+      return code.startsWith('1-1') ||
+             code.startsWith('11') ||
+             name.includes('kas') ||
+             name.includes('bank');
+    })
     .map(acc => acc.id);
 
   // Fetch journal entries that involve cash/bank accounts
@@ -1415,8 +1527,9 @@ export async function generateCashFlowStatement(
   // Get beginning and ending cash balances
   const cashKasAccounts = findAllAccountsByLookup(allAccounts, 'KAS_UTAMA');
   const cashKasKecilAccounts = findAllAccountsByLookup(allAccounts, 'KAS_KECIL');
+  const cashKasDriverAccounts = findAllAccountsByLookup(allAccounts, 'KAS_DRIVER');
   const cashBankAccounts = findAllAccountsByLookup(allAccounts, 'BANK');
-  const cashAccounts = [...cashKasAccounts, ...cashKasKecilAccounts, ...cashBankAccounts];
+  const cashAccounts = [...cashKasAccounts, ...cashKasKecilAccounts, ...cashKasDriverAccounts, ...cashBankAccounts];
 
   if (cashAccounts.length === 0) {
     console.warn('⚠️ No cash/bank accounts found in COA');

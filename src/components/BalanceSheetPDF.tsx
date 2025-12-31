@@ -52,9 +52,17 @@ export const generateBalanceSheetPDF = (
   yPos += 5;
 
   // Aset Lancar
+  // Calculate total Kas dan Setara Kas
+  const totalKasSetaraKas = data.assets.currentAssets.kasBank.reduce((sum, item) => sum + item.balance, 0);
+
   const currentAssetsData: any[] = [
     ['Aset Lancar', '', { isHeader: true }],
-    ...data.assets.currentAssets.kasBank.map(item => [`  ${item.accountName}`, item.formattedBalance]),
+    // Kas dan Setara Kas sebagai sub-header
+    ...(data.assets.currentAssets.kasBank.length > 0 ? [
+      ['  Kas dan Setara Kas', '', { isSubHeader: true }],
+      ...data.assets.currentAssets.kasBank.map(item => [`    ${item.accountName}`, item.formattedBalance]),
+      ['  Total Kas dan Setara Kas', formatCurrency(totalKasSetaraKas), { isSubTotal: true }],
+    ] : []),
     ...data.assets.currentAssets.piutangUsaha.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...(data.assets.currentAssets.piutangPajak || []).map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.assets.currentAssets.persediaan.map(item => [`  ${item.accountName}`, item.formattedBalance]),
@@ -81,6 +89,14 @@ export const generateBalanceSheetPDF = (
         if (rowData[2].isHeader) {
           hookData.cell.styles.fontStyle = 'bold';
           hookData.cell.styles.fontSize = 9;
+        }
+        if (rowData[2].isSubHeader) {
+          hookData.cell.styles.fontStyle = 'bold';
+          hookData.cell.styles.fontSize = 8;
+        }
+        if (rowData[2].isSubTotal) {
+          hookData.cell.styles.fontStyle = 'italic';
+          hookData.cell.styles.fontSize = 8;
         }
         if (rowData[2].isBold) {
           hookData.cell.styles.fontStyle = 'bold';
@@ -204,7 +220,9 @@ export const generateBalanceSheetPDF = (
   const equityData: any[] = [
     ['Ekuitas', '', { isHeader: true }],
     ...data.equity.modalPemilik.map(item => [`  ${item.accountName}`, item.formattedBalance]),
-    ['  Laba Rugi Ditahan', formatCurrency(data.equity.labaRugiDitahan)],
+    ['  Laba Ditahan (Akun)', formatCurrency(data.equity.labaDitahanAkun)],
+    ['  Laba Tahun Berjalan', formatCurrency(data.equity.labaTahunBerjalan)],
+    ['  Total Laba Ditahan', formatCurrency(data.equity.totalLabaDitahan), { isBold: true }],
     ['Total Ekuitas', formatCurrency(data.equity.totalEquity), { isBold: true }],
   ];
 
@@ -268,6 +286,19 @@ export const generateBalanceSheetPDF = (
     yPosBottom,
     { align: 'center' }
   );
+
+  // Show selisih if not balanced
+  if (!data.isBalanced) {
+    yPosBottom += 5;
+    doc.setFontSize(9);
+    doc.setTextColor(255, 0, 0);
+    doc.text(
+      `Selisih: ${formatCurrency(data.selisih)}`,
+      pageWidth / 2,
+      yPosBottom,
+      { align: 'center' }
+    );
+  }
 
   // Signature Section - positioned at bottom of page
   const signatureY = pageHeight - 55;

@@ -2214,3 +2214,250 @@ export async function createSpoilageJournal(params: {
     ],
   });
 }
+
+/**
+ * Create Inventory Opening Balance Journal
+ *
+ * Jurnal untuk saldo awal persediaan agar neraca balance.
+ * Digunakan untuk sinkronisasi nilai persediaan dari stock × cost_price
+ * dengan jurnal akuntansi.
+ *
+ * PENTING: Counterpart adalah Modal Disetor (3100), BUKAN Laba Ditahan (3200)
+ * Karena saldo awal persediaan bukan hasil dari operasional (laba),
+ * melainkan modal/investasi awal dari pemilik.
+ *
+ * Dr. Persediaan Barang Dagang (1310)     xxx
+ * Dr. Persediaan Bahan Baku (1320)        xxx
+ *   Cr. Modal Disetor (3100)                  xxx
+ */
+export async function createInventoryOpeningBalanceJournal(params: {
+  productsInventoryValue: number;
+  materialsInventoryValue: number;
+  branchId: string;
+  openingDate?: Date;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { productsInventoryValue, materialsInventoryValue, branchId, openingDate } = params;
+
+  const totalAmount = productsInventoryValue + materialsInventoryValue;
+
+  if (totalAmount <= 0) {
+    return { success: false, error: 'Tidak ada nilai persediaan yang perlu dijurnal' };
+  }
+
+  // Find Persediaan Barang Dagang account (1310)
+  const persediaanBarangAccount = await getAccountByCode('1310', branchId)
+    || await findAccountByPattern('persediaan barang', 'Aset', branchId)
+    || await findAccountByPattern('barang dagang', 'Aset', branchId);
+
+  // Find Persediaan Bahan Baku account (1320)
+  const persediaanBahanAccount = await getAccountByCode('1320', branchId)
+    || await findAccountByPattern('persediaan bahan', 'Aset', branchId)
+    || await findAccountByPattern('bahan baku', 'Aset', branchId);
+
+  // Find Modal Disetor account (3100) - BUKAN Laba Ditahan!
+  // Saldo awal persediaan adalah bagian dari modal/investasi, bukan laba operasional
+  const modalDisetorAccount = await getAccountByCode('3100', branchId)
+    || await findAccountByPattern('modal disetor', 'Modal', branchId)
+    || await findAccountByPattern('modal pemilik', 'Modal', branchId)
+    || await findAccountByPattern('capital', 'Modal', branchId);
+
+  if (!modalDisetorAccount) {
+    return { success: false, error: 'Akun Modal Disetor (3100) tidak ditemukan. Pastikan akun sudah dibuat di COA.' };
+  }
+
+  const lines: JournalLineInput[] = [];
+
+  // Add Persediaan Barang Dagang if value > 0
+  if (productsInventoryValue > 0) {
+    if (!persediaanBarangAccount) {
+      return { success: false, error: 'Akun Persediaan Barang Dagang (1310) tidak ditemukan.' };
+    }
+    lines.push({
+      accountId: persediaanBarangAccount.id,
+      accountCode: persediaanBarangAccount.code,
+      accountName: persediaanBarangAccount.name,
+      debitAmount: productsInventoryValue,
+      creditAmount: 0,
+      description: 'Saldo awal persediaan barang dagang',
+    });
+  }
+
+  // Add Persediaan Bahan Baku if value > 0
+  if (materialsInventoryValue > 0) {
+    if (!persediaanBahanAccount) {
+      return { success: false, error: 'Akun Persediaan Bahan Baku (1320) tidak ditemukan.' };
+    }
+    lines.push({
+      accountId: persediaanBahanAccount.id,
+      accountCode: persediaanBahanAccount.code,
+      accountName: persediaanBahanAccount.name,
+      debitAmount: materialsInventoryValue,
+      creditAmount: 0,
+      description: 'Saldo awal persediaan bahan baku',
+    });
+  }
+
+  // Add Modal Disetor (credit) - counterpart untuk saldo awal persediaan
+  lines.push({
+    accountId: modalDisetorAccount.id,
+    accountCode: modalDisetorAccount.code,
+    accountName: modalDisetorAccount.name,
+    debitAmount: 0,
+    creditAmount: totalAmount,
+    description: 'Penyesuaian modal - saldo awal persediaan migrasi',
+  });
+
+  const entryDate = openingDate || new Date();
+  const description = `Saldo Awal Persediaan - Sinkronisasi nilai persediaan dengan jurnal akuntansi`;
+
+  return createJournalEntry({
+    entryDate,
+    description,
+    referenceType: 'opening',
+    referenceId: `opening-inventory-${branchId}-${Date.now()}`,
+    branchId,
+    autoPost: true,
+    lines,
+  });
+}
+
+/**
+ * Generate opening balance journal for all accounts with initial_balance
+ * This creates balancing entries for Kas/Bank and other accounts that have initial_balance
+ * but no corresponding journal entries.
+ *
+ * Jurnal:
+ * Dr. [Akun dengan initial_balance positif - Aset]
+ * Cr. Laba Ditahan (3200) - untuk total saldo awal Aset
+ *
+ * Dr. Laba Ditahan (3200) - untuk total saldo awal Kewajiban
+ * Cr. [Akun dengan initial_balance positif - Kewajiban]
+ */
+export async function createAllOpeningBalanceJournal(params: {
+  branchId: string;
+  openingDate?: Date;
+}): Promise<{ success: boolean; journalId?: string; error?: string; summary?: any }> {
+  const { branchId, openingDate } = params;
+
+  // Get all accounts with initial_balance for this branch
+  const { data: accountsWithBalance, error: accountsError } = await supabase
+    .from('accounts')
+    .select('id, code, name, type, initial_balance')
+    .eq('branch_id', branchId)
+    .not('initial_balance', 'is', null)
+    .neq('initial_balance', 0);
+
+  if (accountsError) {
+    return { success: false, error: `Gagal mengambil data akun: ${accountsError.message}` };
+  }
+
+  if (!accountsWithBalance || accountsWithBalance.length === 0) {
+    return { success: false, error: 'Tidak ada akun dengan saldo awal yang perlu dijurnal' };
+  }
+
+  // Find Laba Ditahan account (3200)
+  const labaDitahanAccount = await getAccountByCode('3200', branchId)
+    || await findAccountByPattern('laba ditahan', 'Modal', branchId)
+    || await findAccountByPattern('retained', 'Modal', branchId);
+
+  if (!labaDitahanAccount) {
+    return { success: false, error: 'Akun Laba Ditahan (3200) tidak ditemukan. Pastikan akun sudah dibuat di COA.' };
+  }
+
+  const lines: JournalLineInput[] = [];
+  let totalDebit = 0;
+  let totalCredit = 0;
+
+  // Group accounts and create journal lines
+  accountsWithBalance.forEach(account => {
+    const balance = account.initial_balance || 0;
+    if (balance === 0) return;
+
+    const normalizedType = (account.type || '').toLowerCase();
+    const isDebitNormal = normalizedType.includes('aset') ||
+                          normalizedType.includes('asset') ||
+                          normalizedType.includes('beban') ||
+                          normalizedType.includes('expense');
+
+    if (isDebitNormal) {
+      // Aset/Beban: Debit the account, Credit Laba Ditahan
+      if (balance > 0) {
+        lines.push({
+          accountId: account.id,
+          accountCode: account.code,
+          accountName: account.name,
+          debitAmount: balance,
+          creditAmount: 0,
+          description: `Saldo awal ${account.name}`,
+        });
+        totalDebit += balance;
+      }
+    } else {
+      // Kewajiban/Modal/Pendapatan: Credit the account, Debit Laba Ditahan
+      if (balance > 0) {
+        lines.push({
+          accountId: account.id,
+          accountCode: account.code,
+          accountName: account.name,
+          debitAmount: 0,
+          creditAmount: balance,
+          description: `Saldo awal ${account.name}`,
+        });
+        totalCredit += balance;
+      }
+    }
+  });
+
+  if (lines.length === 0) {
+    return { success: false, error: 'Tidak ada saldo awal yang perlu dijurnal' };
+  }
+
+  // Balance with Laba Ditahan
+  const netAmount = totalDebit - totalCredit;
+  if (netAmount !== 0) {
+    if (netAmount > 0) {
+      // More debits than credits, credit Laba Ditahan
+      lines.push({
+        accountId: labaDitahanAccount.id,
+        accountCode: labaDitahanAccount.code || '3200',
+        accountName: labaDitahanAccount.name,
+        debitAmount: 0,
+        creditAmount: netAmount,
+        description: 'Saldo awal migrasi - penyeimbang',
+      });
+    } else {
+      // More credits than debits, debit Laba Ditahan
+      lines.push({
+        accountId: labaDitahanAccount.id,
+        accountCode: labaDitahanAccount.code || '3200',
+        accountName: labaDitahanAccount.name,
+        debitAmount: Math.abs(netAmount),
+        creditAmount: 0,
+        description: 'Saldo awal migrasi - penyeimbang',
+      });
+    }
+  }
+
+  const entryDate = openingDate || new Date();
+  const description = `Saldo Awal Akun - Jurnal migrasi saldo awal dari initial_balance`;
+
+  const result = await createJournalEntry({
+    entryDate,
+    description,
+    referenceType: 'opening',
+    referenceId: `opening-all-${branchId}-${Date.now()}`,
+    branchId,
+    autoPost: true,
+    lines,
+  });
+
+  return {
+    ...result,
+    summary: {
+      accountsProcessed: accountsWithBalance.length,
+      totalDebit,
+      totalCredit,
+      labaDitahanAdjustment: netAmount,
+    }
+  };
+}

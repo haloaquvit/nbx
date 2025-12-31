@@ -43,9 +43,13 @@ import {
   FileText,
   Search,
   Eye,
-  Loader2
+  Loader2,
+  RefreshCw,
+  Package,
+  AlertCircle
 } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
+import { createInventoryOpeningBalanceJournal, createAllOpeningBalanceJournal } from "@/services/journalService"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
@@ -367,6 +371,27 @@ export default function ChartOfAccountsPage() {
   const [journalLines, setJournalLines] = useState<JournalLineDetail[]>([])
   const [isLoadingJournals, setIsLoadingJournals] = useState(false)
 
+  // Sync Inventory state
+  const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [inventoryData, setInventoryData] = useState<{
+    productsValue: number;
+    materialsValue: number;
+    productsJournalValue: number;
+    materialsJournalValue: number;
+  } | null>(null)
+  const [isLoadingInventory, setIsLoadingInventory] = useState(false)
+
+  // State for All Opening Balance Sync
+  const [isAllOpeningDialogOpen, setIsAllOpeningDialogOpen] = useState(false)
+  const [isSyncingAllOpening, setIsSyncingAllOpening] = useState(false)
+  const [openingBalanceData, setOpeningBalanceData] = useState<{
+    accounts: { code: string; name: string; type: string; initialBalance: number }[];
+    totalAsset: number;
+    totalOther: number;
+  } | null>(null)
+  const [isLoadingOpeningBalance, setIsLoadingOpeningBalance] = useState(false)
+
   // Form state
   const [formData, setFormData] = useState({
     code: '',
@@ -488,6 +513,245 @@ export default function ChartOfAccountsPage() {
 
   const handleCollapseAll = () => {
     setExpandedCodes(new Set())
+  }
+
+  // ============================================================================
+  // SYNC INVENTORY FUNCTIONS
+  // ============================================================================
+  const handleOpenSyncDialog = async () => {
+    if (!currentBranch?.id) {
+      toast({ variant: "destructive", title: "Error", description: "Pilih cabang terlebih dahulu" })
+      return
+    }
+
+    setIsSyncDialogOpen(true)
+    setIsLoadingInventory(true)
+
+    try {
+      // Get products inventory value (current_stock × cost_price)
+      const { data: products, error: productsError } = await supabase
+        .from('products')
+        .select('id, name, current_stock, cost_price, base_price')
+        .eq('branch_id', currentBranch.id)
+
+      if (productsError) throw productsError
+
+      const productsValue = (products || []).reduce((sum, p) => {
+        const costPrice = p.cost_price || p.base_price || 0
+        return sum + ((p.current_stock || 0) * costPrice)
+      }, 0)
+
+      // Get materials inventory value (stock × price_per_unit)
+      const { data: materials, error: materialsError } = await supabase
+        .from('materials')
+        .select('id, name, stock, price_per_unit')
+        .eq('branch_id', currentBranch.id)
+
+      if (materialsError) throw materialsError
+
+      const materialsValue = (materials || []).reduce((sum, m) => {
+        return sum + ((m.stock || 0) * (m.price_per_unit || 0))
+      }, 0)
+
+      // Get current journal values for inventory accounts
+      // Persediaan Barang Dagang (1310)
+      const { data: journalProducts } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          debit_amount,
+          credit_amount,
+          journal_entries!inner (
+            is_voided,
+            branch_id
+          )
+        `)
+        .eq('account_code', '1310')
+        .eq('journal_entries.branch_id', currentBranch.id)
+        .eq('journal_entries.is_voided', false)
+
+      const productsJournalValue = (journalProducts || []).reduce((sum, line) => {
+        return sum + (line.debit_amount || 0) - (line.credit_amount || 0)
+      }, 0)
+
+      // Persediaan Bahan Baku (1320)
+      const { data: journalMaterials } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          debit_amount,
+          credit_amount,
+          journal_entries!inner (
+            is_voided,
+            branch_id
+          )
+        `)
+        .eq('account_code', '1320')
+        .eq('journal_entries.branch_id', currentBranch.id)
+        .eq('journal_entries.is_voided', false)
+
+      const materialsJournalValue = (journalMaterials || []).reduce((sum, line) => {
+        return sum + (line.debit_amount || 0) - (line.credit_amount || 0)
+      }, 0)
+
+      setInventoryData({
+        productsValue,
+        materialsValue,
+        productsJournalValue,
+        materialsJournalValue
+      })
+    } catch (error: any) {
+      console.error('Error loading inventory data:', error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Gagal memuat data persediaan: " + error.message
+      })
+      setIsSyncDialogOpen(false)
+    } finally {
+      setIsLoadingInventory(false)
+    }
+  }
+
+  const handleSyncInventory = async () => {
+    if (!currentBranch?.id || !inventoryData) return
+
+    // Calculate the difference (what needs to be journaled)
+    const productsNeedJournal = inventoryData.productsValue - inventoryData.productsJournalValue
+    const materialsNeedJournal = inventoryData.materialsValue - inventoryData.materialsJournalValue
+
+    if (productsNeedJournal <= 0 && materialsNeedJournal <= 0) {
+      toast({
+        title: "Tidak Ada Selisih",
+        description: "Persediaan sudah sinkron dengan jurnal akuntansi"
+      })
+      setIsSyncDialogOpen(false)
+      return
+    }
+
+    setIsSyncing(true)
+
+    try {
+      const result = await createInventoryOpeningBalanceJournal({
+        productsInventoryValue: Math.max(0, productsNeedJournal),
+        materialsInventoryValue: Math.max(0, materialsNeedJournal),
+        branchId: currentBranch.id,
+        openingDate: new Date()
+      })
+
+      if (result.success) {
+        toast({
+          title: "Sinkronisasi Berhasil",
+          description: `Jurnal saldo awal persediaan berhasil dibuat (ID: ${result.journalId?.substring(0, 8)}...)`
+        })
+        setIsSyncDialogOpen(false)
+        setInventoryData(null)
+      } else {
+        throw new Error(result.error || 'Unknown error')
+      }
+    } catch (error: any) {
+      console.error('Error syncing inventory:', error)
+      toast({
+        variant: "destructive",
+        title: "Sinkronisasi Gagal",
+        description: error.message
+      })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  // ============================================================================
+  // SYNC ALL OPENING BALANCES FUNCTIONS
+  // ============================================================================
+  const handleOpenAllOpeningDialog = async () => {
+    if (!currentBranch?.id) {
+      toast({ variant: "destructive", title: "Error", description: "Pilih cabang terlebih dahulu" })
+      return
+    }
+
+    setIsAllOpeningDialogOpen(true)
+    setIsLoadingOpeningBalance(true)
+
+    try {
+      // Get all accounts with initial_balance for this branch
+      const { data: accountsWithBalance, error } = await supabase
+        .from('accounts')
+        .select('code, name, type, initial_balance')
+        .eq('branch_id', currentBranch.id)
+        .not('initial_balance', 'is', null)
+        .neq('initial_balance', 0)
+        .order('code')
+
+      if (error) throw error
+
+      const accounts = (accountsWithBalance || []).map(acc => ({
+        code: acc.code || '',
+        name: acc.name,
+        type: acc.type,
+        initialBalance: acc.initial_balance || 0
+      }))
+
+      const totalAsset = accounts
+        .filter(acc => acc.type?.toLowerCase().includes('aset'))
+        .reduce((sum, acc) => sum + acc.initialBalance, 0)
+
+      const totalOther = accounts
+        .filter(acc => !acc.type?.toLowerCase().includes('aset'))
+        .reduce((sum, acc) => sum + acc.initialBalance, 0)
+
+      setOpeningBalanceData({ accounts, totalAsset, totalOther })
+    } catch (error: any) {
+      console.error('Error loading opening balance data:', error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Gagal memuat data saldo awal: " + error.message
+      })
+      setIsAllOpeningDialogOpen(false)
+    } finally {
+      setIsLoadingOpeningBalance(false)
+    }
+  }
+
+  const handleSyncAllOpeningBalances = async () => {
+    if (!currentBranch?.id || !openingBalanceData) return
+
+    if (openingBalanceData.accounts.length === 0) {
+      toast({
+        title: "Tidak Ada Saldo Awal",
+        description: "Tidak ada akun dengan saldo awal yang perlu dijurnal"
+      })
+      setIsAllOpeningDialogOpen(false)
+      return
+    }
+
+    setIsSyncingAllOpening(true)
+
+    try {
+      const result = await createAllOpeningBalanceJournal({
+        branchId: currentBranch.id,
+        openingDate: new Date()
+      })
+
+      if (result.success) {
+        toast({
+          title: "Sinkronisasi Berhasil",
+          description: `Jurnal saldo awal berhasil dibuat untuk ${result.summary?.accountsProcessed || 0} akun. Total Debit: Rp ${(result.summary?.totalDebit || 0).toLocaleString('id-ID')}`
+        })
+        setIsAllOpeningDialogOpen(false)
+        setOpeningBalanceData(null)
+      } else {
+        throw new Error(result.error || 'Unknown error')
+      }
+    } catch (error: any) {
+      console.error('Error syncing opening balances:', error)
+      toast({
+        variant: "destructive",
+        title: "Sinkronisasi Gagal",
+        description: error.message
+      })
+    } finally {
+      setIsSyncingAllOpening(false)
+    }
   }
 
   const handleImportClick = () => {
@@ -794,14 +1058,32 @@ export default function ChartOfAccountsPage() {
         </div>
 
         {userIsAdminOrOwner && (
-          <Button
-            onClick={handleImportClick}
-            disabled={isImporting}
-            variant={accounts && accounts.length > 0 ? "outline" : "default"}
-          >
-            <Upload className="h-4 w-4 mr-2" />
-            {isImporting ? 'Mengimport...' : 'Import COA Standar'}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleOpenSyncDialog}
+              disabled={isLoadingInventory}
+              variant="outline"
+            >
+              <Package className="h-4 w-4 mr-2" />
+              {isLoadingInventory ? 'Memuat...' : 'Sinkron Persediaan'}
+            </Button>
+            <Button
+              onClick={handleOpenAllOpeningDialog}
+              disabled={isLoadingOpeningBalance}
+              variant="outline"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              {isLoadingOpeningBalance ? 'Memuat...' : 'Sinkron Saldo Awal'}
+            </Button>
+            <Button
+              onClick={handleImportClick}
+              disabled={isImporting}
+              variant={accounts && accounts.length > 0 ? "outline" : "default"}
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              {isImporting ? 'Mengimport...' : 'Import COA Standar'}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -1254,6 +1536,187 @@ export default function ChartOfAccountsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Sync Inventory Dialog */}
+      <AlertDialog open={isSyncDialogOpen} onOpenChange={setIsSyncDialogOpen}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Sinkronisasi Saldo Awal Persediaan
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  Fitur ini akan membuat jurnal saldo awal untuk menyeimbangkan nilai persediaan
+                  di neraca dengan data aktual produk dan bahan baku.
+                </p>
+
+                {inventoryData && (
+                  <div className="bg-muted rounded-lg p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Persediaan Barang Dagang</p>
+                        <p className="font-mono font-semibold">{formatCurrency(inventoryData.productsValue)}</p>
+                        <p className="text-xs text-muted-foreground">Jurnal: {formatCurrency(inventoryData.productsJournalValue)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Persediaan Bahan Baku</p>
+                        <p className="font-mono font-semibold">{formatCurrency(inventoryData.materialsValue)}</p>
+                        <p className="text-xs text-muted-foreground">Jurnal: {formatCurrency(inventoryData.materialsJournalValue)}</p>
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">Selisih yang akan dijurnal:</span>
+                        <span className="font-mono font-bold text-lg">
+                          {formatCurrency(
+                            (inventoryData.productsValue - inventoryData.productsJournalValue) +
+                            (inventoryData.materialsValue - inventoryData.materialsJournalValue)
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                      <p className="font-medium">Jurnal yang akan dibuat:</p>
+                      <p>Dr. Persediaan Barang Dagang (1310)</p>
+                      <p>Dr. Persediaan Bahan Baku (1320)</p>
+                      <p className="ml-4">Cr. Laba Ditahan (3200)</p>
+                    </div>
+                  </div>
+                )}
+
+                {!inventoryData && !isLoadingInventory && (
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="text-sm">Gagal memuat data persediaan</span>
+                  </div>
+                )}
+
+                {isLoadingInventory && (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSyncing}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSyncInventory}
+              disabled={isSyncing || !inventoryData || (
+                (inventoryData.productsValue - inventoryData.productsJournalValue) +
+                (inventoryData.materialsValue - inventoryData.materialsJournalValue) <= 0
+              )}
+            >
+              {isSyncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Membuat Jurnal...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Buat Jurnal Saldo Awal
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Sync All Opening Balances Dialog */}
+      <AlertDialog open={isAllOpeningDialogOpen} onOpenChange={setIsAllOpeningDialogOpen}>
+        <AlertDialogContent className="max-w-lg">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Sinkronisasi Saldo Awal Akun
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4">
+                <p>
+                  Fitur ini akan membuat jurnal saldo awal untuk akun-akun yang memiliki
+                  initial balance (saldo awal) tapi belum ada jurnal penyeimbangnya.
+                </p>
+
+                {openingBalanceData && openingBalanceData.accounts.length > 0 && (
+                  <div className="bg-muted rounded-lg p-4 space-y-3">
+                    <div className="text-sm">
+                      <p className="text-muted-foreground mb-2">Akun dengan saldo awal:</p>
+                      <div className="max-h-40 overflow-y-auto space-y-1">
+                        {openingBalanceData.accounts.map((acc, idx) => (
+                          <div key={idx} className="flex justify-between text-xs">
+                            <span>{acc.code} - {acc.name}</span>
+                            <span className="font-mono">{formatCurrency(acc.initialBalance)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">Total Saldo Awal Aset:</span>
+                        <span className="font-mono font-bold">
+                          {formatCurrency(openingBalanceData.totalAsset)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-muted-foreground bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                      <p className="font-medium">Jurnal yang akan dibuat:</p>
+                      <p>Dr. [Akun Aset dengan saldo awal]</p>
+                      <p className="ml-4">Cr. Laba Ditahan (3200) - sebagai penyeimbang</p>
+                    </div>
+                  </div>
+                )}
+
+                {openingBalanceData && openingBalanceData.accounts.length === 0 && (
+                  <div className="flex items-center gap-2 text-green-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="text-sm">Tidak ada akun dengan saldo awal yang perlu dijurnal</span>
+                  </div>
+                )}
+
+                {!openingBalanceData && !isLoadingOpeningBalance && (
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="text-sm">Gagal memuat data saldo awal</span>
+                  </div>
+                )}
+
+                {isLoadingOpeningBalance && (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSyncingAllOpening}>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSyncAllOpeningBalances}
+              disabled={isSyncingAllOpening || !openingBalanceData || openingBalanceData.accounts.length === 0}
+            >
+              {isSyncingAllOpening ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Membuat Jurnal...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Buat Jurnal Saldo Awal
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

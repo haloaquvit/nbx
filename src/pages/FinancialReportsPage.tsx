@@ -17,10 +17,14 @@ import {
   Loader2,
   CheckCircle,
   AlertTriangle,
+  AlertCircle,
   Building,
   CreditCard,
   Banknote,
-  Building2
+  Building2,
+  BookOpen,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { id } from 'date-fns/locale/id';
@@ -46,6 +50,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useClosingEntry } from '@/hooks/useClosingEntry';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const FinancialReportsPage = () => {
   const [balanceSheet, setBalanceSheet] = useState<BalanceSheetData | null>(null);
@@ -67,12 +80,34 @@ const FinancialReportsPage = () => {
   const { currentBranch, availableBranches, canAccessAllBranches } = useBranch();
   const [selectedBranchId, setSelectedBranchId] = useState<string>('');
 
+  // Closing Entry hook
+  const {
+    loading: closingLoading,
+    preview: closingPreview,
+    closedYears,
+    fetchPreview,
+    fetchClosedYears,
+    executeClosing,
+    voidClosing,
+    clearPreview
+  } = useClosingEntry();
+
+  const [closingYear, setClosingYear] = useState<number>(new Date().getFullYear());
+  const [showClosingConfirm, setShowClosingConfirm] = useState(false);
+
   // Sync selectedBranchId when currentBranch changes (after loading)
   useEffect(() => {
     if (currentBranch?.id && !selectedBranchId) {
       setSelectedBranchId(currentBranch.id);
     }
   }, [currentBranch?.id]);
+
+  // Fetch closed years when branch changes
+  useEffect(() => {
+    if (selectedBranchId) {
+      fetchClosedYears(selectedBranchId);
+    }
+  }, [selectedBranchId, fetchClosedYears]);
 
   const handleGenerateBalanceSheet = async () => {
     if (!selectedBranchId) {
@@ -165,6 +200,35 @@ const FinancialReportsPage = () => {
     setPeriodFrom(format(startDate, 'yyyy-MM-dd'));
     setPeriodTo(format(endOfMonth(endDate), 'yyyy-MM-dd'));
   };
+
+  // Closing Entry handlers
+  const handlePreviewClosing = async () => {
+    if (!selectedBranchId) {
+      toast({
+        variant: 'destructive',
+        title: 'Gagal',
+        description: 'Silakan pilih cabang terlebih dahulu'
+      });
+      return;
+    }
+    await fetchPreview(closingYear, selectedBranchId);
+  };
+
+  const handleConfirmClosing = async () => {
+    if (!selectedBranchId || !user?.id) return;
+    const success = await executeClosing(closingYear, selectedBranchId, user.id);
+    if (success) {
+      setShowClosingConfirm(false);
+      clearPreview();
+    }
+  };
+
+  const handleVoidClosing = async (year: number) => {
+    if (!selectedBranchId) return;
+    await voidClosing(year, selectedBranchId);
+  };
+
+  const isYearAlreadyClosed = closedYears.some(cy => cy.year === closingYear);
 
   return (
     <div className="container mx-auto py-8 space-y-6">
@@ -301,7 +365,7 @@ const FinancialReportsPage = () => {
 
       {/* Reports Tabs */}
       <Tabs defaultValue="balance-sheet" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="balance-sheet" className="gap-2">
             <Building className="h-4 w-4" />
             Neraca
@@ -313,6 +377,10 @@ const FinancialReportsPage = () => {
           <TabsTrigger value="cash-flow" className="gap-2">
             <Banknote className="h-4 w-4" />
             Arus Kas
+          </TabsTrigger>
+          <TabsTrigger value="closing-entry" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            Tutup Buku
           </TabsTrigger>
         </TabsList>
 
@@ -367,12 +435,26 @@ const FinancialReportsPage = () => {
                     {/* Current Assets */}
                     <div className="space-y-2">
                       <h4 className="font-medium text-gray-700">Aset Lancar:</h4>
-                      {balanceSheet.assets.currentAssets.kasBank.map(item => (
-                        <div key={item.accountId} className="flex justify-between pl-4">
-                          <span className="text-sm">{item.accountName}</span>
-                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+
+                      {/* Kas dan Setara Kas - Grouped */}
+                      {balanceSheet.assets.currentAssets.kasBank.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="pl-4 font-medium text-sm text-gray-600">Kas dan Setara Kas:</div>
+                          {balanceSheet.assets.currentAssets.kasBank.map(item => (
+                            <div key={item.accountId} className="flex justify-between pl-8">
+                              <span className="text-sm">{item.accountName}</span>
+                              <span className="text-sm font-mono">{item.formattedBalance}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between pl-4 text-sm italic text-gray-600">
+                            <span>Total Kas dan Setara Kas</span>
+                            <span className="font-mono">
+                              {formatCurrency(balanceSheet.assets.currentAssets.kasBank.reduce((sum, item) => sum + item.balance, 0))}
+                            </span>
+                          </div>
                         </div>
-                      ))}
+                      )}
+
                       {balanceSheet.assets.currentAssets.piutangUsaha.map(item => (
                         <div key={item.accountId} className="flex justify-between pl-4">
                           <span className="text-sm">{item.accountName}</span>
@@ -433,46 +515,79 @@ const FinancialReportsPage = () => {
                   {/* Liabilities & Equity */}
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-red-700 border-b pb-2">KEWAJIBAN & EKUITAS</h3>
-                    
+
                     {/* Liabilities */}
                     <div className="space-y-2">
                       <h4 className="font-medium text-gray-700">Kewajiban Lancar:</h4>
-                      {balanceSheet.liabilities.currentLiabilities.hutangUsaha.map(item => (
-                        <div key={item.accountId} className="flex justify-between pl-4">
-                          <span className="text-sm">{item.accountName}</span>
-                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+
+                      {/* Hutang Usaha - Grouped */}
+                      {balanceSheet.liabilities.currentLiabilities.hutangUsaha.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="pl-4 font-medium text-sm text-gray-600">Hutang Usaha:</div>
+                          {balanceSheet.liabilities.currentLiabilities.hutangUsaha.map(item => (
+                            <div key={item.accountId} className="flex justify-between pl-8">
+                              <span className="text-sm">{item.accountName}</span>
+                              <span className="text-sm font-mono">{item.formattedBalance}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      {balanceSheet.liabilities.currentLiabilities.hutangBank.map(item => (
-                        <div key={item.accountId} className="flex justify-between pl-4">
-                          <span className="text-sm">{item.accountName}</span>
-                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                      )}
+
+                      {/* Hutang Bank */}
+                      {balanceSheet.liabilities.currentLiabilities.hutangBank.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="pl-4 font-medium text-sm text-gray-600">Hutang Bank:</div>
+                          {balanceSheet.liabilities.currentLiabilities.hutangBank.map(item => (
+                            <div key={item.accountId} className="flex justify-between pl-8">
+                              <span className="text-sm">{item.accountName}</span>
+                              <span className="text-sm font-mono">{item.formattedBalance}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      {balanceSheet.liabilities.currentLiabilities.hutangKartuKredit.map(item => (
-                        <div key={item.accountId} className="flex justify-between pl-4">
-                          <span className="text-sm">{item.accountName}</span>
-                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                      )}
+
+                      {/* Hutang Kartu Kredit */}
+                      {balanceSheet.liabilities.currentLiabilities.hutangKartuKredit.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="pl-4 font-medium text-sm text-gray-600">Hutang Kartu Kredit:</div>
+                          {balanceSheet.liabilities.currentLiabilities.hutangKartuKredit.map(item => (
+                            <div key={item.accountId} className="flex justify-between pl-8">
+                              <span className="text-sm">{item.accountName}</span>
+                              <span className="text-sm font-mono">{item.formattedBalance}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      {balanceSheet.liabilities.currentLiabilities.hutangLain.map(item => (
-                        <div key={item.accountId} className="flex justify-between pl-4">
-                          <span className="text-sm">{item.accountName}</span>
-                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                      )}
+
+                      {/* Hutang Lain-lain */}
+                      {balanceSheet.liabilities.currentLiabilities.hutangLain.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="pl-4 font-medium text-sm text-gray-600">Hutang Lain-lain:</div>
+                          {balanceSheet.liabilities.currentLiabilities.hutangLain.map(item => (
+                            <div key={item.accountId} className="flex justify-between pl-8">
+                              <span className="text-sm">{item.accountName}</span>
+                              <span className="text-sm font-mono">{item.formattedBalance}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
+
+                      {/* Hutang Gaji */}
                       {balanceSheet.liabilities.currentLiabilities.hutangGaji.map(item => (
                         <div key={item.accountId} className="flex justify-between pl-4">
                           <span className="text-sm">{item.accountName}</span>
                           <span className="text-sm font-mono">{item.formattedBalance}</span>
                         </div>
                       ))}
+
+                      {/* Hutang Pajak */}
                       {balanceSheet.liabilities.currentLiabilities.hutangPajak.map(item => (
                         <div key={item.accountId} className="flex justify-between pl-4">
                           <span className="text-sm">{item.accountName}</span>
                           <span className="text-sm font-mono">{item.formattedBalance}</span>
                         </div>
                       ))}
+
                       <div className="flex justify-between font-medium border-t pt-2">
                         <span>Total Kewajiban</span>
                         <span className="font-mono">{formatCurrency(balanceSheet.liabilities.totalLiabilities)}</span>
@@ -482,16 +597,43 @@ const FinancialReportsPage = () => {
                     {/* Equity */}
                     <div className="space-y-2">
                       <h4 className="font-medium text-gray-700">Ekuitas:</h4>
-                      {balanceSheet.equity.modalPemilik.map(item => (
-                        <div key={item.accountId} className="flex justify-between pl-4">
-                          <span className="text-sm">{item.accountName}</span>
-                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+
+                      {/* Modal Pemilik - Grouped */}
+                      {balanceSheet.equity.modalPemilik.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="pl-4 font-medium text-sm text-gray-600">Modal Pemilik:</div>
+                          {balanceSheet.equity.modalPemilik.map(item => (
+                            <div key={item.accountId} className="flex justify-between pl-8">
+                              <span className="text-sm">{item.accountName}</span>
+                              <span className="text-sm font-mono">{item.formattedBalance}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                      <div className="flex justify-between pl-4">
-                        <span className="text-sm">Laba Rugi Ditahan</span>
-                        <span className="text-sm font-mono">{formatCurrency(balanceSheet.equity.labaRugiDitahan)}</span>
+                      )}
+
+                      {/* Laba Ditahan - dengan breakdown */}
+                      <div className="space-y-1">
+                        <div className="pl-4 font-medium text-sm text-gray-600">Laba Ditahan:</div>
+                        {balanceSheet.equity.labaDitahanAkun !== 0 && (
+                          <div className="flex justify-between pl-8">
+                            <span className="text-sm text-gray-500">Saldo Laba Ditahan</span>
+                            <span className="text-sm font-mono text-gray-500">{formatCurrency(balanceSheet.equity.labaDitahanAkun)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between pl-8">
+                          <span className="text-sm text-gray-500">Laba Tahun Berjalan</span>
+                          <span className={`text-sm font-mono ${balanceSheet.equity.labaTahunBerjalan >= 0 ? 'text-gray-500' : 'text-red-500'}`}>
+                            {formatCurrency(balanceSheet.equity.labaTahunBerjalan)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between pl-4 text-sm italic text-gray-600">
+                          <span>Total Laba Ditahan</span>
+                          <span className={`font-mono ${balanceSheet.equity.totalLabaDitahan >= 0 ? '' : 'text-red-600'}`}>
+                            {formatCurrency(balanceSheet.equity.totalLabaDitahan)}
+                          </span>
+                        </div>
                       </div>
+
                       <div className="flex justify-between font-medium border-t pt-2">
                         <span>Total Ekuitas</span>
                         <span className="font-mono">{formatCurrency(balanceSheet.equity.totalEquity)}</span>
@@ -502,12 +644,32 @@ const FinancialReportsPage = () => {
                       <span>TOTAL KEWAJIBAN & EKUITAS</span>
                       <span className="font-mono">{formatCurrency(balanceSheet.totalLiabilitiesEquity)}</span>
                     </div>
+
+                    {/* Selisih Warning */}
+                    {!balanceSheet.isBalanced && (
+                      <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="flex items-center gap-2 text-red-700">
+                          <AlertCircle className="h-5 w-5" />
+                          <span className="font-medium">Neraca Tidak Balance!</span>
+                        </div>
+                        <div className="mt-2 text-sm text-red-600">
+                          <div className="flex justify-between">
+                            <span>Selisih:</span>
+                            <span className="font-mono font-bold">{formatCurrency(balanceSheet.selisih)}</span>
+                          </div>
+                          <p className="mt-2 text-xs">
+                            Kemungkinan penyebab: Saldo awal persediaan belum dijurnal,
+                            atau ada transaksi yang tidak memiliki jurnal lengkap.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="text-xs text-muted-foreground text-center pt-4 border-t">
-                  Dibuat pada: {format(balanceSheet.generatedAt, 'dd MMM yyyy HH:mm', { locale: id })} • 
-                  Data dari: Accounts, Transactions, Materials
+                  Dibuat pada: {format(balanceSheet.generatedAt, 'dd MMM yyyy HH:mm', { locale: id })} •
+                  Status: {balanceSheet.isBalanced ? '✓ Neraca Balance' : '⚠ Neraca Tidak Balance'}
                 </div>
               </CardContent>
             </Card>
@@ -917,7 +1079,208 @@ const FinancialReportsPage = () => {
             </Card>
           )}
         </TabsContent>
+
+        {/* Closing Entry Tab */}
+        <TabsContent value="closing-entry" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                Tutup Buku Tahunan
+              </CardTitle>
+              <CardDescription>
+                Tutup periode akuntansi dan transfer Laba/Rugi ke Laba Ditahan
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Year Selection */}
+              <div className="flex items-end gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="closingYear">Tahun yang akan ditutup</Label>
+                  <Select
+                    value={String(closingYear)}
+                    onValueChange={(val) => {
+                      setClosingYear(Number(val));
+                      clearPreview();
+                    }}
+                  >
+                    <SelectTrigger id="closingYear" className="w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[2023, 2024, 2025].map(year => (
+                        <SelectItem key={year} value={String(year)}>
+                          {year}
+                          {closedYears.some(cy => cy.year === year) && ' (Sudah ditutup)'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  onClick={handlePreviewClosing}
+                  disabled={closingLoading || isYearAlreadyClosed}
+                >
+                  {closingLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  Preview Tutup Buku
+                </Button>
+              </div>
+
+              {isYearAlreadyClosed && (
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
+                  <Lock className="h-5 w-5 text-yellow-600" />
+                  <span className="text-yellow-800">
+                    Tahun {closingYear} sudah ditutup pada{' '}
+                    {format(closedYears.find(cy => cy.year === closingYear)?.closedAt || new Date(), 'd MMM yyyy HH:mm', { locale: id })}
+                  </span>
+                </div>
+              )}
+
+              {/* Preview Results */}
+              {closingPreview && (
+                <div className="space-y-4 border rounded-lg p-4">
+                  <h4 className="font-semibold">Preview Jurnal Penutup Tahun {closingPreview.year}</h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Pendapatan */}
+                    <div className="space-y-2">
+                      <h5 className="font-medium text-green-700">Pendapatan yang akan ditutup:</h5>
+                      {closingPreview.pendapatanAccounts.length > 0 ? (
+                        <>
+                          {closingPreview.pendapatanAccounts.map(acc => (
+                            <div key={acc.id} className="flex justify-between text-sm pl-4">
+                              <span>{acc.code} - {acc.name}</span>
+                              <span className="font-mono">{formatCurrency(acc.balance)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between font-medium border-t pt-2">
+                            <span>Total Pendapatan</span>
+                            <span className="font-mono text-green-700">{formatCurrency(closingPreview.totalPendapatan)}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground pl-4">Tidak ada pendapatan</p>
+                      )}
+                    </div>
+
+                    {/* Beban */}
+                    <div className="space-y-2">
+                      <h5 className="font-medium text-red-700">Beban yang akan ditutup:</h5>
+                      {closingPreview.bebanAccounts.length > 0 ? (
+                        <>
+                          {closingPreview.bebanAccounts.map(acc => (
+                            <div key={acc.id} className="flex justify-between text-sm pl-4">
+                              <span>{acc.code} - {acc.name}</span>
+                              <span className="font-mono">{formatCurrency(acc.balance)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between font-medium border-t pt-2">
+                            <span>Total Beban</span>
+                            <span className="font-mono text-red-700">{formatCurrency(closingPreview.totalBeban)}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground pl-4">Tidak ada beban</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Summary */}
+                  <div className={`p-4 rounded-lg ${closingPreview.labaRugiBersih >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'} border`}>
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold text-lg">
+                        {closingPreview.labaRugiBersih >= 0 ? 'Laba Bersih' : 'Rugi Bersih'}
+                      </span>
+                      <span className={`font-mono text-xl font-bold ${closingPreview.labaRugiBersih >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                        {formatCurrency(Math.abs(closingPreview.labaRugiBersih))}
+                      </span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {closingPreview.labaRugiBersih >= 0
+                        ? `Laba ini akan ditransfer ke akun Laba Ditahan (${closingPreview.labaDitahanAccount?.code || '3200'})`
+                        : `Rugi ini akan mengurangi saldo Laba Ditahan (${closingPreview.labaDitahanAccount?.code || '3200'})`}
+                    </p>
+                  </div>
+
+                  {/* Action Button */}
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => setShowClosingConfirm(true)}
+                      className="gap-2"
+                      disabled={closingLoading}
+                    >
+                      <Lock className="h-4 w-4" />
+                      Eksekusi Tutup Buku
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Closed Years History */}
+              {closedYears.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="font-semibold">Riwayat Tutup Buku</h4>
+                  <div className="border rounded-lg divide-y">
+                    {closedYears.map(cy => (
+                      <div key={cy.id} className="flex items-center justify-between p-3">
+                        <div>
+                          <span className="font-medium">Tahun {cy.year}</span>
+                          <span className="text-sm text-muted-foreground ml-2">
+                            - Ditutup {format(cy.closedAt, 'd MMM yyyy HH:mm', { locale: id })}
+                          </span>
+                          <span className={`text-sm ml-2 ${cy.netIncome >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ({cy.netIncome >= 0 ? 'Laba' : 'Rugi'}: {formatCurrency(Math.abs(cy.netIncome))})
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleVoidClosing(cy.year)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <Unlock className="h-4 w-4 mr-1" />
+                          Batalkan
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={showClosingConfirm} onOpenChange={setShowClosingConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Tutup Buku</DialogTitle>
+            <DialogDescription>
+              Anda akan menutup buku untuk tahun {closingYear}. Proses ini akan:
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="list-disc pl-6 space-y-1 text-sm">
+            <li>Menutup semua akun Pendapatan ke Ikhtisar Laba Rugi</li>
+            <li>Menutup semua akun Beban ke Ikhtisar Laba Rugi</li>
+            <li>Transfer {closingPreview?.labaRugiBersih && closingPreview.labaRugiBersih >= 0 ? 'Laba' : 'Rugi'} Bersih ke Laba Ditahan</li>
+          </ul>
+          <p className="text-sm text-muted-foreground mt-2">
+            Jurnal penutup akan dibuat dengan tanggal 31 Desember {closingYear}.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowClosingConfirm(false)}>
+              Batal
+            </Button>
+            <Button onClick={handleConfirmClosing} disabled={closingLoading}>
+              {closingLoading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              Ya, Tutup Buku
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -49,6 +49,7 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
     amount: '',
     interestRate: '0',
     interestType: 'flat' as 'flat' | 'per_month' | 'per_year' | 'decreasing',
+    tenorMonths: '1', // Tenor cicilan dalam bulan
     dueDate: '',
     description: '',
     notes: ''
@@ -69,6 +70,7 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
       amount: '',
       interestRate: '0',
       interestType: 'flat',
+      tenorMonths: '1',
       dueDate: '',
       description: '',
       notes: ''
@@ -104,6 +106,8 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
         branchId: currentBranch?.id || null,
       });
 
+      const tenorMonths = parseInt(formData.tenorMonths) || 1;
+
       // Insert into accounts_payable
       const { error } = await supabase.from('accounts_payable').insert({
         id,
@@ -113,13 +117,13 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
         amount,
         interest_rate: interestRate,
         interest_type: formData.interestType,
+        tenor_months: tenorMonths,
         due_date: formData.dueDate || null,
         description: formData.description,
         status: 'Outstanding',
         paid_amount: 0,
         notes: isMigration ? `[MIGRASI] ${formData.notes || ''}` : (formData.notes || null),
         branch_id: currentBranch?.id || null,
-        source: isMigration ? 'migration' : 'manual',
       });
 
       if (error) throw error;
@@ -284,7 +288,6 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
             paid_amount: 0,
             notes: `[MIGRASI] ${row.notes || 'Import dari Excel'}`,
             branch_id: currentBranch?.id || null,
-            source: 'migration',
           });
 
           if (error) throw error;
@@ -621,38 +624,57 @@ function ManualInputForm({
 
       {/* Interest Rate Section - hide for migration */}
       {!isMigration && (
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="interestRate">Persentase Bunga (%)</Label>
-            <Input
-              id="interestRate"
-              type="number"
-              step="0.01"
-              min="0"
-              value={formData.interestRate}
-              onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
-              placeholder="0"
-            />
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="interestRate">Persentase Bunga (%)</Label>
+              <Input
+                id="interestRate"
+                type="number"
+                step="0.01"
+                min="0"
+                value={formData.interestRate}
+                onChange={(e) => setFormData({ ...formData, interestRate: e.target.value })}
+                placeholder="0"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="interestType">Tipe Bunga</Label>
+              <Select
+                value={formData.interestType}
+                onValueChange={(value: any) => setFormData({ ...formData, interestType: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="flat">Flat (Sekali)</SelectItem>
+                  <SelectItem value="per_month">Per Bulan</SelectItem>
+                  <SelectItem value="per_year">Per Tahun</SelectItem>
+                  <SelectItem value="decreasing">Bunga Menurun</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
+          {/* Tenor / Cicilan */}
           <div className="space-y-2">
-            <Label htmlFor="interestType">Tipe Bunga</Label>
-            <Select
-              value={formData.interestType}
-              onValueChange={(value: any) => setFormData({ ...formData, interestType: value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="flat">Flat (Sekali)</SelectItem>
-                <SelectItem value="per_month">Per Bulan</SelectItem>
-                <SelectItem value="per_year">Per Tahun</SelectItem>
-                <SelectItem value="decreasing">Bunga Menurun</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label htmlFor="tenorMonths">Tenor Cicilan (Bulan)</Label>
+            <Input
+              id="tenorMonths"
+              type="number"
+              min="1"
+              max="360"
+              value={formData.tenorMonths}
+              onChange={(e) => setFormData({ ...formData, tenorMonths: e.target.value })}
+              placeholder="1"
+            />
+            <p className="text-xs text-muted-foreground">
+              Jumlah bulan untuk cicilan. Jadwal angsuran dapat di-generate setelah hutang disimpan.
+            </p>
           </div>
-        </div>
+        </>
       )}
 
       {/* Due Date */}

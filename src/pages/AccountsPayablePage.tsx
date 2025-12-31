@@ -13,10 +13,13 @@ import { useAccountsPayable } from '@/hooks/useAccountsPayable'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useToast } from '@/components/ui/use-toast'
 import { formatCurrency } from '@/lib/utils'
-import { DollarSign, FileText, Calendar, AlertCircle, Download, Edit, Trash2, Eye, CreditCard, Building2, Banknote, Receipt, Clock, User, FileDown, CheckCircle, AlertTriangle, Clock3 } from 'lucide-react'
+import { DollarSign, FileText, Calendar, AlertCircle, Download, Edit, Trash2, Eye, CreditCard, Building2, Banknote, Receipt, Clock, User, FileDown, CheckCircle, AlertTriangle, Clock3, Calculator } from 'lucide-react'
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { AddDebtDialog } from '@/components/AddDebtDialog'
+import { EditDebtDialog } from '@/components/EditDebtDialog'
+import { DebtInstallmentTab } from '@/components/DebtInstallmentTab'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useBranch } from '@/contexts/BranchContext'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/integrations/supabase/client'
@@ -35,6 +38,7 @@ export default function AccountsPayablePage() {
   const [deleteDialog, setDeleteDialog] = useState({ open: false, payable: null as any })
   const [isDeleting, setIsDeleting] = useState(false)
   const [detailDialog, setDetailDialog] = useState({ open: false, payable: null as AccountsPayable | null })
+  const [editDialog, setEditDialog] = useState({ open: false, payable: null as AccountsPayable | null })
 
   const { accountsPayable, isLoading, payAccountsPayable } = useAccountsPayable()
   const { accounts } = useAccounts()
@@ -387,6 +391,15 @@ export default function AccountsPayablePage() {
                           >
                             <Eye className="h-3 w-3" />
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEditDialog({ open: true, payable })}
+                            className="h-7 px-2"
+                            title="Edit Bunga & Tenor"
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
                           {payable.status !== 'Paid' && (
                             <Button
                               size="sm"
@@ -555,6 +568,19 @@ export default function AccountsPayablePage() {
           settings={settings}
           accounts={accounts}
           getOverdueDays={getOverdueDays}
+          onUpdate={() => window.location.reload()}
+        />
+      )}
+
+      {/* Edit Dialog */}
+      {editDialog.payable && (
+        <EditDebtDialog
+          payable={editDialog.payable}
+          open={editDialog.open}
+          onOpenChange={(open) => {
+            setEditDialog({ open, payable: open ? editDialog.payable : null })
+          }}
+          onSuccess={() => window.location.reload()}
         />
       )}
     </div>
@@ -569,6 +595,7 @@ function AccountsPayableDetailDialog({
   settings,
   accounts,
   getOverdueDays,
+  onUpdate,
 }: {
   payable: AccountsPayable
   open: boolean
@@ -576,9 +603,11 @@ function AccountsPayableDetailDialog({
   settings: any
   accounts: any[] | undefined
   getOverdueDays: (dueDate?: Date) => number | null
+  onUpdate?: () => void
 }) {
   const printRef = useRef<HTMLDivElement>(null)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [activeTab, setActiveTab] = useState('detail')
 
   const remainingAmount = payable.amount - (payable.paidAmount || 0)
   const overdueDays = getOverdueDays(payable.dueDate)
@@ -638,7 +667,7 @@ function AccountsPayableDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5 text-blue-600" />
@@ -649,155 +678,174 @@ function AccountsPayableDetailDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Status Badge */}
-          <div className="flex justify-center gap-2">
-            <Badge variant="outline" className={`${statusInfo.color} text-sm px-4 py-1`}>
-              <StatusIcon className="h-4 w-4 mr-2" />
-              {statusInfo.label}
-            </Badge>
-            {overdueDays !== null && overdueDays > 0 && payable.status !== 'Paid' && (
-              <Badge variant="destructive" className="text-sm px-3 py-1">
-                <AlertCircle className="h-4 w-4 mr-1" />
-                Terlambat {overdueDays} hari
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="detail" className="gap-2">
+              <Receipt className="h-4 w-4" />
+              Detail
+            </TabsTrigger>
+            <TabsTrigger value="installment" className="gap-2">
+              <Calculator className="h-4 w-4" />
+              Angsuran
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Tab Detail */}
+          <TabsContent value="detail" className="space-y-4 mt-4">
+            {/* Status Badge */}
+            <div className="flex justify-center gap-2">
+              <Badge variant="outline" className={`${statusInfo.color} text-sm px-4 py-1`}>
+                <StatusIcon className="h-4 w-4 mr-2" />
+                {statusInfo.label}
               </Badge>
-            )}
-          </div>
-
-          {/* Creditor Info Section */}
-          <div className="grid grid-cols-2 gap-3 text-sm bg-slate-50 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <CreditorIcon className="h-4 w-4 text-slate-400 mt-0.5" />
-              <div>
-                <span className="text-slate-500 text-xs">Jenis Kreditor</span>
-                <p className="font-medium">{creditorInfo.label}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <User className="h-4 w-4 text-slate-400 mt-0.5" />
-              <div>
-                <span className="text-slate-500 text-xs">Kreditor</span>
-                <p className="font-medium">{payable.supplierName}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <Clock className="h-4 w-4 text-slate-400 mt-0.5" />
-              <div>
-                <span className="text-slate-500 text-xs">Tanggal Dibuat</span>
-                <p className="font-medium">{format(payable.createdAt, 'd MMM yyyy', { locale: id })}</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-2">
-              <Calendar className="h-4 w-4 text-slate-400 mt-0.5" />
-              <div>
-                <span className="text-slate-500 text-xs">Jatuh Tempo</span>
-                <p className={`font-medium ${overdueDays !== null && overdueDays > 0 ? 'text-red-600' : ''}`}>
-                  {payable.dueDate ? format(payable.dueDate, 'd MMM yyyy', { locale: id }) : '-'}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Amount Card */}
-          <div className="border rounded-lg p-4">
-            <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              Informasi Pembayaran
-            </h4>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Total Hutang</span>
-                <span className="font-mono font-bold text-lg">{formatCurrency(payable.amount)}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Sudah Dibayar</span>
-                <span className="font-mono font-bold text-green-600">{formatCurrency(payable.paidAmount || 0)}</span>
-              </div>
-              <div className="flex justify-between items-center pt-2 border-t">
-                <span className="text-slate-700 font-medium">Sisa Hutang</span>
-                <span className="font-mono font-bold text-lg text-red-600">{formatCurrency(remainingAmount)}</span>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="pt-2">
-                <div className="flex justify-between text-xs text-slate-500 mb-1">
-                  <span>Progress Pembayaran</span>
-                  <span>{paidPercentage.toFixed(0)}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-2.5">
-                  <div
-                    className={`h-2.5 rounded-full transition-all ${paidPercentage >= 100 ? 'bg-green-500' : paidPercentage > 0 ? 'bg-yellow-500' : 'bg-slate-300'}`}
-                    style={{ width: `${Math.min(paidPercentage, 100)}%` }}
-                  ></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Interest Info */}
-          {payable.interestRate && payable.interestRate > 0 && (
-            <div className="border rounded-lg p-4">
-              <h4 className="text-sm font-semibold mb-2">Informasi Bunga</h4>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-slate-500">Suku Bunga</span>
-                <span className="font-medium">
-                  {payable.interestRate}%
-                  {payable.interestType === 'per_month' && ' / bulan'}
-                  {payable.interestType === 'per_year' && ' / tahun'}
-                  {payable.interestType === 'flat' && ' (flat)'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Payment Account */}
-          {payable.status === 'Paid' && paymentAccountName && (
-            <div className="border rounded-lg p-4">
-              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                <Banknote className="h-4 w-4" />
-                Akun Pembayaran
-              </h4>
-              <p className="text-sm">{paymentAccountName}</p>
-              {payable.paidAt && (
-                <p className="text-xs text-slate-500 mt-1">
-                  Dilunasi: {format(payable.paidAt, 'd MMM yyyy HH:mm', { locale: id })}
-                </p>
+              {overdueDays !== null && overdueDays > 0 && payable.status !== 'Paid' && (
+                <Badge variant="destructive" className="text-sm px-3 py-1">
+                  <AlertCircle className="h-4 w-4 mr-1" />
+                  Terlambat {overdueDays} hari
+                </Badge>
               )}
             </div>
-          )}
 
-          {/* Description */}
-          <div className="border rounded-lg p-4">
-            <h4 className="text-sm font-semibold mb-2">Deskripsi</h4>
-            <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
-              {payable.description || '-'}
-            </p>
-          </div>
+            {/* Creditor Info Section */}
+            <div className="grid grid-cols-2 gap-3 text-sm bg-slate-50 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <CreditorIcon className="h-4 w-4 text-slate-400 mt-0.5" />
+                <div>
+                  <span className="text-slate-500 text-xs">Jenis Kreditor</span>
+                  <p className="font-medium">{creditorInfo.label}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <User className="h-4 w-4 text-slate-400 mt-0.5" />
+                <div>
+                  <span className="text-slate-500 text-xs">Kreditor</span>
+                  <p className="font-medium">{payable.supplierName}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <Clock className="h-4 w-4 text-slate-400 mt-0.5" />
+                <div>
+                  <span className="text-slate-500 text-xs">Tanggal Dibuat</span>
+                  <p className="font-medium">{format(payable.createdAt, 'd MMM yyyy', { locale: id })}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <Calendar className="h-4 w-4 text-slate-400 mt-0.5" />
+                <div>
+                  <span className="text-slate-500 text-xs">Jatuh Tempo</span>
+                  <p className={`font-medium ${overdueDays !== null && overdueDays > 0 ? 'text-red-600' : ''}`}>
+                    {payable.dueDate ? format(payable.dueDate, 'd MMM yyyy', { locale: id }) : '-'}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-          {/* Notes */}
-          {payable.notes && (
+            {/* Amount Card */}
             <div className="border rounded-lg p-4">
-              <h4 className="text-sm font-semibold mb-2">Catatan</h4>
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Informasi Pembayaran
+              </h4>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Total Hutang</span>
+                  <span className="font-mono font-bold text-lg">{formatCurrency(payable.amount)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Sudah Dibayar</span>
+                  <span className="font-mono font-bold text-green-600">{formatCurrency(payable.paidAmount || 0)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <span className="text-slate-700 font-medium">Sisa Hutang</span>
+                  <span className="font-mono font-bold text-lg text-red-600">{formatCurrency(remainingAmount)}</span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="pt-2">
+                  <div className="flex justify-between text-xs text-slate-500 mb-1">
+                    <span>Progress Pembayaran</span>
+                    <span>{paidPercentage.toFixed(0)}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2.5">
+                    <div
+                      className={`h-2.5 rounded-full transition-all ${paidPercentage >= 100 ? 'bg-green-500' : paidPercentage > 0 ? 'bg-yellow-500' : 'bg-slate-300'}`}
+                      style={{ width: `${Math.min(paidPercentage, 100)}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Interest Info */}
+            {payable.interestRate && payable.interestRate > 0 && (
+              <div className="border rounded-lg p-4">
+                <h4 className="text-sm font-semibold mb-2">Informasi Bunga</h4>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-500">Suku Bunga</span>
+                  <span className="font-medium">
+                    {payable.interestRate}%
+                    {payable.interestType === 'per_month' && ' / bulan'}
+                    {payable.interestType === 'per_year' && ' / tahun'}
+                    {payable.interestType === 'flat' && ' (flat)'}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Payment Account */}
+            {payable.status === 'Paid' && paymentAccountName && (
+              <div className="border rounded-lg p-4">
+                <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <Banknote className="h-4 w-4" />
+                  Akun Pembayaran
+                </h4>
+                <p className="text-sm">{paymentAccountName}</p>
+                {payable.paidAt && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    Dilunasi: {format(payable.paidAt, 'd MMM yyyy HH:mm', { locale: id })}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Description */}
+            <div className="border rounded-lg p-4">
+              <h4 className="text-sm font-semibold mb-2">Deskripsi</h4>
               <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
-                {payable.notes}
+                {payable.description || '-'}
               </p>
             </div>
-          )}
 
-          {/* Print PDF Button */}
-          <div className="pt-4 border-t flex justify-end">
-            <Button
-              onClick={handlePrintPDF}
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              disabled={isGenerating}
-            >
-              <FileDown className="h-4 w-4" />
-              {isGenerating ? "Membuat PDF..." : "Cetak PDF"}
-            </Button>
-          </div>
-        </div>
+            {/* Notes */}
+            {payable.notes && (
+              <div className="border rounded-lg p-4">
+                <h4 className="text-sm font-semibold mb-2">Catatan</h4>
+                <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded">
+                  {payable.notes}
+                </p>
+              </div>
+            )}
+
+            {/* Print PDF Button */}
+            <div className="pt-4 border-t flex justify-end">
+              <Button
+                onClick={handlePrintPDF}
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                disabled={isGenerating}
+              >
+                <FileDown className="h-4 w-4" />
+                {isGenerating ? "Membuat PDF..." : "Cetak PDF"}
+              </Button>
+            </div>
+          </TabsContent>
+
+          {/* Tab Angsuran */}
+          <TabsContent value="installment" className="mt-4">
+            <DebtInstallmentTab debt={payable} onUpdate={onUpdate} />
+          </TabsContent>
+        </Tabs>
       </DialogContent>
 
       {/* Hidden PDF Content */}
