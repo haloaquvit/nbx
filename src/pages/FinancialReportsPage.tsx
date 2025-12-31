@@ -488,12 +488,28 @@ const FinancialReportsPage = () => {
                     {/* Fixed Assets */}
                     <div className="space-y-2">
                       <h4 className="font-medium text-gray-700">Aset Tetap:</h4>
+                      {/* Kendaraan */}
+                      {balanceSheet.assets.fixedAssets.kendaraan.map(item => (
+                        <div key={item.accountId} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName}</span>
+                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                        </div>
+                      ))}
+                      {/* Peralatan */}
                       {balanceSheet.assets.fixedAssets.peralatan.map(item => (
                         <div key={item.accountId} className="flex justify-between pl-4">
                           <span className="text-sm">{item.accountName}</span>
                           <span className="text-sm font-mono">{item.formattedBalance}</span>
                         </div>
                       ))}
+                      {/* Aset Tetap Lainnya */}
+                      {balanceSheet.assets.fixedAssets.asetTetapLainnya.map(item => (
+                        <div key={item.accountId} className="flex justify-between pl-4">
+                          <span className="text-sm">{item.accountName}</span>
+                          <span className="text-sm font-mono">{item.formattedBalance}</span>
+                        </div>
+                      ))}
+                      {/* Akumulasi Penyusutan */}
                       {balanceSheet.assets.fixedAssets.akumulasiPenyusutan.map(item => (
                         <div key={item.accountId} className="flex justify-between pl-4">
                           <span className="text-sm">({item.accountName})</span>

@@ -60,12 +60,41 @@ async function calculateAccountBalancesFromJournal(
     }));
   }
 
-  // Initialize balance map with initial_balance
+  // Check which accounts have opening balance journals
+  // These accounts should NOT use initial_balance to avoid double counting
+  const { data: openingJournals } = await supabase
+    .from('journal_entry_lines')
+    .select(`
+      account_id,
+      journal_entries!inner (
+        branch_id,
+        reference_type,
+        is_voided
+      )
+    `)
+    .eq('journal_entries.branch_id', branchId)
+    .eq('journal_entries.reference_type', 'opening')
+    .eq('journal_entries.is_voided', false);
+
+  const accountsWithOpeningJournal = new Set<string>();
+  (openingJournals || []).forEach((line: any) => {
+    if (line.account_id) {
+      accountsWithOpeningJournal.add(line.account_id);
+    }
+  });
+
+  // Initialize balance map
+  // If account has opening journal, start from 0 (journal will add the balance)
+  // If no opening journal, use initial_balance as starting point
   const accountBalanceMap = new Map<string, number>();
   const accountTypes = new Map<string, string>();
 
   accounts.forEach(acc => {
-    accountBalanceMap.set(acc.id, acc.initialBalance || 0);
+    // Jika akun sudah punya jurnal opening, mulai dari 0
+    // Jika belum, gunakan initial_balance
+    const hasOpeningJournal = accountsWithOpeningJournal.has(acc.id);
+    const startingBalance = hasOpeningJournal ? 0 : (acc.initialBalance || 0);
+    accountBalanceMap.set(acc.id, startingBalance);
     accountTypes.set(acc.id, acc.type);
   });
 
@@ -139,7 +168,9 @@ export interface BalanceSheetData {
       totalCurrentAssets: number;
     };
     fixedAssets: {
+      kendaraan: BalanceSheetItem[];
       peralatan: BalanceSheetItem[];
+      asetTetapLainnya: BalanceSheetItem[];
       akumulasiPenyusutan: BalanceSheetItem[];
       totalFixedAssets: number;
     };
@@ -704,37 +735,85 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   // Nilai aset tetap = Harga Perolehan (dari jurnal) - Akumulasi Penyusutan
   // Tabel assets hanya untuk inventaris/tracking, bukan untuk nilai di neraca
   // ============================================================================
-  const peralatan = assetAccounts
-    .filter(acc => {
-      // Include accounts with code starting with 14, 15, 16 (fixed assets range)
-      // Exclude akumulasi penyusutan (will be handled separately)
-      if (acc.code) {
-        const codePrefix = acc.code.substring(0, 2);
-        if (['14', '15', '16'].includes(codePrefix)) {
-          // Exclude akumulasi penyusutan (usually 1430, 1530, etc.)
-          return !acc.name.toLowerCase().includes('akumulasi');
-        }
-      }
+  // PENTING: Pencarian berdasarkan NAMA akun, bukan kode akun (lebih fleksibel)
+  // ============================================================================
 
-      // Fallback: also include by name for accounts without codes
+  // Helper function untuk filter aset tetap berdasarkan nama
+  const isFixedAssetAccount = (acc: AccountWithBalance): boolean => {
+    const nameLower = acc.name.toLowerCase();
+    // Exclude akumulasi penyusutan dan header
+    if (nameLower.includes('akumulasi') || acc.isHeader) return false;
+    // Include jika kode dimulai dengan 14, 15, 16 (range aset tetap)
+    if (acc.code) {
+      const codePrefix = acc.code.substring(0, 2);
+      if (['14', '15', '16'].includes(codePrefix)) return true;
+    }
+    // Include berdasarkan nama
+    return (nameLower.includes('kendaraan') ||
+            nameLower.includes('peralatan') ||
+            nameLower.includes('mesin') ||
+            nameLower.includes('bangunan') ||
+            nameLower.includes('tanah') ||
+            nameLower.includes('komputer') ||
+            nameLower.includes('furniture') ||
+            nameLower.includes('gedung'));
+  };
+
+  // KENDARAAN - akun dengan nama mengandung "kendaraan" atau "vehicle"
+  const kendaraan = assetAccounts
+    .filter(acc => {
       const nameLower = acc.name.toLowerCase();
-      return (nameLower.includes('peralatan') ||
-             nameLower.includes('kendaraan') ||
-             nameLower.includes('mesin') ||
-             nameLower.includes('bangunan') ||
-             nameLower.includes('tanah') ||
-             nameLower.includes('komputer') ||
-             nameLower.includes('furniture') ||
-             nameLower.includes('aset tetap') ||
-             nameLower.includes('gedung')) &&
-             !nameLower.includes('akumulasi');
+      return (nameLower.includes('kendaraan') || nameLower.includes('vehicle')) &&
+             !nameLower.includes('akumulasi') &&
+             !acc.isHeader;
     })
-    .filter(acc => (acc.balance || 0) !== 0) // Only show accounts with balance from journal
+    .filter(acc => (acc.balance || 0) !== 0)
     .map(acc => ({
       accountId: acc.id,
       accountCode: acc.code,
       accountName: acc.name,
-      balance: acc.balance || 0, // Use journal balance ONLY (PSAK compliant)
+      balance: acc.balance || 0,
+      formattedBalance: formatCurrency(acc.balance || 0)
+    }));
+
+  // PERALATAN - akun dengan nama mengandung "peralatan", "alat", "mesin", "equipment"
+  const peralatan = assetAccounts
+    .filter(acc => {
+      const nameLower = acc.name.toLowerCase();
+      return (nameLower.includes('peralatan') ||
+              nameLower.includes('alat') ||
+              nameLower.includes('mesin') ||
+              nameLower.includes('equipment')) &&
+             !nameLower.includes('akumulasi') &&
+             !nameLower.includes('kendaraan') &&
+             !acc.isHeader;
+    })
+    .filter(acc => (acc.balance || 0) !== 0)
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: acc.balance || 0,
+      formattedBalance: formatCurrency(acc.balance || 0)
+    }));
+
+  // ASET TETAP LAINNYA - bangunan, tanah, komputer, furniture, dll
+  const asetTetapLainnya = assetAccounts
+    .filter(acc => {
+      const nameLower = acc.name.toLowerCase();
+      // Exclude yang sudah masuk kendaraan atau peralatan
+      if (nameLower.includes('kendaraan') || nameLower.includes('vehicle')) return false;
+      if (nameLower.includes('peralatan') || nameLower.includes('mesin') || nameLower.includes('equipment')) return false;
+      if (nameLower.includes('akumulasi') || acc.isHeader) return false;
+      // Include aset tetap lainnya
+      return isFixedAssetAccount(acc);
+    })
+    .filter(acc => (acc.balance || 0) !== 0)
+    .map(acc => ({
+      accountId: acc.id,
+      accountCode: acc.code,
+      accountName: acc.name,
+      balance: acc.balance || 0,
       formattedBalance: formatCurrency(acc.balance || 0)
     }));
 
@@ -756,8 +835,10 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
       formattedBalance: formatCurrency(acc.balance || 0)
     }));
 
-  const totalFixedAssets = 
-    peralatan.reduce((sum, item) => sum + item.balance, 0) -
+  const totalFixedAssets =
+    kendaraan.reduce((sum, item) => sum + item.balance, 0) +
+    peralatan.reduce((sum, item) => sum + item.balance, 0) +
+    asetTetapLainnya.reduce((sum, item) => sum + item.balance, 0) -
     Math.abs(akumulasiPenyusutan.reduce((sum, item) => sum + Math.abs(item.balance), 0));
 
   const totalAssets = totalCurrentAssets + totalFixedAssets;
@@ -970,7 +1051,9 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
         totalCurrentAssets
       },
       fixedAssets: {
+        kendaraan,
         peralatan,
+        asetTetapLainnya,
         akumulasiPenyusutan,
         totalFixedAssets
       },
@@ -1832,17 +1915,44 @@ export async function generateCashFlowStatement(
   // SALDO KAS AWAL PERIODE - DIHITUNG DARI JOURNAL ENTRIES SEBELUM PERIODE
   // ============================================================================
   // Saldo awal = initial_balance + Sum(Debit - Credit) dari journal SEBELUM fromDate
+  // PENTING: Jika akun sudah punya jurnal opening, abaikan initial_balance
   // ============================================================================
 
   // Get cash account IDs for beginning balance calculation
   const cashAccountIdsForBeginning = cashAccounts.map(acc => acc.id);
 
+  // Check which cash accounts have opening balance journals
+  const { data: cashOpeningJournals } = await supabase
+    .from('journal_entry_lines')
+    .select(`
+      account_id,
+      journal_entries!inner (
+        branch_id,
+        reference_type,
+        is_voided
+      )
+    `)
+    .eq('journal_entries.branch_id', branchId)
+    .eq('journal_entries.reference_type', 'opening')
+    .eq('journal_entries.is_voided', false)
+    .in('account_id', cashAccountIdsForBeginning);
+
+  const cashAccountsWithOpeningJournal = new Set<string>();
+  (cashOpeningJournals || []).forEach((line: any) => {
+    if (line.account_id) {
+      cashAccountsWithOpeningJournal.add(line.account_id);
+    }
+  });
+
   // Calculate beginning cash from initial_balance + journal entries BEFORE periodFrom
   let beginningCash = 0;
 
-  // Start with initial_balance from cash accounts
+  // Start with initial_balance from cash accounts (only if no opening journal)
   cashAccounts.forEach(acc => {
-    beginningCash += acc.initialBalance || 0;
+    // Jika akun sudah punya jurnal opening, jangan tambahkan initial_balance
+    if (!cashAccountsWithOpeningJournal.has(acc.id)) {
+      beginningCash += acc.initialBalance || 0;
+    }
   });
 
   // Fetch journal entries BEFORE periodFrom for cash/bank accounts

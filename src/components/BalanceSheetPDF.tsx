@@ -112,7 +112,9 @@ export const generateBalanceSheetPDF = (
   // Aset Tetap
   const fixedAssetsData: any[] = [
     ['Aset Tetap', '', { isHeader: true }],
+    ...data.assets.fixedAssets.kendaraan.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.assets.fixedAssets.peralatan.map(item => [`  ${item.accountName}`, item.formattedBalance]),
+    ...data.assets.fixedAssets.asetTetapLainnya.map(item => [`  ${item.accountName}`, item.formattedBalance]),
     ...data.assets.fixedAssets.akumulasiPenyusutan.map(item => [`  (${item.accountName})`, `(${item.formattedBalance})`]),
     ['Total Aset Tetap', formatCurrency(data.assets.fixedAssets.totalFixedAssets), { isBold: true }],
   ];

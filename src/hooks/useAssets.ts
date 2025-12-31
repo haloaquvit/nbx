@@ -200,28 +200,99 @@ export function useCreateAsset() {
       // Auto-assign account based on category if not provided
       let accountId = formData.accountId;
 
-      if (!accountId) {
-        // Map asset category to account code
-        const categoryToAccountCode: Record<string, string> = {
-          'equipment': '1410',    // Peralatan Produksi
-          'vehicle': '1420',      // Kendaraan
-          'building': '1440',     // Bangunan
-          'furniture': '1430',    // Tanah (temporary, should be Furniture)
-          'computer': '1410',     // Use Peralatan Produksi for now
-          'other': '1400',        // Aset Tetap (header)
+      if (!accountId && currentBranch?.id) {
+        // ============================================================================
+        // MAPPING KATEGORI ASET KE AKUN COA
+        // Prioritas pencarian: 1) By Name (lebih fleksibel), 2) By Code (fallback)
+        // ============================================================================
+        const categoryToAccount: Record<string, { names: string[]; code: string }> = {
+          'vehicle': {
+            names: ['kendaraan', 'vehicle'],
+            code: '1410'
+          },
+          'equipment': {
+            names: ['peralatan', 'mesin', 'equipment'],
+            code: '1420'
+          },
+          'building': {
+            names: ['bangunan', 'gedung', 'building'],
+            code: '1440'
+          },
+          'furniture': {
+            names: ['furniture', 'inventaris', 'mebel'],
+            code: '1450'
+          },
+          'computer': {
+            names: ['komputer', 'computer', 'laptop', 'perangkat ti'],
+            code: '1460'
+          },
+          'other': {
+            names: ['aset tetap lain', 'aset lain'],
+            code: '1490'
+          },
         };
 
-        const accountCode = categoryToAccountCode[formData.category] || '1400';
+        const mapping = categoryToAccount[formData.category] || categoryToAccount['other'];
 
-        // Find account by code
-        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-        const { data: accountDataRaw } = await supabase
-          .from('accounts')
-          .select('id')
-          .eq('code', accountCode)
-          .eq('is_active', true)
-          .order('id').limit(1);
-        const accountData = Array.isArray(accountDataRaw) ? accountDataRaw[0] : accountDataRaw;
+        // 1. Cari akun berdasarkan NAMA terlebih dahulu (lebih fleksibel)
+        let accountData: { id: string } | null = null;
+
+        for (const searchName of mapping.names) {
+          const { data: byNameRaw } = await supabase
+            .from('accounts')
+            .select('id, name, code')
+            .eq('branch_id', currentBranch.id)
+            .eq('is_active', true)
+            .eq('is_header', false)
+            .ilike('name', `%${searchName}%`)
+            .order('code')
+            .limit(1);
+
+          const byName = Array.isArray(byNameRaw) ? byNameRaw[0] : byNameRaw;
+          if (byName) {
+            accountData = byName;
+            console.log(`[useAssets] Found account by name "${searchName}":`, byName.code, byName.name);
+            break;
+          }
+        }
+
+        // 2. Fallback: cari berdasarkan KODE jika nama tidak ditemukan
+        if (!accountData) {
+          const { data: byCodeRaw } = await supabase
+            .from('accounts')
+            .select('id, name, code')
+            .eq('branch_id', currentBranch.id)
+            .eq('code', mapping.code)
+            .eq('is_active', true)
+            .order('id')
+            .limit(1);
+
+          const byCode = Array.isArray(byCodeRaw) ? byCodeRaw[0] : byCodeRaw;
+          if (byCode) {
+            accountData = byCode;
+            console.log(`[useAssets] Found account by code "${mapping.code}":`, byCode.name);
+          }
+        }
+
+        // 3. Last fallback: cari akun Aset Tetap manapun yang bukan header
+        if (!accountData) {
+          const { data: anyAssetRaw } = await supabase
+            .from('accounts')
+            .select('id, name, code')
+            .eq('branch_id', currentBranch.id)
+            .eq('type', 'Aset')
+            .eq('is_active', true)
+            .eq('is_header', false)
+            .ilike('code', '14%')
+            .order('code')
+            .limit(1);
+
+          const anyAsset = Array.isArray(anyAssetRaw) ? anyAssetRaw[0] : anyAssetRaw;
+          if (anyAsset) {
+            accountData = anyAsset;
+            console.log(`[useAssets] Fallback to any fixed asset account:`, anyAsset.code, anyAsset.name);
+          }
+        }
 
         if (accountData) {
           accountId = accountData.id;
