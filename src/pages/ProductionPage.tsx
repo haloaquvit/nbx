@@ -120,7 +120,7 @@ export default function ProductionPage() {
       toast({
         variant: "destructive",
         title: "Validation Error",
-        description: "Lengkapi data bahan rusak"
+        description: "Lengkapi data item keluar"
       })
       return
     }
@@ -277,19 +277,19 @@ export default function ProductionPage() {
         )}
       </section>
 
-      {/* Error Input Section */}
+      {/* Item Keluar Section */}
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4 mb-6">
         <div className="flex items-center gap-2 mb-4">
           <AlertTriangle className="h-5 w-5 text-red-500" />
-          <div className="text-lg font-semibold text-red-600 dark:text-red-400">Input Bahan Rusak</div>
+          <div className="text-lg font-semibold text-red-600 dark:text-red-400">Item Keluar</div>
         </div>
         <div className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-          Input bahan yang rusak/cacat dalam produksi. Stock akan berkurang dan tercatat di riwayat produksi.
+          Input item yang keluar (rusak/cacat/hilang). Stock akan berkurang dan tercatat di riwayat produksi.
         </div>
 
         <div className="grid md:grid-cols-3 gap-3">
           <div>
-            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Nama Bahan *</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Nama Item *</div>
             <Select value={selectedMaterialId} onValueChange={setSelectedMaterialId}>
               <SelectTrigger>
                 <SelectValue placeholder="Pilih bahan..." />
@@ -308,7 +308,7 @@ export default function ProductionPage() {
             </Select>
           </div>
           <div>
-            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Jumlah Bahan Rusak *</div>
+            <div className="text-xs text-slate-600 dark:text-slate-400 mb-1">Jumlah Item Keluar *</div>
             <Input
               type="number"
               inputMode="numeric"
@@ -337,7 +337,7 @@ export default function ProductionPage() {
             onClick={handleError}
             disabled={isLoading || !selectedMaterialId || errorQuantity <= 0}
           >
-            {isLoading ? "Processing..." : "Catat Bahan Rusak"}
+            {isLoading ? "Processing..." : "Catat Item Keluar"}
           </Button>
         </div>
       </section>

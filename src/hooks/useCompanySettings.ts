@@ -20,6 +20,10 @@ export interface CompanyInfo {
   salesPhone?: string; // Nomor HP Sales
   // Thermal printer settings
   thermalPrinterWidth?: '58mm' | '80mm'; // Ukuran kertas thermal (58mm atau 80mm)
+  // Telegram Bot settings
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  telegramEnabled?: boolean;
 }
 
 export const useCompanySettings = () => {
@@ -53,6 +57,9 @@ export const useCompanySettings = () => {
         bankAccountName3: settingsObj.company_bank_account_name_3 || '',
         salesPhone: settingsObj.company_sales_phone || '',
         thermalPrinterWidth: (settingsObj.thermal_printer_width as '58mm' | '80mm') || '58mm',
+        telegramBotToken: settingsObj.telegram_bot_token || '',
+        telegramChatId: settingsObj.telegram_chat_id || '',
+        telegramEnabled: settingsObj.telegram_enabled === 'true',
       };
     },
     staleTime: 60 * 60 * 1000, // 1 hour (settings rarely change)
@@ -80,6 +87,9 @@ export const useCompanySettings = () => {
         { key: 'company_bank_account_name_3', value: newInfo.bankAccountName3 || '' },
         { key: 'company_sales_phone', value: newInfo.salesPhone || '' },
         { key: 'thermal_printer_width', value: newInfo.thermalPrinterWidth || '58mm' },
+        { key: 'telegram_bot_token', value: newInfo.telegramBotToken || '' },
+        { key: 'telegram_chat_id', value: newInfo.telegramChatId || '' },
+        { key: 'telegram_enabled', value: newInfo.telegramEnabled ? 'true' : 'false' },
       ];
       const { error } = await supabase.from('company_settings').upsert(settingsData);
       if (error) throw new Error(error.message);

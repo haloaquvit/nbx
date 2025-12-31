@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { Upload, Image as ImageIcon, MapPin, Printer } from 'lucide-react'
+import { Upload, Image as ImageIcon, MapPin, Printer, Send } from 'lucide-react'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
+import { TelegramSettings } from '@/components/TelegramSettings'
 import { compressImage } from '@/utils/imageCompression'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/hooks/useAuth'
@@ -138,9 +139,10 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="company" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="branches">Branches</TabsTrigger>
+          <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
         </TabsList>
         
@@ -310,6 +312,10 @@ export default function SettingsPage() {
 
         <TabsContent value="branches" className="space-y-6">
           <BranchManagementPage />
+        </TabsContent>
+
+        <TabsContent value="telegram" className="space-y-6">
+          <TelegramSettings />
         </TabsContent>
 
         <TabsContent value="integrations" className="space-y-6">

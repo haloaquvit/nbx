@@ -45,8 +45,9 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
-import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
+import { usePermissions, PERMISSIONS, Permission } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
+import { useGranularPermission } from "@/hooks/useGranularPermission";
 
 // Section color configuration for modern gradient look
 const sectionColors: Record<string, { bg: string; text: string; activeBg: string }> = {
@@ -69,7 +70,7 @@ const sectionColors: Record<string, { bg: string; text: string; activeBg: string
  * simply modify the data structure below – the rendering logic will adapt
  * automatically.
  */
-const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?: string) => [
+const getMenuItems = (hasPermission: (permission: Permission) => boolean, hasGranularPermission: (permission: string) => boolean, userRole?: string) => [
   {
     title: "Utama",
     items: [
@@ -77,11 +78,16 @@ const getMenuItems = (hasPermission: (permission: string) => boolean, userRole?:
       { href: "/pos", label: "Kasir (POS)", icon: ShoppingCart, permission: PERMISSIONS.TRANSACTIONS },
       // POS Supir removed from web sidebar - only available in mobile view
       { href: "/transactions", label: "Data Transaksi", icon: List, permission: PERMISSIONS.TRANSACTIONS },
+      { href: "/quotations", label: "Penawaran", icon: FileText, granularPermission: 'quotations_view' },
       { href: "/delivery", label: "Pengantaran", icon: Truck, permission: PERMISSIONS.DELIVERIES },
       { href: "/retasi", label: "Retasi", icon: Package, permission: PERMISSIONS.DELIVERIES },
       { href: "/attendance", label: "Absensi", icon: Fingerprint, permission: PERMISSIONS.ATTENDANCE },
     ].filter(item => {
-      // Check permission
+      // Check granular permission first
+      if ('granularPermission' in item && item.granularPermission) {
+        return hasGranularPermission(item.granularPermission) || hasGranularPermission('quotations_create');
+      }
+      // Check regular permission
       if (item.permission && !hasPermission(item.permission)) return false;
       return true;
     }),
@@ -165,9 +171,10 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   const { settings } = useCompanySettings();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
+  const { hasGranularPermission } = useGranularPermission();
 
   // Get filtered menu items based on user permissions and role
-  const menuItems = getMenuItems(hasPermission, user?.role);
+  const menuItems = getMenuItems(hasPermission, hasGranularPermission, user?.role);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");

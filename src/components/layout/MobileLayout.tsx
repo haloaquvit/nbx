@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, Warehouse, Navigation, Coins, MapPin } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, Warehouse, Navigation, Coins, MapPin, FileText } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
@@ -94,6 +94,7 @@ const MobileLayout = () => {
   const canViewCommission = hasGranularPermission('commission_view') || hasGranularPermission('commission_report')
   const canAccessAttendance = hasGranularPermission('attendance_access') || hasGranularPermission('attendance_view')
   const canAccessCustomerMap = hasGranularPermission('customer_map_access') || hasGranularPermission('customers_view')
+  const canAccessQuotations = hasGranularPermission('quotations_view') || hasGranularPermission('quotations_create')
 
   const menuItems = [
     // POS Kasir - controlled by pos_access permission
@@ -139,6 +140,15 @@ const MobileLayout = () => {
       path: '/customer-map',
       description: 'Cari pelanggan via GPS',
       color: 'bg-rose-500 hover:bg-rose-600',
+      textColor: 'text-white'
+    }] : []),
+    // Quotation/Penawaran - controlled by quotations_view or quotations_create permission
+    ...(canAccessQuotations ? [{
+      title: 'Penawaran',
+      icon: FileText,
+      path: '/quotations',
+      description: 'Kelola penawaran harga',
+      color: 'bg-violet-500 hover:bg-violet-600',
       textColor: 'text-white'
     }] : []),
     // Input Produksi - controlled by production_view or production_create permission
@@ -241,6 +251,8 @@ const MobileLayout = () => {
         return 'Komisi Saya'
       case '/customer-map':
         return 'Pelanggan Terdekat'
+      case '/quotations':
+        return 'Penawaran'
       default:
         return 'ERP System'
     }

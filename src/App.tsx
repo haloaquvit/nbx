@@ -70,6 +70,7 @@ const WarehousePage = lazy(() => import("@/pages/WarehousePage"));
 const MobileRetasiPage = lazy(() => import("@/pages/MobileRetasiPage"));
 const MobileSoldItemsPage = lazy(() => import("@/pages/MobileSoldItemsPage"));
 const MobileCommissionPage = lazy(() => import("@/pages/MobileCommissionPage"));
+const QuotationsPage = lazy(() => import("@/pages/QuotationsPage"));
 
 const SERVERS = [
   {
@@ -271,6 +272,8 @@ function WebApp() {
                   <Route path="/retasi" element={<MobileRetasiPage />} />
                   <Route path="/sold-items" element={<MobileSoldItemsPage />} />
                   <Route path="/my-commission" element={<MobileCommissionPage />} />
+                  <Route path="/quotations" element={<QuotationsPage />} />
+                  <Route path="/quotations/new" element={<QuotationsPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               ) : (
@@ -321,6 +324,8 @@ function WebApp() {
                   <Route path="/material-usage-summary" element={<MaterialUsageSummaryPage />} />
                   <Route path="/web-management" element={<WebManagementPage />} />
                   <Route path="/customer-map" element={<CustomerMapPage />} />
+                  <Route path="/quotations" element={<QuotationsPage />} />
+                  <Route path="/quotations/new" element={<QuotationsPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

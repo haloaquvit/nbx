@@ -9,8 +9,10 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart, Eye, EyeOff } from 'lucide-react'
+import { Phone, Navigation, Store, Home, MapPin, AlertCircle, ShoppingCart, Eye, EyeOff, FileText, UserCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { SalesVisitDialog } from '@/components/SalesVisitDialog'
+import { useAuth } from '@/hooks/useAuth'
 import {
   getVisitedCustomerIdsAsync,
   cleanExpiredVisits,
@@ -48,8 +50,20 @@ export function NearbyCustomerList({
   const { hasGranularPermission } = useGranularPermission()
   const { currentBranch } = useBranch()
 
+  const { user } = useAuth()
+
   // Check permissions
   const canAccessDriverPos = hasGranularPermission('pos_driver_access')
+  const canAccessQuotations = hasGranularPermission('quotations_create')
+
+  // Check if user is sales or owner
+  const isSalesOrOwner = user?.role?.toLowerCase() === 'owner' ||
+    user?.role?.toLowerCase() === 'sales' ||
+    user?.role?.toLowerCase() === 'admin'
+
+  // State for sales visit dialog
+  const [visitDialogOpen, setVisitDialogOpen] = useState(false)
+  const [selectedCustomerForVisit, setSelectedCustomerForVisit] = useState<Customer | null>(null)
 
   // State untuk hide visited customers
   const [hideVisited, setHideVisited] = useState(true)
@@ -121,6 +135,23 @@ export function NearbyCustomerList({
 
   const handleOpenDriverPos = (customer: Customer) => {
     navigate(`/driver-pos?customerId=${customer.id}`)
+  }
+
+  const handleOpenQuotation = (customer: Customer) => {
+    navigate(`/quotations/new?customerId=${customer.id}`)
+  }
+
+  const handleOpenVisitDialog = (customer: Customer) => {
+    setSelectedCustomerForVisit(customer)
+    setVisitDialogOpen(true)
+  }
+
+  const handleVisitRecorded = async () => {
+    // Reload visited customers after recording a visit
+    const dbVisitedIds = await getVisitedCustomerIdsAsync(currentBranch?.id)
+    setVisitedIds(dbVisitedIds)
+    const dbVisitCount = await getTodayVisitCountAsync(currentBranch?.id)
+    setVisitCount(dbVisitCount)
   }
 
   if (!userLocation) {
@@ -276,8 +307,9 @@ export function NearbyCustomerList({
                   </div>
 
                   {/* Bottom row: Actions */}
-                  <div className="flex gap-2 mt-2 justify-between">
-                    <div className="flex gap-1">
+                  <div className="flex flex-col gap-2 mt-2">
+                    {/* Row 1: POS, Quotation, Visit */}
+                    <div className="flex gap-1 flex-wrap">
                       {canAccessDriverPos && (
                         <Button
                           size="sm"
@@ -291,6 +323,35 @@ export function NearbyCustomerList({
                           POS
                         </Button>
                       )}
+                      {canAccessQuotations && (
+                        <Button
+                          size="sm"
+                          className="h-8 px-3 text-xs bg-purple-600 hover:bg-purple-700"
+                          onClick={e => {
+                            e.stopPropagation()
+                            handleOpenQuotation(customer as Customer)
+                          }}
+                        >
+                          <FileText className="h-3 w-3 mr-1" />
+                          Penawaran
+                        </Button>
+                      )}
+                      {isSalesOrOwner && (
+                        <Button
+                          size="sm"
+                          className="h-8 px-3 text-xs bg-cyan-600 hover:bg-cyan-700"
+                          onClick={e => {
+                            e.stopPropagation()
+                            handleOpenVisitDialog(customer as Customer)
+                          }}
+                        >
+                          <UserCheck className="h-3 w-3 mr-1" />
+                          Dikunjungi
+                        </Button>
+                      )}
+                    </div>
+                    {/* Row 2: Call, Navigate */}
+                    <div className="flex gap-1">
                       <Button
                         size="sm"
                         variant="outline"
@@ -321,6 +382,14 @@ export function NearbyCustomerList({
           })}
         </div>
       )}
+
+      {/* Sales Visit Dialog */}
+      <SalesVisitDialog
+        open={visitDialogOpen}
+        onOpenChange={setVisitDialogOpen}
+        customer={selectedCustomerForVisit}
+        onVisitRecorded={handleVisitRecorded}
+      />
     </div>
   )
 }

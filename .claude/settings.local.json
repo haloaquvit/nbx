@@ -230,7 +230,17 @@
       "Bash(\"\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Gabung tombol Sinkron Saldo Awal + fix Neraca tidak balance\n\n## Tombol Sinkron Saldo Awal (Gabungan)\n- Gabung 3 tombol menjadi 1: Persediaan Barang, Bahan Baku, Saldo Awal Akun\n- Dialog preview menampilkan nilai dan status sinkronisasi\n- Sinkronisasi sequential: persediaan dulu, lalu akun lain\n\n## Fix Neraca Tidak Balance\n- Tambah pengecekan duplikasi jurnal saldo awal (cegah klik 2x)\n- Jika jurnal sudah ada, tampilkan error dengan nomor jurnal\n- Fix: Persediaan diambil dari saldo jurnal (COA), bukan products table\n\n## Fix di Nabire\n- Hapus jurnal duplikat JE-20260101-0003403\n- Reset initial_balance Bank BRI ke 0 (sudah dijurnal)\n\n## Lainnya\n- Debug logs untuk due payment notifications\n- Debug logs untuk bonus calculation di Mobile POS\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"SELECT table_name FROM information_schema.tables WHERE table_schema = ''public'' AND table_type = ''BASE TABLE'' ORDER BY table_name;\")",
-      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d nbx_db -c \"SELECT table_name FROM information_schema.tables WHERE table_schema = ''public'' AND table_type = ''BASE TABLE'' ORDER BY table_name;\")"
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d nbx_db -c \"SELECT table_name FROM information_schema.tables WHERE table_schema = ''public'' AND table_type = ''BASE TABLE'' ORDER BY table_name;\")",
+      "Bash(PGPASSWORD=\"Aquvit2024\" psql -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"\\d journal_entries\")",
+      "Bash(cmd /c \"\"C:Program FilesPostgreSQL17binpsql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"d journal_entries\"\")",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"SELECT column_name FROM information_schema.columns WHERE table_name = ''journal_entries'' ORDER BY ordinal_position;\")",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d nbx_db -f \"d:\\App\\Aquvit Fix - Copy\\sql\\add-customer-visits.sql\")",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -f \"d:\\App\\Aquvit Fix - Copy\\sql\\add-customer-visits.sql\")",
+      "Bash(cmd /c \"set PGPASSWORD=Aquvit2024&& \"C:Program FilesPostgreSQL17binpsql.exe\" -h 103.127.139.233 -U aquvit_admin -d nbx_db -f \"d:AppAquvit Fix - Copysqladd-customer-visits.sql\"\")",
+      "Bash(cmd /c \"set PGPASSWORD=Aquvit2024&& \"C:Program FilesPostgreSQL17binpsql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -f \"d:AppAquvit Fix - Copysqladd-customer-visits.sql\"\")",
+      "Bash(dir 'd:\\App\\Aquvit Fix - Copy' /b)",
+      "Bash(cmd /c \"set PGPASSWORD=Aquvit2024&& \"\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\"\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"\"SELECT column_name FROM information_schema.columns WHERE table_name = ''quotations'' ORDER BY ordinal_position;\"\"\")",
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"SELECT column_name FROM information_schema.columns WHERE table_name = ''quotations'' ORDER BY ordinal_position;\")"
     ],
     "deny": [],
     "ask": [],

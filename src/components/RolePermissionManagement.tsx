@@ -55,6 +55,7 @@ const FEATURES = [
       { id: 'transactions_create', name: 'Buat Transaksi', icon: Plus },
       { id: 'transactions_edit', name: 'Edit Transaksi', icon: Edit },
       { id: 'transactions_delete', name: 'Hapus Transaksi', icon: Trash2 },
+      { id: 'material_sales', name: 'Izin Jual Bahan', icon: Plus },
     ]
   },
   {

@@ -124,18 +124,43 @@ export class PricingService {
    */
   static async getProductPricing(productId: string): Promise<ProductPricing | null> {
     try {
-      // Get product details
+      // Get product details - try products table first
       // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
+      let productData: { id: string; name: string; base_price: number; current_stock: number } | null = null;
+
       const { data: productDataRaw, error: productError } = await supabase
         .from('products')
         .select('id, name, base_price, current_stock')
         .eq('id', productId)
         .order('id').limit(1)
-      const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw
 
-      if (productError || !productData) {
-        console.error('Failed to fetch product:', productError)
-        return null
+      productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+
+      // If not found in products, try materials table
+      if (!productData) {
+        const { data: materialDataRaw, error: materialError } = await supabase
+          .from('materials')
+          .select('id, name, price_per_unit, stock')
+          .eq('id', productId)
+          .order('id').limit(1)
+
+        const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
+
+        if (materialData) {
+          productData = {
+            id: materialData.id,
+            name: materialData.name,
+            base_price: materialData.price_per_unit || 0,
+            current_stock: materialData.stock || 0
+          };
+        } else if (materialError) {
+          console.error('Failed to fetch material:', materialError);
+        }
+      }
+
+      if (!productData) {
+        console.error('Failed to fetch product/material:', productError);
+        return null;
       }
 
       // Get ALL stock pricing rules (including inactive for display)

@@ -17,6 +17,7 @@ import { calculatePPN, calculatePPNWithMode, getDefaultPPNPercentage } from '@/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Textarea } from './ui/textarea'
 import { useProducts } from '@/hooks/useProducts'
+import { useMaterials } from '@/hooks/useMaterials'
 import { useUsers } from '@/hooks/useUsers'
 import { useAccounts } from '@/hooks/useAccounts'
 import { useTransactions } from '@/hooks/useTransactions'
@@ -29,6 +30,7 @@ import { AddCustomerDialog } from './AddCustomerDialog'
 import { PrintReceiptDialog } from './PrintReceiptDialog'
 import { DateTimePicker } from './ui/datetime-picker'
 import { useAuth } from '@/hooks/useAuth'
+import { useGranularPermission } from '@/hooks/useGranularPermission'
 import { User } from '@/types/user'
 import { useCustomers } from '@/hooks/useCustomers'
 import { useRetasi } from '@/hooks/useRetasi'
@@ -56,8 +58,13 @@ export const PosForm = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { user: currentUser } = useAuth()
+  const { hasGranularPermission } = useGranularPermission()
   const queryClient = useQueryClient()
   const { products, isLoading: isLoadingProducts } = useProducts()
+  const { materials } = useMaterials()
+
+  // Check if user can sell materials
+  const canSellMaterials = hasGranularPermission('material_sales')
   const { users } = useUsers();
   const { accounts } = useAccounts();
   const { addTransaction } = useTransactions();
@@ -185,7 +192,8 @@ export const PosForm = () => {
   };
 
   // Function to get cached pricing data for a product
-  const getCachedPricing = async (productId: string, basePrice: number) => {
+  // isMaterial parameter indicates if this is a material (not a product)
+  const getCachedPricing = async (productId: string, basePrice: number, isMaterial: boolean = false) => {
     const CACHE_DURATION = 60000; // 1 minute cache
     const cached = pricingCache.current[productId];
     const now = Date.now();
@@ -199,7 +207,8 @@ export const PosForm = () => {
     let productPricing = await PricingService.getProductPricing(productId);
 
     // If no pricing data exists, create sample pricing rules (for testing)
-    if (!productPricing || (productPricing.bonusPricings.length === 0 && productPricing.stockPricings.length === 0)) {
+    // SKIP for materials - pricing rules only work with products table (foreign key constraint)
+    if (!isMaterial && (!productPricing || (productPricing.bonusPricings.length === 0 && productPricing.stockPricings.length === 0))) {
       console.log('🎯 No pricing rules found, creating sample rules...');
       await createSamplePricingRules(productId, basePrice);
       productPricing = await PricingService.getProductPricing(productId);
@@ -217,9 +226,15 @@ export const PosForm = () => {
   // Function to calculate dynamic pricing for a product (uses cache)
   const calculateDynamicPrice = async (product: Product, quantity: number, skipFetch: boolean = false) => {
     try {
+      // Untuk material, gunakan _materialId (UUID asli) bukan product.id yang ada prefix "material-"
+      const productExt = product as Product & { _isMaterial?: boolean; _materialId?: string };
+      const actualProductId = productExt._isMaterial && productExt._materialId
+        ? productExt._materialId
+        : product.id;
+
       // If skipFetch, use cached data only (for qty changes) - no logging
       if (skipFetch) {
-        const cached = pricingCache.current[product.id];
+        const cached = pricingCache.current[actualProductId];
         if (cached) {
           const priceCalculation = PricingService.calculatePrice(
             product.basePrice || 0,
@@ -234,7 +249,8 @@ export const PosForm = () => {
       }
 
       console.log('🔄 Fetching pricing for product:', product.name);
-      const cachedPricing = await getCachedPricing(product.id, product.basePrice);
+      const isMaterial = productExt._isMaterial || false;
+      const cachedPricing = await getCachedPricing(actualProductId, product.basePrice, isMaterial);
 
       // Calculate price based on QUANTITY purchased, NOT stock level
       const priceCalculation = PricingService.calculatePrice(
@@ -501,11 +517,38 @@ export const PosForm = () => {
     });
   };
 
+  // Convert materials to Product-like objects for POS
+  // Materials akan ditampilkan dengan label "(Bahan)" dan type "Bahan"
+  // Hanya tampil jika user punya permission material_sales
+  const materialsAsProducts = useMemo(() => {
+    if (!materials || !canSellMaterials) return [];
+    return materials.map(material => ({
+      id: `material-${material.id}`,
+      name: `${material.name} (Bahan)`,
+      type: 'Bahan' as any, // Special type for materials
+      basePrice: material.pricePerUnit,
+      costPrice: material.pricePerUnit,
+      unit: material.unit,
+      initialStock: material.stock,
+      currentStock: material.stock,
+      minStock: material.minStock,
+      minOrder: 1,
+      description: material.description,
+      specifications: [],
+      materials: [],
+      createdAt: material.createdAt,
+      updatedAt: material.updatedAt,
+      _isMaterial: true, // Flag to identify material items
+      _materialId: material.id, // Original material ID
+    } as Product & { _isMaterial: boolean; _materialId: string }));
+  }, [materials, canSellMaterials]);
+
   const filteredProducts = useMemo(() => {
-    return products?.filter(product => 
+    const allItems = [...(products || []), ...materialsAsProducts];
+    return allItems.filter(product =>
       product.name?.toLowerCase().includes(productSearch.toLowerCase())
     ) || [];
-  }, [products, productSearch]);
+  }, [products, materialsAsProducts, productSearch]);
 
   const filteredCustomers = useMemo(() => {
     if (!customers) return [];
@@ -516,8 +559,9 @@ export const PosForm = () => {
   }, [customers, customerSearch]);
 
   const addToCart = async (product: Product) => {
-    // Validasi stok untuk produk Produksi
-    if (product.type === 'Produksi' && (product.currentStock || 0) <= 0) {
+    // Validasi stok untuk produk Produksi atau Bahan
+    const needsStockCheck = product.type === 'Produksi' || product.type === 'Bahan';
+    if (needsStockCheck && (product.currentStock || 0) <= 0) {
       toast({
         variant: "destructive",
         title: "Stok Habis",
@@ -530,11 +574,11 @@ export const PosForm = () => {
     if (existing) {
       // Cek apakah qty baru melebihi stok
       const newQty = existing.qty + 1;
-      if (product.type === 'Produksi' && newQty > (product.currentStock || 0)) {
+      if (needsStockCheck && newQty > (product.currentStock || 0)) {
         toast({
           variant: "destructive",
           title: "Stok Tidak Cukup",
-          description: `${product.name} hanya tersedia ${product.currentStock} unit.`,
+          description: `${product.name} hanya tersedia ${product.currentStock} ${product.unit || 'unit'}.`,
         });
         return;
       }
@@ -863,7 +907,7 @@ export const PosForm = () => {
                 </Button>
 
                 {showProductDropdown && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-96 md:max-h-[500px] overflow-y-auto">
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-[70vh] overflow-y-auto">
                     <div className="p-4 border-b dark:border-gray-600 bg-gray-50 dark:bg-gray-700 sticky top-0">
                       <Input
                         ref={productSearchInputRef}
@@ -874,10 +918,10 @@ export const PosForm = () => {
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-80 md:max-h-96 overflow-y-auto">
+                    <div className="max-h-[60vh] overflow-y-auto">
                       {filteredProducts.map((product) => {
-                        // Cek apakah stok habis untuk produk Produksi
-                        const isOutOfStock = product.type === 'Produksi' && (product.currentStock || 0) <= 0;
+                        // Cek apakah stok habis untuk produk Produksi atau Bahan
+                        const isOutOfStock = (product.type === 'Produksi' || product.type === 'Bahan') && (product.currentStock || 0) <= 0;
 
                         return (
                           <div
@@ -897,37 +941,50 @@ export const PosForm = () => {
                                   </span>
                                 </div>
                               </div>
-                              <div className={`shrink-0 font-medium ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
-                                <Plus className="h-5 w-5" />
+                              {/* Stok di sebelah kanan - tampil untuk semua tipe */}
+                              <div className="shrink-0 text-right">
+                                <div className={`text-sm font-medium ${
+                                  isOutOfStock
+                                    ? 'text-red-500'
+                                    : (product.currentStock || 0) <= (product.minStock || 10)
+                                      ? 'text-amber-600'
+                                      : 'text-gray-600 dark:text-gray-300'
+                                }`}>
+                                  <span className="text-xs text-gray-400">Stok:</span>{' '}
+                                  <span className="font-bold">{product.currentStock ?? '-'}</span>{' '}
+                                  <span className="text-xs">{product.unit || 'pcs'}</span>
+                                </div>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 mb-1">
                               <span className={`inline-flex px-2 py-0.5 rounded text-xs ${
                                 product.type === 'Produksi'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-blue-100 text-blue-700'
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
+                                  : product.type === 'Bahan'
+                                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
                               }`}>
                                 {product.type}
                               </span>
-                              {product.type === 'Jual Langsung' && (
-                                <span className="text-xs text-gray-500">(Tidak mengurangi stok)</span>
-                              )}
                               {isOutOfStock && (
                                 <span className="text-xs text-red-600 font-medium">⚠️ Stok Habis</span>
                               )}
                             </div>
-                            <div className={`text-base font-bold mb-1 ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
-                              {new Intl.NumberFormat("id-ID", {
-                                style: "currency",
-                                currency: "IDR",
-                                maximumFractionDigits: 0,
-                              }).format(product.basePrice || 0)}
-                            </div>
-                            {product.type === 'Produksi' && (
-                              <div className={`text-sm ${isOutOfStock ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
-                                Stok: {product.currentStock || 0}
+                            <div className="flex items-center justify-between">
+                              <div className={`text-base font-bold ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
+                                {new Intl.NumberFormat("id-ID", {
+                                  style: "currency",
+                                  currency: "IDR",
+                                  maximumFractionDigits: 0,
+                                }).format(product.basePrice || 0)}
                               </div>
-                            )}
+                              {/* Tombol + di kanan bawah */}
+                              {!isOutOfStock && (
+                                <div className="text-green-600 dark:text-green-400">
+                                  <Plus className="h-5 w-5" />
+                                </div>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -1040,7 +1097,21 @@ export const PosForm = () => {
                             disabled={retasiBlocked}
                           />
                         </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-900 dark:text-white">{item.unit}</td>
+                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-900 dark:text-white">
+                          <div>{item.unit}</div>
+                          {/* Tampilkan stok untuk semua produk */}
+                          {item.product && (
+                            <div className={`text-xs mt-0.5 ${
+                              (item.product.currentStock || 0) <= 0
+                                ? 'text-red-500 font-medium'
+                                : (item.product.currentStock || 0) <= (item.product.minStock || 10)
+                                  ? 'text-amber-600'
+                                  : 'text-gray-500'
+                            }`}>
+                              Stok: {item.product.currentStock ?? '-'}
+                            </div>
+                          )}
+                        </td>
                         <td className="px-2 md:px-4 py-2 md:py-3 text-right">
                           {item.isBonus ? (
                             <div className="text-center text-xs text-green-600 font-medium">GRATIS</div>
