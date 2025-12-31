@@ -189,3 +189,65 @@ export function safeFormatTimeOnly(
     minute: '2-digit',
   });
 }
+
+/**
+ * Konversi tanggal string (YYYY-MM-DD) ke Date dengan start of day di timezone kantor
+ * Menghasilkan Date yang benar untuk query database dengan filter >=
+ *
+ * Contoh: dateString='2025-12-31', timezone='Asia/Jakarta' (UTC+7)
+ * Hasil: Date yang merepresentasikan 2025-12-31 00:00:00 WIB = 2025-12-30T17:00:00.000Z
+ */
+export function toOfficeStartOfDay(dateString: string, timezone: string = 'Asia/Jakarta'): Date {
+  // Dapatkan offset UTC untuk timezone dalam jam
+  const offsetHours = getTimezoneOffsetHours(timezone);
+
+  // Parse tanggal dari string format YYYY-MM-DD
+  const [year, month, day] = dateString.split('-').map(Number);
+
+  // Buat date di UTC dengan kompensasi offset
+  // Jika timezone UTC+7, untuk mendapatkan 00:00 WIB kita perlu 00:00 - 7 jam = -7 jam = kemarin 17:00 UTC
+  const utcDate = new Date(Date.UTC(year, month - 1, day, -offsetHours, 0, 0, 0));
+
+  return utcDate;
+}
+
+/**
+ * Konversi tanggal string (YYYY-MM-DD) ke Date dengan end of day di timezone kantor
+ * Menghasilkan Date yang benar untuk query database dengan filter <=
+ *
+ * Contoh: dateString='2025-12-31', timezone='Asia/Jakarta' (UTC+7)
+ * Hasil: Date yang merepresentasikan 2025-12-31 23:59:59.999 WIB = 2025-12-31T16:59:59.999Z
+ */
+export function toOfficeEndOfDay(dateString: string, timezone: string = 'Asia/Jakarta'): Date {
+  // Dapatkan offset UTC untuk timezone dalam jam
+  const offsetHours = getTimezoneOffsetHours(timezone);
+
+  // Parse tanggal dari string format YYYY-MM-DD
+  const [year, month, day] = dateString.split('-').map(Number);
+
+  // Buat date di UTC dengan kompensasi offset
+  // Jika timezone UTC+7, untuk mendapatkan 23:59 WIB kita perlu 23:59 - 7 jam = 16:59 UTC
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 23 - offsetHours, 59, 59, 999));
+
+  return utcDate;
+}
+
+/**
+ * Mendapatkan offset timezone dari UTC dalam jam (integer)
+ * Menggunakan lookup table untuk Indonesia timezones
+ *
+ * @returns offset dalam jam (7 untuk WIB, 8 untuk WITA, 9 untuk WIT)
+ */
+function getTimezoneOffsetHours(timezone: string): number {
+  // Hardcode offset untuk Indonesia timezones - lebih reliable daripada kalkulasi dinamis
+  const offsets: Record<string, number> = {
+    'Asia/Jakarta': 7,    // WIB UTC+7
+    'Asia/Makassar': 8,   // WITA UTC+8
+    'Asia/Jayapura': 9,   // WIT UTC+9
+    // Fallback untuk timezone umum lainnya
+    'UTC': 0,
+    'GMT': 0,
+  };
+
+  return offsets[timezone] ?? 7; // Default ke WIB jika tidak dikenal
+}

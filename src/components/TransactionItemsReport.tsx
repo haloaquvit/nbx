@@ -16,6 +16,8 @@ import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/integrations/supabase/client'
 import { useBranch } from '@/contexts/BranchContext'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { toOfficeStartOfDay, toOfficeEndOfDay } from '@/utils/officeTime'
 
 interface SoldProduct {
   transactionId: string
@@ -52,6 +54,7 @@ export const TransactionItemsReport = () => {
   const [isLoading, setIsLoading] = useState(false)
 
   const { currentBranch } = useBranch()
+  const { timezone } = useTimezone()
 
   const months = [
     { value: 1, label: 'Januari' },
@@ -77,13 +80,25 @@ export const TransactionItemsReport = () => {
       let toDate: Date
 
       if (filterType === 'monthly') {
-        fromDate = startOfMonth(new Date(selectedYear, selectedMonth - 1))
-        toDate = endOfMonth(new Date(selectedYear, selectedMonth - 1))
+        // Untuk filter bulanan, gunakan hari pertama dan terakhir bulan
+        const firstDay = format(startOfMonth(new Date(selectedYear, selectedMonth - 1)), 'yyyy-MM-dd')
+        const lastDay = format(endOfMonth(new Date(selectedYear, selectedMonth - 1)), 'yyyy-MM-dd')
+        fromDate = toOfficeStartOfDay(firstDay, timezone)
+        toDate = toOfficeEndOfDay(lastDay, timezone)
       } else {
-        fromDate = new Date(startDate)
-        toDate = new Date(endDate)
-        toDate.setHours(23, 59, 59, 999)
+        // Gunakan timezone kantor untuk konversi tanggal
+        // Ini memastikan filter bekerja dengan benar terlepas dari timezone browser
+        fromDate = toOfficeStartOfDay(startDate, timezone)
+        toDate = toOfficeEndOfDay(endDate, timezone)
       }
+
+      console.log('[TransactionItemsReport] Date filter with office timezone:', {
+        timezone,
+        startDate,
+        endDate,
+        fromDateISO: fromDate.toISOString(),
+        toDateISO: toDate.toISOString(),
+      })
 
       const items: SoldProduct[] = []
 
