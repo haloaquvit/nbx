@@ -593,7 +593,11 @@ export const useTransactions = (filters?: {
   })
 
   const updateTransaction = useMutation({
-    mutationFn: async (updatedTransaction: Transaction): Promise<Transaction> => {
+    mutationFn: async (params: Transaction | { transaction: Transaction, previousPaidAmount: number }): Promise<Transaction> => {
+      // Support both old format (Transaction) and new format with previousPaidAmount
+      const updatedTransaction = 'transaction' in params ? params.transaction : params;
+      const previousPaidAmount = 'previousPaidAmount' in params ? params.previousPaidAmount : updatedTransaction.paidAmount;
+
       const dbData = toDb(updatedTransaction);
       // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: savedTransactionRaw, error } = await supabase
@@ -608,6 +612,45 @@ export const useTransactions = (filters?: {
       const savedTransaction = Array.isArray(savedTransactionRaw) ? savedTransactionRaw[0] : savedTransactionRaw;
       if (!savedTransaction) throw new Error('Failed to update transaction');
 
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR PAYMENT CHANGES
+      // ============================================================================
+      // Jika ada perubahan pembayaran (paidAmount berbeda dari sebelumnya),
+      // buat jurnal penyesuaian:
+      // - Jika pembayaran bertambah: Dr. Kas, Cr. Piutang
+      // - Jika pembayaran berkurang: Dr. Piutang, Cr. Kas (refund/koreksi)
+      // ============================================================================
+      const paymentDifference = updatedTransaction.paidAmount - previousPaidAmount;
+
+      if (paymentDifference !== 0 && currentBranch?.id) {
+        try {
+          if (paymentDifference > 0) {
+            // Pembayaran bertambah - buat jurnal pembayaran piutang
+            const journalResult = await createReceivablePaymentJournal({
+              receivableId: updatedTransaction.id,
+              paymentDate: new Date(),
+              amount: paymentDifference,
+              customerName: updatedTransaction.customerName,
+              invoiceNumber: updatedTransaction.id,
+              branchId: currentBranch.id,
+            });
+
+            if (journalResult.success) {
+              console.log('✅ Jurnal penyesuaian pembayaran auto-generated:', journalResult.journalId);
+            } else {
+              console.warn('⚠️ Gagal membuat jurnal penyesuaian pembayaran:', journalResult.error);
+            }
+          } else {
+            // Pembayaran berkurang - ini adalah koreksi/refund (Dr. Piutang, Cr. Kas)
+            // Untuk saat ini, kita log saja - jurnal koreksi perlu penanganan khusus
+            console.log('⚠️ Pembayaran dikurangi sebesar:', Math.abs(paymentDifference));
+            console.log('ℹ️ Jurnal koreksi pembayaran perlu dibuat manual untuk saat ini');
+          }
+        } catch (journalError) {
+          console.error('Error creating payment adjustment journal:', journalError);
+        }
+      }
+
       return fromDb(savedTransaction);
     },
     onSuccess: () => {
@@ -617,6 +660,7 @@ export const useTransactions = (filters?: {
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stockMovements'] })
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] })
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
     }
   })
 

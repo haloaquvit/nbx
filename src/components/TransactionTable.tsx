@@ -68,6 +68,7 @@ export function TransactionTable() {
 
   // Filter states
   const [showFilters, setShowFilters] = React.useState(false);
+  const [customerSearch, setCustomerSearch] = React.useState<string>(''); // Search box untuk pelanggan
   const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [ppnFilter, setPpnFilter] = React.useState<'all' | 'ppn' | 'non-ppn'>('all');
   const [deliveryFilter, setDeliveryFilter] = React.useState<'all' | 'pending-delivery'>('all');
@@ -178,6 +179,15 @@ export function TransactionTable() {
       });
     }
 
+    // Filter by search (customer name or order ID)
+    if (customerSearch.trim()) {
+      const searchLower = customerSearch.toLowerCase().trim();
+      filtered = filtered.filter(transaction => {
+        return transaction.customerName?.toLowerCase().includes(searchLower) ||
+               transaction.id?.toLowerCase().includes(searchLower);
+      });
+    }
+
     // Sort: ascending (oldest first) for mobile, descending (newest first) for desktop
     filtered.sort((a, b) => {
       const dateA = new Date(a.orderDate || 0).getTime();
@@ -186,9 +196,10 @@ export function TransactionTable() {
     });
 
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, cashierFilter, isMobile]);
+  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, cashierFilter, customerSearch, isMobile]);
 
   const clearFilters = () => {
+    setCustomerSearch('');
     setDateRange({ from: undefined, to: undefined });
     setPpnFilter('all');
     setDeliveryFilter('all');
@@ -642,12 +653,35 @@ export function TransactionTable() {
 
   return (
     <div className="w-full max-w-none">
+      {/* Customer Search Box - Always visible */}
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Cari nama pelanggan atau nomor order..."
+            value={customerSearch}
+            onChange={(e) => setCustomerSearch(e.target.value)}
+            className="pl-10 pr-10"
+          />
+          {customerSearch && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+              onClick={() => setCustomerSearch('')}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Filter Toggle Button */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowFilters(!showFilters)}
             className="gap-2"
           >
@@ -655,7 +689,7 @@ export function TransactionTable() {
             Filter Transaksi
             {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
-          {(dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all' || cashierFilter !== 'all') && (
+          {(customerSearch.trim() || dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all' || cashierFilter !== 'all') && (
             <Badge variant="secondary" className="ml-2">
               Filter aktif
             </Badge>

@@ -154,12 +154,10 @@ export function useCreateNotification() {
 
   return useMutation({
     mutationFn: async (notification: Partial<Notification>) => {
-      const id = `NOTIF-MANUAL-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-      const { error } = await supabase
+      // Let database auto-generate UUID for id
+      const { data, error } = await supabase
         .from('notifications')
         .insert({
-          id,
           title: notification.title,
           message: notification.message,
           type: notification.type || 'other',
@@ -168,10 +166,12 @@ export function useCreateNotification() {
           reference_url: notification.referenceUrl,
           priority: notification.priority || 'normal',
           user_id: notification.userId,
-        });
+        })
+        .select('id')
+        .single();
 
       if (error) throw error;
-      return id;
+      return data?.id;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });

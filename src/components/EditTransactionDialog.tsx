@@ -46,6 +46,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
   const [items, setItems] = useState<FormTransactionItem[]>([])
   const [diskon, setDiskon] = useState(0)
   const [paidAmount, setPaidAmount] = useState(0)
+  const [previousPaidAmount, setPreviousPaidAmount] = useState(0) // Jumlah dibayar sebelumnya
   const [ppnEnabled, setPpnEnabled] = useState(false)
   const [ppnMode, setPpnMode] = useState<'include' | 'exclude'>('include')
   const [ppnPercentage, setPpnPercentage] = useState(getDefaultPPNPercentage())
@@ -60,6 +61,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
       setDueDate(transaction.dueDate ? transaction.dueDate.toISOString().split('T')[0] : '')
       setPaymentAccountId(transaction.paymentAccountId || '')
       setPaidAmount(transaction.paidAmount)
+      setPreviousPaidAmount(transaction.paidAmount) // Simpan jumlah dibayar sebelumnya
       setPpnEnabled(transaction.ppnEnabled)
       setPpnMode(transaction.ppnMode || 'include')
       setPpnPercentage(transaction.ppnPercentage)
@@ -167,7 +169,8 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
       isOfficeSale: isOfficeSale,
     }
 
-    updateTransaction.mutate(updatedTransaction, {
+    // Kirim dengan previousPaidAmount untuk auto-generate jurnal penyesuaian pembayaran
+    updateTransaction.mutate({ transaction: updatedTransaction, previousPaidAmount }, {
       onSuccess: () => {
         toast({ title: "Sukses", description: "Transaksi berhasil diperbarui." })
         onOpenChange(false)
@@ -416,32 +419,136 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Metode Pembayaran</Label>
-              <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih pembayaran..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts?.filter(a => a.isPaymentAccount).map(acc => (
-                    <SelectItem key={acc.id} value={acc.id}>
-                      {acc.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Payment Section */}
+          <div className="border border-green-200 bg-green-50 p-4 rounded-lg space-y-4">
+            <Label className="text-sm font-medium text-gray-900 block">Status Pembayaran</Label>
+
+            {/* Previous Payment Info */}
+            <div className="bg-white border border-gray-200 rounded-lg p-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Total Tagihan:</span>
+                <span className="font-bold text-lg">
+                  {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalTagihan)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center mt-1">
+                <span className="text-sm text-gray-600">Dibayar Sebelumnya:</span>
+                <span className="font-medium text-blue-600">
+                  {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(previousPaidAmount)}
+                </span>
+              </div>
+              {previousPaidAmount !== paidAmount && (
+                <div className="flex justify-between items-center mt-1 pt-2 border-t">
+                  <span className="text-sm text-gray-600">Perubahan:</span>
+                  <span className={`font-medium ${paidAmount > previousPaidAmount ? 'text-green-600' : 'text-red-600'}`}>
+                    {paidAmount > previousPaidAmount ? '+' : ''}{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(paidAmount - previousPaidAmount)}
+                  </span>
+                </div>
+              )}
             </div>
+
+            {/* Quick Select Buttons */}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={paidAmount === totalTagihan ? "default" : "outline"}
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  setPaidAmount(totalTagihan)
+                  // Auto-select first payment account if not selected
+                  if (!paymentAccountId) {
+                    const firstAccount = accounts?.find(a => a.isPaymentAccount)
+                    if (firstAccount) setPaymentAccountId(firstAccount.id)
+                  }
+                }}
+              >
+                Lunas
+              </Button>
+              <Button
+                type="button"
+                variant={paidAmount === 0 ? "default" : "outline"}
+                size="sm"
+                className="flex-1"
+                onClick={() => {
+                  setPaidAmount(0)
+                  setPaymentAccountId('')
+                }}
+              >
+                Kredit (Belum Bayar)
+              </Button>
+            </div>
+
+            {/* Payment Amount Input */}
             <div>
-              <Label>Jumlah Dibayar</Label>
+              <Label className="text-sm">Jumlah Dibayar Baru</Label>
               <Input
                 type="number"
                 value={paidAmount}
-                onChange={(e) => setPaidAmount(Number(e.target.value) || 0)}
+                onChange={(e) => {
+                  const val = Number(e.target.value) || 0
+                  setPaidAmount(Math.min(val, totalTagihan))
+                  // Auto-select payment account if paying
+                  if (val > 0 && !paymentAccountId) {
+                    const firstAccount = accounts?.find(a => a.isPaymentAccount)
+                    if (firstAccount) setPaymentAccountId(firstAccount.id)
+                  }
+                  if (val === 0) setPaymentAccountId('')
+                }}
+                className="mt-1"
               />
             </div>
+
+            {/* Payment Account - Only show if paidAmount > 0 */}
+            {paidAmount > 0 && (
+              <div>
+                <Label className="text-sm">Metode Pembayaran</Label>
+                <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Pilih pembayaran..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts?.filter(a => a.isPaymentAccount).map(acc => (
+                      <SelectItem key={acc.id} value={acc.id}>
+                        {acc.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Remaining Balance */}
+            {sisaTagihan > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-orange-700">Sisa Tagihan:</span>
+                  <span className="font-bold text-orange-600">
+                    {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(sisaTagihan)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Payment Status Indicator */}
+            {paidAmount >= totalTagihan && totalTagihan > 0 && (
+              <div className="text-center py-2 bg-green-100 rounded-lg text-green-700 font-medium text-sm">
+                ✓ Pembayaran Lunas
+              </div>
+            )}
+            {paidAmount === 0 && totalTagihan > 0 && (
+              <div className="text-center py-2 bg-orange-100 rounded-lg text-orange-700 font-medium text-sm">
+                📝 Transaksi Kredit (Belum Bayar)
+              </div>
+            )}
+            {paidAmount > 0 && paidAmount < totalTagihan && (
+              <div className="text-center py-2 bg-yellow-100 rounded-lg text-yellow-700 font-medium text-sm">
+                ⏳ Pembayaran Sebagian
+              </div>
+            )}
           </div>
 
+          {/* Due Date - Only show if there's remaining balance */}
           {sisaTagihan > 0 && (
             <div>
               <Label>Tanggal Jatuh Tempo</Label>
@@ -449,6 +556,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
+                className="mt-1"
               />
             </div>
           )}

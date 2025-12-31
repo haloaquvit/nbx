@@ -163,13 +163,10 @@ export const LowStockNotificationService = {
           })
           .eq('id', existingNotif[0].id);
       } else {
-        // Create new notification
-        const id = `NOTIF-LOWSTOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
+        // Create new notification - let database auto-generate UUID
         await supabase
           .from('notifications')
           .insert({
-            id,
             title: `Peringatan Stok Rendah (${items.length} item)`,
             message,
             type: 'low_stock',
