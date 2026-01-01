@@ -289,6 +289,20 @@ export const useJournalEntries = () => {
         throw new Error('Journal entry ID is required for voiding');
       }
 
+      // 1. Get journal entry lines to know which accounts to recalculate
+      const { data: journalLines } = await supabase
+        .from('journal_entry_lines')
+        .select('account_id')
+        .eq('journal_entry_id', id);
+
+      const affectedAccountIds = new Set<string>();
+      for (const line of journalLines || []) {
+        if (line.account_id) {
+          affectedAccountIds.add(line.account_id);
+        }
+      }
+
+      // 2. Void the journal entry
       // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('journal_entries')
@@ -300,12 +314,68 @@ export const useJournalEntries = () => {
           void_reason: reason
         })
         .eq('id', id)
-        .select()
+        .select('*, branch_id')
         .order('id').limit(1);
 
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       if (!data) throw new Error('Failed to void journal entry');
+
+      // 3. Recalculate balance for all affected accounts
+      const branchId = data.branch_id;
+      if (affectedAccountIds.size > 0 && branchId) {
+        console.log('Recalculating balance for accounts after void:', Array.from(affectedAccountIds));
+
+        for (const accountId of affectedAccountIds) {
+          // Get account type first
+          const { data: accountData } = await supabase
+            .from('accounts')
+            .select('id, type, initial_balance')
+            .eq('id', accountId)
+            .single();
+
+          if (accountData) {
+            // Calculate balance from non-voided journal entries
+            const { data: accJournalLines } = await supabase
+              .from('journal_entry_lines')
+              .select(`
+                debit_amount,
+                credit_amount,
+                journal_entries!inner (is_voided, status, branch_id)
+              `)
+              .eq('account_id', accountId);
+
+            let totalDebit = 0;
+            let totalCredit = 0;
+
+            for (const line of accJournalLines || []) {
+              const journal = line.journal_entries as any;
+              if (journal &&
+                  journal.branch_id === branchId &&
+                  journal.status === 'posted' &&
+                  journal.is_voided === false) {
+                totalDebit += Number(line.debit_amount) || 0;
+                totalCredit += Number(line.credit_amount) || 0;
+              }
+            }
+
+            // Calculate balance based on account type
+            const isDebitNormal = ['Aset', 'Beban'].includes(accountData.type);
+            const calculatedBalance = isDebitNormal
+              ? (totalDebit - totalCredit)
+              : (totalCredit - totalDebit);
+
+            // Update account balance
+            await supabase
+              .from('accounts')
+              .update({ balance: calculatedBalance })
+              .eq('id', accountId);
+
+            console.log(`Updated account ${accountId}: ${calculatedBalance}`);
+          }
+        }
+      }
+
       return data;
     },
     onSuccess: () => {
@@ -313,7 +383,7 @@ export const useJournalEntries = () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       toast({
         title: 'Berhasil',
-        description: 'Jurnal berhasil dibatalkan (void)',
+        description: 'Jurnal berhasil dibatalkan (void) dan saldo akun diperbarui',
       });
     },
     onError: (error: Error) => {

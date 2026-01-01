@@ -131,11 +131,17 @@ export default function AccountsPayablePage() {
     try {
       const debtId = deleteDialog.payable.id
       let voidedJournals = 0
+      const affectedAccountIds = new Set<string>()
 
       // 1. Void all related journal entries (pencatatan hutang + pembayaran)
+      // Also get the journal lines to know which accounts to recalculate
       const { data: relatedJournals, error: journalFetchError } = await supabase
         .from('journal_entries')
-        .select('id, entry_number')
+        .select(`
+          id,
+          entry_number,
+          journal_entry_lines (account_id)
+        `)
         .eq('reference_id', debtId)
         .eq('is_voided', false)
 
@@ -144,6 +150,17 @@ export default function AccountsPayablePage() {
       }
 
       if (relatedJournals && relatedJournals.length > 0) {
+        // Collect all affected account IDs
+        for (const journal of relatedJournals) {
+          if (journal.journal_entry_lines) {
+            for (const line of journal.journal_entry_lines as any[]) {
+              if (line.account_id) {
+                affectedAccountIds.add(line.account_id)
+              }
+            }
+          }
+        }
+
         // Void each journal entry
         for (const journal of relatedJournals) {
           const { error: voidError } = await supabase
@@ -161,7 +178,61 @@ export default function AccountsPayablePage() {
         }
       }
 
-      // 2. Delete related debt installments
+      // 2. Recalculate balance for all affected accounts
+      if (affectedAccountIds.size > 0 && currentBranch?.id) {
+        console.log('Recalculating balance for accounts:', Array.from(affectedAccountIds))
+
+        for (const accountId of affectedAccountIds) {
+          // Get account type first
+          const { data: accountData } = await supabase
+            .from('accounts')
+            .select('id, type, initial_balance')
+            .eq('id', accountId)
+            .single()
+
+          if (accountData) {
+            // Calculate balance from non-voided journal entries
+            const { data: journalLines } = await supabase
+              .from('journal_entry_lines')
+              .select(`
+                debit_amount,
+                credit_amount,
+                journal_entries!inner (is_voided, status, branch_id)
+              `)
+              .eq('account_id', accountId)
+
+            let totalDebit = 0
+            let totalCredit = 0
+
+            for (const line of journalLines || []) {
+              const journal = line.journal_entries as any
+              if (journal &&
+                  journal.branch_id === currentBranch.id &&
+                  journal.status === 'posted' &&
+                  journal.is_voided === false) {
+                totalDebit += Number(line.debit_amount) || 0
+                totalCredit += Number(line.credit_amount) || 0
+              }
+            }
+
+            // Calculate balance based on account type
+            const isDebitNormal = ['Aset', 'Beban'].includes(accountData.type)
+            const calculatedBalance = isDebitNormal
+              ? (totalDebit - totalCredit)
+              : (totalCredit - totalDebit)
+
+            // Update account balance
+            await supabase
+              .from('accounts')
+              .update({ balance: calculatedBalance })
+              .eq('id', accountId)
+
+            console.log(`Updated account ${accountId}: ${calculatedBalance}`)
+          }
+        }
+      }
+
+      // 3. Delete related debt installments
       const { error: installmentError } = await supabase
         .from('debt_installments')
         .delete()
@@ -171,7 +242,7 @@ export default function AccountsPayablePage() {
         console.warn('Error deleting installments:', installmentError)
       }
 
-      // 3. Delete the debt record
+      // 4. Delete the debt record
       const { error: deleteError } = await supabase
         .from('accounts_payable')
         .delete()
@@ -182,7 +253,7 @@ export default function AccountsPayablePage() {
       toast({
         title: "Sukses",
         description: voidedJournals > 0
-          ? `Hutang berhasil dihapus. ${voidedJournals} jurnal terkait di-void.`
+          ? `Hutang berhasil dihapus. ${voidedJournals} jurnal terkait di-void dan saldo akun diperbarui.`
           : "Hutang berhasil dihapus"
       })
 
