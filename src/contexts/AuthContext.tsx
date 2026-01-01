@@ -176,7 +176,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         .from('company_settings')
         .select('value')
         .eq('key', 'owner_pin')
-        .order('id')
         .limit(1);
       const setting = Array.isArray(data) ? data[0] : data;
       if (setting?.value) {

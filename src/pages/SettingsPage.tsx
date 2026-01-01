@@ -82,7 +82,6 @@ export default function SettingsPage() {
           .from('company_settings')
           .select('value')
           .eq('key', 'owner_pin')
-          .order('id')
           .limit(1);
         const setting = Array.isArray(data) ? data[0] : data;
         if (setting?.value) {
@@ -117,19 +116,18 @@ export default function SettingsPage() {
       // Check if owner_pin exists
       const { data: existing } = await supabase
         .from('company_settings')
-        .select('id')
+        .select('key')
         .eq('key', 'owner_pin')
-        .order('id')
         .limit(1);
 
       const existingRecord = Array.isArray(existing) ? existing[0] : existing;
 
       if (existingRecord) {
-        // Update existing
+        // Update existing (key is primary key)
         await supabase
           .from('company_settings')
           .update({ value: ownerPin || '' })
-          .eq('id', existingRecord.id);
+          .eq('key', 'owner_pin');
       } else {
         // Insert new
         await supabase
