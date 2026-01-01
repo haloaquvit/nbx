@@ -388,9 +388,86 @@ export function useCreateAsset() {
 // Update asset
 export function useUpdateAsset() {
   const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
 
   return useMutation({
     mutationFn: async ({ id, formData }: { id: string; formData: Partial<AssetFormData> }) => {
+      // ============================================================================
+      // 1. GET CURRENT ASSET DATA TO CHECK IF PRICE CHANGED
+      // ============================================================================
+      const { data: currentAssetRaw } = await supabase
+        .from('assets')
+        .select('purchase_price, account_id, name, branch_id')
+        .eq('id', id)
+        .single();
+
+      const currentAsset = currentAssetRaw;
+      const oldPrice = currentAsset?.purchase_price || 0;
+      const newPrice = formData.purchasePrice;
+      const priceChanged = newPrice !== undefined && newPrice !== oldPrice;
+
+      // ============================================================================
+      // 2. IF PRICE CHANGED, VOID OLD JOURNAL AND CREATE NEW ONE
+      // ============================================================================
+      if (priceChanged && currentBranch?.id) {
+        console.log(`[useUpdateAsset] Price changed from ${oldPrice} to ${newPrice}, updating journal...`);
+
+        // Void old journal entries for this asset
+        const { data: oldJournals } = await supabase
+          .from('journal_entries')
+          .select('id')
+          .eq('reference_id', id)
+          .eq('is_voided', false)
+          .ilike('description', '%Pembelian Aset%');
+
+        if (oldJournals && oldJournals.length > 0) {
+          for (const journal of oldJournals) {
+            const voidResult = await voidJournalEntry(journal.id, 'Harga aset diupdate');
+            if (voidResult.success) {
+              console.log(`✅ Voided old asset journal ${journal.id}`);
+            } else {
+              console.warn(`⚠️ Failed to void journal ${journal.id}:`, voidResult.error);
+            }
+          }
+        }
+
+        // Get account info for new journal
+        const accountId = formData.accountId || currentAsset?.account_id;
+        if (accountId && newPrice > 0) {
+          const { data: accountDataRaw } = await supabase
+            .from('accounts')
+            .select('id, code, name')
+            .eq('id', accountId)
+            .single();
+
+          if (accountDataRaw) {
+            const assetName = formData.assetName || currentAsset?.name || 'Aset';
+            const purchaseDate = formData.purchaseDate || new Date();
+
+            const journalResult = await createAssetPurchaseJournal({
+              assetId: id,
+              purchaseDate: purchaseDate,
+              amount: newPrice,
+              assetAccountId: accountDataRaw.id,
+              assetAccountCode: accountDataRaw.code || '',
+              assetAccountName: accountDataRaw.name,
+              assetName: assetName,
+              paymentMethod: formData.source || 'cash',
+              branchId: currentBranch.id,
+            });
+
+            if (journalResult.success) {
+              console.log('✅ New asset purchase journal created:', journalResult.journalId);
+            } else {
+              console.warn('⚠️ Failed to create new asset journal:', journalResult.error);
+            }
+          }
+        }
+      }
+
+      // ============================================================================
+      // 3. UPDATE ASSET DATA
+      // ============================================================================
       const updateData: any = {};
 
       // Note: asset_name is a GENERATED column from 'name'
@@ -429,6 +506,8 @@ export function useUpdateAsset() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     },
   });
 }
