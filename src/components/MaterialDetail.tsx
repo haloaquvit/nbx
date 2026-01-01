@@ -8,11 +8,13 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { DateRange } from "react-day-picker"
-import { ArrowLeft, Package, TrendingDown, BarChart3, ShoppingCart, FileText } from 'lucide-react'
+import { ArrowLeft, Package, TrendingDown, BarChart3, ShoppingCart, FileText, CreditCard, CheckCircle, Clock } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, startOfDay, endOfDay } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 import { useMaterials } from '@/hooks/useMaterials'
 import { useMaterialMovements } from '@/hooks/useMaterialMovements'
+import { useMaterialPayments } from '@/hooks/useMaterialPayments'
+import { PayMaterialBillDialog } from './PayMaterialBillDialog'
 
 interface MaterialDetailProps {
   materialId: string
@@ -22,11 +24,17 @@ export function MaterialDetail({ materialId }: MaterialDetailProps) {
   const navigate = useNavigate()
   const { materials, isLoading: isMaterialsLoading } = useMaterials()
   const { stockMovements, isLoading: isMovementsLoading } = useMaterialMovements()
-  
+  const { payments, getTotalPaidInRange } = useMaterialPayments(materialId)
+
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: startOfMonth(new Date()),
     to: endOfMonth(new Date()),
   })
+  const [paymentDialog, setPaymentDialog] = useState<{
+    open: boolean
+    amount: number
+    periodLabel?: string
+  }>({ open: false, amount: 0 })
 
   // Find the material
   const material = materials?.find(m => m.id === materialId)
@@ -87,31 +95,44 @@ export function MaterialDetail({ materialId }: MaterialDetailProps) {
       .reduce((acc, movement) => {
         const monthKey = format(new Date(movement.createdAt), 'yyyy-MM')
         const monthName = format(new Date(movement.createdAt), 'MMMM yyyy', { locale: id })
-        
+        const monthStart = startOfMonth(new Date(movement.createdAt))
+        const monthEnd = endOfMonth(new Date(movement.createdAt))
+
         if (!acc[monthKey]) {
           acc[monthKey] = {
             month: monthName,
+            monthKey,
+            monthStart,
+            monthEnd,
             usage: 0,
             transactions: new Set()
           }
         }
-        
+
         acc[monthKey].usage += movement.quantity
         if (movement.referenceId) {
           acc[monthKey].transactions.add(movement.referenceId)
         }
-        
+
         return acc
-      }, {} as Record<string, { month: string; usage: number; transactions: Set<string> }>)
+      }, {} as Record<string, { month: string; monthKey: string; monthStart: Date; monthEnd: Date; usage: number; transactions: Set<string> }>)
 
     return Object.values(months)
-      .map(m => ({
-        ...m,
-        transactionCount: m.transactions.size,
-        estimatedBill: m.usage * (material.pricePerUnit || 0)
-      }))
-      .sort((a, b) => b.month.localeCompare(a.month))
-  }, [materialMovements, material])
+      .map(m => {
+        const estimatedBill = m.usage * (material.pricePerUnit || 0)
+        const paidAmount = getTotalPaidInRange(materialId, m.monthStart, m.monthEnd)
+        const unpaidAmount = Math.max(0, estimatedBill - paidAmount)
+        return {
+          ...m,
+          transactionCount: m.transactions.size,
+          estimatedBill,
+          paidAmount,
+          unpaidAmount,
+          isPaid: unpaidAmount === 0 && estimatedBill > 0
+        }
+      })
+      .sort((a, b) => b.monthKey.localeCompare(a.monthKey))
+  }, [materialMovements, material, getTotalPaidInRange, materialId])
 
   if (isMaterialsLoading || isMovementsLoading) {
     return (
@@ -301,7 +322,11 @@ export function MaterialDetail({ materialId }: MaterialDetailProps) {
                         <TableHead>Bulan</TableHead>
                         <TableHead>Penggunaan</TableHead>
                         <TableHead>Transaksi</TableHead>
-                        <TableHead className="text-right">Estimasi Tagihan</TableHead>
+                        <TableHead className="text-right">Tagihan</TableHead>
+                        <TableHead className="text-right">Dibayar</TableHead>
+                        <TableHead className="text-right">Sisa</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                        <TableHead></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -314,8 +339,46 @@ export function MaterialDetail({ materialId }: MaterialDetailProps) {
                             </Badge>
                           </TableCell>
                           <TableCell>{month.transactionCount}</TableCell>
-                          <TableCell className="text-right font-semibold">
+                          <TableCell className="text-right">
                             {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(month.estimatedBill)}
+                          </TableCell>
+                          <TableCell className="text-right text-green-600">
+                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(month.paidAmount)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-red-600">
+                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(month.unpaidAmount)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {month.isPaid ? (
+                              <Badge className="bg-green-100 text-green-800">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Lunas
+                              </Badge>
+                            ) : month.unpaidAmount > 0 ? (
+                              <Badge className="bg-amber-100 text-amber-800">
+                                <Clock className="h-3 w-3 mr-1" />
+                                Belum Lunas
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">-</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {month.unpaidAmount > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                                onClick={() => setPaymentDialog({
+                                  open: true,
+                                  amount: month.unpaidAmount,
+                                  periodLabel: month.month
+                                })}
+                              >
+                                <CreditCard className="h-4 w-4 mr-1" />
+                                Bayar
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -407,6 +470,16 @@ export function MaterialDetail({ materialId }: MaterialDetailProps) {
         </CardContent>
       </Card>
 
+      {/* Payment Dialog */}
+      {material && (
+        <PayMaterialBillDialog
+          open={paymentDialog.open}
+          onOpenChange={(open) => setPaymentDialog(prev => ({ ...prev, open }))}
+          material={material}
+          unpaidAmount={paymentDialog.amount}
+          periodLabel={paymentDialog.periodLabel}
+        />
+      )}
     </div>
   )
 }

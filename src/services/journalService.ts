@@ -1345,6 +1345,74 @@ export async function createManualCashOutJournal(params: {
 }
 
 /**
+ * Generate journal for Material Consumption Payment (Bahan Jenis "Beli")
+ *
+ * Pembayaran tagihan bahan konsumsi (gas, listrik, air, dll):
+ * Dr. Beban Bahan Baku / Beban Operasional   xxx
+ *   Cr. Kas                                        xxx
+ */
+export async function createMaterialPaymentJournal(params: {
+  referenceId: string;
+  transactionDate: Date;
+  amount: number;
+  materialId: string;
+  materialName: string;
+  description: string;
+  cashAccountId: string;
+  cashAccountCode: string;
+  cashAccountName: string;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { referenceId, transactionDate, amount, materialId, materialName, description, cashAccountId, cashAccountCode, cashAccountName, branchId } = params;
+
+  // Find Beban Bahan Baku account (5100) or fallback to Beban Operasional (6100)
+  let expenseAccount = await getAccountByCode('5100', branchId);
+
+  if (!expenseAccount) {
+    // Try Beban Operasional
+    expenseAccount = await getAccountByCode('6100', branchId);
+  }
+
+  if (!expenseAccount) {
+    // Fallback: find any expense account with "bahan" or "operasional"
+    expenseAccount = await findAccountByPattern('bahan', 'Beban', branchId)
+                  || await findAccountByPattern('operasional', 'Beban', branchId)
+                  || await findAccountByPattern('lain', 'Beban', branchId);
+  }
+
+  if (!expenseAccount) {
+    return { success: false, error: 'Akun Beban Bahan/Operasional tidak ditemukan. Buat akun dengan kode 5100 atau 6100' };
+  }
+
+  return createJournalEntry({
+    entryDate: transactionDate,
+    description: `Pembayaran Bahan Konsumsi: ${materialName} - ${description}`,
+    referenceType: 'expense',
+    referenceId,
+    branchId,
+    autoPost: true,
+    lines: [
+      {
+        accountId: expenseAccount.id,
+        accountCode: expenseAccount.code,
+        accountName: expenseAccount.name,
+        debitAmount: amount,
+        creditAmount: 0,
+        description: `Beban ${materialName}`,
+      },
+      {
+        accountId: cashAccountId,
+        accountCode: cashAccountCode,
+        accountName: cashAccountName,
+        debitAmount: 0,
+        creditAmount: amount,
+        description: `Pembayaran ${materialName}`,
+      },
+    ],
+  });
+}
+
+/**
  * Generate journal for Asset Purchase
  *
  * Pembelian Aset Tetap:

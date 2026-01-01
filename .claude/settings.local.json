@@ -240,7 +240,11 @@
       "Bash(cmd /c \"set PGPASSWORD=Aquvit2024&& \"C:Program FilesPostgreSQL17binpsql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -f \"d:AppAquvit Fix - Copysqladd-customer-visits.sql\"\")",
       "Bash(dir 'd:\\App\\Aquvit Fix - Copy' /b)",
       "Bash(cmd /c \"set PGPASSWORD=Aquvit2024&& \"\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\"\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"\"SELECT column_name FROM information_schema.columns WHERE table_name = ''quotations'' ORDER BY ordinal_position;\"\"\")",
-      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"SELECT column_name FROM information_schema.columns WHERE table_name = ''quotations'' ORDER BY ordinal_position;\")"
+      "Bash(\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"SELECT column_name FROM information_schema.columns WHERE table_name = ''quotations'' ORDER BY ordinal_position;\")",
+      "Bash(cmd /c \"set PGPASSWORD=Aquvit2024 && \"\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\"\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -f sql/add-quotation-columns.sql\")",
+      "Bash(cmd /c \"set PGPASSWORD=Aquvit2024&& \"\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\"\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -c \"\"ALTER TABLE quotations ADD COLUMN IF NOT EXISTS customer_address TEXT; ALTER TABLE quotations ADD COLUMN IF NOT EXISTS customer_phone TEXT;\"\"\")",
+      "Bash(cmd /c \"echo ALTER TABLE quotations ADD COLUMN IF NOT EXISTS customer_address TEXT; | \"\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\"\" -h 103.127.139.233 -U aquvit_admin -d mkw_db 2>&1\")",
+      "Bash(cmd /c \"set PGPASSWORD=Aquvit2024& \"\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\"\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -f sql/add-quotation-columns.sql 2>&1\")"
     ],
     "deny": [],
     "ask": [],
