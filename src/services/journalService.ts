@@ -1107,10 +1107,8 @@ export async function createTransferJournal(params: {
 /**
  * Void a journal entry
  *
- * CATATAN: Balance tidak perlu diupdate di sini karena:
- * - Balance dihitung dari query journal_entry_lines di useAccounts.ts
- * - Query hanya mengambil jurnal dengan status 'posted' dan is_voided = false
- * - Saat jurnal di-void, otomatis tidak dihitung dalam balance
+ * PENTING: Fungsi ini juga akan recalculate saldo akun yang terdampak
+ * untuk memastikan kolom balance di tabel accounts selalu akurat.
  */
 export async function voidJournalEntry(journalId: string, reason: string): Promise<{ success: boolean; error?: string }> {
   try {
@@ -1126,11 +1124,11 @@ export async function voidJournalEntry(journalId: string, reason: string): Promi
       return { success: false, error: 'User tidak terautentikasi' };
     }
 
-    // Get journal entry
+    // Get journal entry with branch_id
     // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
     const { data: journalRaw, error: fetchError } = await supabase
       .from('journal_entries')
-      .select('id, status, is_voided')
+      .select('id, status, is_voided, branch_id')
       .eq('id', journalId)
       .order('id').limit(1);
 
@@ -1147,9 +1145,20 @@ export async function voidJournalEntry(journalId: string, reason: string): Promi
       return { success: false, error: 'Hanya jurnal yang sudah diposting yang bisa dibatalkan' };
     }
 
-    // Update journal as voided
-    // Balance akan otomatis terupdate karena query di useAccounts.ts
-    // hanya mengambil jurnal yang posted dan tidak voided
+    // 1. Get journal entry lines to know which accounts to recalculate
+    const { data: journalLines } = await supabase
+      .from('journal_entry_lines')
+      .select('account_id')
+      .eq('journal_entry_id', journalId);
+
+    const affectedAccountIds = new Set<string>();
+    for (const line of journalLines || []) {
+      if (line.account_id) {
+        affectedAccountIds.add(line.account_id);
+      }
+    }
+
+    // 2. Update journal as voided
     const { error: updateError } = await supabase
       .from('journal_entries')
       .update({
@@ -1163,6 +1172,61 @@ export async function voidJournalEntry(journalId: string, reason: string): Promi
 
     if (updateError) {
       return { success: false, error: updateError.message };
+    }
+
+    // 3. Recalculate balance for all affected accounts
+    const branchId = journal.branch_id;
+    if (affectedAccountIds.size > 0 && branchId) {
+      console.log('[JournalService] Recalculating balance for accounts after void:', Array.from(affectedAccountIds));
+
+      for (const accountId of affectedAccountIds) {
+        // Get account type first
+        const { data: accountData } = await supabase
+          .from('accounts')
+          .select('id, type, initial_balance')
+          .eq('id', accountId)
+          .single();
+
+        if (accountData) {
+          // Calculate balance from non-voided journal entries
+          const { data: accJournalLines } = await supabase
+            .from('journal_entry_lines')
+            .select(`
+              debit_amount,
+              credit_amount,
+              journal_entries!inner (is_voided, status, branch_id)
+            `)
+            .eq('account_id', accountId);
+
+          let totalDebit = 0;
+          let totalCredit = 0;
+
+          for (const line of accJournalLines || []) {
+            const journalEntry = line.journal_entries as any;
+            if (journalEntry &&
+                journalEntry.branch_id === branchId &&
+                journalEntry.status === 'posted' &&
+                journalEntry.is_voided === false) {
+              totalDebit += Number(line.debit_amount) || 0;
+              totalCredit += Number(line.credit_amount) || 0;
+            }
+          }
+
+          // Calculate balance based on account type
+          const isDebitNormal = ['Aset', 'Beban'].includes(accountData.type);
+          const calculatedBalance = isDebitNormal
+            ? (totalDebit - totalCredit)
+            : (totalCredit - totalDebit);
+
+          // Update account balance
+          await supabase
+            .from('accounts')
+            .update({ balance: calculatedBalance })
+            .eq('id', accountId);
+
+          console.log(`[JournalService] Updated account ${accountId}: ${calculatedBalance}`);
+        }
+      }
     }
 
     return { success: true };
