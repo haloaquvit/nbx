@@ -25,11 +25,12 @@ export const STANDARD_COA_TEMPLATE: CoATemplate[] = [
   { code: '1000', name: 'ASET', category: 'ASET', level: 1, normalBalance: 'DEBIT', isHeader: true, sortOrder: 1000 },
 
   // Kas dan Setara Kas (11xx)
-  { code: '1100', name: 'Kas dan Setara Kas', category: 'ASET', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '1000', sortOrder: 1100 },
-  { code: '1120', name: 'Kas Tunai', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1120 },
-  { code: '1130', name: 'Bank BCA', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1130 },
-  { code: '1140', name: 'Bank Mandiri', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1140 },
-  { code: '1150', name: 'Bank Lainnya', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1150 },
+  { code: '1100', name: 'Kas dan Setara Kas', category: 'ASET', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '1000', sortOrder: 1100, isPaymentAccount: false },
+  { code: '1110', name: 'Kas Kecil', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1110, isPaymentAccount: true },
+  { code: '1120', name: 'Kas Operasional', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1120, isPaymentAccount: true },
+  { code: '1130', name: 'Bank BCA', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1130, isPaymentAccount: true },
+  { code: '1140', name: 'Bank Mandiri', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1140, isPaymentAccount: true },
+  { code: '1150', name: 'Bank Lainnya', category: 'ASET', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '1100', sortOrder: 1150, isPaymentAccount: true },
 
   // Piutang (12xx)
   { code: '1200', name: 'Piutang', category: 'ASET', level: 2, normalBalance: 'DEBIT', isHeader: true, parentCode: '1000', sortOrder: 1200 },
@@ -60,6 +61,7 @@ export const STANDARD_COA_TEMPLATE: CoATemplate[] = [
   // Kewajiban Jangka Panjang (22xx)
   { code: '2200', name: 'Kewajiban Jangka Panjang', category: 'KEWAJIBAN', level: 2, normalBalance: 'CREDIT', isHeader: true, parentCode: '2000', sortOrder: 2200 },
   { code: '2210', name: 'Hutang Bank', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2200', sortOrder: 2210 },
+  { code: '2220', name: 'Hutang Bank BNI', category: 'KEWAJIBAN', level: 3, normalBalance: 'CREDIT', isHeader: false, parentCode: '2200', sortOrder: 2220 },
 
   // ========== MODAL (3xxx) ==========
   { code: '3000', name: 'MODAL', category: 'MODAL', level: 1, normalBalance: 'CREDIT', isHeader: true, sortOrder: 3000 },
@@ -81,16 +83,22 @@ export const STANDARD_COA_TEMPLATE: CoATemplate[] = [
   { code: '5100', name: 'Harga Pokok Produk', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5100 },
   { code: '5200', name: 'Biaya Bahan Baku', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5200 },
   { code: '5210', name: 'HPP Bonus', category: 'HPP', level: 3, normalBalance: 'DEBIT', isHeader: false, parentCode: '5200', sortOrder: 5210 },
+  { code: '5300', name: 'Biaya Air', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5300 },
+  { code: '5400', name: 'Biaya Ekspedisi', category: 'HPP', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '5000', sortOrder: 5400 },
 
   // ========== BEBAN OPERASIONAL (6xxx) ==========
   { code: '6000', name: 'BEBAN OPERASIONAL', category: 'BEBAN_OPERASIONAL', level: 1, normalBalance: 'DEBIT', isHeader: true, sortOrder: 6000 },
   { code: '6100', name: 'Beban Gaji dan Upah', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6100 },
-  { code: '6200', name: 'Beban Transportasi', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6200 },
-  { code: '6300', name: 'Beban Listrik dan Air', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6300 },
+  { code: '6200', name: 'Biaya CSR', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6200 },
+  { code: '6210', name: 'Biaya Promosi', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6210 },
+  { code: '6300', name: 'Beban Listrik', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6300 },
   { code: '6400', name: 'Beban Sewa', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6400 },
   { code: '6500', name: 'Beban Penyusutan', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6500 },
   { code: '6600', name: 'Beban Administrasi', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6600 },
-  { code: '6700', name: 'Beban Lain-lain', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6700 },
+  { code: '6700', name: 'BBM dan Pelumas', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6700 },
+  { code: '6800', name: 'Pemeliharaan Kendaraan', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6800 },
+  { code: '6810', name: 'Biaya Pemeliharaan Mesin', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6810 },
+  { code: '6900', name: 'Biaya Telepon & Internet', category: 'BEBAN_OPERASIONAL', level: 2, normalBalance: 'DEBIT', isHeader: false, parentCode: '6000', sortOrder: 6900 },
 ];
 
 /**
