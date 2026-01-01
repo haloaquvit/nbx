@@ -152,9 +152,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (isValid) {
       setPinRequired(false);
       lastActivityRef.current = Date.now(); // Reset activity timer
+
+      // Mark this session as validated (survives page refresh within same tab)
+      const sessionStartKey = 'pin_validated_session';
+      const currentSessionId = session?.access_token?.substring(0, 20) || session?.user?.id;
+      if (currentSessionId) {
+        sessionStorage.setItem(sessionStartKey, currentSessionId);
+      }
     }
     return isValid;
-  }, [ownerPin]);
+  }, [ownerPin, session]);
 
   // Dismiss PIN dialog
   const dismissPinDialog = useCallback(() => {
@@ -259,6 +266,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       fetchOwnerPin();
     }
   }, [session, user, fetchOwnerPin]);
+
+  // Trigger PIN validation on page load/refresh for owner with PIN
+  useEffect(() => {
+    if (!session || !user || user.role !== 'owner' || !ownerPin) return;
+
+    // Check if this is a fresh page load (not just a state update)
+    const sessionStartKey = 'pin_validated_session';
+    const currentSessionId = session.access_token?.substring(0, 20) || session.user?.id;
+    const lastValidatedSession = sessionStorage.getItem(sessionStartKey);
+
+    if (lastValidatedSession !== currentSessionId) {
+      // New session or page refresh - require PIN validation
+      setPinRequired(true);
+    }
+  }, [session, user, ownerPin]);
 
   // Initial session check on mount - simplified
   useEffect(() => {
