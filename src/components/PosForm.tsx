@@ -1,6 +1,6 @@
 "use client"
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/ui/number-input'
@@ -39,6 +39,7 @@ import { useSalesEmployees } from '@/hooks/useSalesCommission'
 import { useProductPricing, usePriceCalculation } from '@/hooks/usePricing'
 import { PricingService } from '@/services/pricingService'
 import { Link } from 'react-router-dom'
+import { quotationService, Quotation } from '@/services/quotationService'
 
 interface FormTransactionItem {
   id: number;
@@ -57,6 +58,7 @@ export const PosForm = () => {
   const { toast } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const { user: currentUser } = useAuth()
   const { hasGranularPermission } = useGranularPermission()
   const queryClient = useQueryClient()
@@ -103,10 +105,65 @@ export const PosForm = () => {
   const [isOfficeSale, setIsOfficeSale] = useState(false);
   const [transactionNotes, setTransactionNotes] = useState('');
   const [loadingPrices, setLoadingPrices] = useState<{[key: number]: boolean}>({});
+  const [sourceQuotation, setSourceQuotation] = useState<Quotation | null>(null);
   const productSearchInputRef = useRef<HTMLInputElement>(null);
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({});
   // Cache for product pricing data to avoid repeated fetches
   const pricingCache = useRef<Record<string, { bonusPricings: any[], stockPricings: any[], fetchedAt: number }>>({});
+
+  // Load quotation data if fromQuotation param is present
+  useEffect(() => {
+    const quotationId = searchParams.get('fromQuotation');
+    if (quotationId && products && customers) {
+      loadQuotationData(quotationId);
+    }
+  }, [searchParams, products, customers]);
+
+  const loadQuotationData = async (quotationId: string) => {
+    try {
+      const quotation = await quotationService.getQuotationById(quotationId);
+      if (!quotation) {
+        toast({ variant: 'destructive', title: 'Error', description: 'Penawaran tidak ditemukan' });
+        return;
+      }
+
+      setSourceQuotation(quotation);
+
+      // Set customer
+      const customer = customers?.find(c => c.id === quotation.customer_id);
+      if (customer) {
+        setSelectedCustomer(customer);
+      }
+
+      // Set notes
+      if (quotation.notes) {
+        setTransactionNotes(`Dari Penawaran: ${quotation.quotation_number || quotation.id}\n${quotation.notes}`);
+      } else {
+        setTransactionNotes(`Dari Penawaran: ${quotation.quotation_number || quotation.id}`);
+      }
+
+      // Set items from quotation
+      if (quotation.items && quotation.items.length > 0) {
+        const formItems: FormTransactionItem[] = quotation.items.map((item, index) => {
+          const product = products?.find(p => p.id === item.product_id);
+          return {
+            id: index + 1,
+            product: product || null,
+            keterangan: item.notes || '',
+            qty: item.quantity,
+            harga: item.unit_price,
+            unit: item.unit || 'pcs',
+          };
+        });
+        setItems(formItems);
+      }
+
+      toast({ title: 'Berhasil', description: 'Data penawaran berhasil dimuat' });
+    } catch (err) {
+      console.error('Error loading quotation:', err);
+      toast({ variant: 'destructive', title: 'Error', description: 'Gagal memuat data penawaran' });
+    }
+  };
 
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
@@ -503,6 +560,15 @@ export const PosForm = () => {
         // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
         // addTransaction sudah memanggil createSalesJournal yang akan auto-post jurnal
         // ============================================================================
+
+        // Update quotation status to converted if this transaction is from a quotation
+        if (sourceQuotation?.id) {
+          try {
+            await quotationService.convertToInvoice(sourceQuotation.id, savedData.id);
+          } catch (err) {
+            console.error('Failed to update quotation status:', err);
+          }
+        }
 
         setSavedTransaction(savedData);
         toast({ title: "Sukses", description: "Transaksi dan pembayaran berhasil disimpan." });

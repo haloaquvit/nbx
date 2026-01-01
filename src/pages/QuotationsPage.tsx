@@ -453,12 +453,13 @@ export default function QuotationsPage() {
                               Invoice
                             </Button>
                           )}
-                          {quotation.status === 'draft' && (
+                          {quotation.status !== 'converted' && (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="text-red-600"
                               onClick={() => handleDelete(quotation.id!)}
+                              title="Hapus penawaran"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
