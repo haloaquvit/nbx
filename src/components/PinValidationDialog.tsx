@@ -84,7 +84,6 @@ export const PinValidationDialog = () => {
               ref={inputRef}
               type="password"
               inputMode="numeric"
-              pattern="[0-9]*"
               placeholder="Masukkan PIN"
               value={pin}
               onChange={(e) => {
