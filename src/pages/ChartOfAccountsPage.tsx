@@ -957,38 +957,77 @@ export default function ChartOfAccountsPage() {
     try {
       // Delete existing accounts if requested
       // Sort by level descending (delete children first, then parents)
+      // Skip accounts that are still in use by other tables (foreign key constraints)
       if (deleteExisting && accounts && accounts.length > 0) {
         const sortedAccounts = [...accounts].sort((a, b) => (b.level || 1) - (a.level || 1))
+        let skippedCount = 0
         for (const acc of sortedAccounts) {
           try {
             await deleteAccount.mutateAsync(acc.id)
-          } catch (err) {
-            console.warn(`Failed to delete account ${acc.code}:`, err)
+          } catch (err: any) {
+            // Skip accounts with foreign key constraints (still in use)
+            if (err.message?.includes('foreign key') || err.message?.includes('violates')) {
+              skippedCount++
+              console.warn(`Skipped account ${acc.code} - still in use`)
+            } else {
+              console.warn(`Failed to delete account ${acc.code}:`, err)
+            }
           }
+        }
+        if (skippedCount > 0) {
+          toast({
+            title: "Info",
+            description: `${skippedCount} akun tidak dihapus karena masih digunakan (jurnal, aset, dll). Akun-akun tersebut akan di-update.`
+          })
         }
       }
 
       // Import each account
-      // First pass: create all accounts without parent
+      // First pass: create or update all accounts without parent
       const createdAccounts: Map<string, string> = new Map() // code -> id
 
-      for (const template of STANDARD_COA_INDONESIA) {
-        const accountData = {
-          name: template.name,
-          type: template.type as 'Aset' | 'Kewajiban' | 'Modal' | 'Pendapatan' | 'Beban',
-          code: template.code,
-          level: template.level,
-          isHeader: template.isHeader,
-          isPaymentAccount: template.isPaymentAccount || false,
-          isActive: true,
-          balance: 0,
-          initialBalance: 0,
-          sortOrder: parseInt(template.code) || 0,
-          branchId: currentBranch.id
-        }
+      // Check existing accounts by code for this branch
+      const existingAccountsByCode = new Map<string, typeof accounts[0]>()
+      accounts?.forEach(acc => {
+        if (acc.code) existingAccountsByCode.set(acc.code, acc)
+      })
 
-        const created = await addAccount.mutateAsync(accountData)
-        createdAccounts.set(template.code, created.id)
+      for (const template of STANDARD_COA_INDONESIA) {
+        const existingAccount = existingAccountsByCode.get(template.code)
+
+        if (existingAccount) {
+          // Update existing account (preserve balance and initial_balance)
+          await updateAccount.mutateAsync({
+            accountId: existingAccount.id,
+            newData: {
+              name: template.name,
+              type: template.type as 'Aset' | 'Kewajiban' | 'Modal' | 'Pendapatan' | 'Beban',
+              level: template.level,
+              isHeader: template.isHeader,
+              isPaymentAccount: template.isPaymentAccount || false,
+              sortOrder: parseInt(template.code) || 0,
+            }
+          })
+          createdAccounts.set(template.code, existingAccount.id)
+        } else {
+          // Create new account
+          const accountData = {
+            name: template.name,
+            type: template.type as 'Aset' | 'Kewajiban' | 'Modal' | 'Pendapatan' | 'Beban',
+            code: template.code,
+            level: template.level,
+            isHeader: template.isHeader,
+            isPaymentAccount: template.isPaymentAccount || false,
+            isActive: true,
+            balance: 0,
+            initialBalance: 0,
+            sortOrder: parseInt(template.code) || 0,
+            branchId: currentBranch.id
+          }
+
+          const created = await addAccount.mutateAsync(accountData)
+          createdAccounts.set(template.code, created.id)
+        }
       }
 
       // Second pass: update parent relationships
