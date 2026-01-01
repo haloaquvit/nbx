@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/components/ui/use-toast"
-import { Upload, Image as ImageIcon, MapPin, Printer, Send } from 'lucide-react'
+import { Upload, Image as ImageIcon, MapPin, Printer, Lock, Eye, EyeOff } from 'lucide-react'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { TelegramSettings } from '@/components/TelegramSettings'
 import { compressImage } from '@/utils/imageCompression'
@@ -18,11 +18,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import BranchManagementPage from './BranchManagementPage'
 import { INDONESIA_TIMEZONES } from '@/utils/officeTime'
+import { supabase } from '@/integrations/supabase/client'
 
 export default function SettingsPage() {
   const { settings, isLoading, updateSettings } = useCompanySettings();
   const { toast } = useToast();
   const { user } = useAuth();
+
+  // PIN State
+  const [ownerPin, setOwnerPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [showPin, setShowPin] = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [currentPin, setCurrentPin] = useState<string | null>(null);
+
   const [localInfo, setLocalInfo] = useState({
     name: '',
     address: '',
@@ -64,6 +73,108 @@ export default function SettingsPage() {
       });
     }
   }, [settings]);
+
+  // Fetch current PIN on mount
+  useEffect(() => {
+    const fetchCurrentPin = async () => {
+      try {
+        const { data } = await supabase
+          .from('company_settings')
+          .select('value')
+          .eq('key', 'owner_pin')
+          .order('id')
+          .limit(1);
+        const setting = Array.isArray(data) ? data[0] : data;
+        if (setting?.value) {
+          setCurrentPin(setting.value);
+        }
+      } catch (error) {
+        console.error('Failed to fetch owner PIN:', error);
+      }
+    };
+    fetchCurrentPin();
+  }, []);
+
+  // Save owner PIN
+  const handleSavePin = async () => {
+    if (!isOwner(user)) {
+      toast({ variant: "destructive", title: "Akses Ditolak", description: "Hanya Owner yang dapat mengatur PIN." });
+      return;
+    }
+
+    if (ownerPin && ownerPin.length < 4) {
+      toast({ variant: "destructive", title: "PIN Terlalu Pendek", description: "PIN minimal 4 digit." });
+      return;
+    }
+
+    if (ownerPin && ownerPin !== confirmPin) {
+      toast({ variant: "destructive", title: "PIN Tidak Cocok", description: "Konfirmasi PIN tidak sesuai." });
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      // Check if owner_pin exists
+      const { data: existing } = await supabase
+        .from('company_settings')
+        .select('id')
+        .eq('key', 'owner_pin')
+        .order('id')
+        .limit(1);
+
+      const existingRecord = Array.isArray(existing) ? existing[0] : existing;
+
+      if (existingRecord) {
+        // Update existing
+        await supabase
+          .from('company_settings')
+          .update({ value: ownerPin || '' })
+          .eq('id', existingRecord.id);
+      } else {
+        // Insert new
+        await supabase
+          .from('company_settings')
+          .insert({ key: 'owner_pin', value: ownerPin || '' });
+      }
+
+      setCurrentPin(ownerPin || null);
+      setOwnerPin('');
+      setConfirmPin('');
+      toast({
+        title: ownerPin ? "PIN Berhasil Disimpan" : "PIN Berhasil Dihapus",
+        description: ownerPin ? "PIN akan diminta setiap 3 menit tidak ada aktivitas." : "Validasi PIN sudah dinonaktifkan."
+      });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Gagal", description: error.message });
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
+  // Remove owner PIN
+  const handleRemovePin = async () => {
+    if (!isOwner(user)) {
+      toast({ variant: "destructive", title: "Akses Ditolak", description: "Hanya Owner yang dapat mengatur PIN." });
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      await supabase
+        .from('company_settings')
+        .delete()
+        .eq('key', 'owner_pin');
+
+      setCurrentPin(null);
+      setOwnerPin('');
+      setConfirmPin('');
+      toast({ title: "PIN Dihapus", description: "Validasi PIN sudah dinonaktifkan." });
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Gagal", description: error.message });
+    } finally {
+      setPinLoading(false);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
@@ -139,8 +250,9 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="company" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="company">Company</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="branches">Branches</TabsTrigger>
           <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
@@ -308,6 +420,109 @@ export default function SettingsPage() {
         </CardContent>
             </Card>
           </form>
+        </TabsContent>
+
+        <TabsContent value="security">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                Keamanan Owner
+              </CardTitle>
+              <CardDescription>
+                Atur PIN untuk validasi keamanan akun Owner. PIN akan diminta setelah 3 menit tidak ada aktivitas.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Current PIN Status */}
+              <div className="p-4 rounded-lg bg-muted">
+                <div className="flex items-center gap-2 mb-2">
+                  <Lock className="h-4 w-4" />
+                  <span className="font-medium">Status PIN Owner</span>
+                </div>
+                {currentPin ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-green-600 dark:text-green-400">
+                      PIN sudah diatur ({currentPin.length} digit)
+                    </span>
+                    <Button variant="destructive" size="sm" onClick={handleRemovePin} disabled={pinLoading}>
+                      Hapus PIN
+                    </Button>
+                  </div>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    PIN belum diatur. Validasi PIN tidak aktif.
+                  </span>
+                )}
+              </div>
+
+              {/* Set New PIN */}
+              <div className="space-y-4">
+                <h4 className="font-medium">{currentPin ? 'Ganti PIN' : 'Atur PIN Baru'}</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="ownerPin">PIN Baru (4-6 digit)</Label>
+                    <div className="relative">
+                      <Input
+                        id="ownerPin"
+                        type={showPin ? "text" : "password"}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        value={ownerPin}
+                        onChange={(e) => setOwnerPin(e.target.value.replace(/\D/g, ''))}
+                        placeholder="Masukkan PIN"
+                        className="pr-10"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowPin(!showPin)}
+                      >
+                        {showPin ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPin">Konfirmasi PIN</Label>
+                    <Input
+                      id="confirmPin"
+                      type={showPin ? "text" : "password"}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      value={confirmPin}
+                      onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Konfirmasi PIN"
+                    />
+                  </div>
+                </div>
+                {ownerPin && confirmPin && ownerPin !== confirmPin && (
+                  <p className="text-sm text-destructive">PIN tidak cocok</p>
+                )}
+                <Button
+                  onClick={handleSavePin}
+                  disabled={pinLoading || !ownerPin || ownerPin.length < 4 || ownerPin !== confirmPin}
+                >
+                  {pinLoading ? "Menyimpan..." : "Simpan PIN"}
+                </Button>
+              </div>
+
+              {/* Info */}
+              <div className="pt-4 border-t">
+                <h4 className="font-medium mb-2">Cara Kerja Validasi PIN</h4>
+                <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                  <li>PIN hanya berlaku untuk akun dengan role <strong>Owner</strong></li>
+                  <li>Setelah 3 menit tidak ada aktivitas (idle), dialog PIN akan muncul</li>
+                  <li>Owner harus memasukkan PIN yang benar untuk melanjutkan</li>
+                  <li>Jika PIN salah, Owner bisa coba lagi atau logout</li>
+                  <li>Fitur ini mencegah orang lain mengakses akun Owner yang ditinggalkan</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="branches" className="space-y-6">

@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Material } from '@/types/material'
 import { supabase } from '@/integrations/supabase/client'
 import { useBranch } from '@/contexts/BranchContext'
+import { createMaterialStockAdjustmentJournal } from '@/services/journalService'
 
 const fromDbToApp = (dbMaterial: any): Material => ({
   id: dbMaterial.id,
@@ -110,6 +111,23 @@ export const useMaterials = () => {
         ...fromAppToDb(material),
         branch_id: currentBranch?.id || null,
       };
+
+      // Get existing material data to check stock changes
+      let oldStock = 0;
+      let oldPricePerUnit = 0;
+      if (material.id) {
+        const { data: existingRaw } = await supabase
+          .from('materials')
+          .select('stock, price_per_unit, name')
+          .eq('id', material.id)
+          .order('id').limit(1);
+        const existing = Array.isArray(existingRaw) ? existingRaw[0] : existingRaw;
+        if (existing) {
+          oldStock = Number(existing.stock) || 0;
+          oldPricePerUnit = Number(existing.price_per_unit) || 0;
+        }
+      }
+
       // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('materials')
@@ -119,6 +137,28 @@ export const useMaterials = () => {
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       if (!data) throw new Error('Failed to upsert material');
+
+      // AUTO-JOURNAL: Create adjustment journal when stock changes
+      const newStock = Number(data.stock) || 0;
+      const pricePerUnit = Number(data.price_per_unit) || oldPricePerUnit;
+      const stockDiff = newStock - oldStock;
+
+      if (material.id && stockDiff !== 0 && pricePerUnit > 0 && currentBranch?.id) {
+        const journalResult = await createMaterialStockAdjustmentJournal({
+          materialId: material.id,
+          materialName: data.name || material.name || 'Unknown Material',
+          oldStock,
+          newStock,
+          pricePerUnit,
+          branchId: currentBranch.id,
+        });
+        if (journalResult.success) {
+          console.log('✅ Auto-generated material stock adjustment journal:', journalResult.journalId);
+        } else {
+          console.warn('⚠️ Failed to create material stock adjustment journal:', journalResult.error);
+        }
+      }
+
       return fromDbToApp(data);
     },
     onSuccess: () => {

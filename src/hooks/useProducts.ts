@@ -4,6 +4,7 @@ import { Product } from '@/types/product'
 import { supabase } from '@/integrations/supabase/client'
 import { logError, logDebug } from '@/utils/debugUtils'
 import { useBranch } from '@/contexts/BranchContext'
+import { createProductStockAdjustmentJournal } from '@/services/journalService'
 
 // Calculate BOM cost for a product (HPP dari materials)
 export const calculateBOMCost = async (productId: string): Promise<number> => {
@@ -155,8 +156,28 @@ export const useProducts = () => {
         logDebug('Product Update Success', data);
 
         // Create/update inventory batch for FIFO HPP calculation
-        const newInitialStock = dbData.initial_stock || 0;
-        const newCostPrice = dbData.cost_price || 0;
+        const newInitialStock = dbData.initial_stock !== undefined ? dbData.initial_stock : oldInitialStock;
+        const newCostPrice = dbData.cost_price || existing?.cost_price || 0;
+
+        // AUTO-JOURNAL: Create adjustment journal when initial_stock changes
+        if (dbData.initial_stock !== undefined && existing && currentBranch?.id) {
+          const stockDiff = Number(dbData.initial_stock) - oldInitialStock;
+          if (stockDiff !== 0 && newCostPrice > 0) {
+            const journalResult = await createProductStockAdjustmentJournal({
+              productId: product.id!,
+              productName: product.name || data.name || 'Unknown Product',
+              oldStock: oldInitialStock,
+              newStock: Number(dbData.initial_stock),
+              costPrice: newCostPrice,
+              branchId: currentBranch.id,
+            });
+            if (journalResult.success) {
+              logDebug('Auto-generated stock adjustment journal', { journalId: journalResult.journalId });
+            } else {
+              console.warn('Failed to create stock adjustment journal:', journalResult.error);
+            }
+          }
+        }
 
         if (newInitialStock > 0 && newCostPrice > 0) {
           const { data: existingBatch } = await supabase

@@ -15,7 +15,7 @@ import { Session, User as SupabaseUser } from '@supabase/supabase-js';
 // Idle timeout configuration (in milliseconds)
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const IDLE_WARNING_MS = 55 * 60 * 1000; // Warning at 55 minutes (5 minutes before logout)
-const SESSION_VALIDATE_INTERVAL_MS = 30 * 1000; // Validate session every 30 seconds
+const PIN_VALIDATION_INTERVAL_MS = 3 * 60 * 1000; // PIN validation every 3 minutes of idle for owner
 
 interface AuthContextType {
   session: Session | null;
@@ -24,7 +24,9 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   idleWarning: boolean; // Show warning before auto logout
   resetIdleTimer: () => void; // Manual reset for user activity
-  sessionKicked: boolean; // True if session was kicked by another login
+  pinRequired: boolean; // True when owner needs to enter PIN
+  validatePin: (pin: string) => Promise<boolean>; // Validate owner PIN
+  dismissPinDialog: () => void; // Dismiss PIN dialog after successful validation
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,7 +36,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [idleWarning, setIdleWarning] = useState(false);
-  const [sessionKicked, setSessionKicked] = useState(false);
+  const [pinRequired, setPinRequired] = useState(false);
+  const [ownerPin, setOwnerPin] = useState<string | null>(null);
 
   // Simple cache for user profiles to avoid repeated DB calls
   const profileCacheRef = useRef<Map<string, Employee>>(new Map());
@@ -42,7 +45,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Idle timer refs
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
   const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const sessionValidateTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pinValidationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
   // Simplified and fast user profile creation from auth data
@@ -123,9 +126,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // Clear all timers
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
-      if (sessionValidateTimerRef.current) clearInterval(sessionValidateTimerRef.current);
+      if (pinValidationTimerRef.current) clearTimeout(pinValidationTimerRef.current);
       setIdleWarning(false);
-      setSessionKicked(false);
+      setPinRequired(false);
 
       // Clear cache
       profileCacheRef.current.clear();
@@ -142,6 +145,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  // Validate owner PIN
+  const validatePin = useCallback(async (pin: string): Promise<boolean> => {
+    if (!ownerPin) return true; // No PIN set, always valid
+    const isValid = pin === ownerPin;
+    if (isValid) {
+      setPinRequired(false);
+      lastActivityRef.current = Date.now(); // Reset activity timer
+    }
+    return isValid;
+  }, [ownerPin]);
+
+  // Dismiss PIN dialog
+  const dismissPinDialog = useCallback(() => {
+    setPinRequired(false);
+    lastActivityRef.current = Date.now();
+  }, []);
+
+  // Fetch owner PIN from company_settings
+  const fetchOwnerPin = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('company_settings')
+        .select('value')
+        .eq('key', 'owner_pin')
+        .order('id')
+        .limit(1);
+      const setting = Array.isArray(data) ? data[0] : data;
+      if (setting?.value) {
+        setOwnerPin(setting.value);
+      } else {
+        setOwnerPin(null);
+      }
+    } catch (error) {
+      console.error('Failed to fetch owner PIN:', error);
+      setOwnerPin(null);
+    }
+  }, []);
+
   // Reset idle timer - called on user activity
   const resetIdleTimer = useCallback(() => {
     lastActivityRef.current = Date.now();
@@ -150,14 +191,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Clear existing timers
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    if (pinValidationTimerRef.current) clearTimeout(pinValidationTimerRef.current);
 
     // Only set timers if user is logged in
     if (!session) return;
 
-    // Set warning timer (1 minute before logout)
+    // Set warning timer (5 minutes before logout)
     warningTimerRef.current = setTimeout(() => {
       setIdleWarning(true);
-      console.log('⚠️ Idle warning: akan logout dalam 1 menit karena tidak ada aktivitas');
+      console.log('⚠️ Idle warning: akan logout dalam 5 menit karena tidak ada aktivitas');
     }, IDLE_WARNING_MS);
 
     // Set logout timer
@@ -165,7 +207,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('🔒 Auto logout karena idle 1 jam');
       signOut();
     }, IDLE_TIMEOUT_MS);
-  }, [session, signOut]);
+
+    // Set PIN validation timer for owner (3 minutes of idle)
+    if (user?.role === 'owner' && ownerPin) {
+      pinValidationTimerRef.current = setTimeout(() => {
+        console.log('🔐 PIN validation required for owner after 3 minutes idle');
+        setPinRequired(true);
+      }, PIN_VALIDATION_INTERVAL_MS);
+    }
+  }, [session, signOut, user?.role, ownerPin]);
 
   // Setup idle detection listeners
   useEffect(() => {
@@ -196,33 +246,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+      if (pinValidationTimerRef.current) clearTimeout(pinValidationTimerRef.current);
     };
   }, [session, resetIdleTimer]);
 
-  // Session validation - check if session was kicked by another login (PostgREST mode only)
+  // Fetch owner PIN when user logs in as owner
   useEffect(() => {
-    if (!session || !isPostgRESTMode) return;
+    if (!session || !user) return;
 
-    const validateSession = async () => {
-      const result = await postgrestAuth.validateSession();
-      if (!result.valid && result.kicked) {
-        console.log('🚫 Session kicked: Anda telah login di perangkat lain');
-        setSessionKicked(true);
-        setSession(null);
-        setUser(null);
-      }
-    };
-
-    // Validate immediately on mount
-    validateSession();
-
-    // Validate every 30 seconds
-    sessionValidateTimerRef.current = setInterval(validateSession, SESSION_VALIDATE_INTERVAL_MS);
-
-    return () => {
-      if (sessionValidateTimerRef.current) clearInterval(sessionValidateTimerRef.current);
-    };
-  }, [session]);
+    // Only fetch PIN for owner role
+    if (user.role === 'owner') {
+      fetchOwnerPin();
+    }
+  }, [session, user, fetchOwnerPin]);
 
   // Initial session check on mount - simplified
   useEffect(() => {
@@ -332,7 +368,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ session, user, isLoading, signOut, idleWarning, resetIdleTimer, sessionKicked }}
+      value={{ session, user, isLoading, signOut, idleWarning, resetIdleTimer, pinRequired, validatePin, dismissPinDialog }}
     >
       {children}
     </AuthContext.Provider>

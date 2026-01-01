@@ -26,7 +26,7 @@ type LoginFormValues = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const navigate = useNavigate();
   const { settings, isLoading: settingsLoading } = useCompanySettings();
-  const { session, isLoading: authLoading, sessionKicked } = useAuth();
+  const { session, isLoading: authLoading } = useAuth();
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormValues>({
@@ -40,13 +40,6 @@ export default function LoginPage() {
       navigate('/', { replace: true });
     }
   }, [session, authLoading, navigate]);
-
-  // Show message if session was kicked by another login
-  useEffect(() => {
-    if (sessionKicked) {
-      setLoginError('Anda telah login di perangkat lain. Session ini telah berakhir. Silakan login kembali.');
-    }
-  }, [sessionKicked]);
 
   const onSubmit = async (formData: LoginFormValues) => {
     setLoginError(null);

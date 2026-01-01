@@ -17,6 +17,7 @@ import { updateFavicon } from "@/utils/faviconUtils";
 import { useCacheManager, useBackgroundRefresh } from "@/hooks/useCacheManager";
 import { Card, CardContent } from "@/components/ui/card";
 import { Building2, MapPin, Check } from "lucide-react";
+import { PinValidationDialog } from "@/components/PinValidationDialog";
 
 // Lazy load all pages
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
@@ -251,6 +252,8 @@ function WebApp() {
             v7_startTransition: true,
             v7_relativeSplatPath: true
           }}>
+            {/* PIN Validation Dialog for Owner */}
+            <PinValidationDialog />
             <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />

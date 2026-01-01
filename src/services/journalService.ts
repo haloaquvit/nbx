@@ -2434,16 +2434,9 @@ export async function createInventoryOpeningBalanceJournal(params: {
     return { success: false, error: 'Tidak ada nilai persediaan yang perlu dijurnal' };
   }
 
-  // ============================================================================
-  // AUTO-VOID: Void existing inventory opening journals before creating new one
-  // ============================================================================
-  const { voidedCount, voidedNumbers } = await voidExistingOpeningJournals(
-    branchId,
-    '%Saldo Awal Persediaan%'
-  );
-  if (voidedCount > 0) {
-    console.log(`[JournalService] Auto-voided ${voidedCount} existing inventory opening journals: ${voidedNumbers.join(', ')}`);
-  }
+  // NOTE: Tidak melakukan auto-void karena fungsi ini menambahkan SELISIH,
+  // bukan mengganti saldo awal. Jurnal baru akan menambah saldo yang sudah ada.
+  // Jika perlu reset, gunakan void manual dari halaman jurnal.
 
   // Find Persediaan Barang Dagang account (1310)
   const persediaanBarangAccount = await getAccountByCode('1310', branchId)
@@ -2696,4 +2689,202 @@ export async function createAllOpeningBalanceJournal(params: {
     },
     voidedJournals: allVoidedNumbers.length > 0 ? allVoidedNumbers : undefined,
   };
+}
+
+/**
+ * Create adjustment journal when product initial stock is changed
+ * This ensures the balance sheet stays in sync with inventory changes.
+ *
+ * Jurnal (jika stock bertambah):
+ * Dr. Persediaan Barang Dagang (1310)    xxx
+ *   Cr. Modal Disetor (3100)               xxx
+ *
+ * Jurnal (jika stock berkurang):
+ * Dr. Modal Disetor (3100)               xxx
+ *   Cr. Persediaan Barang Dagang (1310)    xxx
+ */
+export async function createProductStockAdjustmentJournal(params: {
+  productId: string;
+  productName: string;
+  oldStock: number;
+  newStock: number;
+  costPrice: number;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { productId, productName, oldStock, newStock, costPrice, branchId } = params;
+
+  const stockDiff = newStock - oldStock;
+  const valueChange = Math.abs(stockDiff * costPrice);
+
+  if (stockDiff === 0 || valueChange === 0) {
+    return { success: true }; // No change needed
+  }
+
+  // Find Persediaan Barang Dagang account (1310)
+  const persediaanAccount = await getAccountByCode('1310', branchId)
+    || await findAccountByPattern('persediaan barang', 'Aset', branchId)
+    || await findAccountByPattern('barang dagang', 'Aset', branchId);
+
+  // Find Modal Disetor account (3100)
+  const modalAccount = await getAccountByCode('3100', branchId)
+    || await findAccountByPattern('modal disetor', 'Modal', branchId)
+    || await findAccountByPattern('modal pemilik', 'Modal', branchId);
+
+  if (!persediaanAccount) {
+    return { success: false, error: 'Akun Persediaan Barang Dagang (1310) tidak ditemukan' };
+  }
+  if (!modalAccount) {
+    return { success: false, error: 'Akun Modal Disetor (3100) tidak ditemukan' };
+  }
+
+  const lines: JournalLineInput[] = [];
+
+  if (stockDiff > 0) {
+    // Stock increased: Dr. Persediaan, Cr. Modal
+    lines.push({
+      accountId: persediaanAccount.id,
+      accountCode: persediaanAccount.code,
+      accountName: persediaanAccount.name,
+      debitAmount: valueChange,
+      creditAmount: 0,
+      description: `Penambahan stok awal ${productName} (+${stockDiff} unit)`,
+    });
+    lines.push({
+      accountId: modalAccount.id,
+      accountCode: modalAccount.code,
+      accountName: modalAccount.name,
+      debitAmount: 0,
+      creditAmount: valueChange,
+      description: `Penyesuaian modal - penambahan stok ${productName}`,
+    });
+  } else {
+    // Stock decreased: Dr. Modal, Cr. Persediaan
+    lines.push({
+      accountId: modalAccount.id,
+      accountCode: modalAccount.code,
+      accountName: modalAccount.name,
+      debitAmount: valueChange,
+      creditAmount: 0,
+      description: `Penyesuaian modal - pengurangan stok ${productName}`,
+    });
+    lines.push({
+      accountId: persediaanAccount.id,
+      accountCode: persediaanAccount.code,
+      accountName: persediaanAccount.name,
+      debitAmount: 0,
+      creditAmount: valueChange,
+      description: `Pengurangan stok awal ${productName} (${stockDiff} unit)`,
+    });
+  }
+
+  const description = `Penyesuaian Stok Produk: ${productName} (${oldStock} → ${newStock} unit)`;
+
+  return createJournalEntry({
+    entryDate: new Date(),
+    description,
+    referenceType: 'adjustment',
+    referenceId: `stock-adj-product-${productId}-${Date.now()}`,
+    branchId,
+    autoPost: true,
+    lines,
+  });
+}
+
+/**
+ * Create adjustment journal when material stock is changed
+ * This ensures the balance sheet stays in sync with inventory changes.
+ *
+ * Jurnal (jika stock bertambah):
+ * Dr. Persediaan Bahan Baku (1320)    xxx
+ *   Cr. Modal Disetor (3100)           xxx
+ *
+ * Jurnal (jika stock berkurang):
+ * Dr. Modal Disetor (3100)           xxx
+ *   Cr. Persediaan Bahan Baku (1320)   xxx
+ */
+export async function createMaterialStockAdjustmentJournal(params: {
+  materialId: string;
+  materialName: string;
+  oldStock: number;
+  newStock: number;
+  pricePerUnit: number;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { materialId, materialName, oldStock, newStock, pricePerUnit, branchId } = params;
+
+  const stockDiff = newStock - oldStock;
+  const valueChange = Math.abs(stockDiff * pricePerUnit);
+
+  if (stockDiff === 0 || valueChange === 0) {
+    return { success: true }; // No change needed
+  }
+
+  // Find Persediaan Bahan Baku account (1320)
+  const persediaanAccount = await getAccountByCode('1320', branchId)
+    || await findAccountByPattern('persediaan bahan', 'Aset', branchId)
+    || await findAccountByPattern('bahan baku', 'Aset', branchId);
+
+  // Find Modal Disetor account (3100)
+  const modalAccount = await getAccountByCode('3100', branchId)
+    || await findAccountByPattern('modal disetor', 'Modal', branchId)
+    || await findAccountByPattern('modal pemilik', 'Modal', branchId);
+
+  if (!persediaanAccount) {
+    return { success: false, error: 'Akun Persediaan Bahan Baku (1320) tidak ditemukan' };
+  }
+  if (!modalAccount) {
+    return { success: false, error: 'Akun Modal Disetor (3100) tidak ditemukan' };
+  }
+
+  const lines: JournalLineInput[] = [];
+
+  if (stockDiff > 0) {
+    // Stock increased: Dr. Persediaan, Cr. Modal
+    lines.push({
+      accountId: persediaanAccount.id,
+      accountCode: persediaanAccount.code,
+      accountName: persediaanAccount.name,
+      debitAmount: valueChange,
+      creditAmount: 0,
+      description: `Penambahan stok bahan ${materialName} (+${stockDiff} unit)`,
+    });
+    lines.push({
+      accountId: modalAccount.id,
+      accountCode: modalAccount.code,
+      accountName: modalAccount.name,
+      debitAmount: 0,
+      creditAmount: valueChange,
+      description: `Penyesuaian modal - penambahan bahan ${materialName}`,
+    });
+  } else {
+    // Stock decreased: Dr. Modal, Cr. Persediaan
+    lines.push({
+      accountId: modalAccount.id,
+      accountCode: modalAccount.code,
+      accountName: modalAccount.name,
+      debitAmount: valueChange,
+      creditAmount: 0,
+      description: `Penyesuaian modal - pengurangan bahan ${materialName}`,
+    });
+    lines.push({
+      accountId: persediaanAccount.id,
+      accountCode: persediaanAccount.code,
+      accountName: persediaanAccount.name,
+      debitAmount: 0,
+      creditAmount: valueChange,
+      description: `Pengurangan stok bahan ${materialName} (${stockDiff} unit)`,
+    });
+  }
+
+  const description = `Penyesuaian Stok Bahan: ${materialName} (${oldStock} → ${newStock} unit)`;
+
+  return createJournalEntry({
+    entryDate: new Date(),
+    description,
+    referenceType: 'adjustment',
+    referenceId: `stock-adj-material-${materialId}-${Date.now()}`,
+    branchId,
+    autoPost: true,
+    lines,
+  });
 }

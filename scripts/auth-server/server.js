@@ -84,22 +84,13 @@ app.post('/auth/v1/token', async (req, res) => {
       // Get password_changed_at timestamp for token invalidation
       const pca = user.password_changed_at ? Math.floor(new Date(user.password_changed_at).getTime() / 1000) : 0;
 
-      // Generate unique session token for this login
-      const sessionToken = generateSessionToken();
+      // DISABLED: Single session enforcement (tabrak auth)
+      // Users can now login from multiple devices simultaneously
+      // const sessionToken = generateSessionToken();
+      // await pool.query('DELETE FROM active_sessions WHERE user_id = $1', [user.id]);
+      // await pool.query(`INSERT INTO active_sessions ...`);
 
-      // Delete any existing session for this user (auto-kick old session)
-      await pool.query('DELETE FROM active_sessions WHERE user_id = $1', [user.id]);
-
-      // Create new active session
-      const deviceInfo = req.headers['user-agent'] || 'Unknown';
-      const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown';
-      await pool.query(
-        `INSERT INTO active_sessions (user_id, session_token, device_info, ip_address)
-         VALUES ($1, $2, $3, $4)`,
-        [user.id, sessionToken, deviceInfo, ipAddress]
-      );
-
-      // Generate JWT token with session_token included
+      // Generate JWT token (without session enforcement)
       const token = jwt.sign(
         {
           sub: user.id,
@@ -108,7 +99,7 @@ app.post('/auth/v1/token', async (req, res) => {
           role: user.role, // User's actual role (owner, admin, etc) for RLS
           aud: 'authenticated',
           pca: pca, // password_changed_at - for token invalidation on password reset
-          sid: sessionToken, // Session ID for single session enforcement
+          // sid removed - no longer using single session enforcement
           iat: Math.floor(Date.now() / 1000),
           exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 days
         },
@@ -122,7 +113,7 @@ app.post('/auth/v1/token', async (req, res) => {
         token_type: 'bearer',
         expires_in: 604800,
         refresh_token: token, // Simplified: same as access token
-        session_token: sessionToken, // For client-side session validation
+        // session_token removed - no longer using single session enforcement
         user: {
           id: user.id,
           email: user.email,
@@ -284,29 +275,17 @@ app.get('/auth/v1/user', async (req, res) => {
 
 /**
  * POST /auth/v1/logout
- * Logout - removes active session from database
+ * Logout - just acknowledge (no more active_sessions to clean up)
  */
 app.post('/auth/v1/logout', async (req, res) => {
-  const authHeader = req.headers.authorization;
-
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.substring(7);
-      const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
-
-      // Remove active session
-      await pool.query('DELETE FROM active_sessions WHERE user_id = $1', [decoded.sub]);
-    } catch (e) {
-      // Ignore token errors on logout
-    }
-  }
-
+  // No more active_sessions cleanup needed since single session enforcement is disabled
   res.json({ message: 'Logged out successfully' });
 });
 
 /**
  * GET /auth/v1/session/validate
- * Validate if current session is still active (not kicked by another login)
+ * DISABLED: Single session enforcement removed
+ * Now just validates if token is still valid (not expired, password not changed)
  */
 app.get('/auth/v1/session/validate', async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -323,35 +302,29 @@ app.get('/auth/v1/session/validate', async (req, res) => {
 
   try {
     const decoded = jwt.verify(token, Buffer.from(JWT_SECRET, 'base64'));
-    const sessionToken = decoded.sid;
 
-    if (!sessionToken) {
-      // Old token without session ID - consider valid but warn
-      return res.json({ valid: true, legacy: true });
-    }
-
-    // Check if session exists in database
+    // Check if password was changed after token was issued
     const result = await pool.query(
-      'SELECT id FROM active_sessions WHERE user_id = $1 AND session_token = $2',
-      [decoded.sub, sessionToken]
+      'SELECT password_changed_at FROM profiles WHERE id = $1',
+      [decoded.sub]
     );
 
-    if (result.rows.length === 0) {
-      // Session was kicked (user logged in from another device)
-      return res.json({
-        valid: false,
-        kicked: true,
-        error: 'session_kicked',
-        error_description: 'Anda telah login di perangkat lain. Session ini telah berakhir.'
-      });
+    if (result.rows.length > 0) {
+      const currentPca = result.rows[0].password_changed_at
+        ? Math.floor(new Date(result.rows[0].password_changed_at).getTime() / 1000)
+        : 0;
+      const tokenPca = decoded.pca || 0;
+
+      if (currentPca > tokenPca) {
+        return res.json({
+          valid: false,
+          error: 'password_changed',
+          error_description: 'Password telah diubah. Silakan login kembali.'
+        });
+      }
     }
 
-    // Update last activity
-    await pool.query(
-      'UPDATE active_sessions SET last_activity = NOW() WHERE session_token = $1',
-      [sessionToken]
-    );
-
+    // Token is valid - no more single session enforcement
     return res.json({ valid: true });
 
   } catch (error) {

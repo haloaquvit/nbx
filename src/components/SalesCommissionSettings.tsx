@@ -13,7 +13,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { Pencil, Trash2, Plus, Users, Percent, DollarSign } from "lucide-react"
 import { useSalesEmployees, useSalesCommissionSettings } from "@/hooks/useSalesCommission"
 import { SalesCommissionSetting } from "@/types/commission"
-import { useAuth } from "@/contexts/AuthContext"
+import { useAuth } from "@/hooks/useAuth"
 
 export function SalesCommissionSettings() {
   const { toast } = useToast()
