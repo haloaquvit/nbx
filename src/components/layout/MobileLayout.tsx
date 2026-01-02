@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, Warehouse, Navigation, Coins, MapPin, FileText } from 'lucide-react'
+import { ShoppingCart, Clock, User, LogOut, Menu, X, List, Truck, Package, Users, ArrowLeft, Home, Sun, Moon, Building2, Check, ChevronsUpDown, Factory, Warehouse, Navigation, Coins, MapPin, FileText, RefreshCw } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ const MobileLayout = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const { theme, setTheme } = useTheme()
   const { currentBranch, availableBranches, canAccessAllBranches, switchBranch } = useBranch()
   const { hasGranularPermission } = useGranularPermission()
@@ -263,7 +264,7 @@ const MobileLayout = () => {
       // Already at home, can't go back further
       return
     }
-    
+
     // Smart navigation based on current path
     if (currentPath.startsWith('/transactions/')) {
       // From transaction detail, go back to transactions list
@@ -275,6 +276,13 @@ const MobileLayout = () => {
       // From any other page, go back to home
       navigate('/')
     }
+  }
+
+  // Handle page refresh
+  const handleRefresh = () => {
+    setIsRefreshing(true)
+    // Reload current page
+    window.location.reload()
   }
 
   return (
@@ -656,26 +664,38 @@ const MobileLayout = () => {
         )}
       </div>
 
-      {/* Mobile Footer Navigation - Minimal (hide when sidebar is open) */}
+      {/* Mobile Footer Navigation - Always visible, hide only when sidebar is open */}
       <div className={cn(
         "fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-gray-200 dark:bg-gray-900/95 dark:border-gray-700 transition-transform duration-300",
         isSidebarOpen && "translate-y-full"
       )}>
-        <div className="flex items-center justify-between px-6 py-4">
+        <div className="flex items-center justify-between px-4 py-3">
           {/* Left - Menu Button */}
-          <Button variant="ghost" size="lg" onClick={toggleSidebar} className="flex items-center space-x-2 h-12 px-6 text-gray-900 dark:text-white">
+          <Button variant="ghost" size="lg" onClick={toggleSidebar} className="flex items-center space-x-2 h-12 px-4 text-gray-900 dark:text-white">
             {isSidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             <span className="text-sm font-medium">{isSidebarOpen ? 'Tutup' : 'Menu'}</span>
           </Button>
 
+          {/* Center - Refresh Button */}
+          <Button
+            variant="ghost"
+            size="lg"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="flex items-center space-x-2 h-12 px-4 text-gray-900 dark:text-white"
+          >
+            <RefreshCw className={cn("h-5 w-5", isRefreshing && "animate-spin")} />
+            <span className="text-sm font-medium">Refresh</span>
+          </Button>
+
           {/* Right - Back Button */}
           {currentPath !== '/' ? (
-            <Button variant="ghost" size="lg" onClick={handleBack} className="flex items-center space-x-2 h-12 px-6 text-gray-900 dark:text-white">
+            <Button variant="ghost" size="lg" onClick={handleBack} className="flex items-center space-x-2 h-12 px-4 text-gray-900 dark:text-white">
               <ArrowLeft className="h-5 w-5" />
               <span className="text-sm font-medium">Kembali</span>
             </Button>
           ) : (
-            <div></div>
+            <div className="w-[100px]"></div>
           )}
         </div>
       </div>

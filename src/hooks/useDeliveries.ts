@@ -342,6 +342,65 @@ export function useDeliveries() {
 
   const createDelivery = useMutation({
     mutationFn: async (request: CreateDeliveryRequest): Promise<Delivery> => {
+      // ============================================================================
+      // VALIDASI: Jika transaksi dari Driver POS (ada retasi_id), driver delivery
+      // harus sama dengan driver retasi. Ini mencegah driver lain menginput
+      // delivery untuk transaksi yang bukan miliknya.
+      // ============================================================================
+      let effectiveDriverId = request.driverId // Driver yang akan digunakan (bisa di-override)
+
+      const { data: txnForValidation, error: txnValidationError } = await supabase
+        .from('transactions')
+        .select('id, retasi_id, cashier_id, cashier_name')
+        .eq('id', request.transactionId)
+        .order('id').limit(1)
+
+      if (txnValidationError) {
+        throw new Error(`Gagal memvalidasi transaksi: ${txnValidationError.message}`)
+      }
+
+      const txnData = Array.isArray(txnForValidation) ? txnForValidation[0] : txnForValidation
+
+      if (!txnData) {
+        throw new Error('Transaksi tidak ditemukan')
+      }
+
+      // Jika transaksi dari Driver POS (ada retasi_id), validasi driver
+      if (txnData.retasi_id) {
+        // Ambil driver_id dari retasi, atau gunakan cashier_id jika retasi tidak punya driver_id
+        const { data: retasiData, error: retasiError } = await supabase
+          .from('retasi')
+          .select('id, driver_id, driver_name')
+          .eq('id', txnData.retasi_id)
+          .order('id').limit(1)
+
+        if (retasiError) {
+          console.warn('Gagal mengambil data retasi untuk validasi:', retasiError)
+        } else {
+          const retasi = Array.isArray(retasiData) ? retasiData[0] : retasiData
+
+          if (retasi) {
+            // Gunakan driver_id dari retasi, atau fallback ke cashier_id transaksi
+            const expectedDriverId = retasi.driver_id || txnData.cashier_id
+            const expectedDriverName = retasi.driver_name || txnData.cashier_name
+
+            // Validasi: driver yang dipilih harus sama dengan driver retasi/kasir
+            if (request.driverId && expectedDriverId && request.driverId !== expectedDriverId) {
+              throw new Error(
+                `Transaksi ini berasal dari Driver POS milik ${expectedDriverName}. ` +
+                `Hanya ${expectedDriverName} yang dapat menginput pengantaran untuk transaksi ini.`
+              )
+            }
+
+            // Jika tidak ada driver yang dipilih, gunakan driver retasi/kasir secara otomatis
+            if (!request.driverId && expectedDriverId) {
+              console.log(`📦 Auto-assigning driver dari retasi: ${expectedDriverName}`)
+              effectiveDriverId = expectedDriverId
+            }
+          }
+        }
+      }
+
       let photoUrl: string | undefined
 
       // Upload photo via VPS server
@@ -405,7 +464,7 @@ export function useDeliveries() {
           p_delivery_date: new Date().toISOString(),
           p_photo_url: photoUrl || null,
           p_notes: request.notes || null,
-          p_driver_id: request.driverId || null,
+          p_driver_id: effectiveDriverId || null,
           p_helper_id: request.helperId || null,
           p_branch_id: currentBranch?.id || null,
         })
@@ -447,7 +506,7 @@ export function useDeliveries() {
               p_delivery_date: new Date().toISOString(),
               p_photo_url: photoUrl || null,
               p_notes: request.notes || null,
-              p_driver_id: request.driverId || null,
+              p_driver_id: effectiveDriverId || null,
               p_helper_id: request.helperId || null,
               p_branch_id: currentBranch?.id || null,
             });
