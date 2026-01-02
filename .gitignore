@@ -26,3 +26,13 @@ dist-ssr
 nul
 *.pem
 Aquvit.pem
+
+# Local test files
+scripts/auth-server/.env
+scripts/auth-server/package-lock.json
+scripts/local-proxy/
+mkw_db_backup.sql
+*.backup.sql
+
+# Claude local settings
+.claude/settings.local.json

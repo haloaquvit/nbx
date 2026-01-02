@@ -216,7 +216,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
       latitude: data.latitude,
       longitude: data.longitude,
       jumlah_galon_titip: data.jumlah_galon_titip || 0,
-      classification: data.classification,
+      classification: data.classification || null,
       store_photo_url: storePhotoFilename, // Simpan filename saja, URL di-generate saat tampil
     };
     addCustomer.mutate(newCustomerData, {

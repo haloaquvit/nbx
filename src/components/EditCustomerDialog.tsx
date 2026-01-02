@@ -225,7 +225,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       phone: data.phone,
       address: data.address,
       jumlah_galon_titip: data.jumlah_galon_titip || 0,
-      classification: data.classification,
+      classification: data.classification || null,
     }
 
     // Include location and photo fields if user can edit them (admin/owner/cashier/driver/helper)

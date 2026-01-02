@@ -86,6 +86,7 @@ export const useCustomers = () => {
         full_address: newCustomerData.full_address,
         store_photo_url: newCustomerData.store_photo_url,
         jumlah_galon_titip: newCustomerData.jumlah_galon_titip,
+        classification: newCustomerData.classification || null,
         branch_id: currentBranch?.id || null,
       };
       
@@ -119,6 +120,7 @@ export const useCustomers = () => {
         full_address: updateData.full_address,
         store_photo_url: updateData.store_photo_url,
         jumlah_galon_titip: updateData.jumlah_galon_titip,
+        classification: updateData.classification || null,
       };
       
       // Use .order().limit(1) - PostgREST requires explicit order when using limit
