@@ -67,7 +67,7 @@ export default function MobileRetasiPage() {
     date_to: todayStr(),
   };
 
-  const { retasiList, isLoading, markRetasiReturned, getRetasiItems, createRetasi, checkDriverAvailability } = useRetasi(filters);
+  const { retasiList, isLoading, markRetasiReturned, getRetasiItems, createRetasi, checkDriverAvailability, refetchRetasiList } = useRetasi(filters);
   const { drivers } = useDrivers();
 
   const filteredRetasi = retasiList || [];
@@ -297,6 +297,7 @@ export default function MobileRetasiPage() {
         drivers={drivers}
         createRetasi={createRetasi}
         checkDriverAvailability={checkDriverAvailability}
+        refetchRetasiList={refetchRetasiList}
       />
 
       {/* Return Retasi Dialog */}
@@ -324,12 +325,14 @@ function AddRetasiMobileDialog({
   drivers,
   createRetasi,
   checkDriverAvailability,
+  refetchRetasiList,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   drivers: { id: string; name: string }[];
   createRetasi: any;
   checkDriverAvailability: (driverName: string) => Promise<boolean>;
+  refetchRetasiList: () => Promise<any>;
 }) {
   const [driverId, setDriverId] = useState(drivers[0]?.id || "");
   const [retasiItems, setRetasiItems] = useState<CreateRetasiItemData[]>([]);
@@ -451,8 +454,8 @@ function AddRetasiMobileDialog({
       });
 
       toast.success(`Retasi disimpan (${totalBawa} item)`);
-      // Small delay to ensure refetch completes before closing dialog
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Explicitly refetch the retasi list to ensure new data appears
+      await refetchRetasiList();
       onOpenChange(false);
     } catch (error: any) {
       toast.error(error?.message || "Gagal menyimpan retasi");

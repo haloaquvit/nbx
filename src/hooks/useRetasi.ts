@@ -163,7 +163,7 @@ export const useRetasi = (filters?: {
   const { timezone } = useTimezone();
 
   // Get all retasi with items
-  const { data: retasiList, isLoading } = useQuery<(Retasi & { items?: RetasiItem[] })[]>({
+  const { data: retasiList, isLoading, refetch: refetchRetasiList } = useQuery<(Retasi & { items?: RetasiItem[] })[]>({
     queryKey: ['retasi', currentBranch?.id, filters],
     queryFn: async () => {
       let query = supabase
@@ -540,6 +540,7 @@ export const useRetasi = (filters?: {
     deleteRetasi,
     checkDriverAvailability,
     getRetasiItems,
+    refetchRetasiList,
   };
 };
 
