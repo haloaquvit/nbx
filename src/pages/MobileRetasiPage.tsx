@@ -28,10 +28,8 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { CreateRetasiItemData } from "@/types/retasi";
 import { useGranularPermission } from "@/hooks/useGranularPermission";
-
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { useTimezone } from "@/contexts/TimezoneContext";
+import { getOfficeDateString } from "@/utils/officeTime";
 
 export default function MobileRetasiPage() {
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
@@ -39,6 +37,7 @@ export default function MobileRetasiPage() {
   const [selectedRetasiItems, setSelectedRetasiItems] = useState<any[]>([]);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
+  const { timezone } = useTimezone();
   const { canViewRetasi, canCreateRetasi, canEditRetasi, isLoading: permissionLoading } = useGranularPermission();
 
   // Access denied if user doesn't have retasi_view permission
@@ -62,9 +61,11 @@ export default function MobileRetasiPage() {
     );
   }
 
+  // Use office timezone for date filter to match how data is stored
+  const todayDate = getOfficeDateString(timezone);
   const filters = {
-    date_from: todayStr(),
-    date_to: todayStr(),
+    date_from: todayDate,
+    date_to: todayDate,
   };
 
   const { retasiList, isLoading, markRetasiReturned, getRetasiItems, createRetasi, checkDriverAvailability, refetchRetasiList } = useRetasi(filters);
