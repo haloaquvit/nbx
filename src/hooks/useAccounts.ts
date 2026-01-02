@@ -253,38 +253,10 @@ export const useAccounts = () => {
     },
   });
 
-  const updateAccountBalance = useMutation({
-    mutationFn: async ({ accountId, amount }: { accountId: string, amount: number }) => {
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: currentAccountRaw, error: fetchError } = await supabase.from('accounts').select('balance').eq('id', accountId).order('id').limit(1);
-      if (fetchError) throw fetchError;
-      const currentAccount = Array.isArray(currentAccountRaw) ? currentAccountRaw[0] : currentAccountRaw;
-      if (!currentAccount) throw new Error('Account not found');
-
-      // Ensure both values are numbers to prevent string concatenation
-      const currentBalance = Number(currentAccount.balance) || 0;
-      const amountToAdd = Number(amount) || 0;
-      const newBalance = currentBalance + amountToAdd;
-
-      console.log(`Updating account ${accountId}:`, {
-        currentBalance,
-        amountToAdd,
-        newBalance,
-        currentBalanceType: typeof currentBalance,
-        amountType: typeof amountToAdd
-      });
-
-      // Use .order().limit(1) - PostgREST requires explicit order when using limit
-      const { data: updateDataRaw, error: updateError } = await supabase.from('accounts').update({ balance: newBalance }).eq('id', accountId).select().order('id').limit(1);
-      if (updateError) throw updateError;
-      const data = Array.isArray(updateDataRaw) ? updateDataRaw[0] : updateDataRaw;
-      if (!data) throw new Error('Failed to update account balance');
-      return fromDbToApp(data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
-    }
-  })
+  // NOTE: updateAccountBalance telah dihapus karena merupakan dead code.
+  // Saldo akun HANYA dihitung dari journal_entry_lines (double-entry accounting).
+  // Kolom accounts.balance tidak digunakan sebagai source of truth.
+  // Gunakan updateInitialBalance untuk mengubah saldo awal (akan auto-create opening journal).
 
   const updateAccount = useMutation({
     mutationFn: async ({ accountId, newData }: { accountId: string, newData: Partial<Account> }) => {
@@ -335,22 +307,43 @@ export const useAccounts = () => {
       // Sekarang saldo dihitung HANYA dari jurnal, jadi kita perlu buat jurnal opening
       // setiap kali initial_balance diubah
       // ============================================================================
-      const { createOrUpdateAccountOpeningJournal } = await import('@/services/journalService');
+      const branchIdForJournal = currentAccount.branch_id || currentBranch?.id;
 
-      const journalResult = await createOrUpdateAccountOpeningJournal({
+      if (!branchIdForJournal) {
+        console.warn('[useAccounts] Cannot create opening journal: no branch_id available');
+        return fromDbToApp(data);
+      }
+
+      console.log('[useAccounts] Creating opening journal for:', {
         accountId: currentAccount.id,
-        accountCode: currentAccount.code || '',
+        accountCode: currentAccount.code,
         accountName: currentAccount.name,
         accountType: currentAccount.type,
-        initialBalance: initialBalance,
-        branchId: currentAccount.branch_id || currentBranch?.id || '',
+        initialBalance,
+        branchId: branchIdForJournal,
       });
 
-      if (!journalResult.success) {
-        console.warn('[useAccounts] Failed to create opening journal:', journalResult.error);
+      try {
+        const { createOrUpdateAccountOpeningJournal } = await import('@/services/journalService');
+
+        const journalResult = await createOrUpdateAccountOpeningJournal({
+          accountId: currentAccount.id,
+          accountCode: currentAccount.code || '',
+          accountName: currentAccount.name,
+          accountType: currentAccount.type,
+          initialBalance: initialBalance,
+          branchId: branchIdForJournal,
+        });
+
+        if (!journalResult.success) {
+          console.warn('[useAccounts] Failed to create opening journal:', journalResult.error);
+          // Don't throw - initial_balance sudah terupdate, jurnal bisa dibuat manual nanti
+        } else {
+          console.log('[useAccounts] Opening journal created/updated:', journalResult.journalId);
+        }
+      } catch (journalError) {
+        console.error('[useAccounts] Error creating opening journal:', journalError);
         // Don't throw - initial_balance sudah terupdate, jurnal bisa dibuat manual nanti
-      } else {
-        console.log('[useAccounts] Opening journal created/updated:', journalResult.journalId);
       }
 
       return fromDbToApp(data);
@@ -568,7 +561,6 @@ export const useAccounts = () => {
     accounts,
     isLoading,
     addAccount,
-    updateAccountBalance,
     updateAccount,
     updateInitialBalance,
     deleteAccount,

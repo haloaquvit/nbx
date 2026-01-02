@@ -146,7 +146,8 @@ async function findAccountByPattern(pattern: string, type: string, branchId: str
 }
 
 /**
- * Generate journal entry number with timestamp suffix to prevent race condition duplicates
+ * Generate journal entry number using database sequence (preferred)
+ * Falls back to timestamp-based generation if RPC not available
  */
 async function generateJournalNumber(branchId: string): Promise<string> {
   const now = new Date();
@@ -162,6 +163,28 @@ async function generateJournalNumber(branchId: string): Promise<string> {
     return `${prefix}${timestamp}`;
   }
 
+  // Try to use database sequence RPC (race-condition free)
+  try {
+    const { data: rpcResult, error: rpcError } = await supabase
+      .rpc('get_next_journal_number', {
+        p_branch_id: branchId,
+        p_date: now.toISOString().split('T')[0]
+      });
+
+    if (!rpcError && rpcResult) {
+      console.log('[JournalService] Got journal number from sequence:', rpcResult);
+      return rpcResult;
+    }
+
+    // RPC not available or failed, fall through to legacy method
+    if (rpcError) {
+      console.log('[JournalService] RPC get_next_journal_number not available, using fallback:', rpcError.message);
+    }
+  } catch (e) {
+    console.log('[JournalService] RPC call failed, using fallback method');
+  }
+
+  // Legacy fallback: query last entry and increment
   const { data, error } = await supabase
     .from('journal_entries')
     .select('entry_number')
@@ -204,12 +227,66 @@ async function generateJournalNumber(branchId: string): Promise<string> {
 }
 
 /**
+ * Check if a period (year) is closed for a branch
+ * Prevents posting to closed periods
+ */
+export async function isPeriodClosed(entryDate: Date, branchId: string): Promise<{ closed: boolean; closedYear?: number }> {
+  const year = entryDate.getFullYear();
+
+  const { data, error } = await supabase
+    .from('closing_periods')
+    .select('id, year')
+    .eq('branch_id', branchId)
+    .eq('year', year)
+    .limit(1);
+
+  if (error) {
+    console.warn('[JournalService] Error checking closed period:', error);
+    return { closed: false };
+  }
+
+  if (data && data.length > 0) {
+    return { closed: true, closedYear: data[0].year };
+  }
+
+  return { closed: false };
+}
+
+/**
+ * Get all closed years for a branch
+ */
+export async function getClosedPeriods(branchId: string): Promise<number[]> {
+  const { data, error } = await supabase
+    .from('closing_periods')
+    .select('year')
+    .eq('branch_id', branchId)
+    .order('year', { ascending: false });
+
+  if (error) {
+    console.warn('[JournalService] Error fetching closed periods:', error);
+    return [];
+  }
+
+  return (data || []).map(row => row.year);
+}
+
+/**
  * Create journal entry with lines (with retry logic for duplicate key conflicts)
+ * Now includes period locking validation
  */
 export async function createJournalEntry(input: CreateJournalInput, retryCount = 0): Promise<{ success: boolean; journalId?: string; error?: string }> {
   const MAX_RETRIES = 3;
 
   try {
+    // Check period locking - prevent posting to closed periods
+    const periodCheck = await isPeriodClosed(input.entryDate, input.branchId);
+    if (periodCheck.closed) {
+      return {
+        success: false,
+        error: `Periode tahun ${periodCheck.closedYear} sudah ditutup. Tidak dapat membuat jurnal pada periode yang sudah ditutup.`
+      };
+    }
+
     // Validate balance
     const totalDebit = input.lines.reduce((sum, line) => sum + (line.debitAmount || 0), 0);
     const totalCredit = input.lines.reduce((sum, line) => sum + (line.creditAmount || 0), 0);
@@ -2595,7 +2672,7 @@ export async function createInventoryOpeningBalanceJournal(params: {
 
   return {
     ...result,
-    voidedJournals: voidedNumbers.length > 0 ? voidedNumbers : undefined,
+    // voidedJournals tidak ada karena fungsi ini menambahkan SELISIH, bukan mengganti
   };
 }
 
@@ -2632,13 +2709,12 @@ export async function createOrUpdateAccountOpeningJournal(params: {
   // ============================================================================
   // STEP 1: Void existing opening journal for this specific account
   // ============================================================================
-  const descriptionPattern = `%Saldo awal ${accountName}%`;
-
+  // NOTE: PostgREST tidak mendukung !inner syntax, jadi kita filter di client-side
   const { data: existingJournals, error: findError } = await supabase
     .from('journal_entry_lines')
     .select(`
       journal_entry_id,
-      journal_entries!inner (
+      journal_entries (
         id,
         entry_number,
         reference_type,
@@ -2646,19 +2722,25 @@ export async function createOrUpdateAccountOpeningJournal(params: {
         branch_id
       )
     `)
-    .eq('account_id', accountId)
-    .eq('journal_entries.reference_type', 'opening')
-    .eq('journal_entries.is_voided', false)
-    .eq('journal_entries.branch_id', branchId);
+    .eq('account_id', accountId);
 
   let voidedJournalId: string | undefined;
 
   if (!findError && existingJournals && existingJournals.length > 0) {
+    // Filter on client side: reference_type='opening', is_voided=false, matching branch_id
+    const openingJournals = existingJournals.filter((line: any) => {
+      const journal = line.journal_entries;
+      if (!journal) return false;
+      return journal.reference_type === 'opening' &&
+             journal.is_voided === false &&
+             journal.branch_id === branchId;
+    });
+
     // Void all existing opening journals for this account
-    for (const line of existingJournals) {
+    for (const line of openingJournals) {
       const journalId = (line as any).journal_entries?.id;
       if (journalId) {
-        await supabase
+        const { error: voidError } = await supabase
           .from('journal_entries')
           .update({
             is_voided: true,
@@ -2666,10 +2748,17 @@ export async function createOrUpdateAccountOpeningJournal(params: {
             void_reason: `Auto-void: Saldo awal ${accountName} diperbarui`,
           })
           .eq('id', journalId);
-        voidedJournalId = journalId;
-        console.log(`[JournalService] Auto-voided opening journal for ${accountCode}: ${journalId}`);
+
+        if (voidError) {
+          console.warn(`[JournalService] Error voiding journal ${journalId}:`, voidError.message);
+        } else {
+          voidedJournalId = journalId;
+          console.log(`[JournalService] Auto-voided opening journal for ${accountCode}: ${journalId}`);
+        }
       }
     }
+  } else if (findError) {
+    console.warn(`[JournalService] Error finding existing opening journals:`, findError.message);
   }
 
   // ============================================================================
@@ -2685,17 +2774,22 @@ export async function createOrUpdateAccountOpeningJournal(params: {
   // ============================================================================
   // STEP 3: Find Laba Ditahan account (3200) as balancing account
   // ============================================================================
+  console.log(`[JournalService] Looking for Laba Ditahan account (3200) in branch ${branchId}...`);
+
   const labaDitahanAccount = await getAccountByCode('3200', branchId)
     || await findAccountByPattern('laba ditahan', 'Modal', branchId)
     || await findAccountByPattern('retained', 'Modal', branchId);
 
   if (!labaDitahanAccount) {
+    console.warn(`[JournalService] Laba Ditahan (3200) not found for branch ${branchId}`);
     return {
       success: false,
       error: 'Akun Laba Ditahan (3200) tidak ditemukan. Pastikan akun sudah dibuat di COA.',
       voidedJournalId,
     };
   }
+
+  console.log(`[JournalService] Found Laba Ditahan: ${labaDitahanAccount.code} - ${labaDitahanAccount.name}`);
 
   // ============================================================================
   // STEP 4: Create journal lines based on account type
@@ -2790,6 +2884,8 @@ export async function createOrUpdateAccountOpeningJournal(params: {
   // ============================================================================
   // STEP 5: Create the journal entry
   // ============================================================================
+  console.log(`[JournalService] Creating opening journal with ${lines.length} lines for ${accountCode}:`, lines);
+
   const result = await createJournalEntry({
     entryDate: new Date(),
     description: `Saldo awal ${accountName} - Auto-generated`,
@@ -2800,7 +2896,11 @@ export async function createOrUpdateAccountOpeningJournal(params: {
     lines,
   });
 
-  console.log(`[JournalService] Created opening journal for ${accountCode} ${accountName}: ${result.journalId}`);
+  if (result.success) {
+    console.log(`[JournalService] SUCCESS: Created opening journal for ${accountCode} ${accountName}: ${result.journalId}`);
+  } else {
+    console.error(`[JournalService] FAILED: Could not create opening journal for ${accountCode}:`, result.error);
+  }
 
   return {
     ...result,

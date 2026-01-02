@@ -1,5 +1,38 @@
 # CHANGELOG v4
 
+## 2026-01-02 - COA Balance Calculation Cleanup
+
+### Removed Dead Code
+- **Hapus `updateAccountBalance` mutation** dari `useAccounts.ts`
+  - Fungsi ini mengupdate kolom `accounts.balance` yang **TIDAK digunakan** untuk perhitungan saldo
+  - Saldo akun HANYA dihitung dari `journal_entry_lines` (double-entry accounting)
+  - Ini adalah dead code yang berpotensi menyebabkan kebingungan
+
+### COA Balance System Documentation
+```
+PRINSIP DOUBLE-ENTRY ACCOUNTING:
+================================
+1. Saldo akun dihitung 100% dari journal_entry_lines
+2. Kolom accounts.balance TIDAK digunakan (legacy)
+3. initial_balance hanya referensi untuk membuat opening journal
+4. Ketika initial_balance diubah via updateInitialBalance:
+   - Jurnal opening lama di-void otomatis
+   - Jurnal opening baru dibuat dengan pasangan Laba Ditahan (3200)
+
+RUMUS PERHITUNGAN SALDO:
+========================
+- Aset/Beban: saldo = SUM(debit) - SUM(credit)
+- Kewajiban/Modal/Pendapatan: saldo = SUM(credit) - SUM(debit)
+
+FUNGSI EDIT YANG AMAN:
+======================
+- updateAccount: Edit metadata (name, code, type) - tidak menyentuh balance
+- updateInitialBalance: Edit saldo awal - auto-create opening journal
+- deleteAccount: Hapus akun - perlu validasi jika sudah ada jurnal
+```
+
+---
+
 ## 2025-12-28 - APK Build & Bluetooth Printer Support
 
 ---
@@ -303,6 +336,89 @@ Perbaikan laporan arus kas yang sebelumnya menghitung transfer antar akun kas se
 | `src/services/pricingService.ts` | Defensive check untuk array undefined |
 | `src/components/PosForm.tsx` | Defensive check untuk calculatePrice |
 | `src/components/MobilePosForm.tsx` | UI pembayaran baru, fix pricing, dark mode |
+
+---
+
+## 2026-01-02 - Accounting System Improvements
+
+### 53. COA Seeding dengan Fallback Template Standar
+
+Ketika membuat branch baru, sistem sekarang menggunakan fallback ke template standar jika kantor pusat tidak memiliki COA.
+
+**Perubahan:**
+- Modifikasi `useBranches.ts` untuk import `STANDARD_COA_TEMPLATE`
+- `createBranch` dan `copyCoaToBranch` sekarang fallback ke template standar
+- Template standar mencakup 50+ akun standar Indonesia
+
+**Flow:**
+```
+Branch Baru Dibuat
+    ↓
+Cek apakah HQ punya COA?
+    ↓
+[Ya] → Copy dari HQ
+[Tidak] → Gunakan STANDARD_COA_TEMPLATE
+    ↓
+Insert akun ke branch baru
+```
+
+### 54. Period Locking - Cegah Posting ke Periode Tertutup
+
+Jurnal tidak dapat dibuat pada periode yang sudah ditutup (tutup buku tahunan).
+
+**Perubahan di journalService.ts:**
+- Tambah fungsi `isPeriodClosed(date, branchId)`
+- Tambah fungsi `getClosedPeriods(branchId)`
+- Validasi di `createJournalEntry()` - block posting ke periode tertutup
+
+**Error Message:**
+```
+"Periode tahun 2025 sudah ditutup. Tidak dapat membuat jurnal pada periode yang sudah ditutup."
+```
+
+### 55. Optimasi Query dengan Caching Hook
+
+Hook baru untuk menghitung saldo akun dengan caching yang lebih agresif.
+
+**File Baru:**
+- `src/hooks/useAccountBalanceSummary.ts`
+
+**Fitur:**
+- Cache 2 menit untuk saldo akun
+- Kalkulasi summary: Total Aset, Kewajiban, Modal, Pendapatan, Beban, HPP
+- Getter helpers: `getAccountBalance(idOrCode)`, `getAccountsByType(type)`
+- Check `isBalanced` untuk validasi neraca
+
+**Usage:**
+```tsx
+const { summary, getAccountBalance } = useAccountBalanceSummary();
+console.log(summary.totalAset, summary.labaRugiBersih);
+console.log(getAccountBalance('1120')); // Saldo Kas
+```
+
+### 56. Journal Number Sequence yang Lebih Robust
+
+Perbaikan generasi nomor jurnal untuk mencegah race condition.
+
+**Database Migration:**
+- `database/create_journal_sequence.sql`
+- Tabel `journal_sequences` untuk tracking sequence per branch/hari
+- RPC `get_next_journal_number()` dengan advisory lock
+- Format: `JE-YYYYMMDD-XXXX`
+
+**Perubahan di journalService.ts:**
+- Coba gunakan RPC `get_next_journal_number` terlebih dahulu
+- Fallback ke metode lama jika RPC tidak tersedia
+- Race-condition free dengan PostgreSQL advisory lock
+
+### Files Created/Modified
+
+| File | Perubahan |
+|------|-----------|
+| `src/hooks/useBranches.ts` | Fallback COA ke template standar |
+| `src/hooks/useAccountBalanceSummary.ts` | Hook cached account balances |
+| `src/services/journalService.ts` | Period locking + sequence RPC |
+| `database/create_journal_sequence.sql` | Database migration untuk sequence |
 
 ---
 

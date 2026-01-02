@@ -1,5 +1,5 @@
 "use client"
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Download, Calendar, Package, CalendarDays, ShoppingCart, Truck, Store, Navigation, FileSpreadsheet, User } from 'lucide-react'
+import { Download, Calendar, Package, CalendarDays, ShoppingCart, Truck, Store, Navigation, FileSpreadsheet, User, Wallet } from 'lucide-react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 import jsPDF from 'jspdf'
@@ -18,6 +18,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { useBranch } from '@/contexts/BranchContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { toOfficeStartOfDay, toOfficeEndOfDay } from '@/utils/officeTime'
+import { useAccounts } from '@/hooks/useAccounts'
 
 interface SoldProduct {
   transactionId: string
@@ -35,6 +36,8 @@ interface SoldProduct {
   retasiKe?: number // Retasi ke-berapa (1, 2, 3, dst)
   cashierName: string
   isBonus: boolean
+  paymentAccountId?: string // ID akun pembayaran
+  paymentAccountName?: string // Nama akun pembayaran
 }
 
 export const TransactionItemsReport = () => {
@@ -50,11 +53,24 @@ export const TransactionItemsReport = () => {
   const [availableDriversKasir, setAvailableDriversKasir] = useState<string[]>([])
   const [retasiKeFilter, setRetasiKeFilter] = useState<string>('all')
   const [availableRetasiKe, setAvailableRetasiKe] = useState<{value: string, label: string}[]>([])
+  const [paymentAccountFilter, setPaymentAccountFilter] = useState<string>('all')
   const [reportData, setReportData] = useState<SoldProduct[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
   const { currentBranch } = useBranch()
   const { timezone } = useTimezone()
+  const { accounts } = useAccounts()
+
+  // Get payment accounts (kas/bank accounts)
+  const paymentAccounts = useMemo(() => {
+    return (accounts || []).filter(acc =>
+      acc.isPaymentAccount === true ||
+      acc.code?.startsWith('1-1') || // Kas
+      acc.code?.startsWith('11') ||  // Kas
+      acc.name?.toLowerCase().includes('kas') ||
+      acc.name?.toLowerCase().includes('bank')
+    ).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+  }, [accounts])
 
   const months = [
     { value: 1, label: 'Januari' },
@@ -125,6 +141,7 @@ export const TransactionItemsReport = () => {
               order_date,
               cashier_id,
               retasi_id,
+              payment_account_id,
               cashier:profiles!transactions_cashier_id_fkey(full_name),
               items
             )
@@ -191,6 +208,9 @@ export const TransactionItemsReport = () => {
 
               const price = matchingTxItem?.price || matchingTxItem?.product?.basePrice || 0
 
+              // Get payment account name
+              const paymentAcct = paymentAccounts.find(a => a.id === transaction?.payment_account_id)
+
               items.push({
                 transactionId: delivery.transaction_id,
                 transactionDate: new Date(transaction?.order_date || delivery.delivery_date),
@@ -206,7 +226,9 @@ export const TransactionItemsReport = () => {
                 retasiNumber: retasiNumberDisplay,
                 retasiKe: retasiInfo?.retasi_ke,
                 cashierName: transaction?.cashier?.full_name || 'Unknown',
-                isBonus: isBonus
+                isBonus: isBonus,
+                paymentAccountId: transaction?.payment_account_id,
+                paymentAccountName: paymentAcct?.name
               })
             })
           })
@@ -223,6 +245,7 @@ export const TransactionItemsReport = () => {
             order_date,
             items,
             cashier_id,
+            payment_account_id,
             cashier:profiles!transactions_cashier_id_fkey(full_name)
           `)
           .eq('is_office_sale', true)
@@ -253,6 +276,9 @@ export const TransactionItemsReport = () => {
               const price = item.price || item.product?.basePrice || 0
               const quantity = item.quantity || 0
 
+              // Get payment account name
+              const paymentAcct = paymentAccounts.find(a => a.id === transaction.payment_account_id)
+
               items.push({
                 transactionId: transaction.id,
                 transactionDate: orderDate,
@@ -266,7 +292,9 @@ export const TransactionItemsReport = () => {
                 source: 'office_sale',
                 driverName: undefined,
                 cashierName: transaction.cashier?.full_name || 'Unknown',
-                isBonus: isBonus
+                isBonus: isBonus,
+                paymentAccountId: transaction.payment_account_id,
+                paymentAccountName: paymentAcct?.name
               })
             })
           })
@@ -287,7 +315,8 @@ export const TransactionItemsReport = () => {
             items,
             retasi_id,
             retasi_number,
-            cashier_name
+            cashier_name,
+            payment_account_id
           `)
           .not('retasi_id', 'is', null)
           .gte('order_date', fromDate.toISOString())
@@ -351,6 +380,9 @@ export const TransactionItemsReport = () => {
                 ? `${retasiInfo.retasi_number} (ke-${retasiInfo.retasi_ke})`
                 : (transaction.retasi_number || '-')
 
+              // Get payment account name
+              const paymentAcct = paymentAccounts.find(a => a.id === transaction.payment_account_id)
+
               items.push({
                 transactionId: transaction.id,
                 transactionDate: orderDate,
@@ -366,7 +398,9 @@ export const TransactionItemsReport = () => {
                 retasiKe: retasiInfo?.retasi_ke,
                 driverName: retasiInfo?.driver_name || transaction.cashier_name,
                 cashierName: transaction.cashier_name || 'Unknown',
-                isBonus: isBonus
+                isBonus: isBonus,
+                paymentAccountId: transaction.payment_account_id,
+                paymentAccountName: paymentAcct?.name
               })
             })
           })
@@ -415,6 +449,11 @@ export const TransactionItemsReport = () => {
       if (retasiKeFilter !== 'all') {
         const filterKe = parseInt(retasiKeFilter)
         filteredItems = filteredItems.filter(item => item.retasiKe === filterKe)
+      }
+
+      // Apply payment account filter if selected
+      if (paymentAccountFilter !== 'all') {
+        filteredItems = filteredItems.filter(item => item.paymentAccountId === paymentAccountFilter)
       }
 
       setReportData(filteredItems)
@@ -732,6 +771,29 @@ export const TransactionItemsReport = () => {
               </div>
             </div>
 
+            {/* Payment Account Filter */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-1">
+                  <Wallet className="h-3 w-3" />
+                  Akun Pembayaran
+                </Label>
+                <Select value={paymentAccountFilter} onValueChange={setPaymentAccountFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Semua Akun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Akun Pembayaran</SelectItem>
+                    {paymentAccounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.code ? `${account.code} - ${account.name}` : account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             {/* Monthly Filter */}
             {filterType === 'monthly' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -822,42 +884,61 @@ export const TransactionItemsReport = () => {
 
       {reportData.length > 0 && !isLoading && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
                 Hasil Laporan - {filterType === 'monthly'
                   ? `${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`
                   : `${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
                 }
-              </span>
-              <div className="flex gap-2 text-sm text-muted-foreground flex-wrap">
-                <span>{reportData.length} Produk</span>
-                <span>•</span>
-                <span className="text-blue-600">{reportData.filter(i => i.source === 'delivery').length} Diantar</span>
-                <span>•</span>
-                <span className="text-green-600">{reportData.filter(i => i.source === 'office_sale').length} Laku Kantor</span>
-                <span>•</span>
-                <span className="text-purple-600">{reportData.filter(i => i.source === 'retasi').length} Retasi</span>
+              </CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handlePrintReport}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Cetak PDF
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleExportExcel}>
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  Export Excel
+                </Button>
               </div>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-medium">Detail Produk Laku</h3>
-              {reportData.length > 0 && (
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={handlePrintReport}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Cetak PDF
-                  </Button>
-                  <Button variant="outline" onClick={handleExportExcel}>
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                    Export Excel
-                  </Button>
-                </div>
-              )}
             </div>
+
+            {/* Summary Cards - Moved to Header */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-4">
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold">{reportData.length}</div>
+                <div className="text-xs text-muted-foreground">Total Produk</div>
+              </div>
+              <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold text-blue-600">{reportData.filter(item => item.source === 'delivery').length}</div>
+                <div className="text-xs text-muted-foreground">Diantar</div>
+              </div>
+              <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold text-green-600">{reportData.filter(item => item.source === 'office_sale').length}</div>
+                <div className="text-xs text-muted-foreground">Laku Kantor</div>
+              </div>
+              <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold text-purple-600">{reportData.filter(item => item.source === 'retasi').length}</div>
+                <div className="text-xs text-muted-foreground">Retasi</div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold">{reportData.reduce((sum, item) => sum + item.quantity, 0)}</div>
+                <div className="text-xs text-muted-foreground">Total Qty</div>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-3 text-center">
+                <div className="text-lg font-bold text-emerald-600">Rp {reportData.reduce((sum, item) => sum + item.total, 0).toLocaleString()}</div>
+                <div className="text-xs text-muted-foreground">Total Nilai</div>
+              </div>
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold">{new Set(reportData.map(item => item.transactionId)).size}</div>
+                <div className="text-xs text-muted-foreground">Transaksi</div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4 pt-2">
+            <h3 className="text-lg font-medium">Detail Produk Laku</h3>
 
             <div className="border rounded-lg overflow-hidden">
               <Table>
@@ -924,52 +1005,6 @@ export const TransactionItemsReport = () => {
                   ))}
                 </TableBody>
               </Table>
-            </div>
-
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mt-6">
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold">{reportData.length}</div>
-                  <div className="text-sm text-muted-foreground">Total Produk</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-blue-600">{reportData.filter(item => item.source === 'delivery').length}</div>
-                  <div className="text-sm text-muted-foreground">Diantar</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-green-600">{reportData.filter(item => item.source === 'office_sale').length}</div>
-                  <div className="text-sm text-muted-foreground">Laku Kantor</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold text-purple-600">{reportData.filter(item => item.source === 'retasi').length}</div>
-                  <div className="text-sm text-muted-foreground">Retasi</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold">{reportData.reduce((sum, item) => sum + item.quantity, 0)}</div>
-                  <div className="text-sm text-muted-foreground">Total Qty</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold">Rp {reportData.reduce((sum, item) => sum + item.total, 0).toLocaleString()}</div>
-                  <div className="text-sm text-muted-foreground">Total Nilai</div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-2xl font-bold">{new Set(reportData.map(item => item.transactionId)).size}</div>
-                  <div className="text-sm text-muted-foreground">Transaksi</div>
-                </CardContent>
-              </Card>
             </div>
           </CardContent>
         </Card>

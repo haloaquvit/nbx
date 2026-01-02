@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Branch } from '@/types/branch';
 import { useToast } from '@/hooks/use-toast';
+import { STANDARD_COA_TEMPLATE } from '@/utils/chartOfAccountsUtils';
 
 export function useBranches() {
   const { toast } = useToast();
@@ -77,8 +78,10 @@ export function useBranches() {
         b.name.toLowerCase().includes('manokwari')
       ) || allBranches?.[0];
 
+      // 3. Try to get accounts from headquarters first
+      let accountsToCopy: any[] = [];
+
       if (headquartersBranch && headquartersBranch.id !== newBranch.id) {
-        // 3. Get all accounts from headquarters
         const { data: hqAccounts, error: accError } = await supabase
           .from('accounts')
           .select('code, name, type, parent_id, is_header, level, normal_balance, is_active, sort_order, category')
@@ -86,15 +89,14 @@ export function useBranches() {
           .order('code');
 
         if (!accError && hqAccounts && hqAccounts.length > 0) {
-          // 4. Create the same accounts for the new branch
-          const newAccounts = hqAccounts.map(acc => ({
+          accountsToCopy = hqAccounts.map(acc => ({
             branch_id: newBranch.id,
             code: acc.code,
             name: acc.name,
             type: acc.type,
-            parent_id: null, // Reset parent since IDs will be different
+            parent_id: null,
             is_header: acc.is_header,
-            initial_balance: 0, // Start with zero balance for new branch
+            initial_balance: 0,
             balance: 0,
             level: acc.level,
             normal_balance: acc.normal_balance,
@@ -102,15 +104,44 @@ export function useBranches() {
             sort_order: acc.sort_order,
             category: acc.category,
           }));
+        }
+      }
 
-          const { error: insertError } = await supabase
-            .from('accounts')
-            .insert(newAccounts);
+      // 4. Fallback to standard template if no HQ accounts found
+      if (accountsToCopy.length === 0) {
+        console.log('[useBranches] Using standard COA template for new branch');
+        accountsToCopy = STANDARD_COA_TEMPLATE.map(template => ({
+          branch_id: newBranch.id,
+          code: template.code,
+          name: template.name,
+          type: template.category === 'ASET' ? 'Aset' :
+                template.category === 'KEWAJIBAN' ? 'Kewajiban' :
+                template.category === 'MODAL' ? 'Modal' :
+                template.category === 'PENDAPATAN' || template.category === 'PENDAPATAN_NON_OPERASIONAL' ? 'Pendapatan' :
+                'Beban',
+          parent_id: null,
+          is_header: template.isHeader,
+          initial_balance: 0,
+          balance: 0,
+          level: template.level,
+          normal_balance: template.normalBalance === 'DEBIT' ? 'debit' : 'credit',
+          is_active: true,
+          sort_order: template.sortOrder,
+          category: template.category,
+          is_payment_account: template.isPaymentAccount || false,
+        }));
+      }
 
-          if (insertError) {
-            console.error('Failed to copy COA to new branch:', insertError);
-            // Don't throw - branch was created successfully, just COA copy failed
-          }
+      // 5. Insert accounts for new branch
+      if (accountsToCopy.length > 0) {
+        const { error: insertError } = await supabase
+          .from('accounts')
+          .insert(accountsToCopy);
+
+        if (insertError) {
+          console.error('Failed to create COA for new branch:', insertError);
+        } else {
+          console.log(`[useBranches] Created ${accountsToCopy.length} accounts for branch ${newBranch.id}`);
         }
       }
 
@@ -232,42 +263,65 @@ export function useBranches() {
         throw new Error('Tidak dapat menemukan kantor pusat untuk menyalin COA');
       }
 
-      // 3. Get all accounts from headquarters
+      // 3. Try to get accounts from headquarters
+      let accountsToCopy: any[] = [];
+
       const { data: hqAccounts, error: accError } = await supabase
         .from('accounts')
         .select('code, name, type, parent_id, is_header, level, normal_balance, is_active, sort_order, category')
         .eq('branch_id', headquartersBranch.id)
         .order('code');
 
-      if (accError) throw accError;
-      if (!hqAccounts || hqAccounts.length === 0) {
-        throw new Error('Kantor pusat tidak memiliki akun COA');
+      if (!accError && hqAccounts && hqAccounts.length > 0) {
+        accountsToCopy = hqAccounts.map(acc => ({
+          branch_id: targetBranchId,
+          code: acc.code,
+          name: acc.name,
+          type: acc.type,
+          parent_id: null,
+          is_header: acc.is_header,
+          initial_balance: 0,
+          balance: 0,
+          level: acc.level,
+          normal_balance: acc.normal_balance,
+          is_active: acc.is_active,
+          sort_order: acc.sort_order,
+          category: acc.category,
+        }));
       }
 
-      // 4. Create the same accounts for the target branch
-      const newAccounts = hqAccounts.map(acc => ({
-        branch_id: targetBranchId,
-        code: acc.code,
-        name: acc.name,
-        type: acc.type,
-        parent_id: null,
-        is_header: acc.is_header,
-        initial_balance: 0,
-        balance: 0,
-        level: acc.level,
-        normal_balance: acc.normal_balance,
-        is_active: acc.is_active,
-        sort_order: acc.sort_order,
-        category: acc.category,
-      }));
+      // 4. Fallback to standard template if no HQ accounts
+      if (accountsToCopy.length === 0) {
+        console.log('[useBranches] Using standard COA template');
+        accountsToCopy = STANDARD_COA_TEMPLATE.map(template => ({
+          branch_id: targetBranchId,
+          code: template.code,
+          name: template.name,
+          type: template.category === 'ASET' ? 'Aset' :
+                template.category === 'KEWAJIBAN' ? 'Kewajiban' :
+                template.category === 'MODAL' ? 'Modal' :
+                template.category === 'PENDAPATAN' || template.category === 'PENDAPATAN_NON_OPERASIONAL' ? 'Pendapatan' :
+                'Beban',
+          parent_id: null,
+          is_header: template.isHeader,
+          initial_balance: 0,
+          balance: 0,
+          level: template.level,
+          normal_balance: template.normalBalance === 'DEBIT' ? 'debit' : 'credit',
+          is_active: true,
+          sort_order: template.sortOrder,
+          category: template.category,
+          is_payment_account: template.isPaymentAccount || false,
+        }));
+      }
 
       const { error: insertError } = await supabase
         .from('accounts')
-        .insert(newAccounts);
+        .insert(accountsToCopy);
 
       if (insertError) throw insertError;
 
-      return { copiedCount: newAccounts.length };
+      return { copiedCount: accountsToCopy.length };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
