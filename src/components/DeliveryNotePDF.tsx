@@ -19,7 +19,7 @@ function safeFormatDate(date: Date | string | null | undefined, formatStr: strin
   }
 }
 import { useCompanySettings } from "@/hooks/useCompanySettings"
-import { useTransactions } from "@/hooks/useTransactions"
+import { useTransactionDeliveryInfo } from "@/hooks/useDeliveries"
 import { createCompressedPDF } from "@/utils/pdfUtils"
 import { useIsMobile } from "@/hooks/use-mobile"
 
@@ -31,14 +31,15 @@ interface DeliveryNotePDFProps {
 
 export function DeliveryNotePDF({ delivery, transactionInfo, children }: DeliveryNotePDFProps) {
   const { settings } = useCompanySettings()
-  const { transactions } = useTransactions()
+  // Use useTransactionDeliveryInfo to get complete delivery summary with correct remaining quantities
+  const { data: fetchedTransactionInfo } = useTransactionDeliveryInfo(delivery.transactionId)
   const printRef = React.useRef<HTMLDivElement>(null)
   const dotMatrixRef = React.useRef<HTMLDivElement>(null)
   const [isDialogOpen, setIsDialogOpen] = React.useState(false)
   const isMobile = useIsMobile()
 
-  // Get transaction info if not provided
-  const transaction = transactionInfo || transactions?.find(t => t.id === delivery.transactionId)
+  // Prioritize: transactionInfo prop > fetched data (which has deliverySummary)
+  const transaction = transactionInfo || fetchedTransactionInfo
 
   const handlePrintPDF = async () => {
     if (!printRef.current) {

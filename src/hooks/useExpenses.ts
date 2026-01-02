@@ -223,7 +223,8 @@ export const useExpenses = () => {
             categoryName: newExpenseData.category || 'Beban Umum',
             description: newExpenseData.description,
             branchId: currentBranch.id,
-            accountId: newExpenseData.expenseAccountId, // Akun beban spesifik
+            expenseAccountId: newExpenseData.expenseAccountId, // Akun beban spesifik
+            cashAccountId: newExpenseData.accountId, // Akun sumber dana (Kas Kecil, Kas Operasional, Bank, dll)
           });
 
           if (journalResult.success) {

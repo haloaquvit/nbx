@@ -652,22 +652,42 @@ export async function createExpenseJournal(params: {
   categoryName: string;
   description: string;
   branchId: string;
-  accountId?: string; // Optional: specific expense account
+  expenseAccountId?: string; // Optional: specific expense account (akun beban)
+  cashAccountId?: string; // Optional: specific cash account (sumber dana: Kas Kecil, Kas Operasional, dll)
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
-  const { expenseId, expenseDate, amount, categoryName, description, branchId, accountId } = params;
+  const { expenseId, expenseDate, amount, categoryName, description, branchId, expenseAccountId, cashAccountId } = params;
 
-  // Find accounts
-  const kasAccount = await getAccountByCode('1120', branchId) || await findAccountByPattern('kas', 'Aset', branchId);
+  // Find cash account (sumber dana)
+  let kasAccount: { id: string; code: string; name: string } | null = null;
 
+  if (cashAccountId) {
+    // Use specific cash account if provided (user selected: Kas Kecil, Kas Operasional, Bank, etc.)
+    const { data: dataRaw } = await supabase
+      .from('accounts')
+      .select('id, code, name')
+      .eq('id', cashAccountId)
+      .order('id').limit(1);
+    const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+    if (data) {
+      kasAccount = { id: data.id, code: data.code, name: data.name };
+    }
+  }
+
+  if (!kasAccount) {
+    // Fallback to default Kas Operasional if no specific account provided
+    kasAccount = await getAccountByCode('1120', branchId) || await findAccountByPattern('kas', 'Aset', branchId);
+  }
+
+  // Find expense account (akun beban)
   let bebanAccount: { id: string; code: string; name: string } | null = null;
 
-  if (accountId) {
-    // Use specific account if provided
+  if (expenseAccountId) {
+    // Use specific expense account if provided
     // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
     const { data: dataRaw } = await supabase
       .from('accounts')
       .select('id, code, name')
-      .eq('id', accountId)
+      .eq('id', expenseAccountId)
       .order('id').limit(1);
     const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
     if (data) {
@@ -2279,7 +2299,7 @@ export async function createMigrationDebtJournal(params: {
  * Generate journal for Material Spoilage/Waste (Bahan Rusak)
  *
  * Bahan Rusak saat Produksi:
- * Dr. Beban Bahan Rusak (5300)     xxx
+ * Dr. Biaya Bahan Baku (5200)     xxx
  *   Cr. Persediaan Bahan Baku (1320)    xxx
  */
 export async function createSpoilageJournal(params: {
@@ -2295,16 +2315,14 @@ export async function createSpoilageJournal(params: {
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
   const { errorId, errorRef, errorDate, amount, materialName, quantity, unit, notes, branchId } = params;
 
-  // Find Beban Bahan Rusak account (5300) or fallback to similar expense accounts
-  const spoilageAccount = await getAccountByCode('5300', branchId)
+  // Find Biaya Bahan Baku account (5200) - bahan rusak masuk ke biaya bahan baku
+  const spoilageAccount = await getAccountByCode('5200', branchId) // Biaya Bahan Baku (primary)
+    || await findAccountByPattern('bahan baku', 'Beban', branchId)
     || await findAccountByPattern('rusak', 'Beban', branchId)
-    || await findAccountByPattern('spoil', 'Beban', branchId)
-    || await findAccountByPattern('waste', 'Beban', branchId)
-    || await getAccountByCode('5200', branchId) // Fallback to Biaya Bahan Baku
     || await getAccountByCode('5100', branchId); // Fallback to HPP
 
   if (!spoilageAccount) {
-    return { success: false, error: 'Akun Beban Bahan Rusak tidak ditemukan. Buat akun dengan kode 5300 atau tipe Beban' };
+    return { success: false, error: 'Akun Biaya Bahan Baku tidak ditemukan. Buat akun dengan kode 5200 atau tipe Beban' };
   }
 
   // Find Persediaan Bahan Baku account (1320)
