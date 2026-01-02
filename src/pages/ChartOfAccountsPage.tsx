@@ -1282,14 +1282,9 @@ export default function ChartOfAccountsPage() {
 
         {userIsAdminOrOwner && (
           <div className="flex gap-2">
-            <Button
-              onClick={handleOpenSyncAllDialog}
-              disabled={isSyncingAll}
-              variant="outline"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              {isSyncingAll ? 'Memuat...' : 'Sinkron Saldo Awal'}
-            </Button>
+            {/* Tombol "Sinkron Saldo Awal" DIHAPUS karena sekarang jurnal saldo awal
+                otomatis dibuat saat edit initial_balance akun.
+                Lihat: useAccounts.ts > updateInitialBalance */}
             <Button
               onClick={handleImportClick}
               disabled={isImporting}

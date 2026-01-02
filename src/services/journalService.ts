@@ -2600,6 +2600,215 @@ export async function createInventoryOpeningBalanceJournal(params: {
 }
 
 /**
+ * ============================================================================
+ * CREATE/UPDATE OPENING BALANCE JOURNAL FOR SINGLE ACCOUNT
+ * ============================================================================
+ * Dipanggil otomatis saat user mengedit initial_balance akun di Chart of Accounts.
+ * Ini menggantikan tombol "Sinkron Saldo Awal" yang harus diklik manual.
+ *
+ * Logika:
+ * 1. Void jurnal opening sebelumnya untuk akun ini (jika ada)
+ * 2. Buat jurnal opening baru dengan nilai initial_balance terbaru
+ * 3. Gunakan Laba Ditahan (3200) sebagai akun penyeimbang
+ *
+ * Jurnal untuk Aset (initial_balance positif):
+ *   Dr. [Akun Aset]        xxx
+ *     Cr. Laba Ditahan       xxx
+ *
+ * Jurnal untuk Kewajiban/Modal (initial_balance positif):
+ *   Dr. Laba Ditahan       xxx
+ *     Cr. [Akun Kewajiban]   xxx
+ */
+export async function createOrUpdateAccountOpeningJournal(params: {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  initialBalance: number;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string; voidedJournalId?: string }> {
+  const { accountId, accountCode, accountName, accountType, initialBalance, branchId } = params;
+
+  // ============================================================================
+  // STEP 1: Void existing opening journal for this specific account
+  // ============================================================================
+  const descriptionPattern = `%Saldo awal ${accountName}%`;
+
+  const { data: existingJournals, error: findError } = await supabase
+    .from('journal_entry_lines')
+    .select(`
+      journal_entry_id,
+      journal_entries!inner (
+        id,
+        entry_number,
+        reference_type,
+        is_voided,
+        branch_id
+      )
+    `)
+    .eq('account_id', accountId)
+    .eq('journal_entries.reference_type', 'opening')
+    .eq('journal_entries.is_voided', false)
+    .eq('journal_entries.branch_id', branchId);
+
+  let voidedJournalId: string | undefined;
+
+  if (!findError && existingJournals && existingJournals.length > 0) {
+    // Void all existing opening journals for this account
+    for (const line of existingJournals) {
+      const journalId = (line as any).journal_entries?.id;
+      if (journalId) {
+        await supabase
+          .from('journal_entries')
+          .update({
+            is_voided: true,
+            voided_at: new Date().toISOString(),
+            void_reason: `Auto-void: Saldo awal ${accountName} diperbarui`,
+          })
+          .eq('id', journalId);
+        voidedJournalId = journalId;
+        console.log(`[JournalService] Auto-voided opening journal for ${accountCode}: ${journalId}`);
+      }
+    }
+  }
+
+  // ============================================================================
+  // STEP 2: If initial_balance is 0, no need to create new journal
+  // ============================================================================
+  if (initialBalance === 0) {
+    return {
+      success: true,
+      voidedJournalId,
+    };
+  }
+
+  // ============================================================================
+  // STEP 3: Find Laba Ditahan account (3200) as balancing account
+  // ============================================================================
+  const labaDitahanAccount = await getAccountByCode('3200', branchId)
+    || await findAccountByPattern('laba ditahan', 'Modal', branchId)
+    || await findAccountByPattern('retained', 'Modal', branchId);
+
+  if (!labaDitahanAccount) {
+    return {
+      success: false,
+      error: 'Akun Laba Ditahan (3200) tidak ditemukan. Pastikan akun sudah dibuat di COA.',
+      voidedJournalId,
+    };
+  }
+
+  // ============================================================================
+  // STEP 4: Create journal lines based on account type
+  // ============================================================================
+  const normalizedType = (accountType || '').toLowerCase();
+  const isDebitNormal = normalizedType.includes('aset') ||
+                        normalizedType.includes('asset') ||
+                        normalizedType.includes('beban') ||
+                        normalizedType.includes('expense');
+
+  const lines: JournalLineInput[] = [];
+  const absBalance = Math.abs(initialBalance);
+
+  if (isDebitNormal) {
+    // Aset/Beban: Debit the account, Credit Laba Ditahan
+    if (initialBalance > 0) {
+      lines.push({
+        accountId,
+        accountCode,
+        accountName,
+        debitAmount: absBalance,
+        creditAmount: 0,
+        description: `Saldo awal ${accountName}`,
+      });
+      lines.push({
+        accountId: labaDitahanAccount.id,
+        accountCode: labaDitahanAccount.code || '3200',
+        accountName: labaDitahanAccount.name,
+        debitAmount: 0,
+        creditAmount: absBalance,
+        description: `Penyeimbang saldo awal ${accountName}`,
+      });
+    } else {
+      // Negative balance for asset (unusual but handle it)
+      lines.push({
+        accountId,
+        accountCode,
+        accountName,
+        debitAmount: 0,
+        creditAmount: absBalance,
+        description: `Saldo awal ${accountName} (negatif)`,
+      });
+      lines.push({
+        accountId: labaDitahanAccount.id,
+        accountCode: labaDitahanAccount.code || '3200',
+        accountName: labaDitahanAccount.name,
+        debitAmount: absBalance,
+        creditAmount: 0,
+        description: `Penyeimbang saldo awal ${accountName}`,
+      });
+    }
+  } else {
+    // Kewajiban/Modal/Pendapatan: Credit the account, Debit Laba Ditahan
+    if (initialBalance > 0) {
+      lines.push({
+        accountId,
+        accountCode,
+        accountName,
+        debitAmount: 0,
+        creditAmount: absBalance,
+        description: `Saldo awal ${accountName}`,
+      });
+      lines.push({
+        accountId: labaDitahanAccount.id,
+        accountCode: labaDitahanAccount.code || '3200',
+        accountName: labaDitahanAccount.name,
+        debitAmount: absBalance,
+        creditAmount: 0,
+        description: `Penyeimbang saldo awal ${accountName}`,
+      });
+    } else {
+      // Negative balance for liability (unusual but handle it)
+      lines.push({
+        accountId,
+        accountCode,
+        accountName,
+        debitAmount: absBalance,
+        creditAmount: 0,
+        description: `Saldo awal ${accountName} (negatif)`,
+      });
+      lines.push({
+        accountId: labaDitahanAccount.id,
+        accountCode: labaDitahanAccount.code || '3200',
+        accountName: labaDitahanAccount.name,
+        debitAmount: 0,
+        creditAmount: absBalance,
+        description: `Penyeimbang saldo awal ${accountName}`,
+      });
+    }
+  }
+
+  // ============================================================================
+  // STEP 5: Create the journal entry
+  // ============================================================================
+  const result = await createJournalEntry({
+    entryDate: new Date(),
+    description: `Saldo awal ${accountName} - Auto-generated`,
+    referenceType: 'opening',
+    referenceId: `opening-${accountId}-${Date.now()}`,
+    branchId,
+    autoPost: true,
+    lines,
+  });
+
+  console.log(`[JournalService] Created opening journal for ${accountCode} ${accountName}: ${result.journalId}`);
+
+  return {
+    ...result,
+    voidedJournalId,
+  };
+}
+
+/**
  * Generate opening balance journal for all accounts with initial_balance
  * This creates balancing entries for Kas/Bank and other accounts that have initial_balance
  * but no corresponding journal entries.

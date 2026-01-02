@@ -149,12 +149,17 @@ export const useAccounts = () => {
         }));
       }
 
-      // Calculate balance per account from journal_entry_lines
+      // Calculate balance per account from journal_entry_lines ONLY
+      // ============================================================================
+      // PENTING: Saldo dihitung HANYA dari jurnal, TANPA initial_balance
+      // initial_balance hanya digunakan sebagai referensi untuk membuat jurnal opening
+      // Ini mencegah duplikasi saldo jika sudah ada jurnal saldo awal
+      // ============================================================================
       const accountBalanceMap = new Map<string, number>();
 
-      // Initialize with initial_balance for each account
+      // Initialize with 0 (not initial_balance) - saldo murni dari jurnal
       baseAccounts.forEach(acc => {
-        accountBalanceMap.set(acc.id, acc.initialBalance || 0);
+        accountBalanceMap.set(acc.id, 0);
       });
 
       // ============================================================================
@@ -300,11 +305,10 @@ export const useAccounts = () => {
 
   const updateInitialBalance = useMutation({
     mutationFn: async ({ accountId, initialBalance }: { accountId: string, initialBalance: number }) => {
-      // Get current balance and calculate the difference
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+      // Get current account data for journal creation
       const { data: currentAccountRaw, error: fetchError } = await supabase
         .from('accounts')
-        .select('balance, initial_balance')
+        .select('id, code, name, type, balance, initial_balance, branch_id')
         .eq('id', accountId)
         .order('id').limit(1);
 
@@ -312,17 +316,11 @@ export const useAccounts = () => {
       const currentAccount = Array.isArray(currentAccountRaw) ? currentAccountRaw[0] : currentAccountRaw;
       if (!currentAccount) throw new Error('Account not found');
 
-      // Calculate how much the balance should change
-      const balanceDifference = initialBalance - (currentAccount.initial_balance || 0);
-      const newBalance = currentAccount.balance + balanceDifference;
-
-      // Update both initial_balance and balance
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+      // Update initial_balance in database (balance is calculated from journals now)
       const { data: dataRaw, error } = await supabase
         .from('accounts')
         .update({
           initial_balance: initialBalance,
-          balance: newBalance
         })
         .eq('id', accountId)
         .select()
@@ -331,10 +329,35 @@ export const useAccounts = () => {
       if (error) throw error;
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       if (!data) throw new Error('Failed to update initial balance');
+
+      // ============================================================================
+      // AUTO-CREATE/UPDATE OPENING JOURNAL
+      // Sekarang saldo dihitung HANYA dari jurnal, jadi kita perlu buat jurnal opening
+      // setiap kali initial_balance diubah
+      // ============================================================================
+      const { createOrUpdateAccountOpeningJournal } = await import('@/services/journalService');
+
+      const journalResult = await createOrUpdateAccountOpeningJournal({
+        accountId: currentAccount.id,
+        accountCode: currentAccount.code || '',
+        accountName: currentAccount.name,
+        accountType: currentAccount.type,
+        initialBalance: initialBalance,
+        branchId: currentAccount.branch_id || currentBranch?.id || '',
+      });
+
+      if (!journalResult.success) {
+        console.warn('[useAccounts] Failed to create opening journal:', journalResult.error);
+        // Don't throw - initial_balance sudah terupdate, jurnal bisa dibuat manual nanti
+      } else {
+        console.log('[useAccounts] Opening journal created/updated:', journalResult.journalId);
+      }
+
       return fromDbToApp(data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
     }
   })
 
