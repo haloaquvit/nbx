@@ -23,6 +23,7 @@ import { compressImage, formatFileSize, isImageFile } from "@/utils/imageCompres
 import { PhotoUploadService } from "@/services/photoUploadService"
 import { useState, useRef } from "react"
 import { useAuth } from "@/hooks/useAuth"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 const customerSchema = z.object({
   name: z.string().min(3, { message: "Nama harus diisi (minimal 3 karakter)." }),
@@ -47,14 +48,15 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
   const { toast } = useToast()
   const { addCustomer, isLoading } = useCustomers()
   const { user } = useAuth()
+  const isMobile = useIsMobile()
   const [isUploading, setIsUploading] = useState(false)
   const [storePhoto, setStorePhoto] = useState<File | null>(null)
   const [storePhotoFilename, setStorePhotoFilename] = useState<string>('') // Hanya simpan filename
   const [photoPreview, setPhotoPreview] = useState<string | null>(null) // Preview foto
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Foto wajib untuk semua user, koordinat GPS opsional untuk admin/owner
-  const requiresPhoto = true // Foto WAJIB untuk semua
+  // Foto wajib HANYA untuk mobile view, opsional untuk web/desktop view
+  const requiresPhoto = isMobile // Foto wajib hanya di mobile
   const requiresLocation = user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
   const {
     register,
@@ -184,12 +186,12 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
 
 
   const onSubmit = async (data: CustomerFormData) => {
-    // Validate foto - WAJIB untuk semua user
-    if (!storePhotoFilename) {
+    // Validate foto - wajib HANYA untuk mobile view
+    if (requiresPhoto && !storePhotoFilename) {
       toast({
         variant: "destructive",
         title: "Foto Toko Wajib",
-        description: "Foto toko/kios pelanggan wajib diupload.",
+        description: "Foto toko/kios pelanggan wajib diupload di perangkat mobile.",
       })
       return
     }
@@ -249,7 +251,9 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
           <DialogHeader>
             <DialogTitle>Tambah Pelanggan Baru</DialogTitle>
             <DialogDescription>
-              Isi detail pelanggan di bawah ini. <strong className="text-red-600">Foto toko wajib diisi.</strong>
+              Isi detail pelanggan di bawah ini.
+              {requiresPhoto && <strong className="text-red-600"> Foto toko wajib diisi.</strong>}
+              {!requiresPhoto && <span className="text-muted-foreground"> Foto toko opsional di desktop.</span>}
               {requiresLocation && (
                 <span className="text-red-600"> Koordinat GPS juga wajib untuk role Anda.</span>
               )}
@@ -333,7 +337,7 @@ export function AddCustomerDialog({ open, onOpenChange, onCustomerAdded }: AddCu
             <div className="space-y-2">
               <Label>
                 Foto Toko
-                <span className="text-red-500 ml-1">*</span>
+                {requiresPhoto && <span className="text-red-500 ml-1">*</span>}
               </Label>
               <div className="space-y-2">
                 <input

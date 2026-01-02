@@ -12,8 +12,23 @@ import {
   CustomerClassificationType
 } from '@/types/pricing'
 
+// Cache untuk product pricing - berlaku 30 detik
+const pricingCache = new Map<string, { data: ProductPricing; timestamp: number }>();
+const CACHE_TTL_MS = 30 * 1000; // 30 detik
+
 export class PricingService {
-  
+
+  /**
+   * Clear cache for a specific product or all
+   */
+  static clearCache(productId?: string) {
+    if (productId) {
+      pricingCache.delete(productId);
+    } else {
+      pricingCache.clear();
+    }
+  }
+
   /**
    * Calculate final price based on current stock and quantity
    */
@@ -120,10 +135,16 @@ export class PricingService {
   }
 
   /**
-   * Get product pricing with all rules
+   * Get product pricing with all rules (with caching)
    */
   static async getProductPricing(productId: string): Promise<ProductPricing | null> {
     try {
+      // Check cache first
+      const cached = pricingCache.get(productId);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return cached.data;
+      }
+
       // Get product details - try products table first
       // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
       let productData: { id: string; name: string; base_price: number; current_stock: number } | null = null;
@@ -219,7 +240,7 @@ export class PricingService {
         bonusRules
       )
 
-      return {
+      const result: ProductPricing = {
         id: productData.id,
         productId: productData.id,
         productName: productData.name,
@@ -230,6 +251,11 @@ export class PricingService {
         finalPrice: priceCalculation.stockAdjustedPrice,
         availableBonuses: priceCalculation.availableBonuses
       }
+
+      // Save to cache
+      pricingCache.set(productId, { data: result, timestamp: Date.now() });
+
+      return result;
 
     } catch (error) {
       console.error('Error in getProductPricing:', error)

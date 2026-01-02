@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { PlusCircle, Trash2, Search, UserPlus, Wallet, FileText, Check, ChevronsUpDown, ShoppingCart, Calculator, User as UserIcon, Plus, Minus, Printer, Eye, ArrowRight } from 'lucide-react'
+import { PlusCircle, Trash2, Search, UserPlus, Wallet, FileText, Check, ChevronsUpDown, ShoppingCart, Calculator, User as UserIcon, Plus, Minus, Printer, Eye, ArrowRight, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/use-toast'
@@ -72,11 +72,13 @@ export const MobilePosForm = () => {
   const [isSuccessSheetOpen, setIsSuccessSheetOpen] = useState(false)
   const [lastTransactionTotal, setLastTransactionTotal] = useState<number>(0) // Store total before reset
   const [openProductDropdowns, setOpenProductDropdowns] = useState<{[key: number]: boolean}>({});
-  const [isItemsSheetOpen, setIsItemsSheetOpen] = useState(false);
   const [isPaymentSheetOpen, setIsPaymentSheetOpen] = useState(false);
   const [isProductSheetOpen, setIsProductSheetOpen] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const productSearchRef = useRef<HTMLInputElement>(null);
+
+  // Local cache for product pricing to avoid repeated DB calls
+  const pricingCacheRef = useRef<Map<string, any>>(new Map());
 
 
   const subTotal = useMemo(() => items.reduce((total, item) => total + (item.qty * item.harga), 0), [items]);
@@ -229,153 +231,314 @@ export const MobilePosForm = () => {
     resetForm();
   };
 
+  // Helper: Get cached pricing or fetch
+  const getCachedPricing = async (productId: string) => {
+    const cached = pricingCacheRef.current.get(productId);
+    if (cached) {
+      console.log('[POS] Using cached pricing for:', productId, cached);
+      return cached;
+    }
+
+    console.log('[POS] Fetching pricing for:', productId);
+    const pricing = await PricingService.getProductPricing(productId);
+    console.log('[POS] Fetched pricing:', pricing);
+    if (pricing) {
+      pricingCacheRef.current.set(productId, pricing);
+    }
+    return pricing;
+  };
+
   // Update item dengan bonus calculation
   const updateItemWithBonuses = async (existingItem: FormTransactionItem, newQty: number) => {
     if (!existingItem.product) return;
 
-    // Get pricing data first
-    const productPricing = await PricingService.getProductPricing(existingItem.product.id);
+    console.log('[POS] updateItemWithBonuses:', existingItem.product.name, 'newQty:', newQty);
 
-    console.log('[MobilePOS] updateItemWithBonuses:', {
-      productName: existingItem.product.name,
-      newQty,
-      bonusPricings: productPricing?.bonusPricings
-    });
+    const productPricing = await getCachedPricing(existingItem.product.id);
+    console.log('[POS] Update - bonusPricings:', productPricing?.bonusPricings);
 
-    // Calculate price with proper parameters
     const calculation = productPricing ? PricingService.calculatePrice(
       existingItem.product.basePrice || 0,
       existingItem.product.currentStock || 0,
       newQty,
-      [], // Ignore stock pricing for mobile POS
+      [],
       productPricing.bonusPricings || []
     ) : null;
 
-    console.log('[MobilePOS] Calculation result:', calculation);
+    console.log('[POS] Update - Calculation result:', calculation);
 
-    // Update main item
-    let newItems = items.map(item =>
-      item.id === existingItem.id
-        ? { ...item, qty: newQty, harga: calculation?.finalPrice || item.harga }
-        : item
-    );
+    // Use functional update to get latest items state
+    setItems(prevItems => {
+      // Update main item
+      let newItems = prevItems.map(item =>
+        item.id === existingItem.id
+          ? { ...item, qty: newQty, harga: calculation?.finalPrice || item.harga }
+          : item
+      );
 
-    // Remove existing bonus items for this product
-    newItems = newItems.filter(item =>
-      !(item.isBonus && item.product?.id === existingItem.product?.id)
-    );
+      // Remove existing bonus items for this product
+      newItems = newItems.filter(item =>
+        !(item.isBonus && item.product?.id === existingItem.product?.id)
+      );
 
-    // Add bonus items if any
-    if (calculation?.bonuses && calculation.bonuses.length > 0) {
-      for (const bonus of calculation.bonuses) {
-        if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
-          const bonusItem: FormTransactionItem = {
-            id: Date.now() + Math.random(),
-            product: existingItem.product,
-            keterangan: bonus.description || `Bonus - ${bonus.type}`,
-            qty: bonus.bonusQuantity,
-            harga: 0,
-            unit: existingItem.product.unit || 'pcs',
-            isBonus: true,
-            bonusDescription: bonus.description,
-          };
-          newItems.push(bonusItem);
+      // Add bonus items if any
+      if (calculation?.bonuses && calculation.bonuses.length > 0) {
+        console.log('[POS] Update - Processing bonuses:', calculation.bonuses);
+        for (const bonus of calculation.bonuses) {
+          if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+            console.log('[POS] Update - Adding bonus item');
+            newItems.push({
+              id: Date.now() + Math.random(),
+              product: existingItem.product,
+              keterangan: bonus.description || `Bonus - ${bonus.type}`,
+              qty: bonus.bonusQuantity,
+              harga: 0,
+              unit: existingItem.product!.unit || 'pcs',
+              isBonus: true,
+              bonusDescription: bonus.description,
+            });
+          }
         }
       }
-    }
 
-    setItems(newItems);
+      console.log('[POS] Update - Final items count:', newItems.length);
+      return newItems;
+    });
   };
 
   // Add new item with bonus calculation
   const addNewItemWithBonuses = async (product: Product, quantity: number) => {
-    // Get pricing data first
-    const productPricing = await PricingService.getProductPricing(product.id);
+    console.log('[POS] addNewItemWithBonuses:', product.name, 'qty:', quantity);
 
-    // Calculate price with proper parameters
+    const productPricing = await getCachedPricing(product.id);
+    console.log('[POS] bonusPricings:', productPricing?.bonusPricings);
+
     const calculation = productPricing ? PricingService.calculatePrice(
       product.basePrice || 0,
       product.currentStock || 0,
       quantity,
-      [], // Ignore stock pricing for mobile POS
+      [],
       productPricing.bonusPricings || []
     ) : null;
 
-    const newItems: FormTransactionItem[] = [...items];
+    console.log('[POS] Calculation result:', calculation);
 
-    // Add main item
-    const mainItem: FormTransactionItem = {
-      id: Date.now(),
-      product: product,
-      keterangan: '',
-      qty: quantity,
-      harga: calculation?.finalPrice || product.basePrice || 0,
-      unit: product.unit || 'pcs',
-      isBonus: false,
-    };
-    newItems.push(mainItem);
+    // Use functional update to get latest items state
+    setItems(prevItems => {
+      const newItems: FormTransactionItem[] = [...prevItems];
 
-    // Add bonus items if any
-    if (calculation?.bonuses && calculation.bonuses.length > 0) {
-      for (const bonus of calculation.bonuses) {
-        if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
-          const bonusItem: FormTransactionItem = {
-            id: Date.now() + Math.random(),
-            product: product,
-            keterangan: bonus.description || `Bonus - ${bonus.type}`,
-            qty: bonus.bonusQuantity,
-            harga: 0,
-            unit: product.unit || 'pcs',
-            isBonus: true,
-            bonusDescription: bonus.description,
-          };
-          newItems.push(bonusItem);
+      // Add main item
+      newItems.push({
+        id: Date.now(),
+        product: product,
+        keterangan: '',
+        qty: quantity,
+        harga: calculation?.finalPrice || product.basePrice || 0,
+        unit: product.unit || 'pcs',
+        isBonus: false,
+      });
+
+      // Add bonus items if any
+      if (calculation?.bonuses && calculation.bonuses.length > 0) {
+        console.log('[POS] Processing bonuses:', calculation.bonuses);
+        for (const bonus of calculation.bonuses) {
+          console.log('[POS] Bonus type check:', bonus.type, 'qty:', bonus.bonusQuantity);
+          if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+            console.log('[POS] Adding bonus item for:', product.name);
+            newItems.push({
+              id: Date.now() + Math.random(),
+              product: product,
+              keterangan: bonus.description || `Bonus - ${bonus.type}`,
+              qty: bonus.bonusQuantity,
+              harga: 0,
+              unit: product.unit || 'pcs',
+              isBonus: true,
+              bonusDescription: bonus.description,
+            });
+          }
         }
       }
-    }
 
-    setItems(newItems);
+      console.log('[POS] Final items count:', newItems.length);
+      return newItems;
+    });
   };
 
-  // Tambah produk ke cart dengan cepat
+  // Tambah produk ke cart - SINKRON, bonus langsung tampil bersamaan
   const addProductToCart = async (product: Product) => {
-    const existing = items.find(item => item.product?.id === product.id && !item.isBonus);
-    if (existing) {
-      // Jika sudah ada, tambah qty dan update bonus
-      const newQty = existing.qty + 1;
-      await updateItemWithBonuses(existing, newQty);
-    } else {
-      // Jika belum ada, tambah item baru dengan bonus
-      await addNewItemWithBonuses(product, 1);
-    }
+    console.log('[POS] addProductToCart:', product.name);
+
+    // PENTING: Fetch pricing DULU sebelum update state, agar bonus langsung tampil
+    const productPricing = await getCachedPricing(product.id);
+    console.log('[POS] Got pricing, bonusPricings:', productPricing?.bonusPricings);
+
+    // Sekarang update state dengan data lengkap termasuk bonus
+    setItems(prevItems => {
+      const existing = prevItems.find(item => item.product?.id === product.id && !item.isBonus);
+
+      if (existing) {
+        const newQty = existing.qty + 1;
+        console.log('[POS] Existing item, updating qty to:', newQty);
+
+        // Calculate price and bonus
+        const calculation = productPricing ? PricingService.calculatePrice(
+          product.basePrice || 0,
+          product.currentStock || 0,
+          newQty,
+          [],
+          productPricing.bonusPricings || []
+        ) : null;
+
+        console.log('[POS] Calculation result:', calculation);
+
+        // Update main item qty and price
+        let newItems = prevItems.map(item =>
+          item.id === existing.id
+            ? { ...item, qty: newQty, harga: calculation?.finalPrice || item.harga }
+            : item
+        );
+
+        // Remove old bonus items for this product
+        newItems = newItems.filter(item =>
+          !(item.isBonus && item.product?.id === product.id)
+        );
+
+        // Add new bonus items LANGSUNG dalam satu setState
+        if (calculation?.bonuses && calculation.bonuses.length > 0) {
+          for (const bonus of calculation.bonuses) {
+            console.log('[POS] Checking bonus:', bonus.type, 'qty:', bonus.bonusQuantity);
+            if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+              console.log('[POS] >>> ADDING BONUS ITEM:', bonus.bonusQuantity);
+              newItems.push({
+                id: Date.now() + Math.random(),
+                product: product,
+                keterangan: bonus.description || `Bonus`,
+                qty: bonus.bonusQuantity,
+                harga: 0,
+                unit: product.unit || 'pcs',
+                isBonus: true,
+                bonusDescription: bonus.description,
+              });
+            }
+          }
+        }
+
+        console.log('[POS] Final items count:', newItems.length);
+        return newItems;
+      } else {
+        // New item
+        console.log('[POS] Adding new item');
+
+        // Calculate price and bonus for qty=1
+        const calculation = productPricing ? PricingService.calculatePrice(
+          product.basePrice || 0,
+          product.currentStock || 0,
+          1,
+          [],
+          productPricing.bonusPricings || []
+        ) : null;
+
+        console.log('[POS] New item calculation:', calculation);
+
+        const newItems: FormTransactionItem[] = [...prevItems];
+
+        // Add main item
+        newItems.push({
+          id: Date.now(),
+          product: product,
+          keterangan: '',
+          qty: 1,
+          harga: calculation?.finalPrice || product.basePrice || 0,
+          unit: product.unit || 'pcs',
+          isBonus: false,
+        });
+
+        // Add bonus items LANGSUNG dalam satu setState
+        if (calculation?.bonuses && calculation.bonuses.length > 0) {
+          for (const bonus of calculation.bonuses) {
+            console.log('[POS] New item checking bonus:', bonus.type, 'qty:', bonus.bonusQuantity);
+            if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+              console.log('[POS] >>> ADDING NEW ITEM BONUS:', bonus.bonusQuantity);
+              newItems.push({
+                id: Date.now() + Math.random(),
+                product: product,
+                keterangan: bonus.description || `Bonus`,
+                qty: bonus.bonusQuantity,
+                harga: 0,
+                unit: product.unit || 'pcs',
+                isBonus: true,
+                bonusDescription: bonus.description,
+              });
+            }
+          }
+        }
+
+        console.log('[POS] Final new items count:', newItems.length);
+        return newItems;
+      }
+    });
   };
 
-  // Update qty item (with bonus recalculation)
+  // Update qty item (with bonus recalculation) - SINKRON
   const updateItemQty = async (index: number, delta: number) => {
     const item = items[index];
-    const newQty = item.qty + delta;
+    if (!item || item.isBonus) return;
 
-    if (item.isBonus) {
-      // Allow manual bonus quantity adjustment
-      if (newQty <= 0) {
-        setItems(items.filter((_, i) => i !== index));
-      } else {
-        const newItems = [...items];
-        newItems[index].qty = newQty;
-        setItems(newItems);
-      }
-      return;
-    }
+    const newQty = item.qty + delta;
 
     if (newQty <= 0) {
       // Remove main item and all its bonus items
-      setItems(items.filter(i =>
+      setItems(prevItems => prevItems.filter(i =>
         !(i.id === item.id || (i.isBonus && i.product?.id === item.product?.id))
       ));
-    } else {
-      // Update with bonus recalculation
-      await updateItemWithBonuses(item, newQty);
+      return;
     }
+
+    // Fetch pricing DULU agar bonus langsung tampil
+    const productPricing = item.product ? await getCachedPricing(item.product.id) : null;
+
+    setItems(prevItems => {
+      // Calculate price and bonus
+      const calculation = productPricing ? PricingService.calculatePrice(
+        item.product!.basePrice || 0,
+        item.product!.currentStock || 0,
+        newQty,
+        [],
+        productPricing.bonusPricings || []
+      ) : null;
+
+      // Update main item qty and price
+      let newItems = prevItems.map((i, idx) =>
+        idx === index
+          ? { ...i, qty: newQty, harga: calculation?.finalPrice || i.harga }
+          : i
+      );
+
+      // Remove old bonus items for this product
+      newItems = newItems.filter(i =>
+        !(i.isBonus && i.product?.id === item.product?.id)
+      );
+
+      // Add new bonus items LANGSUNG
+      if (calculation?.bonuses && calculation.bonuses.length > 0) {
+        for (const bonus of calculation.bonuses) {
+          if (bonus.type === 'quantity' && bonus.bonusQuantity > 0) {
+            newItems.push({
+              id: Date.now() + Math.random(),
+              product: item.product!,
+              keterangan: bonus.description || `Bonus`,
+              qty: bonus.bonusQuantity,
+              harga: 0,
+              unit: item.product!.unit || 'pcs',
+              isBonus: true,
+              bonusDescription: bonus.description,
+            });
+          }
+        }
+      }
+
+      return newItems;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -634,7 +797,14 @@ export const MobilePosForm = () => {
       <Card className="dark:bg-gray-800 dark:border-gray-700">
         <CardHeader className="pb-2 pt-3 px-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base dark:text-white">Item ({items.length})</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base dark:text-white">Item ({items.filter(i => !i.isBonus).length})</CardTitle>
+              {items.filter(i => i.isBonus).length > 0 && (
+                <span className="text-xs bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400 px-2 py-0.5 rounded-full">
+                  +{items.filter(i => i.isBonus).reduce((sum, i) => sum + i.qty, 0)} Bonus
+                </span>
+              )}
+            </div>
             <div className="flex gap-2">
               {/* Tombol Tambah Produk Cepat */}
               <Sheet open={isProductSheetOpen} onOpenChange={setIsProductSheetOpen}>
@@ -709,115 +879,6 @@ export const MobilePosForm = () => {
                 </SheetContent>
               </Sheet>
 
-              {/* Tombol Kelola Detail */}
-              <Sheet open={isItemsSheetOpen} onOpenChange={setIsItemsSheetOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <FileText className="mr-1 h-4 w-4" /> Edit
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="bottom" className="h-[90vh] overflow-y-auto">
-                  <SheetHeader>
-                    <SheetTitle>Edit Item</SheetTitle>
-                    <SheetDescription>
-                      Edit detail, qty, atau harga item
-                    </SheetDescription>
-                  </SheetHeader>
-                  <div className="space-y-4 mt-6">
-                    {items.map((item, index) => (
-                      <Card key={item.id} className={cn(
-                        "p-4",
-                        item.isBonus && "bg-green-50 border-green-300"
-                      )}>
-                        <div className="space-y-3">
-                          {/* Product Name */}
-                          <div className="flex items-center justify-between">
-                            {item.isBonus ? (
-                              <p className="font-semibold text-green-700">
-                                🎁 {item.product?.name} (Bonus)
-                              </p>
-                            ) : (
-                              <p className="font-semibold">{item.product?.name || 'Produk'}</p>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveItem(index)}
-                              className="text-destructive h-8 w-8 p-0"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-
-                          {/* Bonus Description */}
-                          {item.isBonus && item.bonusDescription && (
-                            <p className="text-sm text-green-600 -mt-2">{item.bonusDescription}</p>
-                          )}
-
-                          {/* Quantity and Price */}
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <Label className="text-sm">Qty</Label>
-                              <Input
-                                type="number"
-                                value={item.qty || ''}
-                                onChange={(e) => handleNumberInputChange(index, 'qty', e)}
-                                onFocus={(e) => e.target.select()}
-                                placeholder="0"
-                                min="0"
-                                step="1"
-                              />
-                            </div>
-                            <div>
-                              <Label className="text-sm">Harga</Label>
-                              <Input
-                                type="number"
-                                value={item.isBonus ? 0 : (item.harga || '')}
-                                onChange={(e) => handleNumberInputChange(index, 'harga', e)}
-                                onFocus={(e) => e.target.select()}
-                                placeholder="0"
-                                min="0"
-                                disabled={item.isBonus}
-                                className={item.isBonus ? "bg-green-100" : ""}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Keterangan */}
-                          <div>
-                            <Label className="text-sm">Catatan</Label>
-                            <Input
-                              value={item.keterangan}
-                              onChange={(e) => handleItemChange(index, 'keterangan', e.target.value)}
-                              placeholder="Catatan item..."
-                            />
-                          </div>
-
-                          {/* Total */}
-                          <div className="flex justify-between pt-2 border-t">
-                            <span className="text-sm text-muted-foreground">Total:</span>
-                            {item.isBonus ? (
-                              <span className="font-bold text-green-600">GRATIS</span>
-                            ) : (
-                              <span className="font-bold text-green-600">
-                                {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-
-                    {items.length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground">
-                        <ShoppingCart className="mx-auto h-12 w-12 mb-2 opacity-50" />
-                        <p>Keranjang kosong</p>
-                        <p className="text-sm">Ketuk "Tambah" untuk menambah produk</p>
-                      </div>
-                    )}
-                  </div>
-                </SheetContent>
-              </Sheet>
             </div>
           </div>
         </CardHeader>
@@ -829,42 +890,52 @@ export const MobilePosForm = () => {
                   "flex items-center gap-2 p-2 rounded",
                   item.isBonus ? "bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700" : "bg-muted dark:bg-gray-700"
                 )}>
-                  {/* Qty Controls */}
+                  {/* Qty Controls - disabled for bonus items */}
                   <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => updateItemQty(index, -1)}
-                    >
-                      <Minus className="h-4 w-4" />
-                    </Button>
-                    <Input
-                      type="number"
-                      value={item.qty || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '') {
-                          handleItemChange(index, 'qty', 0);
-                        } else {
-                          const num = parseInt(val);
-                          if (!isNaN(num) && num >= 0) {
-                            handleItemChange(index, 'qty', num);
-                          }
-                        }
-                      }}
-                      onFocus={(e) => e.target.select()}
-                      className="w-14 h-8 text-center font-bold p-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      min="0"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => updateItemQty(index, 1)}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
+                    {item.isBonus ? (
+                      // Bonus: hanya tampilkan qty tanpa kontrol edit
+                      <div className="w-14 h-8 flex items-center justify-center bg-green-200 dark:bg-green-800 rounded text-green-700 dark:text-green-300 font-bold text-sm">
+                        {item.qty}
+                      </div>
+                    ) : (
+                      // Non-bonus: tampilkan kontrol edit qty
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => updateItemQty(index, -1)}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          type="number"
+                          value={item.qty || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '') {
+                              handleItemChange(index, 'qty', 0);
+                            } else {
+                              const num = parseInt(val);
+                              if (!isNaN(num) && num >= 0) {
+                                handleItemChange(index, 'qty', num);
+                              }
+                            }
+                          }}
+                          onFocus={(e) => e.target.select()}
+                          className="w-14 h-8 text-center font-bold p-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          min="0"
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={() => updateItemQty(index, 1)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                   {/* Product Info */}
                   <div className="flex-1 min-w-0">
@@ -894,6 +965,15 @@ export const MobilePosForm = () => {
                       {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
                     </p>
                   )}
+                  {/* Delete Button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-red-500 hover:text-red-700 hover:bg-red-100 dark:hover:bg-red-900/30"
+                    onClick={() => handleRemoveItem(index)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
             </div>
@@ -924,6 +1004,22 @@ export const MobilePosForm = () => {
               {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalTagihan)}
             </span>
           </div>
+          {/* Bonus Display */}
+          {(() => {
+            const bonusItems = items.filter(item => item.isBonus);
+            const totalBonusQty = bonusItems.reduce((sum, item) => sum + item.qty, 0);
+            if (totalBonusQty > 0) {
+              return (
+                <div className="flex justify-between items-center mt-2 pt-2 border-t border-blue-200 dark:border-blue-700">
+                  <span className="text-sm font-medium text-green-600 dark:text-green-400">🎁 Bonus:</span>
+                  <span className="text-sm font-bold text-green-600 dark:text-green-400">
+                    {totalBonusQty} {bonusItems.length === 1 ? bonusItems[0].unit : 'item'} GRATIS
+                  </span>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
 
         {/* Payment Amount Input - Primary */}

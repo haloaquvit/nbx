@@ -12,7 +12,7 @@ import { PayReceivableDialog } from "./PayReceivableDialog"
 import { ReceivablesReportPDF } from "./ReceivablesReportPDF"
 // import { PaymentHistoryRow } from "./PaymentHistoryRow" // Removed
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./ui/dropdown-menu"
-import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer, Pencil, FileSpreadsheet } from "lucide-react"
+import { MoreHorizontal, ChevronDown, ChevronRight, CheckCircle, Clock, AlertTriangle, Calendar, Filter, Printer, Pencil, FileSpreadsheet, Search } from "lucide-react"
 import * as XLSX from 'xlsx'
 import { Input } from "./ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
@@ -33,6 +33,7 @@ export function ReceivablesTable() {
   const [expandedRows, setExpandedRows] = React.useState<Set<string>>(new Set())
   const [filterStatus, setFilterStatus] = React.useState<string>('all')
   const [filterAging, setFilterAging] = React.useState<string>('all')
+  const [searchQuery, setSearchQuery] = React.useState<string>('')
   const [editingDueDateId, setEditingDueDateId] = React.useState<string | null>(null)
   const [tempDueDate, setTempDueDate] = React.useState<Date | undefined>(undefined)
 
@@ -68,6 +69,14 @@ export function ReceivablesTable() {
       t.paymentStatus === 'Belum Lunas' || t.paymentStatus === 'Partial'
     ) || []
 
+    // Filter by search query (nomor transaksi atau nama pelanggan)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      filtered = filtered.filter(t =>
+        t.id.toLowerCase().includes(query) ||
+        t.customerName?.toLowerCase().includes(query)
+      )
+    }
 
     // Filter by status
     if (filterStatus !== 'all') {
@@ -92,7 +101,7 @@ export function ReceivablesTable() {
     }
 
     return filtered
-  }, [transactions, filterStatus, filterAging])
+  }, [transactions, filterStatus, filterAging, searchQuery])
 
   const receivableIds = React.useMemo(() => {
     return receivables.map(r => r.id)
@@ -464,8 +473,20 @@ export function ReceivablesTable() {
 
   return (
     <>
-      {/* Filter Controls */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+      {/* Search and Filter Controls */}
+      <div className="flex flex-col gap-4 mb-6">
+        {/* Search Input */}
+        <div className="relative w-full sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Cari no. transaksi atau nama pelanggan..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+
+        {/* Filter Controls */}
         <div className="flex flex-wrap gap-2">
           <Select value={filterStatus} onValueChange={setFilterStatus}>
             <SelectTrigger className="w-48">

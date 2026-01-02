@@ -409,100 +409,144 @@ export const useTransactions = (filters?: {
             for (const item of regularItems) {
               const productId = item.product?.id;
               const quantity = item.quantity || 0;
+              const isMaterial = item.product?._isMaterial === true;
+              const materialId = item.product?._materialId || (isMaterial ? productId?.replace('material-', '') : null);
 
               if (productId && quantity > 0) {
                 try {
-                  // Call consume_inventory_fifo to consume stock and get HPP
-                  const { data: fifoResult, error: fifoError } = await supabase
-                    .rpc('consume_inventory_fifo', {
-                      p_product_id: productId,
-                      p_branch_id: currentBranch?.id || null,
-                      p_quantity: quantity,
-                      p_transaction_id: savedTransaction.id,
-                    });
-
-                  if (fifoError) {
-                    console.warn('FIFO consumption failed, using fallback:', fifoError.message);
-                    // Fallback: Use product's cost_price or base_price directly
-                    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-                    const { data: productDataRaw } = await supabase
-                      .from('products')
-                      .select('cost_price, base_price')
-                      .eq('id', productId)
-                      .order('id').limit(1);
-                    const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
-                    // Use cost_price if available, otherwise use base_price (selling price as approximation)
-                    const costPrice = productData?.cost_price || productData?.base_price || 0;
-                    totalHPP += costPrice * quantity;
-                    console.log('Fallback HPP calculated:', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
-                  } else if (fifoResult && fifoResult.length > 0) {
-                    // FIFO returned result - check if it consumed enough quantity
-                    const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
-
-                    // Parse batches_consumed to get total consumed quantity
-                    let consumedQty = 0;
-                    try {
-                      const batchesConsumed = typeof fifoResult[0].batches_consumed === 'string'
-                        ? JSON.parse(fifoResult[0].batches_consumed)
-                        : fifoResult[0].batches_consumed;
-                      consumedQty = Array.isArray(batchesConsumed)
-                        ? batchesConsumed.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0)
-                        : 0;
-                    } catch (parseErr) {
-                      console.warn('Could not parse batches_consumed:', parseErr);
-                    }
-
-                    if (fifoHpp > 0 && consumedQty >= quantity) {
-                      // FIFO berhasil consume semua qty
-                      totalHPP += fifoHpp;
-                      console.log('FIFO HPP calculated (full):', {
-                        productId,
-                        quantity,
-                        hpp: fifoHpp,
-                        batches: fifoResult[0].batches_consumed,
+                  // Check if this is a Material item (Bahan)
+                  if (isMaterial && materialId) {
+                    // For materials: Use get_material_fifo_cost to get FIFO price
+                    const { data: fifoPrice, error: fifoError } = await supabase
+                      .rpc('get_material_fifo_cost', {
+                        p_material_id: materialId,
+                        p_branch_id: currentBranch?.id || null,
                       });
-                    } else {
-                      // FIFO tidak cukup - hitung fallback untuk sisa qty
-                      const remainingQty = quantity - consumedQty;
 
-                      // Get product cost_price for fallback
-                      const { data: productDataRaw3 } = await supabase
+                    if (fifoError) {
+                      console.warn('Material FIFO cost failed, using fallback:', fifoError.message);
+                      // Fallback: Get price_per_unit from materials table
+                      const { data: materialDataRaw } = await supabase
+                        .from('materials')
+                        .select('price_per_unit')
+                        .eq('id', materialId)
+                        .order('id').limit(1);
+                      const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
+                      const costPrice = materialData?.price_per_unit || item.product?.costPrice || 0;
+                      totalHPP += costPrice * quantity;
+                      console.log('Material HPP Fallback:', { materialId, quantity, costPrice, itemHPP: costPrice * quantity });
+                    } else {
+                      // Use FIFO price from database
+                      const costPrice = Number(fifoPrice) || item.product?.costPrice || 0;
+                      totalHPP += costPrice * quantity;
+                      console.log('Material HPP FIFO:', { materialId, quantity, costPrice, itemHPP: costPrice * quantity });
+                    }
+                  } else {
+                    // For regular products: Use consume_inventory_fifo
+                    const { data: fifoResult, error: fifoError } = await supabase
+                      .rpc('consume_inventory_fifo', {
+                        p_product_id: productId,
+                        p_branch_id: currentBranch?.id || null,
+                        p_quantity: quantity,
+                        p_transaction_id: savedTransaction.id,
+                      });
+
+                    if (fifoError) {
+                      console.warn('FIFO consumption failed, using fallback:', fifoError.message);
+                      // Fallback: Use product's cost_price or base_price directly
+                      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+                      const { data: productDataRaw } = await supabase
                         .from('products')
                         .select('cost_price, base_price')
                         .eq('id', productId)
                         .order('id').limit(1);
-                      const productData3 = Array.isArray(productDataRaw3) ? productDataRaw3[0] : productDataRaw3;
-                      const costPrice = productData3?.cost_price || productData3?.base_price || 0;
+                      const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                      // Use cost_price if available, otherwise use base_price (selling price as approximation)
+                      const costPrice = productData?.cost_price || productData?.base_price || 0;
+                      totalHPP += costPrice * quantity;
+                      console.log('Fallback HPP calculated:', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
+                    } else if (fifoResult && fifoResult.length > 0) {
+                      // FIFO returned result - check if it consumed enough quantity
+                      const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
 
-                      // HPP = FIFO portion + Fallback portion
-                      const fallbackHpp = costPrice * remainingQty;
-                      totalHPP += fifoHpp + fallbackHpp;
+                      // Parse batches_consumed to get total consumed quantity
+                      let consumedQty = 0;
+                      try {
+                        const batchesConsumed = typeof fifoResult[0].batches_consumed === 'string'
+                          ? JSON.parse(fifoResult[0].batches_consumed)
+                          : fifoResult[0].batches_consumed;
+                        consumedQty = Array.isArray(batchesConsumed)
+                          ? batchesConsumed.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0)
+                          : 0;
+                      } catch (parseErr) {
+                        console.warn('Could not parse batches_consumed:', parseErr);
+                      }
 
-                      console.log('HPP calculated (FIFO + Fallback):', {
-                        productId,
-                        requestedQty: quantity,
-                        fifoConsumedQty: consumedQty,
-                        fifoHpp,
-                        remainingQty,
-                        fallbackCostPrice: costPrice,
-                        fallbackHpp,
-                        totalItemHPP: fifoHpp + fallbackHpp
-                      });
+                      if (fifoHpp > 0 && consumedQty >= quantity) {
+                        // FIFO berhasil consume semua qty
+                        totalHPP += fifoHpp;
+                        console.log('FIFO HPP calculated (full):', {
+                          productId,
+                          quantity,
+                          hpp: fifoHpp,
+                          batches: fifoResult[0].batches_consumed,
+                        });
+                      } else {
+                        // FIFO tidak cukup - hitung fallback untuk sisa qty
+                        const remainingQty = quantity - consumedQty;
+
+                        // Get product cost_price for fallback
+                        const { data: productDataRaw3 } = await supabase
+                          .from('products')
+                          .select('cost_price, base_price')
+                          .eq('id', productId)
+                          .order('id').limit(1);
+                        const productData3 = Array.isArray(productDataRaw3) ? productDataRaw3[0] : productDataRaw3;
+                        const costPrice = productData3?.cost_price || productData3?.base_price || 0;
+
+                        // HPP = FIFO portion + Fallback portion
+                        const fallbackHpp = costPrice * remainingQty;
+                        totalHPP += fifoHpp + fallbackHpp;
+
+                        console.log('HPP calculated (FIFO + Fallback):', {
+                          productId,
+                          requestedQty: quantity,
+                          fifoConsumedQty: consumedQty,
+                          fifoHpp,
+                          remainingQty,
+                          fallbackCostPrice: costPrice,
+                          fallbackHpp,
+                          totalItemHPP: fifoHpp + fallbackHpp
+                        });
+                      }
                     }
                   }
                 } catch (err) {
                   console.error('Error calling FIFO:', err);
                   // Fallback to direct cost_price or base_price
-                  // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-                  const { data: productDataRaw2 } = await supabase
-                    .from('products')
-                    .select('cost_price, base_price')
-                    .eq('id', productId)
-                    .order('id').limit(1);
-                  const productData = Array.isArray(productDataRaw2) ? productDataRaw2[0] : productDataRaw2;
-                  const costPrice = productData?.cost_price || productData?.base_price || 0;
-                  totalHPP += costPrice * quantity;
-                  console.log('Fallback HPP (catch):', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
+                  if (isMaterial && materialId) {
+                    // Fallback for materials
+                    const { data: materialDataRaw } = await supabase
+                      .from('materials')
+                      .select('price_per_unit')
+                      .eq('id', materialId)
+                      .order('id').limit(1);
+                    const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
+                    const costPrice = materialData?.price_per_unit || item.product?.costPrice || 0;
+                    totalHPP += costPrice * quantity;
+                    console.log('Material HPP Fallback (catch):', { materialId, quantity, costPrice, itemHPP: costPrice * quantity });
+                  } else {
+                    // Fallback for products
+                    const { data: productDataRaw2 } = await supabase
+                      .from('products')
+                      .select('cost_price, base_price')
+                      .eq('id', productId)
+                      .order('id').limit(1);
+                    const productData = Array.isArray(productDataRaw2) ? productDataRaw2[0] : productDataRaw2;
+                    const costPrice = productData?.cost_price || productData?.base_price || 0;
+                    totalHPP += costPrice * quantity;
+                    console.log('Fallback HPP (catch):', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
+                  }
                 }
               }
             }
@@ -514,19 +558,47 @@ export const useTransactions = (filters?: {
             for (const item of bonusItems) {
               const productId = item.product?.id;
               const quantity = item.quantity || 0;
+              const isMaterial = item.product?._isMaterial === true;
+              const materialId = item.product?._materialId || (isMaterial ? productId?.replace('material-', '') : null);
 
               if (productId && quantity > 0) {
                 try {
-                  // Get cost_price directly for bonus items (no FIFO consumption needed as stock already reduced)
-                  const { data: productDataRaw } = await supabase
-                    .from('products')
-                    .select('cost_price, base_price')
-                    .eq('id', productId)
-                    .order('id').limit(1);
-                  const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
-                  const costPrice = productData?.cost_price || productData?.base_price || 0;
-                  totalHPPBonus += costPrice * quantity;
-                  console.log('HPP Bonus calculated:', { productId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                  if (isMaterial && materialId) {
+                    // For material bonus items: Use FIFO cost
+                    const { data: fifoPrice, error: fifoError } = await supabase
+                      .rpc('get_material_fifo_cost', {
+                        p_material_id: materialId,
+                        p_branch_id: currentBranch?.id || null,
+                      });
+
+                    if (fifoError) {
+                      // Fallback to price_per_unit
+                      const { data: materialDataRaw } = await supabase
+                        .from('materials')
+                        .select('price_per_unit')
+                        .eq('id', materialId)
+                        .order('id').limit(1);
+                      const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
+                      const costPrice = materialData?.price_per_unit || item.product?.costPrice || 0;
+                      totalHPPBonus += costPrice * quantity;
+                      console.log('Material HPP Bonus Fallback:', { materialId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                    } else {
+                      const costPrice = Number(fifoPrice) || item.product?.costPrice || 0;
+                      totalHPPBonus += costPrice * quantity;
+                      console.log('Material HPP Bonus FIFO:', { materialId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                    }
+                  } else {
+                    // For regular product bonus items: Get cost_price directly
+                    const { data: productDataRaw } = await supabase
+                      .from('products')
+                      .select('cost_price, base_price')
+                      .eq('id', productId)
+                      .order('id').limit(1);
+                    const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                    const costPrice = productData?.cost_price || productData?.base_price || 0;
+                    totalHPPBonus += costPrice * quantity;
+                    console.log('HPP Bonus calculated:', { productId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                  }
                 } catch (err) {
                   console.error('Error calculating HPP Bonus:', err);
                 }
