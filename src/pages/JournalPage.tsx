@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
+import { useBranch } from '@/contexts/BranchContext';
 import {
   Table,
   TableBody,
@@ -35,6 +36,7 @@ interface Account {
 }
 
 export function JournalPage() {
+  const { currentBranch } = useBranch();
   const [showForm, setShowForm] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [mainTab, setMainTab] = useState<string>('entries');
@@ -43,21 +45,56 @@ export function JournalPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
 
-  // Fetch accounts for filter
+  // Fetch accounts for filter - filtered by branch
   useEffect(() => {
     const fetchAccounts = async () => {
-      const { data, error } = await supabase
-        .from('accounts')
-        .select('id, code, name')
-        .eq('is_active', true)
-        .order('code');
+      if (!currentBranch?.id) {
+        setAccounts([]);
+        return;
+      }
 
-      if (!error && data) {
-        setAccounts(data);
+      // Get unique accounts from journal entries for this branch
+      const { data: journalLines, error } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          account_id,
+          account_code,
+          account_name,
+          journal_entries!inner (
+            branch_id
+          )
+        `)
+        .eq('journal_entries.branch_id', currentBranch.id);
+
+      if (!error && journalLines) {
+        // Get unique accounts
+        const uniqueAccounts = new Map<string, Account>();
+        journalLines.forEach((line: any) => {
+          if (line.account_id && !uniqueAccounts.has(line.account_id)) {
+            uniqueAccounts.set(line.account_id, {
+              id: line.account_id,
+              code: line.account_code,
+              name: line.account_name
+            });
+          }
+        });
+
+        // Convert to array and sort by code
+        const accountsArray = Array.from(uniqueAccounts.values())
+          .sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+
+        setAccounts(accountsArray);
       }
     };
     fetchAccounts();
-  }, []);
+  }, [currentBranch?.id]);
+
+  // Reset filter when branch changes
+  useEffect(() => {
+    setSelectedAccountId('all');
+    setEntriesPage(1);
+    setLinesPage(1);
+  }, [currentBranch?.id]);
 
   const {
     journalEntries,
