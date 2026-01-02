@@ -1,4 +1,5 @@
 "use client"
+import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -8,6 +9,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useExpenses } from "@/hooks/useExpenses"
 import { useAccounts } from "@/hooks/useAccounts"
 import { useToast } from "./ui/use-toast"
@@ -16,9 +19,10 @@ import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
 import { canManageCash } from '@/utils/roleUtils'
-import { Trash2 } from "lucide-react"
+import { Trash2, Check, ChevronsUpDown } from "lucide-react"
 import { ExpenseReceiptPDF } from "./ExpenseReceiptPDF"
 import { Badge } from "./ui/badge"
+import { cn } from "@/lib/utils"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,10 +62,15 @@ export function ExpenseManagement() {
   })
 
   const watchDate = watch("date")
+  const watchExpenseAccountId = watch("expenseAccountId")
   const canDeleteExpense = canManageCash(user);
+  const [expenseAccountOpen, setExpenseAccountOpen] = useState(false);
 
   // Filter akun beban (type = 'Beban') yang bukan header
   const expenseAccounts = accounts?.filter(a => a.type === 'Beban' && !a.isHeader) || [];
+
+  // Get selected expense account for display
+  const selectedExpenseAccount = expenseAccounts.find(a => a.id === watchExpenseAccountId);
 
   const onSubmit = async (data: ExpenseFormData) => {
     const paymentAccount = accounts?.find(a => a.id === data.accountId)
@@ -126,24 +135,53 @@ export function ExpenseManagement() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="expenseAccountId">Akun Beban</Label>
-                <Select onValueChange={(value) => setValue("expenseAccountId", value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih akun beban..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {isLoadingAccounts ? (
-                      <SelectItem value="loading" disabled>Memuat...</SelectItem>
-                    ) : expenseAccounts.length === 0 ? (
-                      <SelectItem value="empty" disabled>Tidak ada akun beban</SelectItem>
-                    ) : (
-                      expenseAccounts.map(acc => (
-                        <SelectItem key={acc.id} value={acc.id}>
-                          {acc.code ? `${acc.code} - ${acc.name}` : acc.name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                <Popover open={expenseAccountOpen} onOpenChange={setExpenseAccountOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={expenseAccountOpen}
+                      className="w-full justify-between font-normal"
+                    >
+                      {selectedExpenseAccount
+                        ? (selectedExpenseAccount.code ? `${selectedExpenseAccount.code} - ${selectedExpenseAccount.name}` : selectedExpenseAccount.name)
+                        : "Pilih akun beban..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0">
+                    <Command>
+                      <CommandInput placeholder="Cari akun beban..." />
+                      <CommandList>
+                        <CommandEmpty>Akun tidak ditemukan.</CommandEmpty>
+                        <CommandGroup>
+                          {isLoadingAccounts ? (
+                            <CommandItem disabled>Memuat...</CommandItem>
+                          ) : (
+                            expenseAccounts.map(acc => (
+                              <CommandItem
+                                key={acc.id}
+                                value={acc.code ? `${acc.code} ${acc.name}` : acc.name}
+                                onSelect={() => {
+                                  setValue("expenseAccountId", acc.id);
+                                  setExpenseAccountOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    watchExpenseAccountId === acc.id ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {acc.code ? `${acc.code} - ${acc.name}` : acc.name}
+                              </CommandItem>
+                            ))
+                          )}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
                 {errors.expenseAccountId && <p className="text-sm text-destructive">{errors.expenseAccountId.message}</p>}
               </div>
               <div className="space-y-2">

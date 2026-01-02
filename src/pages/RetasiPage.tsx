@@ -629,9 +629,9 @@ function AddRetasiDialog({
   const { timezone } = useTimezone();
   const [nextSeq, setNextSeq] = useState<number>(1);
 
-  // Filter products: semua produk harus punya stock > 0
+  // Semua produk bisa dipilih untuk retasi (tidak dibatasi stock)
   const availableProducts = useMemo(() => {
-    return products?.filter(p => p.currentStock > 0) || [];
+    return products || [];
   }, [products]);
   const [blocked, setBlocked] = useState<boolean>(false);
 
@@ -881,6 +881,7 @@ function AddRetasiDialog({
                   min={1}
                   value={itemQuantity}
                   onChange={(e) => setItemQuantity(Number(e.target.value) || 1)}
+                  onFocus={(e) => e.target.select()}
                   placeholder="Qty"
                 />
               </div>
@@ -918,6 +919,7 @@ function AddRetasiDialog({
                             min={1}
                             value={item.quantity}
                             onChange={(e) => updateItemQuantity(index, Number(e.target.value))}
+                            onFocus={(e) => e.target.select()}
                             className="w-20 text-center"
                           />
                         </TableCell>

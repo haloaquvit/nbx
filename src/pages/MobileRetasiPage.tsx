@@ -340,8 +340,9 @@ function AddRetasiMobileDialog({
 
   const { products, isLoading: isLoadingProducts } = useProducts();
 
+  // Semua produk bisa dipilih untuk retasi (tidak dibatasi stock)
   const availableProducts = useMemo(() => {
-    return products?.filter(p => p.currentStock > 0) || [];
+    return products || [];
   }, [products]);
 
   const totalBawa = useMemo(() => {
@@ -516,6 +517,7 @@ function AddRetasiMobileDialog({
                   min={1}
                   value={itemQuantity}
                   onChange={(e) => setItemQuantity(Number(e.target.value) || 1)}
+                  onFocus={(e) => e.target.select()}
                   className="w-16 text-center"
                 />
                 <Button onClick={addProductItem} size="icon" variant="secondary">
