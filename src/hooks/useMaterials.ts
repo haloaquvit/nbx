@@ -159,6 +159,42 @@ export const useMaterials = () => {
         }
       }
 
+      // SYNC BATCH: Update material_inventory_batches when stock changes
+      if (material.id && newStock > 0 && pricePerUnit > 0) {
+        const { data: existingBatch } = await supabase
+          .from('material_inventory_batches')
+          .select('id, initial_quantity, remaining_quantity')
+          .eq('material_id', material.id)
+          .eq('notes', 'Stok Awal')
+          .order('batch_date')
+          .limit(1);
+
+        const batch = Array.isArray(existingBatch) ? existingBatch[0] : existingBatch;
+
+        if (batch) {
+          // Update existing "Stok Awal" batch - sync remaining_quantity with stock diff
+          const newRemaining = Math.max(0, (batch.remaining_quantity || 0) + stockDiff);
+          await supabase.from('material_inventory_batches').update({
+            initial_quantity: newStock,
+            remaining_quantity: newRemaining,
+            unit_cost: pricePerUnit,
+            updated_at: new Date().toISOString()
+          }).eq('id', batch.id);
+          console.log(`📦 Material batch synced: ${batch.id.substring(0, 8)} (remaining: ${batch.remaining_quantity} → ${newRemaining})`);
+        } else {
+          // Create new "Stok Awal" batch
+          await supabase.from('material_inventory_batches').insert({
+            material_id: material.id,
+            branch_id: currentBranch?.id || null,
+            initial_quantity: newStock,
+            remaining_quantity: newStock,
+            unit_cost: pricePerUnit,
+            notes: 'Stok Awal'
+          });
+          console.log(`📦 Material batch created for ${material.name || data.name}`);
+        }
+      }
+
       return fromDbToApp(data);
     },
     onSuccess: () => {

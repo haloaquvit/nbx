@@ -41,6 +41,7 @@ import {
   Building2,
   Server,
   MapPin,
+  History,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -143,6 +144,7 @@ const getMenuItems = (hasPermission: (permission: Permission) => boolean, hasGra
       { href: "/roles", label: "Manajemen Roles", icon: Shield, permission: PERMISSIONS.ROLES },
       { href: "/branches", label: "Manajemen Cabang", icon: Building2, permission: PERMISSIONS.SETTINGS },
       { href: "/web-management", label: "Web Management", icon: Server, permission: PERMISSIONS.SETTINGS, roles: ['owner'] },
+      { href: "/audit-log", label: "Audit Log", icon: History, permission: PERMISSIONS.SETTINGS, roles: ['owner'] },
     ].filter(item => {
       if (!hasPermission(item.permission)) return false;
       if (item.roles && userRole && !item.roles.includes(userRole.toLowerCase())) return false;

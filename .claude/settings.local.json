@@ -254,7 +254,11 @@
       "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\backfillCashHistory.ts\")",
       "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\cleanupCashHistory.ts\")",
       "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\syncCashFlow.ts\")",
-      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\simpleCashFlow.ts\")"
+      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\simpleCashFlow.ts\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Restrict price editing for driver/helper + fix paidAmount validation\n\n- Disable price input for supir/helper roles in PosForm\n- Add Math.min validation for paidAmount to prevent overpayment bug\n- Remove unused \"Kembali\" (change) display since overpayment is blocked\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(ssh root@103.197.190.54 \"cat /etc/postgrest/postgrest.conf 2>/dev/null || cat /opt/postgrest/postgrest.conf 2>/dev/null || find /etc /opt /home -name ''postgrest.conf'' 2>/dev/null | head -5\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Ensure retasi list refreshes immediately after input on mobile\n\n- Add refetchQueries after invalidateQueries to force immediate data refresh\n- Reduce staleTime from 5 minutes to 30 seconds for more responsive updates\n- Enable refetchOnWindowFocus and refetchOnReconnect for better UX\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Improve retasi list refresh with predicate-based invalidation\n\n- Use predicate to match all retasi queries regardless of branch/filters\n- Add await to ensure invalidation and refetch complete before proceeding\n- Add small delay before closing dialog to ensure data refresh completes\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": [],

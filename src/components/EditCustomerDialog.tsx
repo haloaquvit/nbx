@@ -55,7 +55,13 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
   
   // Check if user is owner, admin, or cashier
   const canEditAllFields = user?.role && ['owner', 'admin', 'cashier'].includes(user.role)
-  
+
+  // Check if user is driver/helper - they can also edit location and photo
+  const isDriverOrHelper = user?.role && ['driver', 'supir', 'helper', 'pembantu'].includes(user.role.toLowerCase())
+
+  // Show location and photo fields for admin/owner/cashier AND driver/helper
+  const canEditLocationAndPhoto = canEditAllFields || isDriverOrHelper
+
   // Check if user must provide coordinates and photo
   const requiresLocationAndPhoto = user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
 
@@ -222,8 +228,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       classification: data.classification,
     }
 
-    // Include additional fields if user can edit all fields
-    if (canEditAllFields) {
+    // Include location and photo fields if user can edit them (admin/owner/cashier/driver/helper)
+    if (canEditLocationAndPhoto) {
       updateData.full_address = data.full_address
       updateData.latitude = data.latitude
       updateData.longitude = data.longitude
@@ -290,8 +296,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
               {errors.address && <p className="text-red-500 text-sm">{errors.address.message}</p>}
             </div>
             
-            {/* Additional fields - only for owner/admin */}
-            {canEditAllFields && (
+            {/* Additional fields - for owner/admin/cashier AND driver/helper */}
+            {canEditLocationAndPhoto && (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="full_address">Koordinat GPS</Label>

@@ -65,6 +65,7 @@ const ZakatPage = lazy(() => import("@/pages/ZakatPage"));
 const BranchManagementPage = lazy(() => import("@/pages/BranchManagementPage"));
 const JournalPage = lazy(() => import("@/pages/JournalPage"));
 const MaterialUsageSummaryPage = lazy(() => import("@/pages/MaterialUsageSummaryPage"));
+const AuditLogPage = lazy(() => import("@/pages/AuditLogPage"));
 const WebManagementPage = lazy(() => import("@/pages/WebManagementPage"));
 const CustomerMapPage = lazy(() => import("@/pages/CustomerMapPage"));
 const WarehousePage = lazy(() => import("@/pages/WarehousePage"));
@@ -329,6 +330,7 @@ function WebApp() {
                   <Route path="/customer-map" element={<CustomerMapPage />} />
                   <Route path="/quotations" element={<QuotationsPage />} />
                   <Route path="/quotations/new" element={<QuotationsPage />} />
+                  <Route path="/audit-log" element={<AuditLogPage />} />
                   <Route path="*" element={<NotFound />} />
                 </Route>
               )}

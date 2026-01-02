@@ -22,7 +22,7 @@ export default function ProductPage() {
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
   const { toast } = useToast()
-  
+
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
     name: "",
@@ -40,12 +40,12 @@ export default function ProductPage() {
   const canDelete = hasPermission(PERMISSIONS.PRODUCTS)
 
   const baseColumns = [
-    { 
-      key: "name", 
+    {
+      key: "name",
       header: "Nama Produk",
       render: (row: any) => (
-        <Link 
-          to={`/products/${row.id}`} 
+        <Link
+          to={`/products/${row.id}`}
           className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
         >
           {row.name}
@@ -68,13 +68,29 @@ export default function ProductPage() {
     { key: "unit", header: "Satuan" },
     {
       key: "basePrice",
-      header: "Harga",
+      header: "Harga Jual",
       render: (row: any) =>
         new Intl.NumberFormat("id-ID", {
           style: "currency",
           currency: "IDR",
           maximumFractionDigits: 0
         }).format(row.basePrice),
+    },
+    {
+      key: "costPrice",
+      header: "HPP",
+      render: (row: any) => (
+        <span className={row.costPrice > 0 ? 'text-gray-700' : 'text-orange-500'}>
+          {row.costPrice > 0
+            ? new Intl.NumberFormat("id-ID", {
+                style: "currency",
+                currency: "IDR",
+                maximumFractionDigits: 0
+              }).format(row.costPrice)
+            : row.type === 'Produksi' ? 'Dari BOM' : 'Rp 0'
+          }
+        </span>
+      ),
     },
     {
       key: "initialStock",
@@ -220,7 +236,8 @@ export default function ProductPage() {
       'Nama Produk': product.name,
       'Jenis': product.type,
       'Satuan': product.unit,
-      'Harga': product.basePrice,
+      'Harga Jual': product.basePrice,
+      'HPP': product.costPrice || 0,
       'Stok Awal': product.initialStock || 0,
       'Stok': product.currentStock,
       'Min Stock': product.minStock,

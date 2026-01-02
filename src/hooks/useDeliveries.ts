@@ -12,6 +12,152 @@ import { PhotoUploadService } from '@/services/photoUploadService'
 import { useBranch } from '@/contexts/BranchContext'
 import { useAuth } from './useAuth'
 import { createDeliveryJournal } from '@/services/journalService'
+import { StockService } from '@/services/stockService'
+
+// ============================================================================
+// FIFO BATCH MANAGEMENT FUNCTIONS
+// ============================================================================
+
+/**
+ * Deduct quantity from inventory batches using FIFO method
+ * Called when delivery is created - reduces remaining_quantity from oldest batches first
+ */
+async function deductBatchFIFO(productId: string, quantity: number, branchId: string | null): Promise<void> {
+  if (quantity <= 0 || !productId) return;
+
+  try {
+    // Get all batches with remaining stock, ordered by batch_date (FIFO)
+    const { data: batches, error } = await supabase
+      .from('inventory_batches')
+      .select('id, remaining_quantity, batch_date')
+      .eq('product_id', productId)
+      .gt('remaining_quantity', 0)
+      .order('batch_date', { ascending: true });
+
+    if (error) {
+      console.error('[deductBatchFIFO] Error fetching batches:', error);
+      return;
+    }
+
+    if (!batches || batches.length === 0) {
+      console.warn(`[deductBatchFIFO] No batches found for product ${productId}`);
+      return;
+    }
+
+    let remainingToDeduct = quantity;
+
+    for (const batch of batches) {
+      if (remainingToDeduct <= 0) break;
+
+      const batchRemaining = batch.remaining_quantity || 0;
+      const deductFromBatch = Math.min(batchRemaining, remainingToDeduct);
+
+      if (deductFromBatch > 0) {
+        const newRemaining = batchRemaining - deductFromBatch;
+
+        const { error: updateError } = await supabase
+          .from('inventory_batches')
+          .update({
+            remaining_quantity: newRemaining,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', batch.id);
+
+        if (updateError) {
+          console.error(`[deductBatchFIFO] Error updating batch ${batch.id}:`, updateError);
+        } else {
+          console.log(`📦 FIFO: Batch ${batch.id.substring(0, 8)} reduced by ${deductFromBatch} (${batchRemaining} → ${newRemaining})`);
+        }
+
+        remainingToDeduct -= deductFromBatch;
+      }
+    }
+
+    if (remainingToDeduct > 0) {
+      console.warn(`[deductBatchFIFO] Could not fully deduct ${quantity} from product ${productId}. Remaining: ${remainingToDeduct}`);
+    }
+  } catch (err) {
+    console.error('[deductBatchFIFO] Exception:', err);
+  }
+}
+
+/**
+ * Restore quantity to inventory batches using FIFO method
+ * Called when delivery is deleted - adds back to oldest depleted batch first
+ */
+async function restoreBatchFIFO(productId: string, quantity: number, branchId: string | null): Promise<void> {
+  if (quantity <= 0 || !productId) return;
+
+  try {
+    // Get all batches ordered by batch_date ASC (oldest first for FIFO restore)
+    const { data: batches, error } = await supabase
+      .from('inventory_batches')
+      .select('id, initial_quantity, remaining_quantity, batch_date')
+      .eq('product_id', productId)
+      .order('batch_date', { ascending: true });
+
+    if (error) {
+      console.error('[restoreBatchFIFO] Error fetching batches:', error);
+      return;
+    }
+
+    if (!batches || batches.length === 0) {
+      console.warn(`[restoreBatchFIFO] No batches found for product ${productId}`);
+      return;
+    }
+
+    let remainingToRestore = quantity;
+
+    for (const batch of batches) {
+      if (remainingToRestore <= 0) break;
+
+      const batchRemaining = batch.remaining_quantity || 0;
+      const batchInitial = batch.initial_quantity || 0;
+      const spaceInBatch = batchInitial - batchRemaining;
+
+      if (spaceInBatch > 0) {
+        const restoreToBatch = Math.min(spaceInBatch, remainingToRestore);
+        const newRemaining = batchRemaining + restoreToBatch;
+
+        const { error: updateError } = await supabase
+          .from('inventory_batches')
+          .update({
+            remaining_quantity: newRemaining,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', batch.id);
+
+        if (updateError) {
+          console.error(`[restoreBatchFIFO] Error updating batch ${batch.id}:`, updateError);
+        } else {
+          console.log(`📦 FIFO Restore: Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch} (${batchRemaining} → ${newRemaining})`);
+        }
+
+        remainingToRestore -= restoreToBatch;
+      }
+    }
+
+    if (remainingToRestore > 0) {
+      // If we couldn't restore to existing batches, add to the most recent one anyway
+      const mostRecentBatch = batches[0];
+      const newRemaining = (mostRecentBatch.remaining_quantity || 0) + remainingToRestore;
+
+      await supabase
+        .from('inventory_batches')
+        .update({
+          remaining_quantity: newRemaining,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', mostRecentBatch.id);
+
+      console.log(`📦 FIFO Restore (overflow): Batch ${mostRecentBatch.id.substring(0, 8)} increased to ${newRemaining}`);
+    }
+  } catch (err) {
+    console.error('[restoreBatchFIFO] Exception:', err);
+  }
+}
+
+// ============================================================================
 
 // Fetch employees with driver and helper roles from profiles table
 export function useDeliveryEmployees() {
@@ -836,28 +982,46 @@ export function useDeliveries() {
               ti.product?.id === item.product_id && !ti._isSalesMeta && !ti.isBonus
             );
 
-            // Calculate HPP per unit (use hppPerUnit from transaction if available)
+            // Calculate HPP per unit using FIFO from inventory batches
+            // Priority: 1) FIFO batches 2) txnItem.hppPerUnit 3) txnItem.hpp 4) cost_price
             let hppPerUnit = 0;
-            if (txnItem) {
-              if (txnItem.hppPerUnit) {
-                hppPerUnit = txnItem.hppPerUnit;
-              } else if (txnItem.hpp && txnItem.quantity > 0) {
-                hppPerUnit = txnItem.hpp / txnItem.quantity;
-              } else if (txnItem.product?.cost_price) {
-                hppPerUnit = txnItem.product.cost_price;
+
+            // FIFO: Calculate from inventory_batches first
+            if (item.product_id) {
+              hppPerUnit = await StockService.calculateFIFOHpp(item.product_id, item.quantity_delivered);
+              if (hppPerUnit > 0) {
+                console.log(`📦 FIFO HPP for ${item.product_name}: ${hppPerUnit}`);
               }
             }
 
-            // Fallback: Get cost_price from products table
+            // Fallback chain if FIFO returns 0
+            if (hppPerUnit <= 0 && txnItem) {
+              if (txnItem.hppPerUnit) {
+                hppPerUnit = txnItem.hppPerUnit;
+                console.log(`📦 Fallback (txnItem.hppPerUnit) for ${item.product_name}: ${hppPerUnit}`);
+              } else if (txnItem.hpp && txnItem.quantity > 0) {
+                hppPerUnit = txnItem.hpp / txnItem.quantity;
+                console.log(`📦 Fallback (txnItem.hpp) for ${item.product_name}: ${hppPerUnit}`);
+              } else if (txnItem.product?.cost_price) {
+                hppPerUnit = txnItem.product.cost_price;
+                console.log(`📦 Fallback (txnItem.product.cost_price) for ${item.product_name}: ${hppPerUnit}`);
+              }
+            }
+
+            // Final fallback: Get cost_price from products table
             if (hppPerUnit <= 0 && item.product_id) {
               const { data: productDataRaw } = await supabase
                 .from('products')
-                .select('cost_price, base_price')
+                .select('cost_price')
                 .eq('id', item.product_id)
                 .order('id').limit(1);
               const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
-              hppPerUnit = productData?.cost_price || productData?.base_price || 0;
-              console.log(`📦 Fallback HPP for ${item.product_name}: ${hppPerUnit}`);
+              hppPerUnit = productData?.cost_price || 0;
+              if (hppPerUnit > 0) {
+                console.log(`📦 Final fallback (products.cost_price) for ${item.product_name}: ${hppPerUnit}`);
+              } else {
+                console.warn(`⚠️ No HPP found for ${item.product_name}, skipping HPP journal`);
+              }
             }
 
             if (hppPerUnit > 0) {
@@ -931,6 +1095,9 @@ export function useDeliveries() {
                   console.error(`Failed to reduce stock for ${productData.name}:`, stockError);
                 } else {
                   console.log(`📦 Stock reduced for ${productData.name}: ${currentStock} → ${newStock}`);
+
+                  // Also deduct from inventory batches (FIFO)
+                  await deductBatchFIFO(item.product_id, item.quantity_delivered, currentBranch?.id || null);
                 }
               }
             }
@@ -1049,6 +1216,9 @@ export function useDeliveries() {
                 console.error(`❌ Error updating stock for ${item.product_name}:`, stockUpdateError)
                 continue
               }
+
+              // Also restore to inventory batches (FIFO)
+              await restoreBatchFIFO(item.product_id, item.quantity_delivered, deliveryData.branch_id || null);
 
               // Create stock movement record for audit trail
               const { error: movementError } = await supabase
@@ -1371,6 +1541,15 @@ export function useDeliveries() {
                 console.error(`Failed to adjust stock for ${productData.name}:`, stockError)
               } else {
                 console.log(`📦 Stock adjusted for ${productData.name}: ${productData.current_stock} → ${newStock} (diff: ${quantityDiff})`)
+
+                // Also adjust inventory batches (FIFO)
+                if (quantityDiff > 0) {
+                  // More delivered = deduct more from batch
+                  await deductBatchFIFO(originalItem.product_id, quantityDiff, deliveryData.branch_id || null);
+                } else {
+                  // Less delivered = restore to batch
+                  await restoreBatchFIFO(originalItem.product_id, Math.abs(quantityDiff), deliveryData.branch_id || null);
+                }
 
                 // Create stock movement record
                 await supabase.from('stock_movements').insert({

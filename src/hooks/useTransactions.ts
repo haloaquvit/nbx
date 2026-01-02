@@ -12,6 +12,109 @@ import { createSalesJournal, createReceivablePaymentJournal } from '@/services/j
 import { markAsVisitedAsync } from '@/utils/customerVisitUtils'
 
 // ============================================================================
+// FIFO BATCH MANAGEMENT FUNCTIONS (for office sales)
+// ============================================================================
+
+/**
+ * Deduct quantity from inventory batches using FIFO method
+ */
+async function deductBatchFIFO(productId: string, quantity: number): Promise<void> {
+  if (quantity <= 0 || !productId) return;
+
+  try {
+    const { data: batches, error } = await supabase
+      .from('inventory_batches')
+      .select('id, remaining_quantity, batch_date')
+      .eq('product_id', productId)
+      .gt('remaining_quantity', 0)
+      .order('batch_date', { ascending: true });
+
+    if (error || !batches || batches.length === 0) return;
+
+    let remainingToDeduct = quantity;
+
+    for (const batch of batches) {
+      if (remainingToDeduct <= 0) break;
+
+      const batchRemaining = batch.remaining_quantity || 0;
+      const deductFromBatch = Math.min(batchRemaining, remainingToDeduct);
+
+      if (deductFromBatch > 0) {
+        await supabase
+          .from('inventory_batches')
+          .update({
+            remaining_quantity: batchRemaining - deductFromBatch,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', batch.id);
+
+        console.log(`📦 FIFO (office sale): Batch ${batch.id.substring(0, 8)} reduced by ${deductFromBatch}`);
+        remainingToDeduct -= deductFromBatch;
+      }
+    }
+  } catch (err) {
+    console.error('[deductBatchFIFO] Exception:', err);
+  }
+}
+
+/**
+ * Restore quantity to inventory batches using FIFO method
+ */
+async function restoreBatchFIFO(productId: string, quantity: number): Promise<void> {
+  if (quantity <= 0 || !productId) return;
+
+  try {
+    const { data: batches, error } = await supabase
+      .from('inventory_batches')
+      .select('id, initial_quantity, remaining_quantity, batch_date')
+      .eq('product_id', productId)
+      .order('batch_date', { ascending: true });
+
+    if (error || !batches || batches.length === 0) return;
+
+    let remainingToRestore = quantity;
+
+    for (const batch of batches) {
+      if (remainingToRestore <= 0) break;
+
+      const batchRemaining = batch.remaining_quantity || 0;
+      const batchInitial = batch.initial_quantity || 0;
+      const spaceInBatch = batchInitial - batchRemaining;
+
+      if (spaceInBatch > 0) {
+        const restoreToBatch = Math.min(spaceInBatch, remainingToRestore);
+
+        await supabase
+          .from('inventory_batches')
+          .update({
+            remaining_quantity: batchRemaining + restoreToBatch,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', batch.id);
+
+        console.log(`📦 FIFO Restore (office sale): Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch}`);
+        remainingToRestore -= restoreToBatch;
+      }
+    }
+
+    if (remainingToRestore > 0 && batches.length > 0) {
+      const mostRecentBatch = batches[0];
+      await supabase
+        .from('inventory_batches')
+        .update({
+          remaining_quantity: (mostRecentBatch.remaining_quantity || 0) + remainingToRestore,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', mostRecentBatch.id);
+    }
+  } catch (err) {
+    console.error('[restoreBatchFIFO] Exception:', err);
+  }
+}
+
+// ============================================================================
+
+// ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
 // ============================================================================
 // Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
@@ -1133,6 +1236,9 @@ export const useTransactions = (filters?: {
                   console.error(`Failed to restore stock for ${productData.name}:`, stockError);
                 } else {
                   console.log(`📦 Stock restored for ${productData.name}: ${currentStock} → ${newStock}`);
+
+                  // Also restore to inventory batches (FIFO)
+                  await restoreBatchFIFO(productId, quantity);
                 }
               } else {
                 console.warn(`Product not found for ID: ${productId}`);

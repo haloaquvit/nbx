@@ -410,10 +410,15 @@ export const useRetasi = (filters?: {
 
       return fromDb(retasi);
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       // Force refetch to ensure new data appears immediately
-      queryClient.invalidateQueries({ queryKey: ['retasi'] });
-      queryClient.refetchQueries({ queryKey: ['retasi'] });
+      // Use predicate to match all retasi queries regardless of filters
+      await queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === 'retasi'
+      });
+      await queryClient.refetchQueries({
+        predicate: (query) => query.queryKey[0] === 'retasi'
+      });
       queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-items'] });
     }

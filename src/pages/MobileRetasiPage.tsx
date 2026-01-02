@@ -450,8 +450,10 @@ function AddRetasiMobileDialog({
         items: retasiItems,
       });
 
-      onOpenChange(false);
       toast.success(`Retasi disimpan (${totalBawa} item)`);
+      // Small delay to ensure refetch completes before closing dialog
+      await new Promise(resolve => setTimeout(resolve, 300));
+      onOpenChange(false);
     } catch (error: any) {
       toast.error(error?.message || "Gagal menyimpan retasi");
     }

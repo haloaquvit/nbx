@@ -431,3 +431,145 @@ Perbaikan generasi nomor jurnal untuk mencegah race condition.
 | - Database `driver_locations` | - | Simpan history lokasi supir |
 | - Admin Monitoring UI | - | Peta untuk melihat posisi semua supir |
 | - WebSocket/Polling | - | Update posisi real-time ke admin |
+
+
+
+
+##### Ini yang harus di lakukan selanjutnya #####
+
+Laporan Lengkap: COA, Jurnal & Branch ID
+1. SISTEM COA (Chart of Accounts)
+Struktur Database accounts:
+Field	Deskripsi
+id	Primary key (acc-XXXX)
+code	Kode 4-digit (1120, 2110, dst)
+name	Nama akun
+type	Aset/Kewajiban/Modal/Pendapatan/Beban
+initial_balance	Saldo awal (referensi untuk opening journal)
+balance	TIDAK DIGUNAKAN - legacy field
+is_payment_account	Akun kas/bank untuk pembayaran
+is_header	Header vs detail account
+branch_id	Multi-branch support
+employee_id	Untuk kas karyawan
+Kode Akun Standar:
+1xxx - ASET (Debit normal)
+  1100 - Kas dan Setara Kas
+  1200 - Piutang
+  1300 - Persediaan
+  1400 - Aset Tetap
+
+2xxx - KEWAJIBAN (Credit normal)
+  2100 - Hutang Jangka Pendek
+  2200 - Hutang Jangka Panjang
+
+3xxx - MODAL (Credit normal)
+  3100 - Modal Disetor
+  3200 - Laba Ditahan
+
+4xxx - PENDAPATAN (Credit normal)
+  4110 - Penjualan
+
+5xxx - HPP (Debit normal)
+  5100 - Harga Pokok Penjualan
+  5210 - HPP Bonus
+
+6xxx - BEBAN OPERASIONAL (Debit normal)
+  6100-6900 - Beban-beban operasional
+2. PERHITUNGAN SALDO AKUN
+Prinsip Utama: Double-Entry Accounting
+Saldo = HANYA dihitung dari journal_entry_lines
+       BUKAN dari kolom accounts.balance
+Rumus:
+// Aset & Beban (Debit Normal):
+saldo = SUM(debit) - SUM(credit)
+
+// Kewajiban, Modal, Pendapatan (Credit Normal):
+saldo = SUM(credit) - SUM(debit)
+Flow Initial Balance:
+Owner set initial_balance → Auto-create Opening Journal → Saldo dihitung dari jurnal
+3. JURNAL OTOMATIS (32 Fungsi)
+Semua transaksi menciptakan jurnal otomatis:
+Transaksi	Jurnal	Akun
+POS/Penjualan	createSalesJournal	Dr.Kas Cr.Penjualan, Dr.HPP Cr.Persediaan
+Beban	createExpenseJournal	Dr.Beban Cr.Kas
+Panjar Karyawan	createAdvanceJournal	Dr.Piutang Cr.Kas
+Transfer Kas	createTransferJournal	Dr.Kas A Cr.Kas B
+Pembelian Material	createMaterialPurchaseJournal	Dr.Persediaan Cr.Kas/Hutang
+Produksi	createProductionOutputJournal	Dr.Barang Jadi Cr.Bahan Baku
+Depresiasi	createDepreciationJournal	Dr.Beban Cr.Akum.Peny
+Pembayaran Hutang	createPayablePaymentJournal	Dr.Hutang Cr.Kas
+4. STATUS BRANCH_ID
+✅ SUDAH BENAR (Filter branch_id)
+useTransactions ✓
+useExpenses ✓
+useEmployeeAdvances ✓
+usePurchaseOrders ✓
+useAssets ✓
+useAccounts ✓
+useProducts ✓
+useCustomers ✓
+useSuppliers ✓
+useEmployees ✓
+useProduction ✓
+useJournalEntries ✓
+useCashFlow ✓
+usePaymentHistory ✓
+useDailyReport ✓
+⚠️ MASALAH DITEMUKAN: useRetasi
+6 Query TIDAK ada filter branch_id:
+useDriverHasRetasi() - baris 84-105
+useActiveRetasi() - baris 109-150
+checkDriverAvailability() - baris 252-289
+createRetasi() - cek driver - baris 302-306
+createRetasi() - hitung retasi_ke - baris 334-339
+retasi-stats query - baris 227-249
+DAMPAK: Data retasi dari branch lain bisa terlihat/tercampur!
+5. RINGKASAN FITUR APLIKASI
+Modul	Fitur
+POS	Penjualan, Driver POS, Retasi
+Inventori	Produk, Material, BOM, Stock Movement
+Keuangan	COA, Jurnal, Neraca, Laba Rugi, Arus Kas
+Piutang/Hutang	AR, AP, Cicilan
+HRD	Karyawan, Payroll, Absensi, Panjar
+Pengadaan	Supplier, PO, Penerimaan Barang
+Aset	Fixed Asset, Depresiasi, Maintenance
+Laporan	PDF Reports, Daily Box, Commission
+6. REKOMENDASI PERBAIKAN
+Segera perbaiki useRetasi.ts - tambahkan filter branch_id ke 6 query yang bermasalah:
+// Contoh perbaikan:
+.from('retasi')
+.select('*')
+.eq('driver_name', driverName)
+.eq('branch_id', currentBranch?.id)  // ← TAMBAHKAN INI
+Apakah ingin saya langsung perbaiki file useRetasi.ts?
+cek lagi bukannya retasi sudah ada branch id ?
+Saya akan cek langsung file useRetasi.ts untuk memverifikasi.
+Read d:\App\Aquvit Fix - Copy\src\hooks\useRetasi.ts
+Anda benar! Mari saya analisis ulang:
+Hasil Verifikasi useRetasi.ts
+✅ SUDAH ADA branch_id:
+Query utama useRetasi (baris 186-189):
+if (currentBranch?.id) {
+  query = query.eq('branch_id', currentBranch.id);
+}
+createRetasi (baris 360):
+branch_id: currentBranch?.id || null
+⚠️ MEMANG TIDAK ADA branch_id (tapi mungkin by design):
+Fungsi	Baris	Alasan Mungkin OK
+useDriverHasRetasi()	84-105	Legacy hook, cek global
+useActiveRetasi()	109-152	Cek driver aktif di SEMUA branch (prevent driver kerja di 2 branch sekaligus)
+checkDriverAvailability()	252-289	Sama - prevent driver double-book
+createRetasi() - cek active	302-306	Sama - validasi global
+createRetasi() - count retasi_ke	334-339	Hitung per driver per hari (bisa jadi bug)
+retasi-stats	227-249	Stats global (bisa jadi bug)
+Pertanyaan Bisnis:
+Apakah satu supir boleh bekerja di 2 branch berbeda secara bersamaan?
+Jika TIDAK boleh → Logic sekarang sudah benar (cek global)
+Jika BOLEH → Perlu tambah branch_id filter
+Yang kemungkinan bug:
+retasi-stats - harusnya per branch, bukan global
+retasi_ke counting - harusnya per branch per driver per hari
+Mau saya perbaiki yang 2 itu?
+
+
+Jika sudah maka tulis changlog di bawah *****
