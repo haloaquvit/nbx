@@ -1,4 +1,5 @@
 import { Product } from "./product";
+import { CustomerClassification } from "./customer";
 
 export interface TransactionItem {
   product: Product;
@@ -36,6 +37,7 @@ export interface Transaction {
   id: string;
   customerId: string;
   customerName: string;
+  customerClassification?: CustomerClassification; // Klasifikasi pelanggan: Rumahan atau Kios/Toko
   cashierId: string;
   cashierName: string;
   salesId?: string | null;

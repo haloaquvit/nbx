@@ -22,7 +22,7 @@ import { useState, useEffect } from "react"
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
 // ============================================================================
 // Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
-// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// cash_history SUDAH DIHAPUS - tidak lagi digunakan
 // Kas manual menggunakan createManualCashInJournal / createManualCashOutJournal
 // ============================================================================
 
@@ -132,23 +132,7 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
 
       console.log(`✅ Jurnal kas ${type} auto-generated:`, journalResult.journalId);
 
-      // Record in cash_history for monitoring (TIDAK update balance)
-      try {
-        await supabase.from('cash_history').insert({
-          account_id: data.accountId,
-          transaction_type: type === "in" ? "income" : "expense",
-          type: type === "in" ? "kas_masuk_manual" : "kas_keluar_manual",
-          amount: data.amount,
-          description: data.description,
-          reference_number: referenceId,
-          created_by: user.id,
-          created_by_name: user.name || user.email || "Unknown User",
-          source_type: 'manual',
-          branch_id: currentBranch.id,
-        });
-      } catch (historyError) {
-        console.warn('cash_history recording failed (non-critical):', historyError);
-      }
+      // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
 
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: ['accounts'] })

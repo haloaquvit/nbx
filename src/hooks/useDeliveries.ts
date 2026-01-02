@@ -176,6 +176,7 @@ export function useTransactionsReadyForDelivery() {
             items: transaction.items,
             total: transaction.total,
             status: transaction.status,
+            cashierName: transaction.cashier_name || undefined,
             deliveries,
             deliverySummary,
           }

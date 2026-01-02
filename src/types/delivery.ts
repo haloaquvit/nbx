@@ -47,6 +47,7 @@ export interface TransactionDeliveryInfo {
   items: any[]; // Transaction items
   total: number;
   status: string;
+  cashierName?: string;
   deliveries: Delivery[];
   deliverySummary: DeliverySummaryItem[];
 }

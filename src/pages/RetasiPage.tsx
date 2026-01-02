@@ -194,44 +194,115 @@ export default function RetasiPage() {
     }
   };
 
-  const exportExcel = () => {
-    const data = filteredRetasi.map((r) => ({
-      "Tgl Berangkat": format(r.departure_date, 'dd/MM/yyyy', { locale: id }),
-      "Tgl Kembali": r.is_returned ? format(r.updated_at, 'dd/MM/yyyy HH:mm', { locale: id }) : "-",
-      "Retasi Ke": r.retasi_ke,
-      "Status": r.is_returned ? "KEMBALI" : "BERANGKAT",
-      "Supir": r.driver_name || "-",
-      "Bawa": r.total_items,
-      "Kembali": r.returned_items_count || 0,
-      "Error": r.error_items_count || 0,
-      "Laku": r.barang_laku || 0,
-      "Tidak Laku": r.barang_tidak_laku || 0,
-      "Selisih": (r.total_items || 0) - (r.returned_items_count || 0) - (r.error_items_count || 0) - (r.barang_laku || 0) - (r.barang_tidak_laku || 0),
-      "Catatan": r.return_notes || r.notes || "-",
-    }));
+  const exportExcel = async () => {
+    try {
+      toast.info('Mengambil data detail...');
 
-    // Add total row
-    data.push({
-      "Tgl Berangkat": "TOTAL",
-      "Tgl Kembali": "",
-      "Retasi Ke": "",
-      "Status": "",
-      "Supir": "",
-      "Bawa": totals.bawa,
-      "Kembali": totals.kembali,
-      "Error": totals.error,
-      "Laku": totals.laku,
-      "Tidak Laku": totals.tidakLaku,
-      "Selisih": totals.selisih,
-      "Catatan": "",
-    } as any);
+      // Fetch all retasi items for each retasi
+      const detailData: any[] = [];
 
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Retasi");
-    XLSX.writeFile(wb, `retasi-${dateFrom}-${dateTo}.xlsx`);
-    
-    toast.success('File Excel berhasil diunduh');
+      for (const r of filteredRetasi) {
+        // Fetch items for this retasi
+        const { data: items } = await supabase
+          .from('retasi_items')
+          .select('*')
+          .eq('retasi_id', r.id)
+          .order('created_at', { ascending: true });
+
+        if (items && items.length > 0) {
+          // Add each item as a separate row
+          items.forEach((item, idx) => {
+            detailData.push({
+              "Tgl Berangkat": idx === 0 ? format(r.departure_date, 'dd/MM/yyyy', { locale: id }) : "",
+              "Tgl Kembali": idx === 0 ? (r.is_returned ? format(r.updated_at, 'dd/MM/yyyy HH:mm', { locale: id }) : "-") : "",
+              "No Retasi": idx === 0 ? r.retasi_number : "",
+              "Retasi Ke": idx === 0 ? r.retasi_ke : "",
+              "Status": idx === 0 ? (r.is_returned ? "KEMBALI" : "BERANGKAT") : "",
+              "Supir": idx === 0 ? (r.driver_name || "-") : "",
+              "Produk": item.product_name,
+              "Qty Bawa": item.quantity,
+              "Qty Kembali": item.returned_qty || 0,
+              "Qty Terjual": item.sold_qty || 0,
+              "Catatan": idx === 0 ? (r.return_notes || r.notes || "-") : "",
+            });
+          });
+
+          // Add subtotal row for this retasi
+          const totalBawa = items.reduce((sum, i) => sum + (i.quantity || 0), 0);
+          const totalKembali = items.reduce((sum, i) => sum + (i.returned_qty || 0), 0);
+          const totalTerjual = items.reduce((sum, i) => sum + (i.sold_qty || 0), 0);
+
+          detailData.push({
+            "Tgl Berangkat": "",
+            "Tgl Kembali": "",
+            "No Retasi": "",
+            "Retasi Ke": "",
+            "Status": "",
+            "Supir": `Subtotal ${r.retasi_number}`,
+            "Produk": "",
+            "Qty Bawa": totalBawa,
+            "Qty Kembali": totalKembali,
+            "Qty Terjual": totalTerjual,
+            "Catatan": "",
+          });
+
+          // Add empty row separator
+          detailData.push({
+            "Tgl Berangkat": "",
+            "Tgl Kembali": "",
+            "No Retasi": "",
+            "Retasi Ke": "",
+            "Status": "",
+            "Supir": "",
+            "Produk": "",
+            "Qty Bawa": "",
+            "Qty Kembali": "",
+            "Qty Terjual": "",
+            "Catatan": "",
+          });
+        } else {
+          // Retasi without items (old data)
+          detailData.push({
+            "Tgl Berangkat": format(r.departure_date, 'dd/MM/yyyy', { locale: id }),
+            "Tgl Kembali": r.is_returned ? format(r.updated_at, 'dd/MM/yyyy HH:mm', { locale: id }) : "-",
+            "No Retasi": r.retasi_number,
+            "Retasi Ke": r.retasi_ke,
+            "Status": r.is_returned ? "KEMBALI" : "BERANGKAT",
+            "Supir": r.driver_name || "-",
+            "Produk": "(Data lama tanpa detail)",
+            "Qty Bawa": r.total_items,
+            "Qty Kembali": r.returned_items_count || 0,
+            "Qty Terjual": r.barang_laku || 0,
+            "Catatan": r.return_notes || r.notes || "-",
+          });
+        }
+      }
+
+      // Add grand total row
+      detailData.push({
+        "Tgl Berangkat": "GRAND TOTAL",
+        "Tgl Kembali": "",
+        "No Retasi": "",
+        "Retasi Ke": "",
+        "Status": "",
+        "Supir": "",
+        "Produk": "",
+        "Qty Bawa": totals.bawa,
+        "Qty Kembali": totals.kembali,
+        "Qty Terjual": totals.laku,
+        "Catatan": "",
+      });
+
+      const ws = XLSX.utils.json_to_sheet(detailData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Retasi Detail");
+      XLSX.writeFile(wb, `retasi-detail-${dateFrom}-${dateTo}.xlsx`);
+
+      toast.success('File Excel berhasil diunduh');
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Gagal mengexport data');
+    }
   };
 
   return (
@@ -258,55 +329,6 @@ export default function RetasiPage() {
         </div>
       </div>
 
-
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Bawa</CardTitle>
-            <Package className="h-4 w-4 text-blue-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{totals.bawa}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Kembali</CardTitle>
-            <CheckCircle className="h-4 w-4 text-slate-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-600">{totals.kembali}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Error</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{totals.error}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tidak Laku</CardTitle>
-            <ShoppingCart className="h-4 w-4 text-orange-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{totals.tidakLaku}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Selisih</CardTitle>
-            <FileText className="h-4 w-4 text-slate-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-slate-600">{totals.selisih}</div>
-          </CardContent>
-        </Card>
-      </div>
 
       <div className="space-y-4">
         {/* Filters */}
@@ -368,9 +390,9 @@ export default function RetasiPage() {
         {/* Retasi Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Daftar Retasi</CardTitle>
+            <CardTitle>Daftar Retasi (Detail per Produk)</CardTitle>
             <CardDescription>
-              Daftar semua retasi yang telah dibuat
+              Daftar semua retasi dengan detail produk per baris
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -378,16 +400,13 @@ export default function RetasiPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Tgl Berangkat</TableHead>
-                  <TableHead>Tgl Kembali</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Retasi Ke</TableHead>
                   <TableHead>Supir</TableHead>
-                  <TableHead>Bawa</TableHead>
-                  <TableHead>Kembali</TableHead>
-                  <TableHead>Error</TableHead>
-                  <TableHead>Laku</TableHead>
-                  <TableHead>Tdk Laku</TableHead>
-                  <TableHead>Selisih</TableHead>
+                  <TableHead>Produk</TableHead>
+                  <TableHead className="text-center">Bawa</TableHead>
+                  <TableHead className="text-center">Kembali</TableHead>
+                  <TableHead className="text-center">Terjual</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -395,137 +414,177 @@ export default function RetasiPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={12}>
+                      <TableCell colSpan={9}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : filteredRetasi.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="text-center text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center text-muted-foreground">
                       Tidak ada data
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredRetasi.map((retasi) => (
-                    <TableRow
-                      key={retasi.id}
-                      className="hover:bg-slate-50/80 cursor-pointer"
-                      onClick={() => {
-                        setDetailRetasi(retasi);
-                        setDetailDialogOpen(true);
-                      }}
-                    >
-                      <TableCell>
-                        {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
-                        {retasi.departure_time && (
-                          <div className="text-xs text-muted-foreground">
-                            {retasi.departure_time}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {retasi.is_returned ?
-                          format(retasi.updated_at, 'dd/MM/yyyy HH:mm', { locale: id }) :
-                          '-'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        {retasi.is_returned ? (
-                          <Badge variant="default" className="bg-emerald-100 text-emerald-700">
-                            Armada Kembali
+                  filteredRetasi.flatMap((retasi) => {
+                    const items = (retasi as any).items || [];
+
+                    if (items.length === 0) {
+                      // Retasi tanpa detail item (data lama)
+                      return [(
+                        <TableRow
+                          key={retasi.id}
+                          className="hover:bg-slate-50/80 cursor-pointer"
+                          onClick={() => {
+                            setDetailRetasi(retasi);
+                            setDetailDialogOpen(true);
+                          }}
+                        >
+                          <TableCell>
+                            {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
+                            {retasi.departure_time && (
+                              <div className="text-xs text-muted-foreground">{retasi.departure_time}</div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {retasi.is_returned ? (
+                              <Badge variant="default" className="bg-emerald-100 text-emerald-700">Kembali</Badge>
+                            ) : (
+                              <Badge variant="default" className="bg-amber-100 text-amber-700">Berangkat</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>Retasi {retasi.retasi_ke}</TableCell>
+                          <TableCell>{retasi.driver_name || '-'}</TableCell>
+                          <TableCell className="text-muted-foreground italic">(Data lama)</TableCell>
+                          <TableCell className="text-center">{retasi.total_items}</TableCell>
+                          <TableCell className="text-center">{retasi.returned_items_count || 0}</TableCell>
+                          <TableCell className="text-center">{retasi.barang_laku || 0}</TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <div className="flex gap-1">
+                              <Button variant="outline" size="sm" title="Lihat Detail"
+                                onClick={() => { setDetailRetasi(retasi); setDetailDialogOpen(true); }}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )];
+                    }
+
+                    // Render setiap item sebagai baris terpisah
+                    return items.map((item: any, idx: number) => (
+                      <TableRow
+                        key={`${retasi.id}-${item.id}`}
+                        className={`hover:bg-slate-50/80 cursor-pointer ${idx === 0 ? 'border-t-2 border-slate-200' : ''}`}
+                        onClick={() => {
+                          setDetailRetasi(retasi);
+                          setDetailDialogOpen(true);
+                        }}
+                      >
+                        <TableCell>
+                          {idx === 0 ? (
+                            <>
+                              {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
+                              {retasi.departure_time && (
+                                <div className="text-xs text-muted-foreground">{retasi.departure_time}</div>
+                              )}
+                            </>
+                          ) : ''}
+                        </TableCell>
+                        <TableCell>
+                          {idx === 0 ? (
+                            retasi.is_returned ? (
+                              <Badge variant="default" className="bg-emerald-100 text-emerald-700">Kembali</Badge>
+                            ) : (
+                              <Badge variant="default" className="bg-amber-100 text-amber-700">Berangkat</Badge>
+                            )
+                          ) : ''}
+                        </TableCell>
+                        <TableCell>{idx === 0 ? `Retasi ${retasi.retasi_ke}` : ''}</TableCell>
+                        <TableCell>{idx === 0 ? (retasi.driver_name || '-') : ''}</TableCell>
+                        <TableCell className="font-medium">{item.product_name}</TableCell>
+                        <TableCell className="text-center">{item.quantity || 0}</TableCell>
+                        <TableCell className="text-center">{item.returned_quantity || 0}</TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                            {item.sold_quantity || 0}
                           </Badge>
-                        ) : (
-                          <Badge variant="default" className="bg-amber-100 text-amber-700">
-                            Armada Berangkat
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">Retasi {retasi.retasi_ke}</span>
-                      </TableCell>
-                      <TableCell>{retasi.driver_name || '-'}</TableCell>
-                      <TableCell>{retasi.total_items}</TableCell>
-                      <TableCell>{retasi.returned_items_count || 0}</TableCell>
-                      <TableCell>{retasi.error_items_count || 0}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="bg-green-50 text-green-700">
-                          {retasi.barang_laku || 0}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="bg-orange-50 text-orange-700">
-                          {retasi.barang_tidak_laku || 0}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className={`font-medium ${
-                          ((retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0) - (retasi.barang_tidak_laku || 0)) >= 0
-                            ? 'text-blue-600'
-                            : 'text-red-600'
-                        }`}>
-                          {(retasi.total_items || 0) - (retasi.returned_items_count || 0) - (retasi.error_items_count || 0) - (retasi.barang_laku || 0) - (retasi.barang_tidak_laku || 0)}
-                        </span>
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <div className="flex gap-1">
-                          {!retasi.is_returned && canEditRetasi() ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                handleReturnRetasi(retasi);
-                              }}
-                              className="text-green-600 hover:text-green-700"
-                              title="Tandai Kembali"
-                            >
-                              <ArrowLeft className="h-4 w-4" />
-                            </Button>
-                          ) : null}
-                          {canEditRetasi() && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditRetasi(retasi)}
-                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                              title="Edit Retasi"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {idx === 0 && (
+                            <div className="flex gap-1">
+                              {!retasi.is_returned && canEditRetasi() && (
+                                <Button variant="outline" size="sm" title="Tandai Kembali"
+                                  onClick={(e) => { e.stopPropagation(); handleReturnRetasi(retasi); }}
+                                  className="text-green-600 hover:text-green-700">
+                                  <ArrowLeft className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {canEditRetasi() && (
+                                <Button variant="outline" size="sm" title="Edit"
+                                  onClick={() => handleEditRetasi(retasi)}
+                                  className="text-blue-600 hover:text-blue-700">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              )}
+                              <Button variant="outline" size="sm" title="Detail"
+                                onClick={() => { setDetailRetasi(retasi); setDetailDialogOpen(true); }}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              {canDeleteRetasi() && (
+                                <Button variant="outline" size="sm" title="Hapus"
+                                  onClick={() => handleDeleteRetasi(retasi)}
+                                  className="text-red-600 hover:text-red-700">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                           )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            title="Lihat Detail"
-                            onClick={() => {
-                              setDetailRetasi(retasi);
-                              setDetailDialogOpen(true);
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          {canDeleteRetasi() && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeleteRetasi(retasi)}
-                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              title="Hapus Retasi"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                        </TableCell>
+                      </TableRow>
+                    ));
+                  })
                 )}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
+
+        {/* Summary Card */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Ringkasan Total</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-6 gap-4 text-center">
+              <div className="p-3 bg-blue-50 rounded-lg">
+                <p className="text-xs text-blue-600">Bawa</p>
+                <p className="text-xl font-bold text-blue-700">{totals.bawa}</p>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-lg">
+                <p className="text-xs text-slate-600">Kembali</p>
+                <p className="text-xl font-bold text-slate-700">{totals.kembali}</p>
+              </div>
+              <div className="p-3 bg-red-50 rounded-lg">
+                <p className="text-xs text-red-600">Error</p>
+                <p className="text-xl font-bold text-red-700">{totals.error}</p>
+              </div>
+              <div className="p-3 bg-green-50 rounded-lg">
+                <p className="text-xs text-green-600">Laku</p>
+                <p className="text-xl font-bold text-green-700">{totals.laku}</p>
+              </div>
+              <div className="p-3 bg-orange-50 rounded-lg">
+                <p className="text-xs text-orange-600">Tidak Laku</p>
+                <p className="text-xl font-bold text-orange-700">{totals.tidakLaku}</p>
+              </div>
+              <div className="p-3 bg-purple-50 rounded-lg">
+                <p className="text-xs text-purple-600">Selisih</p>
+                <p className={`text-xl font-bold ${totals.selisih >= 0 ? 'text-purple-700' : 'text-red-700'}`}>{totals.selisih}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
       </div>
 
       {/* Return Retasi Dialog */}

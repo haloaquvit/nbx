@@ -22,7 +22,7 @@ const fromDbItem = (dbItem: any): RetasiItem => ({
   weight: dbItem.weight,
   volume: dbItem.volume,
   notes: dbItem.notes,
-  created_at: new Date(dbItem.created_at),
+  created_at: dbItem.created_at ? new Date(dbItem.created_at) : new Date(),
 });
 
 // Database to App mapping
@@ -162,13 +162,25 @@ export const useRetasi = (filters?: {
   const { user } = useAuth();
   const { timezone } = useTimezone();
 
-  // Get all retasi
-  const { data: retasiList, isLoading } = useQuery<Retasi[]>({
+  // Get all retasi with items
+  const { data: retasiList, isLoading } = useQuery<(Retasi & { items?: RetasiItem[] })[]>({
     queryKey: ['retasi', currentBranch?.id, filters],
     queryFn: async () => {
       let query = supabase
         .from('retasi')
-        .select('*')
+        .select(`
+          *,
+          retasi_items (
+            id,
+            product_id,
+            product_name,
+            quantity,
+            returned_qty,
+            sold_qty,
+            error_qty,
+            unsold_qty
+          )
+        `)
         .order('created_at', { ascending: false });
 
       // Apply branch filter - ALWAYS filter by selected branch
@@ -196,7 +208,10 @@ export const useRetasi = (filters?: {
         throw new Error(error.message);
       }
 
-      return data ? data.map(fromDb) : [];
+      return data ? data.map(r => ({
+        ...fromDb(r),
+        items: r.retasi_items?.map(fromDbItem) || []
+      })) : [];
     },
     enabled: !!currentBranch,
     // Optimized for retasi management

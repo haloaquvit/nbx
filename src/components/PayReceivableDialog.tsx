@@ -134,55 +134,7 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         }
       }
 
-      // Record payment in cash_history table for cash flow tracking (MONITORING ONLY)
-      // cash_history table columns: id, account_id, transaction_type, amount, description,
-      // reference_number, created_by, created_by_name, source_type, created_at, branch_id, type
-      // IMPORTANT: transaction_type must be 'income' or 'expense' (database constraint)
-      const paymentRecord = {
-        account_id: data.paymentAccountId,
-        transaction_type: 'income',
-        type: 'pembayaran_piutang',
-        amount: Number(data.amount), // Ensure it's a number
-        description: `Pembayaran piutang dari ${transaction.customerName} - Order: ${transaction.id}${data.notes ? ' | ' + data.notes : ''}`,
-        reference_number: transaction.id,
-        created_by: user.id || null, // Allow null if user.id is undefined
-        created_by_name: user.name || user.email || 'Unknown User',
-        source_type: 'receivable_payment',
-        branch_id: currentBranch?.id || null, // ADD BRANCH ID
-      };
-
-      console.log('Attempting to insert cash_history record:', paymentRecord);
-
-      // Insert payment record to cash_history table
-      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
-      const { data: insertedRecordRaw, error: paymentRecordError } = await supabase
-        .from('cash_history')
-        .insert(paymentRecord)
-        .select()
-        .order('id', { ascending: false }).limit(1);
-      const insertedRecord = Array.isArray(insertedRecordRaw) ? insertedRecordRaw[0] : insertedRecordRaw;
-
-      if (paymentRecordError) {
-        console.error('Failed to insert cash_history record:', {
-          error: paymentRecordError,
-          errorCode: paymentRecordError.code,
-          errorMessage: paymentRecordError.message,
-          errorDetails: paymentRecordError.details,
-          errorHint: paymentRecordError.hint,
-          record: paymentRecord
-        });
-        
-        // If it's not a "table doesn't exist" error, show warning to user
-        if (!paymentRecordError.message.includes('does not exist') && paymentRecordError.code !== 'PGRST116') {
-          toast({
-            variant: "destructive",
-            title: "Peringatan", 
-            description: `Pembayaran berhasil tetapi gagal mencatat ke cash flow: ${paymentRecordError.message}`
-          });
-        }
-      } else {
-        console.log('Successfully inserted cash_history record:', insertedRecord);
-      }
+      // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
 
       // Invalidate all transaction-related queries to ensure fresh data
       await Promise.all([

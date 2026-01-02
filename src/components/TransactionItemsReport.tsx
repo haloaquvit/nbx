@@ -47,7 +47,8 @@ export const TransactionItemsReport = () => {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'))
-  const [itemFilter, setItemFilter] = useState<'all' | 'regular' | 'bonus'>('all')
+  const [productFilter, setProductFilter] = useState<string>('all') // Filter by product name
+  const [availableProducts, setAvailableProducts] = useState<string[]>([]) // List of unique product names
   const [sourceFilter, setSourceFilter] = useState<'all' | 'delivery' | 'office_sale' | 'retasi'>('all')
   const [driverKasirFilter, setDriverKasirFilter] = useState<string>('all')
   const [availableDriversKasir, setAvailableDriversKasir] = useState<string[]>([])
@@ -202,10 +203,6 @@ export const TransactionItemsReport = () => {
                               item.product_name?.includes('(BONUS)') ||
                               Boolean(matchingTxItem?.isBonus)
 
-              // Apply item filter
-              if (itemFilter === 'regular' && isBonus) return
-              if (itemFilter === 'bonus' && !isBonus) return
-
               const price = matchingTxItem?.price || matchingTxItem?.product?.basePrice || 0
 
               // Get payment account name
@@ -266,12 +263,14 @@ export const TransactionItemsReport = () => {
             const transactionItems = transaction.items || []
 
             transactionItems.forEach((item: any) => {
-              const productName = item.product?.name || item.name || 'Unknown Item'
-              const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
+              // Skip metadata items (sales meta, migration meta)
+              if (item._isSalesMeta || item._isMigrationMeta) return
 
-              // Apply item filter
-              if (itemFilter === 'regular' && isBonus) return
-              if (itemFilter === 'bonus' && !isBonus) return
+              // Skip items without product info
+              if (!item.product?.name && !item.name) return
+
+              const productName = item.product?.name || item.name
+              const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
 
               const price = item.price || item.product?.basePrice || 0
               const quantity = item.quantity || 0
@@ -362,15 +361,14 @@ export const TransactionItemsReport = () => {
             const retasiInfo = retasiDetailsMap[transaction.retasi_id]
 
             transactionItems.forEach((item: any) => {
-              // Skip sales metadata items
-              if (item._isSalesMeta) return
+              // Skip metadata items (sales meta, migration meta)
+              if (item._isSalesMeta || item._isMigrationMeta) return
 
-              const productName = item.product?.name || item.name || 'Unknown Item'
+              // Skip items without product info
+              if (!item.product?.name && !item.name) return
+
+              const productName = item.product?.name || item.name
               const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
-
-              // Apply item filter
-              if (itemFilter === 'regular' && isBonus) return
-              if (itemFilter === 'bonus' && !isBonus) return
 
               const price = item.price || item.product?.basePrice || 0
               const quantity = item.quantity || 0
@@ -410,6 +408,12 @@ export const TransactionItemsReport = () => {
       // Sort by sold date (newest first)
       items.sort((a, b) => b.soldDate.getTime() - a.soldDate.getTime())
 
+      // Extract unique product names for filter dropdown
+      const uniqueProducts = [...new Set(
+        items.map(item => item.productName).filter(Boolean)
+      )].sort()
+      setAvailableProducts(uniqueProducts)
+
       // Extract unique driver/kasir names for filter dropdown
       const uniqueDriversKasir = [...new Set(
         items.map(item => {
@@ -434,6 +438,11 @@ export const TransactionItemsReport = () => {
 
       // Apply filters
       let filteredItems = items
+
+      // Apply product filter if selected
+      if (productFilter !== 'all') {
+        filteredItems = filteredItems.filter(item => item.productName === productFilter)
+      }
 
       // Apply driver/kasir filter if selected
       if (driverKasirFilter !== 'all') {
@@ -465,16 +474,16 @@ export const TransactionItemsReport = () => {
   }
 
   const getReportTitle = () => {
-    const itemFilterText = itemFilter === 'all' ? '' : itemFilter === 'regular' ? ' (Reguler)' : ' (Bonus)'
+    const productFilterText = productFilter === 'all' ? '' : ` (${productFilter})`
     const sourceText = sourceFilter === 'all' ? '' :
                        sourceFilter === 'delivery' ? ' - Pengantaran' :
                        sourceFilter === 'office_sale' ? ' - Laku Kantor' : ' - Retasi'
 
     if (filterType === 'monthly') {
       const monthName = months.find(m => m.value === selectedMonth)?.label
-      return `Laporan Produk Laku${itemFilterText}${sourceText} - ${monthName} ${selectedYear}`
+      return `Laporan Produk Laku${productFilterText}${sourceText} - ${monthName} ${selectedYear}`
     } else {
-      return `Laporan Produk Laku${itemFilterText}${sourceText} - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
+      return `Laporan Produk Laku${productFilterText}${sourceText} - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
     }
   }
 
@@ -544,7 +553,7 @@ export const TransactionItemsReport = () => {
 
     doc.setFont('helvetica', 'normal')
     doc.text(`• Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems})`, 14, finalY + 8)
-    if (itemFilter === 'all') {
+    if (productFilter === 'all') {
       doc.text(`• Produk Reguler: ${regularItems}, Produk Bonus: ${bonusItems}`, 14, finalY + 16)
       doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 24)
       doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 32)
@@ -555,7 +564,7 @@ export const TransactionItemsReport = () => {
       doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 32)
     }
 
-    const filterSuffix = itemFilter === 'regular' ? '-Reguler' : itemFilter === 'bonus' ? '-Bonus' : ''
+    const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
     const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
                          sourceFilter === 'office_sale' ? '-LakuKantor' :
                          sourceFilter === 'retasi' ? '-Retasi' : ''
@@ -636,7 +645,7 @@ export const TransactionItemsReport = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Produk Laku')
 
     // Generate filename
-    const filterSuffix = itemFilter === 'regular' ? '-Reguler' : itemFilter === 'bonus' ? '-Bonus' : ''
+    const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
     const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
                          sourceFilter === 'office_sale' ? '-LakuKantor' :
                          sourceFilter === 'retasi' ? '-Retasi' : ''
@@ -702,15 +711,21 @@ export const TransactionItemsReport = () => {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Filter Produk</Label>
-                <Select value={itemFilter} onValueChange={(value: 'all' | 'regular' | 'bonus') => setItemFilter(value)}>
+                <Label className="text-sm font-medium flex items-center gap-1">
+                  <Package className="h-3 w-3" />
+                  Item Produk
+                </Label>
+                <Select value={productFilter} onValueChange={setProductFilter}>
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Semua Produk" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua Produk</SelectItem>
-                    <SelectItem value="regular">Produk Reguler</SelectItem>
-                    <SelectItem value="bonus">Produk Bonus</SelectItem>
+                    {availableProducts.map(product => (
+                      <SelectItem key={product} value={product}>
+                        {product}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

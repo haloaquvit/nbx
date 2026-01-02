@@ -50,6 +50,8 @@ import { useAuth } from "@/hooks/useAuth"
 import { UserRole } from "@/types/user"
 import { EditTransactionDialog } from "./EditTransactionDialog"
 import { isOwner } from '@/utils/roleUtils'
+import { useDeliveryEmployees, useDeliveryHistory } from "@/hooks/useDeliveries"
+import { useAccounts } from "@/hooks/useAccounts"
 
 
 export function TransactionTable() {
@@ -71,13 +73,46 @@ export function TransactionTable() {
   const [customerSearch, setCustomerSearch] = React.useState<string>(''); // Search box untuk pelanggan
   const [dateRange, setDateRange] = React.useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [ppnFilter, setPpnFilter] = React.useState<'all' | 'ppn' | 'non-ppn'>('all');
-  const [deliveryFilter, setDeliveryFilter] = React.useState<'all' | 'pending-delivery'>('all');
+  const [driverFilter, setDriverFilter] = React.useState<string>('all'); // Filter by driver ID (replaces deliveryFilter)
   const [paymentFilter, setPaymentFilter] = React.useState<'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang'>('all');
+  const [paymentAccountFilter, setPaymentAccountFilter] = React.useState<string>('all'); // Filter by payment account ID
+  const [customerTypeFilter, setCustomerTypeFilter] = React.useState<'all' | 'Rumahan' | 'Kios/Toko'>('all'); // Filter by customer classification
   const [retasiFilter, setRetasiFilter] = React.useState<string>('all'); // 'all' or retasi_number
   const [cashierFilter, setCashierFilter] = React.useState<string>('all'); // 'all' or cashier_name
   const [filteredTransactions, setFilteredTransactions] = React.useState<Transaction[]>([]);
-  
+
   const { transactions, isLoading, deleteTransaction } = useTransactions();
+
+  // Get drivers (supir) for filter dropdown
+  const { data: deliveryEmployees } = useDeliveryEmployees();
+  const drivers = React.useMemo(() => {
+    if (!deliveryEmployees) return [];
+    return deliveryEmployees.filter(emp => emp.role === 'supir');
+  }, [deliveryEmployees]);
+
+  // Get payment accounts for filter dropdown
+  const { accounts } = useAccounts();
+  const paymentAccounts = React.useMemo(() => {
+    if (!accounts) return [];
+    return accounts.filter(acc => acc.isPaymentAccount && !acc.isHeader && acc.isActive !== false);
+  }, [accounts]);
+
+  // Get delivery history to map transactions to drivers
+  const { data: deliveryHistory } = useDeliveryHistory();
+  const transactionDriverMap = React.useMemo(() => {
+    if (!deliveryHistory) return new Map<string, string[]>();
+    const map = new Map<string, string[]>();
+    deliveryHistory.forEach(delivery => {
+      if (delivery.driverId && delivery.transactionId) {
+        const existing = map.get(delivery.transactionId) || [];
+        if (!existing.includes(delivery.driverId)) {
+          existing.push(delivery.driverId);
+        }
+        map.set(delivery.transactionId, existing);
+      }
+    });
+    return map;
+  }, [deliveryHistory]);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
@@ -150,10 +185,25 @@ export function TransactionTable() {
       });
     }
 
-    // Filter by delivery status
-    if (deliveryFilter === 'pending-delivery') {
+    // Filter by driver (transactions that have been delivered by this driver)
+    if (driverFilter !== 'all') {
       filtered = filtered.filter(transaction => {
-        return transaction.status === 'Pesanan Masuk' || transaction.status === 'Diantar Sebagian';
+        const driverIds = transactionDriverMap.get(transaction.id);
+        return driverIds && driverIds.includes(driverFilter);
+      });
+    }
+
+    // Filter by payment account
+    if (paymentAccountFilter !== 'all') {
+      filtered = filtered.filter(transaction => {
+        return transaction.paymentAccountId === paymentAccountFilter;
+      });
+    }
+
+    // Filter by customer type (Rumahan / Kios/Toko)
+    if (customerTypeFilter !== 'all') {
+      filtered = filtered.filter(transaction => {
+        return transaction.customerClassification === customerTypeFilter;
       });
     }
 
@@ -196,14 +246,16 @@ export function TransactionTable() {
     });
 
     setFilteredTransactions(filtered);
-  }, [transactions, dateRange, ppnFilter, deliveryFilter, paymentFilter, retasiFilter, cashierFilter, customerSearch, isMobile]);
+  }, [transactions, dateRange, ppnFilter, driverFilter, paymentFilter, paymentAccountFilter, customerTypeFilter, retasiFilter, cashierFilter, customerSearch, isMobile, transactionDriverMap]);
 
   const clearFilters = () => {
     setCustomerSearch('');
     setDateRange({ from: undefined, to: undefined });
     setPpnFilter('all');
-    setDeliveryFilter('all');
+    setDriverFilter('all');
     setPaymentFilter('all');
+    setPaymentAccountFilter('all');
+    setCustomerTypeFilter('all');
     setRetasiFilter('all');
     setCashierFilter('all');
   };
@@ -689,7 +741,7 @@ export function TransactionTable() {
             Filter Transaksi
             {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
-          {(customerSearch.trim() || dateRange.from || dateRange.to || ppnFilter !== 'all' || deliveryFilter !== 'all' || paymentFilter !== 'all' || retasiFilter !== 'all' || cashierFilter !== 'all') && (
+          {(customerSearch.trim() || dateRange.from || dateRange.to || ppnFilter !== 'all' || driverFilter !== 'all' || paymentFilter !== 'all' || paymentAccountFilter !== 'all' || customerTypeFilter !== 'all' || retasiFilter !== 'all' || cashierFilter !== 'all') && (
             <Badge variant="secondary" className="ml-2">
               Filter aktif
             </Badge>
@@ -786,16 +838,57 @@ export function TransactionTable() {
             </Select>
           </div>
 
-          {/* Delivery Status Filter */}
+          {/* Driver Filter */}
+          {drivers.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Supir (Driver)</label>
+              <Select value={driverFilter} onValueChange={(value: string) => setDriverFilter(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Supir" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Supir</SelectItem>
+                  {drivers.map(driver => (
+                    <SelectItem key={driver.id} value={driver.id}>
+                      {driver.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Payment Account Filter */}
+          {paymentAccounts.length > 0 && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Akun Pembayaran</label>
+              <Select value={paymentAccountFilter} onValueChange={(value: string) => setPaymentAccountFilter(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Akun Pembayaran" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Akun</SelectItem>
+                  {paymentAccounts.map(account => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.code ? `${account.code} - ${account.name}` : account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Customer Type Filter */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Status Pengantaran</label>
-            <Select value={deliveryFilter} onValueChange={(value: 'all' | 'pending-delivery') => setDeliveryFilter(value)}>
+            <label className="text-sm font-medium">Tipe Pelanggan</label>
+            <Select value={customerTypeFilter} onValueChange={(value: 'all' | 'Rumahan' | 'Kios/Toko') => setCustomerTypeFilter(value)}>
               <SelectTrigger>
-                <SelectValue placeholder="Pilih Status Pengantaran" />
+                <SelectValue placeholder="Pilih Tipe Pelanggan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="pending-delivery">Belum Selesai Pengantaran</SelectItem>
+                <SelectItem value="all">Semua Tipe</SelectItem>
+                <SelectItem value="Rumahan">Rumahan</SelectItem>
+                <SelectItem value="Kios/Toko">Kios/Toko</SelectItem>
               </SelectContent>
             </Select>
           </div>

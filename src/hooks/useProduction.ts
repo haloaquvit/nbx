@@ -113,6 +113,23 @@ export const useProduction = () => {
     try {
       setIsLoading(true);
 
+      // ============================================================================
+      // VALIDASI BRANCH - Produksi harus dilakukan dengan branch yang dipilih
+      // Ini mencegah data produksi tanpa branch_id yang menyebabkan:
+      // - Inventory batch tidak dibuat
+      // - Journal entry tidak dibuat
+      // - Data tidak muncul di frontend (filter by branch)
+      // ============================================================================
+      if (!currentBranch?.id) {
+        toast({
+          variant: "destructive",
+          title: "Branch Tidak Dipilih",
+          description: "Silakan pilih branch terlebih dahulu sebelum melakukan produksi."
+        });
+        console.error('❌ Production cancelled: No branch selected');
+        return false;
+      }
+
       // Generate production reference
       const ref = `PRD-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
 
@@ -127,6 +144,20 @@ export const useProduction = () => {
       const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
       if (productError) throw productError;
       if (!product) throw new Error('Product not found');
+
+      // ============================================================================
+      // VALIDASI BRANCH MATCH - Produk harus sesuai dengan branch yang dipilih
+      // Ini mencegah produksi produk dari branch lain tanpa switch branch dulu
+      // ============================================================================
+      if (product.branch_id && product.branch_id !== currentBranch.id) {
+        toast({
+          variant: "destructive",
+          title: "Branch Tidak Sesuai",
+          description: `Produk ini milik branch lain. Silakan switch ke branch yang sesuai terlebih dahulu.`
+        });
+        console.error(`❌ Production cancelled: Product branch (${product.branch_id}) != current branch (${currentBranch.id})`);
+        return false;
+      }
 
       // Get BOM snapshot if consuming BOM
       let bomSnapshot: BOMItem[] | null = null;
@@ -386,23 +417,7 @@ export const useProduction = () => {
               console.warn('⚠️ Failed to create production output journal:', journalResult.error);
             }
 
-            // Record in cash_history for audit trail (MONITORING ONLY)
-            try {
-              await supabase
-                .from('cash_history')
-                .insert({
-                  account_id: null,
-                  type: 'produksi',
-                  amount: totalMaterialCost,
-                  description: `Produksi ${ref}: ${materialDetails.join(', ')} -> ${product.name} x${input.quantity}`,
-                  reference_id: productionRecord.id,
-                  reference_name: `Produksi ${ref}`,
-                  branch_id: currentBranch.id,
-                  source_type: 'production',
-                });
-            } catch (historyError) {
-              console.warn('cash_history recording failed (non-critical):', historyError);
-            }
+            // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
           }
 
           // ============================================================================
@@ -468,7 +483,7 @@ export const useProduction = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, user, getBOM]); // Dependencies: toast for error messages, user for created_by, getBOM function
+  }, [toast, user, getBOM, currentBranch]); // Dependencies: toast, user, getBOM, currentBranch for branch validation
 
 
   // Process error input
@@ -803,11 +818,7 @@ export const useProduction = () => {
             }
           }
 
-          // Delete cash_history record for this production/error
-          await supabase
-            .from('cash_history')
-            .delete()
-            .eq('reference_id', record.id);
+          // cash_history SUDAH DIHAPUS - tidak perlu delete lagi
 
           console.log('✅ Production/error accounting reversed');
         } catch (productionRollbackError) {

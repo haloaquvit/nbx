@@ -81,6 +81,7 @@ const getMenuItems = (hasPermission: (permission: Permission) => boolean, hasGra
       { href: "/quotations", label: "Penawaran", icon: FileText, granularPermission: 'quotations_view' },
       { href: "/delivery", label: "Pengantaran", icon: Truck, permission: PERMISSIONS.DELIVERIES },
       { href: "/retasi", label: "Retasi", icon: Package, permission: PERMISSIONS.DELIVERIES },
+      { href: "/transaction-items-report", label: "Laporan Produk Laku", icon: PackageOpen, permission: PERMISSIONS.REPORTS },
       { href: "/attendance", label: "Absensi", icon: Fingerprint, permission: PERMISSIONS.ATTENDANCE },
     ].filter(item => {
       // Check granular permission first
@@ -131,7 +132,6 @@ const getMenuItems = (hasPermission: (permission: Permission) => boolean, hasGra
     items: [
       { href: "/stock-report", label: "Laporan Stock", icon: BarChart3, permission: PERMISSIONS.REPORTS },
       { href: "/material-movements", label: "Pergerakan Penggunaan Bahan", icon: Package2, permission: PERMISSIONS.REPORTS },
-      { href: "/transaction-items-report", label: "Laporan Produk Laku", icon: PackageOpen, permission: PERMISSIONS.REPORTS },
       { href: "/attendance/report", label: "Laporan Absensi", icon: BookCheck, permission: PERMISSIONS.REPORTS },
       { href: "/commission-report", label: "Laporan Komisi", icon: Calculator, permission: PERMISSIONS.REPORTS },
     ].filter(item => hasPermission(item.permission)),

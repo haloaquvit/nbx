@@ -977,18 +977,18 @@ export const PosForm = () => {
                 </Button>
 
                 {showProductDropdown && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-[70vh] overflow-y-auto">
-                    <div className="p-4 border-b dark:border-gray-600 bg-gray-50 dark:bg-gray-700 sticky top-0">
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-[40vh] overflow-hidden">
+                    <div className="p-2 border-b dark:border-gray-600 bg-gray-50 dark:bg-gray-700 sticky top-0">
                       <Input
                         ref={productSearchInputRef}
                         placeholder="Cari produk..."
                         value={productSearch}
                         onChange={(e) => setProductSearch(e.target.value)}
-                        className="w-full text-base"
+                        className="w-full text-sm h-9"
                         autoFocus
                       />
                     </div>
-                    <div className="max-h-[60vh] overflow-y-auto">
+                    <div className="max-h-[calc(40vh-50px)] overflow-y-auto">
                       {filteredProducts.map((product) => {
                         // Cek apakah stok habis untuk produk Produksi atau Bahan
                         const isOutOfStock = (product.type === 'Produksi' || product.type === 'Bahan') && (product.currentStock || 0) <= 0;
@@ -996,64 +996,52 @@ export const PosForm = () => {
                         return (
                           <div
                             key={product.id}
-                            className={`p-4 border-b dark:border-gray-600 last:border-b-0 transition-colors ${
+                            className={`px-3 py-2 border-b dark:border-gray-600 last:border-b-0 transition-colors ${
                               isOutOfStock
                                 ? 'bg-gray-100 dark:bg-gray-700 opacity-60 cursor-not-allowed'
                                 : 'hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer'
                             }`}
                             onClick={() => !isOutOfStock && addToCart(product)}
                           >
-                            <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center justify-between gap-2">
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className={`font-semibold text-base ${isOutOfStock ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
-                                    {product.name}
-                                  </span>
-                                </div>
+                                <span className={`font-medium text-sm ${isOutOfStock ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
+                                  {product.name}
+                                </span>
+                                <span className={`ml-2 inline-flex px-1.5 py-0.5 rounded text-xs ${
+                                  product.type === 'Produksi'
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
+                                    : product.type === 'Bahan'
+                                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
+                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                                }`}>
+                                  {product.type}
+                                </span>
+                                {isOutOfStock && (
+                                  <span className="ml-1 text-xs text-red-600 font-medium">Stok Habis</span>
+                                )}
                               </div>
-                              {/* Stok di sebelah kanan - tampil untuk semua tipe */}
-                              <div className="shrink-0 text-right">
-                                <div className={`text-sm font-medium ${
+                              <div className="shrink-0 flex items-center gap-3">
+                                <div className={`text-xs ${
                                   isOutOfStock
                                     ? 'text-red-500'
                                     : (product.currentStock || 0) <= (product.minStock || 10)
                                       ? 'text-amber-600'
-                                      : 'text-gray-600 dark:text-gray-300'
+                                      : 'text-gray-500 dark:text-gray-400'
                                 }`}>
-                                  <span className="text-xs text-gray-400">Stok:</span>{' '}
-                                  <span className="font-bold">{product.currentStock ?? '-'}</span>{' '}
-                                  <span className="text-xs">{product.unit || 'pcs'}</span>
+                                  Stok: <span className="font-semibold">{product.currentStock ?? '-'}</span>
                                 </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`inline-flex px-2 py-0.5 rounded text-xs ${
-                                product.type === 'Produksi'
-                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
-                                  : product.type === 'Bahan'
-                                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
-                                  : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                              }`}>
-                                {product.type}
-                              </span>
-                              {isOutOfStock && (
-                                <span className="text-xs text-red-600 font-medium">⚠️ Stok Habis</span>
-                              )}
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <div className={`text-base font-bold ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
-                                {new Intl.NumberFormat("id-ID", {
-                                  style: "currency",
-                                  currency: "IDR",
-                                  maximumFractionDigits: 0,
-                                }).format(product.basePrice || 0)}
-                              </div>
-                              {/* Tombol + di kanan bawah */}
-                              {!isOutOfStock && (
-                                <div className="text-green-600 dark:text-green-400">
-                                  <Plus className="h-5 w-5" />
+                                <div className={`text-sm font-semibold ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
+                                  {new Intl.NumberFormat("id-ID", {
+                                    style: "currency",
+                                    currency: "IDR",
+                                    maximumFractionDigits: 0,
+                                  }).format(product.basePrice || 0)}
                                 </div>
-                              )}
+                                {!isOutOfStock && (
+                                  <Plus className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                )}
+                              </div>
                             </div>
                           </div>
                         );
@@ -1193,7 +1181,7 @@ export const PosForm = () => {
                                 min={0}
                                 decimalPlaces={2}
                                 className="w-20 md:w-32 text-right text-xs"
-                                disabled={retasiBlocked || loadingPrices[item.id]}
+                                disabled={retasiBlocked || loadingPrices[item.id] || currentUser?.role?.toLowerCase() === 'supir' || currentUser?.role?.toLowerCase() === 'helper'}
                               />
                               {loadingPrices[item.id] && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70">
@@ -1261,7 +1249,7 @@ export const PosForm = () => {
                     <label className="text-xs text-emerald-700 dark:text-emerald-400">Jumlah Bayar</label>
                     <NumberInput
                       value={paidAmount}
-                      onChange={(value) => setPaidAmount(value || 0)}
+                      onChange={(value) => setPaidAmount(Math.min(value || 0, totalTagihan))}
                       min={0}
                       decimalPlaces={2}
                       className="text-right font-bold text-emerald-700 text-lg w-full bg-transparent border-0 p-0 h-auto"
@@ -1294,16 +1282,11 @@ export const PosForm = () => {
                   </Button>
                 </div>
 
-                {/* Status & Sisa/Kembali - Compact */}
+                {/* Status & Sisa - Compact */}
                 <div className="flex justify-between text-xs bg-gray-50 dark:bg-gray-700 p-2 rounded">
                   <span className={sisaTagihan <= 0 ? 'text-green-600 font-medium' : sisaTagihan < totalTagihan ? 'text-orange-600' : 'text-gray-600'}>
                     {sisaTagihan <= 0 ? '✅ Lunas' : sisaTagihan < totalTagihan ? `⏳ Sisa: ${new Intl.NumberFormat("id-ID").format(sisaTagihan)}` : '❌ Belum Bayar'}
                   </span>
-                  {paidAmount > totalTagihan && (
-                    <span className="text-green-600 font-medium">
-                      Kembali: {new Intl.NumberFormat("id-ID").format(paidAmount - totalTagihan)}
-                    </span>
-                  )}
                 </div>
 
                 {/* Payment Method - Only show if paidAmount > 0 */}

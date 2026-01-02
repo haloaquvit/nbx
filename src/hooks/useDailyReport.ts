@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useBranch } from '@/contexts/BranchContext';
+import { useAccounts } from '@/hooks/useAccounts';
 import { startOfDay, endOfDay, format } from 'date-fns';
 
 export interface DailyReportData {
@@ -32,15 +33,23 @@ export interface DailyReportData {
   }>;
 }
 
+/**
+ * useDailyReport - Mengambil laporan harian dari JOURNAL ENTRIES
+ *
+ * ARSITEKTUR BARU:
+ * - Cash flow diambil dari journal_entry_lines untuk akun kas/bank
+ * - TIDAK LAGI menggunakan cash_history table
+ */
 export function useDailyReport(selectedDate: Date) {
   const { currentBranch } = useBranch();
+  const { accounts } = useAccounts();
 
   const {
     data: dailyReport,
     isLoading,
     error
   } = useQuery({
-    queryKey: ['dailyReport', format(selectedDate, 'yyyy-MM-dd'), currentBranch?.id],
+    queryKey: ['dailyReport', format(selectedDate, 'yyyy-MM-dd'), currentBranch?.id, accounts?.length],
     queryFn: async (): Promise<DailyReportData> => {
       const startDate = startOfDay(selectedDate);
       const endDate = endOfDay(selectedDate);
@@ -64,62 +73,86 @@ export function useDailyReport(selectedDate: Date) {
         throw new Error(`Failed to fetch transactions: ${transactionError.message}`);
       }
 
-      // Fetch cash flow for the selected date
-      let cashFlowQuery = supabase
-        .from('cash_history')
-        .select(`
-          *,
-          accounts!account_id (
-            name
-          )
-        `)
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString())
-        .order('created_at', { ascending: false });
+      // Get payment accounts (kas/bank)
+      const paymentAccounts = (accounts || []).filter(acc => acc.isPaymentAccount);
+      const paymentAccountIds = paymentAccounts.map(acc => acc.id);
+      const accountMap = new Map(paymentAccounts.map(acc => [acc.id, acc]));
 
-      // Apply branch filter - ALWAYS filter by selected branch
-      if (currentBranch?.id) {
-        cashFlowQuery = cashFlowQuery.eq('branch_id', currentBranch.id);
+      let cashIn = 0;
+      let cashOut = 0;
+      const cashFlowByAccountMap = new Map<string, { accountName: string; cashIn: number; cashOut: number }>();
+
+      if (paymentAccountIds.length > 0) {
+        // Fetch cash flow from journal_entry_lines for payment accounts
+        const { data: journalLines, error: journalError } = await supabase
+          .from('journal_entry_lines')
+          .select(`
+            id,
+            account_id,
+            account_name,
+            debit_amount,
+            credit_amount,
+            journal_entries (
+              id,
+              entry_date,
+              status,
+              is_voided,
+              branch_id,
+              created_at
+            )
+          `)
+          .in('account_id', paymentAccountIds);
+
+        if (journalError) {
+          console.error('Failed to fetch journal lines for daily report:', journalError);
+        } else {
+          // Filter: posted, not voided, current branch, within date range
+          const filteredLines = (journalLines || []).filter((line: any) => {
+            const journal = line.journal_entries;
+            if (!journal) return false;
+
+            const journalDate = new Date(journal.created_at);
+            const isPosted = journal.status === 'posted';
+            const isNotVoided = journal.is_voided === false;
+            const isCurrentBranch = journal.branch_id === currentBranch?.id;
+            const isInDateRange = journalDate >= startDate && journalDate <= endDate;
+
+            return isPosted && isNotVoided && isCurrentBranch && isInDateRange;
+          });
+
+          // Calculate cash in/out
+          // For payment accounts: Debit = kas masuk (income), Credit = kas keluar (expense)
+          filteredLines.forEach((line: any) => {
+            const debitAmount = Number(line.debit_amount) || 0;
+            const creditAmount = Number(line.credit_amount) || 0;
+            const account = accountMap.get(line.account_id);
+            const accountName = line.account_name || account?.name || 'Unknown Account';
+
+            // Update totals
+            cashIn += debitAmount;
+            cashOut += creditAmount;
+
+            // Update per-account breakdown
+            if (!cashFlowByAccountMap.has(accountName)) {
+              cashFlowByAccountMap.set(accountName, { accountName, cashIn: 0, cashOut: 0 });
+            }
+            const accountData = cashFlowByAccountMap.get(accountName)!;
+            accountData.cashIn += debitAmount;
+            accountData.cashOut += creditAmount;
+          });
+        }
       }
 
-      const { data: cashFlow, error: cashFlowError } = await cashFlowQuery;
+      const netCash = cashIn - cashOut;
 
-      if (cashFlowError) {
-        throw new Error(`Failed to fetch cash flow: ${cashFlowError.message}`);
-      }
-
-      // Calculate totals
+      // Calculate totals from transactions
       const totalSales = transactions?.reduce((sum, t) => sum + (t.total || 0), 0) || 0;
       const totalCash = transactions?.reduce((sum, t) => sum + (t.paid_amount || 0), 0) || 0;
       const totalCredit = totalSales - totalCash;
       const transactionCount = transactions?.length || 0;
 
-      // Calculate cash in/out from cash flow
-      const cashIn = cashFlow?.reduce((sum, cf) => sum + (cf.transaction_type === 'income' ? (cf.amount || 0) : 0), 0) || 0;
-      const cashOut = cashFlow?.reduce((sum, cf) => sum + (cf.transaction_type === 'expense' ? (cf.amount || 0) : 0), 0) || 0;
-      const netCash = cashIn - cashOut;
-
-      // Group cash flow by account
-      const cashFlowByAccount = cashFlow?.reduce((acc, cf) => {
-        const accountName = cf.account_name || cf.accounts?.name || 'Unknown Account';
-        const existing = acc.find(item => item.accountName === accountName);
-        
-        if (existing) {
-          if (cf.transaction_type === 'income') {
-            existing.cashIn += cf.amount || 0;
-          } else {
-            existing.cashOut += cf.amount || 0;
-          }
-        } else {
-          acc.push({
-            accountName,
-            cashIn: cf.transaction_type === 'income' ? (cf.amount || 0) : 0,
-            cashOut: cf.transaction_type === 'expense' ? (cf.amount || 0) : 0,
-          });
-        }
-        
-        return acc;
-      }, [] as Array<{ accountName: string; cashIn: number; cashOut: number; }>) || [];
+      // Convert map to array
+      const cashFlowByAccount = Array.from(cashFlowByAccountMap.values());
 
       // Format transaction data for display
       const formattedTransactions = transactions?.map(t => ({
@@ -149,8 +182,8 @@ export function useDailyReport(selectedDate: Date) {
         transactions: formattedTransactions,
       };
     },
-    enabled: !!currentBranch,
-    refetchOnMount: true, // Auto-refetch when switching branches
+    enabled: !!currentBranch && !!accounts,
+    refetchOnMount: true,
   });
 
   return {

@@ -11,7 +11,7 @@ import { createAdvanceJournal } from '@/services/journalService';
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
 // ============================================================================
 // Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
-// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// cash_history SUDAH DIHAPUS - tidak lagi digunakan
 // Jurnal otomatis dibuat melalui journalService untuk setiap transaksi panjar
 // ============================================================================
 
@@ -155,79 +155,8 @@ export const useEmployeeAdvances = () => {
       const piutangAccount = await getPiutangKaryawanAccount();
 
       // ============================================================================
-      // DOUBLE-ENTRY ACCOUNTING FOR PANJAR KARYAWAN
-      // Journal Entry:
-      // - Debit: Piutang Karyawan (increase asset - employee owes company)
-      // - Credit: Kas/Bank (decrease asset - cash out)
-      //
-      // Saldo dihitung dari cash_history, jadi HARUS dicatat di cash_history
-      // untuk kedua akun agar muncul di Neraca
+      // cash_history SUDAH DIHAPUS - Cash flow sekarang dibaca dari journal_entries
       // ============================================================================
-      if (newData.accountId && user) {
-        try {
-          const description = `Panjar karyawan untuk ${newData.employeeName}: ${newData.notes || 'Tidak ada keterangan'}`;
-
-          // 1. Record DEBIT to Piutang Karyawan (piutang bertambah = kas masuk ke akun piutang)
-          if (piutangAccount) {
-            const piutangRecord = {
-              account_id: piutangAccount.id,
-              transaction_type: 'income', // Piutang bertambah = aset bertambah
-              type: 'panjar_pengambilan', // Custom type for panjar
-              amount: newData.amount,
-              description: `[DEBIT] ${description}`,
-              reference_number: data.id,
-              created_by: user.id,
-              created_by_name: user.name || user.email || 'Unknown User',
-              source_type: 'employee_advance',
-              branch_id: currentBranch?.id || null,
-            };
-
-            const { error: piutangError } = await supabase
-              .from('cash_history')
-              .insert(piutangRecord);
-
-            if (piutangError) {
-              console.error('Failed to record piutang in cash history:', piutangError.message);
-            } else {
-              console.log(`✅ Piutang Karyawan (${piutangAccount.id}) increased by ${newData.amount}`);
-            }
-          } else {
-            console.warn('⚠️ Piutang Karyawan account not found, skipping piutang recording');
-          }
-
-          // 2. Record CREDIT to Kas/Bank (kas berkurang = expense)
-          const cashFlowRecord = {
-            account_id: newData.accountId,
-            transaction_type: 'expense',
-            type: 'panjar_pengambilan',
-            amount: newData.amount,
-            description: `[CREDIT] ${description}`,
-            reference_number: data.id,
-            created_by: user.id,
-            created_by_name: user.name || user.email || 'Unknown User',
-            source_type: 'employee_advance',
-            branch_id: currentBranch?.id || null,
-          };
-
-          const { error: cashFlowError } = await supabase
-            .from('cash_history')
-            .insert(cashFlowRecord);
-
-          if (cashFlowError) {
-            console.error('Failed to record cash flow:', cashFlowError.message);
-          } else {
-            console.log(`✅ Kas/Bank decreased by ${newData.amount}`);
-          }
-
-          console.log('📝 Double-entry for panjar completed:', {
-            debit: { account: piutangAccount?.name, amount: newData.amount },
-            credit: { account: newData.accountName, amount: newData.amount }
-          });
-
-        } catch (error) {
-          console.error('Error recording advance cash flow:', error);
-        }
-      }
 
       // ============================================================================
       // AUTO-GENERATE JOURNAL ENTRY FOR PANJAR
@@ -292,87 +221,8 @@ export const useEmployeeAdvances = () => {
       if (rpcError) throw new Error(rpcError.message);
 
       // ============================================================================
-      // DOUBLE-ENTRY ACCOUNTING FOR PELUNASAN PANJAR
-      // Journal Entry:
-      // - Debit: Kas/Bank (increase asset - cash in)
-      // - Credit: Piutang Karyawan (decrease asset - employee paid back)
-      //
-      // Saldo dihitung dari cash_history, jadi HARUS dicatat di cash_history
-      // untuk kedua akun agar muncul di Neraca
+      // cash_history SUDAH DIHAPUS - Cash flow sekarang dibaca dari journal_entries
       // ============================================================================
-      if (accountId && user) {
-        try {
-          // Get advance details for the description
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: advanceRaw } = await supabase
-            .from('employee_advances')
-            .select('employee_name')
-            .eq('id', advanceId)
-            .order('id').limit(1);
-          const advance = Array.isArray(advanceRaw) ? advanceRaw[0] : advanceRaw;
-
-          const description = `Pelunasan panjar dari ${advance?.employee_name || 'karyawan'} - ${advanceId}`;
-          const piutangAccount = await getPiutangKaryawanAccount();
-
-          // 1. Record DEBIT to Kas/Bank (kas bertambah = income)
-          const cashFlowRecord = {
-            account_id: accountId,
-            transaction_type: 'income',
-            type: 'panjar_pelunasan',
-            amount: repaymentData.amount,
-            description: `[DEBIT] ${description}`,
-            reference_number: newRepayment.id,
-            created_by: user.id,
-            created_by_name: user.name || user.email || 'Unknown User',
-            source_type: 'advance_repayment',
-            branch_id: currentBranch?.id || null,
-          };
-
-          const { error: cashFlowError } = await supabase
-            .from('cash_history')
-            .insert(cashFlowRecord);
-
-          if (cashFlowError) {
-            console.error('Failed to record cash income:', cashFlowError.message);
-          } else {
-            console.log(`✅ Kas/Bank increased by ${repaymentData.amount}`);
-          }
-
-          // 2. Record CREDIT to Piutang Karyawan (piutang berkurang = expense dari akun piutang)
-          if (piutangAccount) {
-            const piutangRecord = {
-              account_id: piutangAccount.id,
-              transaction_type: 'expense', // Piutang berkurang = aset berkurang
-              type: 'panjar_pelunasan',
-              amount: repaymentData.amount,
-              description: `[CREDIT] ${description}`,
-              reference_number: newRepayment.id,
-              created_by: user.id,
-              created_by_name: user.name || user.email || 'Unknown User',
-              source_type: 'advance_repayment',
-              branch_id: currentBranch?.id || null,
-            };
-
-            const { error: piutangError } = await supabase
-              .from('cash_history')
-              .insert(piutangRecord);
-
-            if (piutangError) {
-              console.error('Failed to record piutang decrease:', piutangError.message);
-            } else {
-              console.log(`✅ Piutang Karyawan (${piutangAccount.id}) decreased by ${repaymentData.amount}`);
-            }
-          }
-
-          console.log('📝 Double-entry for pelunasan panjar completed:', {
-            debit: { account: accountName, amount: repaymentData.amount },
-            credit: { account: piutangAccount?.name, amount: repaymentData.amount }
-          });
-
-        } catch (error) {
-          console.error('Error recording repayment cash flow:', error);
-        }
-      }
 
       // ============================================================================
       // AUTO-GENERATE JOURNAL ENTRY FOR PELUNASAN PANJAR
@@ -442,17 +292,7 @@ export const useEmployeeAdvances = () => {
         console.error('Error voiding advance journal:', err);
       }
 
-      // Delete related cash_history records by reference_number (advance ID) - untuk monitoring saja
-      const { error: cashHistoryError } = await supabase
-        .from('cash_history')
-        .delete()
-        .eq('reference_number', advanceToDelete.id);
-
-      if (cashHistoryError) {
-        console.error('Failed to delete related cash history:', cashHistoryError.message);
-      } else {
-        console.log(`✅ Deleted cash_history records for advance ${advanceToDelete.id}`);
-      }
+      // cash_history SUDAH DIHAPUS - tidak perlu delete lagi
 
       // Delete associated repayments first
       await supabase.from('advance_repayments').delete().eq('advance_id', advanceToDelete.id);

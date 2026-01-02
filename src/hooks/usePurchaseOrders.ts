@@ -476,52 +476,7 @@ export const usePurchaseOrders = () => {
         });
       }
 
-      // Record in cash_history for PO payment tracking
-      if (paymentAccountId && user) {
-        try {
-          // Get account name for the payment account
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: accountRaw } = await supabase
-            .from('accounts')
-            .select('name')
-            .eq('id', paymentAccountId)
-            .order('id').limit(1);
-          const account = Array.isArray(accountRaw) ? accountRaw[0] : accountRaw;
-
-          const cashFlowRecord = {
-            account_id: paymentAccountId,
-            account_name: account?.name || 'Unknown Account',
-            type: 'pembayaran_po',
-            amount: totalCost,
-            description: `Pembayaran PO #${updatedPo.id} - ${updatedPo.material_name}`,
-            reference_id: poId,
-            reference_name: `Purchase Order ${poId}`,
-            user_id: user.id,
-            user_name: user.name || user.email || 'Unknown User',
-            transaction_type: 'expense',
-            branch_id: currentBranch?.id || null,
-          };
-
-          console.log('Recording PO payment in cash history:', cashFlowRecord);
-
-          const { error: cashFlowError } = await supabase
-            .from('cash_history')
-            .insert(cashFlowRecord);
-
-          if (cashFlowError) {
-            console.error('Failed to record PO payment in cash flow:', cashFlowError.message);
-          } else {
-            console.log('Successfully recorded PO payment in cash history');
-          }
-        } catch (error) {
-          console.error('Error recording PO payment cash flow:', error);
-        }
-      } else {
-        console.log('Skipping PO payment cash flow record - missing paymentAccountId or user:', {
-          paymentAccountId,
-          user: user ? 'exists' : 'missing'
-        });
-      }
+      // cash_history SUDAH DIHAPUS - Cash flow sekarang dibaca dari journal_entries
 
       return fromDb(updatedPo);
     },

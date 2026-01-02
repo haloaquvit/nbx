@@ -56,7 +56,7 @@ export const BACKUP_TABLES = [
   'production_records',
   'production_errors',
   'balance_adjustments',
-  'cash_history',
+  // 'cash_history', // DIHAPUS - tidak lagi digunakan
   'payment_history',
   'assets',
   'asset_maintenance',
@@ -87,7 +87,7 @@ const TABLES_WITH_BRANCH_ID = [
   'material_stock_movements',
   'stock_movements',
   'production_records',
-  'cash_history',
+  // 'cash_history', // DIHAPUS - tidak lagi digunakan
   'payment_history',
   'assets',
   'zakat_records',

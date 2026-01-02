@@ -704,23 +704,7 @@ export function useRecordDepreciation() {
         .update({ current_value: newCurrentValue })
         .eq('id', assetId);
 
-      // Record in cash_history for audit trail (MONITORING ONLY)
-      try {
-        await supabase
-          .from('cash_history')
-          .insert({
-            account_id: null, // No direct account update
-            type: 'penyusutan',
-            amount: depreciationAmount,
-            description: `Penyusutan ${asset.asset_name} periode ${period}`,
-            reference_id: assetId,
-            reference_name: `Aset ${asset.asset_code || asset.asset_name}`,
-            branch_id: currentBranch.id,
-            source_type: 'depreciation',
-          });
-      } catch (historyError) {
-        console.warn('cash_history recording failed (non-critical):', historyError);
-      }
+      // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
 
       console.log('✅ Depreciation accounting created:', {
         asset: asset.asset_name,

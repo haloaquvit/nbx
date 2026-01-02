@@ -248,7 +248,13 @@
       "Bash(dir \"d:\\App\\Aquvit Fix - Copy\\*change*\")",
       "Bash(dir /b \"d:\\App\\Aquvit Fix - Copy\")",
       "Bash(PGPASSWORD='AQUvit2025!' psql:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\hooks\\useClosedPeriods.ts\" \"d:\\App\\Aquvit Fix - Copy\\src\\components\\ClosingPeriodReminder.tsx\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Improve UX for retasi input and expense account selection\n\n- Remove stock filter on retasi product selection (allow stock 0 products)\n- Add auto-select on quantity input fields for faster editing\n- Change expense account dropdown to searchable combobox\n- Apply changes to both desktop and mobile retasi pages\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\backfillCashHistory.ts\")",
+      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\cleanupCashHistory.ts\")",
+      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\syncCashFlow.ts\")",
+      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\utils\\simpleCashFlow.ts\")"
     ],
     "deny": [],
     "ask": [],

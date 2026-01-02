@@ -15,7 +15,7 @@ import { markAsVisitedAsync } from '@/utils/customerVisitUtils'
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
 // ============================================================================
 // Semua saldo akun HANYA dihitung dari journal_entries (tidak ada update balance langsung)
-// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// cash_history SUDAH DIHAPUS - tidak lagi digunakan
 // Jurnal otomatis dibuat melalui journalService untuk setiap transaksi
 // HPP & Persediaan di-jurnal otomatis melalui createSalesJournal
 // ============================================================================
@@ -83,11 +83,12 @@ const extractSalesFromItems = (items: any[]) => {
 // Helper to map from DB (snake_case) to App (camelCase)
 const fromDb = (dbTransaction: any): Transaction => {
   const salesInfo = extractSalesFromItems(dbTransaction.items);
-  
+
   return {
     id: dbTransaction.id,
     customerId: dbTransaction.customer_id,
     customerName: dbTransaction.customer_name,
+    customerClassification: dbTransaction.customer?.classification || undefined, // Dari join dengan customers
     cashierId: dbTransaction.cashier_id,
     cashierName: dbTransaction.cashier_name,
     salesId: dbTransaction.sales_id || salesInfo.salesId, // Try direct column first, then extract from items
@@ -182,8 +183,8 @@ export const useTransactions = (filters?: {
   const { data: transactions, isLoading } = useQuery<Transaction[]>({
     queryKey: ['transactions', filters, currentBranch?.id],
     queryFn: async () => {
-      // Use only essential columns that definitely exist in the original schema
-      const selectFields = '*'; // Let Supabase handle available columns automatically
+      // Join dengan customers untuk mendapatkan classification
+      const selectFields = '*, customer:customers!customer_id(classification)';
 
       let query = supabase
         .from('transactions')
@@ -331,54 +332,9 @@ export const useTransactions = (filters?: {
         if (quotationError) console.error("Failed to update quotation:", quotationError.message);
       }
 
-      // Record cash flow if there's a direct payment (paidAmount > 0)
-      if (newTransaction.paidAmount > 0 && newTransaction.paymentAccountId) {
-        try {
-          // First, fetch the account name
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: accountDataRaw, error: accountError } = await supabase
-            .from('accounts')
-            .select('name')
-            .eq('id', newTransaction.paymentAccountId)
-            .order('id').limit(1);
-
-          const accountData = Array.isArray(accountDataRaw) ? accountDataRaw[0] : accountDataRaw;
-          if (accountError) {
-            console.error('Failed to fetch account name:', accountError.message);
-          }
-
-          // cash_history table columns: id, account_id, transaction_type, amount, description,
-          // reference_number, created_by, created_by_name, source_type, created_at, branch_id, type
-          // IMPORTANT: transaction_type must be 'income' or 'expense' (database constraint)
-          const cashFlowRecord = {
-            account_id: newTransaction.paymentAccountId,
-            transaction_type: 'income',
-            type: 'orderan',
-            amount: newTransaction.paidAmount,
-            description: `Pembayaran orderan ${savedTransaction.id} - ${newTransaction.customerName}`,
-            reference_number: savedTransaction.id,
-            created_by: newTransaction.cashierId,
-            created_by_name: newTransaction.cashierName,
-            source_type: 'transaction',
-            branch_id: currentBranch?.id || null,
-          };
-
-          const { error: cashFlowError } = await supabase
-            .from('cash_history')
-            .insert(cashFlowRecord);
-
-          if (cashFlowError) {
-            // If cash_history table doesn't exist or has constraint issues, just log a warning but continue
-            if (cashFlowError.code === '42P01' || cashFlowError.code === 'PGRST116' || cashFlowError.code === 'PGRST205') {
-              console.warn('cash_history table does not exist, transaction completed without history tracking');
-            } else {
-              console.error('Failed to record cash flow:', cashFlowError.message);
-            }
-          }
-        } catch (error) {
-          console.error('Error recording cash flow:', error);
-        }
-      }
+      // ============================================================================
+      // cash_history SUDAH DIHAPUS - Cash flow sekarang dibaca dari journal_entries
+      // ============================================================================
 
       // ============================================================================
       // BALANCE UPDATE LANGSUNG DIHAPUS
@@ -1265,96 +1221,9 @@ export const useTransactions = (filters?: {
         console.log('Deleted stock movements for transaction:', deletedMovements);
       }
       
-      // Step 5: Delete related cash_history records
-      console.log('Attempting to delete cash_history records for transaction:', transactionId);
-      
-      // Get all cash_history records for this transaction first (for debugging)
-      // Note: The column is 'reference_number' not 'reference_id'
-      const { data: existingCashHistory } = await supabase
-        .from('cash_history')
-        .select('*')
-        .or(`reference_number.eq.${transactionId},description.ilike.%${transactionId}%`);
+      // Step 5: cash_history SUDAH DIHAPUS - tidak perlu delete lagi
+      // Cash flow sekarang dibaca dari journal_entries
 
-      console.log('Found cash_history records to delete:', existingCashHistory);
-      
-      // Also check with exact patterns used when saving
-      const { data: exactPattern } = await supabase
-        .from('cash_history')
-        .select('*')
-        .like('description', `%Pembayaran orderan ${transactionId}%`);
-        
-      console.log('Found with exact pattern:', exactPattern);
-      
-      // Delete by reference_number (primary method)
-      const { data: deleted1, error: cashHistoryError1 } = await supabase
-        .from('cash_history')
-        .delete()
-        .eq('reference_number', transactionId)
-        .select();
-
-      console.log('Deleted by reference_number:', deleted1, 'Error:', cashHistoryError1);
-
-      // If no records deleted by reference_number, log the actual records for debugging
-      if ((!deleted1 || deleted1.length === 0) && existingCashHistory && existingCashHistory.length > 0) {
-        console.log('Records exist but were not deleted. First record details:', {
-          id: existingCashHistory[0].id,
-          reference_number: existingCashHistory[0].reference_number,
-          description: existingCashHistory[0].description,
-          user_id: existingCashHistory[0].user_id,
-          type: existingCashHistory[0].type
-        });
-      }
-      
-      // Delete by type 'orderan' and specific description pattern
-      const { data: deleted2, error: cashHistoryError2 } = await supabase
-        .from('cash_history')
-        .delete()
-        .eq('type', 'orderan')
-        .like('description', `%Pembayaran orderan ${transactionId}%`)
-        .select();
-        
-      console.log('Deleted by specific description pattern:', deleted2, cashHistoryError2);
-      
-      // Delete any remaining records by description containing transaction ID (case insensitive)
-      const { data: deleted3, error: cashHistoryError3 } = await supabase
-        .from('cash_history')
-        .delete()
-        .ilike('description', `%${transactionId}%`)
-        .select();
-        
-      console.log('Deleted by description:', deleted3, cashHistoryError3);
-      
-      // Final check - count remaining records
-      const { count } = await supabase
-        .from('cash_history')
-        .select('*', { count: 'exact', head: true })
-        .or(`reference_number.eq.${transactionId},description.like.%${transactionId}%`);
-        
-      console.log('Remaining cash_history records for this transaction:', count);
-      
-      // If records still exist after all delete attempts, try RPC function as last resort
-      if (count && count > 0) {
-        console.warn(`${count} cash_history records still exist after deletion attempts. This may be due to RLS policies.`);
-        console.log('Consider running manual cleanup SQL or checking RLS policies for cash_history table');
-        
-        // Try one more direct approach - delete by individual IDs
-        if (existingCashHistory && existingCashHistory.length > 0) {
-          for (const record of existingCashHistory) {
-            try {
-              const { data: directDelete, error: directError } = await supabase
-                .from('cash_history')
-                .delete()
-                .eq('id', record.id)
-                .select();
-                
-              console.log(`Direct delete record ${record.id}:`, directDelete, directError);
-            } catch (error) {
-              console.error('Direct delete error:', error);
-            }
-          }
-        }
-      }
-      
       // Step 6: Delete commission entries (if table exists)
       try {
         console.log('Attempting to delete commission entries for transaction:', transactionId);
@@ -1669,7 +1538,6 @@ export const useTransactions = (filters?: {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['stockMovements'] });
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
-      queryClient.invalidateQueries({ queryKey: ['cash_history'] });
       queryClient.invalidateQueries({ queryKey: ['commissions'] });
       queryClient.invalidateQueries({ queryKey: ['paymentHistory'] });
       queryClient.invalidateQueries({ queryKey: ['deliveries'] });

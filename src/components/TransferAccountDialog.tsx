@@ -23,7 +23,7 @@ import { formatNumber } from "@/utils/formatNumber"
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
 // ============================================================================
 // Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
-// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// cash_history SUDAH DIHAPUS - tidak lagi digunakan
 // Transfer antar akun menggunakan createTransferJournal dari journalService
 // ============================================================================
 
@@ -151,38 +151,7 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
 
       console.log('✅ Jurnal transfer auto-generated:', journalResult.journalId);
 
-      // Record in cash_history for monitoring (TIDAK update balance)
-      try {
-        // Record outbound cash history for source account
-        await supabase.from('cash_history').insert({
-          account_id: data.fromAccountId,
-          transaction_type: 'expense',
-          type: 'transfer_keluar',
-          amount: data.amount,
-          description: `Transfer ke ${toAccount.name}: ${data.description}`,
-          reference_number: transferRef,
-          created_by: user.id,
-          created_by_name: user.name || user.email || "Unknown User",
-          source_type: 'transfer',
-          branch_id: currentBranch.id,
-        });
-
-        // Record inbound cash history for destination account
-        await supabase.from('cash_history').insert({
-          account_id: data.toAccountId,
-          transaction_type: 'income',
-          type: 'transfer_masuk',
-          amount: data.amount,
-          description: `Transfer dari ${fromAccount.name}: ${data.description}`,
-          reference_number: transferRef,
-          created_by: user.id,
-          created_by_name: user.name || user.email || "Unknown User",
-          source_type: 'transfer',
-          branch_id: currentBranch.id,
-        });
-      } catch (historyError) {
-        console.warn('cash_history recording failed (non-critical):', historyError);
-      }
+      // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
 
       // Invalidate queries
       queryClient.invalidateQueries({ queryKey: ['accounts'] })

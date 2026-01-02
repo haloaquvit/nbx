@@ -3,13 +3,14 @@ import { Expense } from '@/types/expense'
 import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
+import { useAccounts } from '@/hooks/useAccounts'
 import { createExpenseJournal } from '@/services/journalService'
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
 // ============================================================================
 // Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
-// cash_history digunakan HANYA untuk Buku Kas Harian (monitoring), TIDAK update balance
+// cash_history SUDAH DIHAPUS - tidak lagi digunakan
 // Jurnal otomatis dibuat melalui journalService untuk setiap transaksi
 // ============================================================================
 
@@ -44,6 +45,7 @@ export const useExpenses = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { currentBranch } = useBranch();
+  const { accounts } = useAccounts();
 
   const { data: expenses, isLoading } = useQuery<Expense[]>({
     queryKey: ['expenses', currentBranch?.id],
@@ -74,38 +76,92 @@ export const useExpenses = () => {
     retryDelay: 1000,
   });
 
-  // Query untuk mendapatkan pembayaran hutang dari cash_history
+  // Query untuk mendapatkan pembayaran hutang dari JOURNAL ENTRIES (bukan cash_history)
   const { data: debtPayments, isLoading: isLoadingDebtPayments } = useQuery<Expense[]>({
-    queryKey: ['debtPayments', currentBranch?.id],
+    queryKey: ['debtPayments', currentBranch?.id, accounts?.length],
     queryFn: async () => {
-      let query = supabase
-        .from('cash_history')
-        .select('*')
-        .eq('type', 'pembayaran_hutang')
-        .order('created_at', { ascending: false });
+      // Get payment accounts (kas/bank)
+      const paymentAccounts = (accounts || []).filter(acc => acc.isPaymentAccount);
+      const paymentAccountIds = paymentAccounts.map(acc => acc.id);
 
-      if (currentBranch?.id) {
-        query = query.eq('branch_id', currentBranch.id);
+      if (paymentAccountIds.length === 0) {
+        return [];
       }
 
-      const { data, error } = await query;
-      if (error) throw new Error(error.message);
+      // Create account lookup map
+      const accountMap = new Map(paymentAccounts.map(acc => [acc.id, acc]));
 
-      // Map cash_history ke format Expense untuk tampilan
-      return data ? data.map((ch: any): Expense => ({
-        id: ch.id,
-        description: ch.description || 'Pembayaran Hutang',
-        amount: ch.amount,
-        accountId: ch.account_id,
-        accountName: ch.account_name,
-        expenseAccountId: undefined,
-        expenseAccountName: ch.description?.match(/\(([^)]+)\)/)?.[1] || 'Pembayaran Hutang', // Extract akun kewajiban dari description
-        date: new Date(ch.created_at),
-        category: 'Pembayaran Hutang',
-        createdAt: new Date(ch.created_at),
-      })) : [];
+      // Query journal entries with reference_type='payable'
+      const { data: journalLines, error } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          id,
+          account_id,
+          account_name,
+          debit_amount,
+          credit_amount,
+          description,
+          journal_entries (
+            id,
+            entry_number,
+            entry_date,
+            description,
+            reference_type,
+            reference_id,
+            status,
+            is_voided,
+            branch_id,
+            created_at
+          )
+        `)
+        .in('account_id', paymentAccountIds);
+
+      if (error) {
+        console.error('Failed to fetch debt payments from journal entries:', error);
+        return [];
+      }
+
+      // Filter: reference_type='payable', posted, not voided, current branch, credit > 0 (kas keluar)
+      const filteredLines = (journalLines || []).filter((line: any) => {
+        const journal = line.journal_entries;
+        if (!journal) return false;
+
+        const isPayablePayment = journal.reference_type === 'payable';
+        const isPosted = journal.status === 'posted';
+        const isNotVoided = journal.is_voided === false;
+        const isCurrentBranch = journal.branch_id === currentBranch?.id;
+        const isCredit = Number(line.credit_amount) > 0; // Kas keluar = credit untuk akun kas
+
+        return isPayablePayment && isPosted && isNotVoided && isCurrentBranch && isCredit;
+      });
+
+      // Sort by created_at descending
+      filteredLines.sort((a: any, b: any) => {
+        const dateA = new Date(a.journal_entries?.created_at || 0);
+        const dateB = new Date(b.journal_entries?.created_at || 0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      // Transform to Expense format
+      return filteredLines.map((line: any): Expense => {
+        const journal = line.journal_entries;
+        const account = accountMap.get(line.account_id);
+
+        return {
+          id: line.id,
+          description: journal.description || 'Pembayaran Hutang',
+          amount: Number(line.credit_amount) || 0,
+          accountId: line.account_id,
+          accountName: line.account_name || account?.name || 'Unknown',
+          expenseAccountId: undefined,
+          expenseAccountName: 'Pembayaran Hutang',
+          date: new Date(journal.created_at),
+          category: 'Pembayaran Hutang',
+          createdAt: new Date(journal.created_at),
+        };
+      });
     },
-    enabled: !!currentBranch,
+    enabled: !!currentBranch && !!accounts,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -143,69 +199,12 @@ export const useExpenses = () => {
       }
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       if (!data) throw new Error('Failed to create expense');
-      
+
       // ============================================================================
       // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
       // Double-entry accounting dilakukan melalui createExpenseJournal di bawah
+      // cash_history TIDAK LAGI DIGUNAKAN
       // ============================================================================
-
-      // Record in cash_history for expense tracking (MONITORING ONLY - tidak update balance)
-      if (newExpenseData.accountId && user) {
-        try {
-          // Determine expense type based on category
-          let sourceType = 'manual_expense';
-          if (newExpenseData.category === 'Panjar Karyawan') {
-            sourceType = 'employee_advance';
-          } else if (newExpenseData.category === 'Pembayaran PO') {
-            sourceType = 'po_payment';
-          } else if (newExpenseData.category === 'Penghapusan Piutang') {
-            sourceType = 'receivables_writeoff';
-          }
-
-          // Determine the new format type based on category 
-          let expenseType = 'pengeluaran';
-          if (newExpenseData.category === 'Panjar Karyawan') {
-            expenseType = 'panjar_pengambilan';
-          } else if (newExpenseData.category === 'Pembayaran PO') {
-            expenseType = 'pembayaran_po';
-          }
-
-          // cash_history table columns: id, account_id, transaction_type, amount, description,
-          // reference_number, created_by, created_by_name, source_type, created_at, branch_id, type
-          // IMPORTANT: transaction_type must be 'income' or 'expense' (database constraint)
-          const cashFlowRecord: any = {
-            account_id: newExpenseData.accountId,
-            transaction_type: 'expense',
-            type: expenseType,
-            amount: newExpenseData.amount,
-            description: newExpenseData.description,
-            reference_number: data.id,
-            created_by: user.id,
-            created_by_name: user.name || user.email || 'Unknown User',
-            source_type: 'expense',
-            branch_id: currentBranch?.id || null,
-          };
-
-          console.log('Recording expense in cash history:', cashFlowRecord);
-
-          const { error: cashFlowError } = await supabase
-            .from('cash_history')
-            .insert(cashFlowRecord);
-
-          if (cashFlowError) {
-            console.error('Failed to record expense in cash flow:', cashFlowError.message);
-          } else {
-            console.log('Successfully recorded expense in cash history');
-          }
-        } catch (error) {
-          console.error('Error recording expense cash flow:', error);
-        }
-      } else {
-        console.log('Skipping cash flow record - missing accountId or user:', {
-          accountId: newExpenseData.accountId,
-          user: user ? 'exists' : 'missing'
-        });
-      }
 
       // ============================================================================
       // AUTO-GENERATE JOURNAL ENTRY
@@ -249,17 +248,6 @@ export const useExpenses = () => {
 
   const deleteExpense = useMutation({
     mutationFn: async (expenseId: string): Promise<Expense> => {
-      // First delete related cash_history records
-      const { error: cashHistoryError } = await supabase
-        .from('cash_history')
-        .delete()
-        .eq('reference_id', expenseId);
-      
-      if (cashHistoryError) {
-        console.error('Failed to delete related cash history:', cashHistoryError.message);
-        // Continue anyway, don't throw
-      }
-
       // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: deletedExpenseRaw, error: deleteError } = await supabase
         .from('expenses')
@@ -271,7 +259,7 @@ export const useExpenses = () => {
       if (deleteError) throw new Error(deleteError.message);
       const deletedExpense = Array.isArray(deletedExpenseRaw) ? deletedExpenseRaw[0] : deletedExpenseRaw;
       if (!deletedExpense) throw new Error("Pengeluaran tidak ditemukan");
-      
+
       const appExpense = fromDbToApp(deletedExpense);
 
       // ============================================================================
