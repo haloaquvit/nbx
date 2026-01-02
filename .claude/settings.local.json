@@ -247,7 +247,8 @@
       "Bash(cmd /c \"set PGPASSWORD=Aquvit2024& \"\"C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe\"\" -h 103.127.139.233 -U aquvit_admin -d mkw_db -f sql/add-quotation-columns.sql 2>&1\")",
       "Bash(dir \"d:\\App\\Aquvit Fix - Copy\\*change*\")",
       "Bash(dir /b \"d:\\App\\Aquvit Fix - Copy\")",
-      "Bash(PGPASSWORD='AQUvit2025!' psql:*)"
+      "Bash(PGPASSWORD='AQUvit2025!' psql:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": [],

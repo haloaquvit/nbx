@@ -410,11 +410,16 @@ export async function createSalesJournal(params: {
   const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, hppBonusAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale, paymentAccountId, paidAmount } = params;
 
   // Find accounts - using actual database codes (1120, 1210, etc.)
-  console.log('[JournalService] createSalesJournal - Finding accounts for branchId:', branchId, 'paymentAccountId:', paymentAccountId);
+  console.log('[JournalService] createSalesJournal - Finding accounts for branchId:', branchId, 'paymentAccountId:', paymentAccountId, 'paidAmount:', paidAmount);
 
-  // If paymentAccountId is provided, use that specific account for cash payment
+  // Determine if we need a cash account:
+  // - If paidAmount is provided and > 0, we need cash account regardless of paymentMethod
+  // - If paymentMethod !== 'credit' (legacy), we need cash account
+  const needsCashAccount = (paidAmount !== undefined && paidAmount > 0) || paymentMethod !== 'credit';
+
+  // If paymentAccountId is provided and we need cash account, use that specific account
   let kasAccount: { id: string; code: string; name: string } | null = null;
-  if (paymentAccountId && paymentMethod !== 'credit') {
+  if (paymentAccountId && needsCashAccount) {
     console.log('[JournalService] Looking up payment account by ID:', paymentAccountId);
     const { data: paymentAccRaw, error: paymentAccError } = await supabase
       .from('accounts')

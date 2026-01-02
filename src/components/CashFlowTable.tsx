@@ -9,7 +9,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { FileDown, X, Calendar } from "lucide-react"
+import { FileDown, X, Calendar, Filter } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -18,6 +18,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import {
   Table,
@@ -220,6 +227,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const [filteredData, setFilteredData] = React.useState<CashHistoryWithBalance[]>([]);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = React.useState(false);
   const [detailRecord, setDetailRecord] = React.useState<CashHistoryWithBalance | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = React.useState<string>('all');
 
   // Get account balances and codes from useAccounts (calculated from journal entries)
   const accountBalances = React.useMemo(() => {
@@ -237,6 +245,22 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     });
     return codes;
   }, [accounts]);
+
+  // Get unique accounts from cash flow data for filter dropdown
+  const uniqueAccountsInData = React.useMemo(() => {
+    if (!Array.isArray(data)) return [];
+    const accountMap = new Map<string, { id: string; name: string; code: string }>();
+    data.forEach(item => {
+      if (item.account_id && item.account_name && !accountMap.has(item.account_id)) {
+        accountMap.set(item.account_id, {
+          id: item.account_id,
+          name: item.account_name,
+          code: accountCodes[item.account_id] || ''
+        });
+      }
+    });
+    return Array.from(accountMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [data, accountCodes]);
 
   // Initialize filtered data with calculated balances
   React.useEffect(() => {
@@ -289,16 +313,24 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     setFilteredData(dataWithBalances);
   }, [data, accountBalances, accountCodes]);
 
-  // Compute filtered and display data based on date range
+  // Compute filtered and display data based on date range AND account filter
   const displayData = React.useMemo(() => {
-    if (!dateRange.from || !Array.isArray(filteredData)) {
-      return filteredData;
+    let result = filteredData;
+
+    // Apply account filter
+    if (selectedAccountId !== 'all') {
+      result = result.filter(item => item.account_id === selectedAccountId);
+    }
+
+    // Apply date filter
+    if (!dateRange.from) {
+      return result;
     }
 
     try {
       if (dateRange.from && !dateRange.to) {
         // Only start date selected
-        return filteredData.filter(item => {
+        return result.filter(item => {
           if (!item.created_at) return false;
           const itemDate = new Date(item.created_at);
           return itemDate >= startOfDay(dateRange.from!);
@@ -307,7 +339,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
 
       if (dateRange.from && dateRange.to) {
         // Both dates selected
-        return filteredData.filter(item => {
+        return result.filter(item => {
           if (!item.created_at) return false;
           const itemDate = new Date(item.created_at);
           return isWithinInterval(itemDate, {
@@ -317,15 +349,20 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         });
       }
 
-      return filteredData;
+      return result;
     } catch (error) {
       console.error('Error filtering cash flow data:', error);
-      return filteredData;
+      return result;
     }
-  }, [filteredData, dateRange]);
+  }, [filteredData, dateRange, selectedAccountId]);
 
-  const clearDateFilter = () => {
+  const clearAccountFilter = () => {
+    setSelectedAccountId('all');
+  };
+
+  const clearAllFilters = () => {
     setDateRange({ from: undefined, to: undefined });
+    setSelectedAccountId('all');
   };
 
   // Calculate totals for summary cards
@@ -874,22 +911,50 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
                     />
                   </PopoverContent>
                 </Popover>
-                
-                {(dateRange.from || dateRange.to) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearDateFilter}
-                    className="h-8 px-2"
-                  >
-                    <X className="h-4 w-4" />
-                    Clear
-                  </Button>
-                )}
               </div>
+
+              {/* Account Filter */}
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Filter Akun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Akun</SelectItem>
+                    {uniqueAccountsInData.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Clear Filters */}
+              {(dateRange.from || dateRange.to || selectedAccountId !== 'all') && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllFilters}
+                  className="h-8 px-2"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Reset Filter
+                </Button>
+              )}
 
               {/* Filter Info */}
               <div className="flex items-center gap-2">
+                {selectedAccountId !== 'all' && (
+                  <Badge variant="secondary" className="flex items-center gap-1">
+                    {uniqueAccountsInData.find(a => a.id === selectedAccountId)?.name}
+                    <X
+                      className="h-3 w-3 cursor-pointer hover:text-destructive"
+                      onClick={clearAccountFilter}
+                    />
+                  </Badge>
+                )}
                 <div className="text-sm text-muted-foreground">
                   Menampilkan {displayData.length} dari {data?.length || 0} transaksi
                 </div>
