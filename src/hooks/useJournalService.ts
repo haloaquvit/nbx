@@ -61,7 +61,8 @@ export function useJournalService() {
     amount: number;
     categoryName: string;
     description: string;
-    accountId?: string;
+    expenseAccountId?: string; // Akun beban spesifik
+    cashAccountId?: string; // Akun sumber dana (Kas Kecil, Kas Operasional, Bank, dll)
   }) => {
     if (!currentBranch?.id) {
       console.error('Branch ID tidak tersedia untuk jurnal pengeluaran');
