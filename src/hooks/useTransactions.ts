@@ -670,6 +670,15 @@ export const useTransactions = (filters?: {
       const updatedTransaction = 'transaction' in params ? params.transaction : params;
       const previousPaidAmount = 'previousPaidAmount' in params ? params.previousPaidAmount : updatedTransaction.paidAmount;
 
+      // Get the old transaction to detect payment status change
+      const { data: oldTransactionRaw } = await supabase
+        .from('transactions')
+        .select('payment_status, total, paid_amount')
+        .eq('id', updatedTransaction.id)
+        .order('id').limit(1);
+      const oldTransaction = Array.isArray(oldTransactionRaw) ? oldTransactionRaw[0] : oldTransactionRaw;
+      const oldPaymentStatus = oldTransaction?.payment_status;
+
       const dbData = toDb(updatedTransaction);
       // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: savedTransactionRaw, error } = await supabase
@@ -685,7 +694,89 @@ export const useTransactions = (filters?: {
       if (!savedTransaction) throw new Error('Failed to update transaction');
 
       // ============================================================================
-      // AUTO-GENERATE JOURNAL ENTRY FOR PAYMENT CHANGES
+      // DETECT PAYMENT STATUS CHANGE (Lunas <-> Kredit)
+      // ============================================================================
+      // Jika payment status berubah, void jurnal lama dan buat jurnal baru
+      // Ini diperlukan karena jurnal penjualan tunai debit Kas, sedangkan
+      // jurnal penjualan kredit debit Piutang
+      // ============================================================================
+      const newPaymentStatus = updatedTransaction.paymentStatus;
+      const paymentStatusChanged = oldPaymentStatus !== newPaymentStatus &&
+        ((oldPaymentStatus === 'Lunas' && newPaymentStatus !== 'Lunas') ||
+         (oldPaymentStatus !== 'Lunas' && newPaymentStatus === 'Lunas'));
+
+      if (paymentStatusChanged && currentBranch?.id) {
+        console.log('🔄 Payment status changed:', oldPaymentStatus, '->', newPaymentStatus);
+
+        try {
+          // 1. Void jurnal penjualan lama
+          const { data: voidedJournals, error: voidError } = await supabase
+            .from('journal_entries')
+            .update({
+              status: 'voided',
+              is_voided: true,
+              voided_at: new Date().toISOString()
+            })
+            .eq('reference_id', updatedTransaction.id)
+            .eq('reference_type', 'transaction')
+            .select('id, entry_number');
+
+          if (voidError) {
+            console.error('Failed to void old sales journal:', voidError.message);
+          } else {
+            console.log('✅ Voided old sales journals:', voidedJournals?.length || 0);
+          }
+
+          // 2. Buat jurnal penjualan baru dengan status pembayaran yang benar
+          const paymentMethod = newPaymentStatus === 'Lunas' ? 'cash' : 'credit';
+
+          // Calculate HPP (simplified - use saved total as fallback)
+          // Note: This is a simplified HPP recalculation. Full HPP would need item-level cost data.
+          let totalHPP = 0;
+          const items = updatedTransaction.items || [];
+          for (const item of items.filter((i: any) => !i.isBonus)) {
+            const productId = item.product?.id;
+            const quantity = item.quantity || 0;
+            if (productId && quantity > 0) {
+              const { data: productDataRaw } = await supabase
+                .from('products')
+                .select('cost_price, base_price')
+                .eq('id', productId)
+                .order('id').limit(1);
+              const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+              const costPrice = productData?.cost_price || productData?.base_price || 0;
+              totalHPP += costPrice * quantity;
+            }
+          }
+
+          const journalResult = await createSalesJournal({
+            transactionId: savedTransaction.id,
+            transactionNumber: savedTransaction.id,
+            transactionDate: new Date(updatedTransaction.orderDate),
+            totalAmount: updatedTransaction.total,
+            paymentMethod: paymentMethod,
+            customerName: updatedTransaction.customerName,
+            branchId: currentBranch.id,
+            hppAmount: totalHPP,
+            ppnEnabled: updatedTransaction.ppnEnabled,
+            ppnAmount: updatedTransaction.ppnAmount,
+            subtotal: updatedTransaction.subtotal,
+            isOfficeSale: updatedTransaction.isOfficeSale || false,
+            paymentAccountId: updatedTransaction.paymentAccountId || undefined,
+          });
+
+          if (journalResult.success) {
+            console.log('✅ New sales journal created:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Failed to create new sales journal:', journalResult.error);
+          }
+        } catch (journalError) {
+          console.error('Error recreating sales journal:', journalError);
+        }
+      }
+
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR PAYMENT CHANGES (when status doesn't change)
       // ============================================================================
       // Jika ada perubahan pembayaran (paidAmount berbeda dari sebelumnya),
       // buat jurnal penyesuaian:
@@ -694,7 +785,9 @@ export const useTransactions = (filters?: {
       // ============================================================================
       const paymentDifference = updatedTransaction.paidAmount - previousPaidAmount;
 
-      if (paymentDifference !== 0 && currentBranch?.id) {
+      // Only create payment adjustment journal if status didn't change completely
+      // (to avoid double-journaling when we already recreated the sales journal above)
+      if (paymentDifference !== 0 && currentBranch?.id && !paymentStatusChanged) {
         try {
           if (paymentDifference > 0) {
             // Pembayaran bertambah - buat jurnal pembayaran piutang
