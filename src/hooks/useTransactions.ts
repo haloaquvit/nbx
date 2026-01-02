@@ -607,6 +607,8 @@ export const useTransactions = (filters?: {
             console.log('Total HPP Bonus:', totalHPPBonus);
           }
 
+          // Use paidAmount for precise partial payment support
+          // paymentMethod is kept for backward compatibility but paidAmount takes priority
           const paymentMethod = newTransaction.paymentStatus === 'Lunas' ? 'cash' : 'credit';
           const journalResult = await createSalesJournal({
             transactionId: savedTransaction.id,
@@ -628,6 +630,8 @@ export const useTransactions = (filters?: {
             isOfficeSale: newTransaction.isOfficeSale || false,
             // Use specific payment account if provided (e.g., driver's cash account)
             paymentAccountId: newTransaction.paymentAccountId || undefined,
+            // NEW: Partial payment support - send actual paid amount
+            paidAmount: newTransaction.paidAmount,
           });
 
           if (journalResult.success) {
@@ -694,125 +698,279 @@ export const useTransactions = (filters?: {
       if (!savedTransaction) throw new Error('Failed to update transaction');
 
       // ============================================================================
-      // DETECT PAYMENT STATUS CHANGE (Lunas <-> Kredit)
+      // DETECT PAYMENT OR AMOUNT CHANGES - UPDATE JOURNAL LINES DIRECTLY
       // ============================================================================
-      // Jika payment status berubah, void jurnal lama dan buat jurnal baru
-      // Ini diperlukan karena jurnal penjualan tunai debit Kas, sedangkan
-      // jurnal penjualan kredit debit Piutang
+      // Update journal lines when:
+      // 1. Paid amount changes (partial payment adjustment)
+      // 2. Total amount changes (item/price edit)
+      // This is more efficient than void + recreate - directly edit existing journal
       // ============================================================================
-      const newPaymentStatus = updatedTransaction.paymentStatus;
-      const paymentStatusChanged = oldPaymentStatus !== newPaymentStatus &&
-        ((oldPaymentStatus === 'Lunas' && newPaymentStatus !== 'Lunas') ||
-         (oldPaymentStatus !== 'Lunas' && newPaymentStatus === 'Lunas'));
+      const oldPaidAmount = oldTransaction?.paid_amount || 0;
+      const oldTotal = oldTransaction?.total || 0;
+      const newPaidAmount = updatedTransaction.paidAmount;
+      const newTotal = updatedTransaction.total;
 
-      if (paymentStatusChanged && currentBranch?.id) {
-        console.log('🔄 Payment status changed:', oldPaymentStatus, '->', newPaymentStatus);
+      const paidAmountChanged = oldPaidAmount !== newPaidAmount;
+      const totalChanged = oldTotal !== newTotal;
+      const needsJournalUpdate = paidAmountChanged || totalChanged;
+
+      if (needsJournalUpdate && currentBranch?.id) {
+        console.log('🔄 Transaction changed, updating journal:', {
+          oldPaidAmount, newPaidAmount, paidAmountChanged,
+          oldTotal, newTotal, totalChanged
+        });
 
         try {
-          // 1. Void jurnal penjualan lama
-          const { data: voidedJournals, error: voidError } = await supabase
+          // 1. Find existing journal entry for this transaction
+          const { data: existingJournalRaw, error: findError } = await supabase
             .from('journal_entries')
-            .update({
-              status: 'voided',
-              is_voided: true,
-              voided_at: new Date().toISOString()
-            })
+            .select('id, entry_number')
             .eq('reference_id', updatedTransaction.id)
             .eq('reference_type', 'transaction')
-            .select('id, entry_number');
+            .eq('status', 'posted')
+            .order('created_at', { ascending: false })
+            .limit(1);
 
-          if (voidError) {
-            console.error('Failed to void old sales journal:', voidError.message);
-          } else {
-            console.log('✅ Voided old sales journals:', voidedJournals?.length || 0);
-          }
+          const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw;
 
-          // 2. Buat jurnal penjualan baru dengan status pembayaran yang benar
-          const paymentMethod = newPaymentStatus === 'Lunas' ? 'cash' : 'credit';
+          if (existingJournal && !findError) {
+            console.log('📝 Found existing journal to update:', existingJournal.entry_number);
 
-          // Calculate HPP (simplified - use saved total as fallback)
-          // Note: This is a simplified HPP recalculation. Full HPP would need item-level cost data.
-          let totalHPP = 0;
-          const items = updatedTransaction.items || [];
-          for (const item of items.filter((i: any) => !i.isBonus)) {
-            const productId = item.product?.id;
-            const quantity = item.quantity || 0;
-            if (productId && quantity > 0) {
-              const { data: productDataRaw } = await supabase
-                .from('products')
-                .select('cost_price, base_price')
-                .eq('id', productId)
-                .order('id').limit(1);
-              const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
-              const costPrice = productData?.cost_price || productData?.base_price || 0;
-              totalHPP += costPrice * quantity;
+            // 2. Get account IDs for Kas and Piutang
+            const kasAccount = await supabase
+              .from('accounts')
+              .select('id')
+              .eq('branch_id', currentBranch.id)
+              .like('code', '11%') // Kas accounts start with 11
+              .eq('is_payment_account', true)
+              .order('code')
+              .limit(1);
+
+            const piutangAccount = await supabase
+              .from('accounts')
+              .select('id')
+              .eq('branch_id', currentBranch.id)
+              .eq('code', '1210')
+              .limit(1);
+
+            const pendapatanAccount = await supabase
+              .from('accounts')
+              .select('id')
+              .eq('branch_id', currentBranch.id)
+              .eq('code', '4100')
+              .limit(1);
+
+            const kasId = kasAccount.data?.[0]?.id;
+            const piutangId = piutangAccount.data?.[0]?.id;
+            const pendapatanId = pendapatanAccount.data?.[0]?.id;
+
+            // 3. Calculate new amounts
+            const cashAmount = Math.min(newPaidAmount, newTotal);
+            const creditAmount = newTotal - cashAmount;
+
+            // Determine revenue amount
+            const revenueAmount = (updatedTransaction.ppnEnabled && updatedTransaction.ppnAmount && updatedTransaction.subtotal)
+              ? updatedTransaction.subtotal
+              : newTotal;
+
+            // 4. Delete existing journal lines
+            await supabase
+              .from('journal_entry_lines')
+              .delete()
+              .eq('journal_entry_id', existingJournal.id);
+
+            // 5. Insert new journal lines with correct amounts
+            const newLines: any[] = [];
+            let lineNumber = 1;
+
+            // Dr. Kas (if any cash payment)
+            if (cashAmount > 0 && kasId) {
+              newLines.push({
+                journal_entry_id: existingJournal.id,
+                account_id: kasId,
+                debit_amount: cashAmount,
+                credit_amount: 0,
+                description: 'Penerimaan kas',
+                line_number: lineNumber++
+              });
             }
-          }
 
-          const journalResult = await createSalesJournal({
-            transactionId: savedTransaction.id,
-            transactionNumber: savedTransaction.id,
-            transactionDate: new Date(updatedTransaction.orderDate),
-            totalAmount: updatedTransaction.total,
-            paymentMethod: paymentMethod,
-            customerName: updatedTransaction.customerName,
-            branchId: currentBranch.id,
-            hppAmount: totalHPP,
-            ppnEnabled: updatedTransaction.ppnEnabled,
-            ppnAmount: updatedTransaction.ppnAmount,
-            subtotal: updatedTransaction.subtotal,
-            isOfficeSale: updatedTransaction.isOfficeSale || false,
-            paymentAccountId: updatedTransaction.paymentAccountId || undefined,
-          });
+            // Dr. Piutang (if any credit amount)
+            if (creditAmount > 0 && piutangId) {
+              newLines.push({
+                journal_entry_id: existingJournal.id,
+                account_id: piutangId,
+                debit_amount: creditAmount,
+                credit_amount: 0,
+                description: 'Piutang penjualan',
+                line_number: lineNumber++
+              });
+            }
 
-          if (journalResult.success) {
-            console.log('✅ New sales journal created:', journalResult.journalId);
+            // Cr. Pendapatan
+            if (pendapatanId) {
+              newLines.push({
+                journal_entry_id: existingJournal.id,
+                account_id: pendapatanId,
+                debit_amount: 0,
+                credit_amount: revenueAmount,
+                description: 'Pendapatan penjualan',
+                line_number: lineNumber++
+              });
+            }
+
+            // Add PPN if applicable
+            if (updatedTransaction.ppnEnabled && updatedTransaction.ppnAmount && updatedTransaction.ppnAmount > 0) {
+              const ppnAccount = await supabase
+                .from('accounts')
+                .select('id')
+                .eq('branch_id', currentBranch.id)
+                .eq('code', '2130')
+                .limit(1);
+
+              if (ppnAccount.data?.[0]?.id) {
+                newLines.push({
+                  journal_entry_id: existingJournal.id,
+                  account_id: ppnAccount.data[0].id,
+                  debit_amount: 0,
+                  credit_amount: updatedTransaction.ppnAmount,
+                  description: 'PPN Keluaran',
+                  line_number: lineNumber++
+                });
+              }
+            }
+
+            // Calculate and add HPP lines
+            let totalHPP = 0;
+            let totalHPPBonus = 0;
+            const items = updatedTransaction.items || [];
+
+            for (const item of items) {
+              const productId = item.product?.id;
+              const quantity = item.quantity || 0;
+              if (productId && quantity > 0) {
+                const { data: productDataRaw } = await supabase
+                  .from('products')
+                  .select('cost_price, base_price')
+                  .eq('id', productId)
+                  .order('id').limit(1);
+                const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                const costPrice = productData?.cost_price || productData?.base_price || 0;
+
+                if (item.isBonus) {
+                  totalHPPBonus += costPrice * quantity;
+                } else {
+                  totalHPP += costPrice * quantity;
+                }
+              }
+            }
+
+            // Add HPP and inventory lines if applicable
+            if (totalHPP > 0) {
+              const hppAccount = await supabase.from('accounts').select('id').eq('branch_id', currentBranch.id).eq('code', '5100').limit(1);
+              const hutangBDAccount = await supabase.from('accounts').select('id').eq('branch_id', currentBranch.id).eq('code', '2140').limit(1);
+
+              if (hppAccount.data?.[0]?.id) {
+                newLines.push({
+                  journal_entry_id: existingJournal.id,
+                  account_id: hppAccount.data[0].id,
+                  debit_amount: totalHPP,
+                  credit_amount: 0,
+                  description: 'Harga Pokok Penjualan',
+                  line_number: lineNumber++
+                });
+              }
+              if (hutangBDAccount.data?.[0]?.id) {
+                newLines.push({
+                  journal_entry_id: existingJournal.id,
+                  account_id: hutangBDAccount.data[0].id,
+                  debit_amount: 0,
+                  credit_amount: totalHPP,
+                  description: 'Modal barang dagang tertahan',
+                  line_number: lineNumber++
+                });
+              }
+            }
+
+            // Insert all new lines
+            if (newLines.length > 0) {
+              const { error: insertError } = await supabase
+                .from('journal_entry_lines')
+                .insert(newLines);
+
+              if (insertError) {
+                console.error('Failed to insert new journal lines:', insertError.message);
+              } else {
+                console.log('✅ Journal lines updated successfully:', newLines.length, 'lines');
+              }
+            }
+
+            // 6. Update journal entry description
+            let paymentTypeDesc = 'Tunai';
+            if (creditAmount > 0 && cashAmount === 0) paymentTypeDesc = 'Kredit';
+            else if (creditAmount > 0 && cashAmount > 0) paymentTypeDesc = 'Sebagian';
+
+            const newDescription = `Penjualan ${paymentTypeDesc} - ${updatedTransaction.id}${updatedTransaction.customerName ? ` - ${updatedTransaction.customerName}` : ''}`;
+
+            await supabase
+              .from('journal_entries')
+              .update({ description: newDescription })
+              .eq('id', existingJournal.id);
+
+            console.log('✅ Journal updated:', existingJournal.entry_number);
+
           } else {
-            console.warn('⚠️ Failed to create new sales journal:', journalResult.error);
-          }
-        } catch (journalError) {
-          console.error('Error recreating sales journal:', journalError);
-        }
-      }
+            // No existing journal found, create new one
+            console.log('📝 No existing journal found, creating new one');
+            const paymentMethod = updatedTransaction.paymentStatus === 'Lunas' ? 'cash' : 'credit';
 
-      // ============================================================================
-      // AUTO-GENERATE JOURNAL ENTRY FOR PAYMENT CHANGES (when status doesn't change)
-      // ============================================================================
-      // Jika ada perubahan pembayaran (paidAmount berbeda dari sebelumnya),
-      // buat jurnal penyesuaian:
-      // - Jika pembayaran bertambah: Dr. Kas, Cr. Piutang
-      // - Jika pembayaran berkurang: Dr. Piutang, Cr. Kas (refund/koreksi)
-      // ============================================================================
-      const paymentDifference = updatedTransaction.paidAmount - previousPaidAmount;
+            // Calculate HPP
+            let totalHPP = 0;
+            let totalHPPBonus = 0;
+            const items = updatedTransaction.items || [];
+            for (const item of items) {
+              const productId = item.product?.id;
+              const quantity = item.quantity || 0;
+              if (productId && quantity > 0) {
+                const { data: productDataRaw } = await supabase
+                  .from('products')
+                  .select('cost_price, base_price')
+                  .eq('id', productId)
+                  .order('id').limit(1);
+                const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                const costPrice = productData?.cost_price || productData?.base_price || 0;
+                if (item.isBonus) {
+                  totalHPPBonus += costPrice * quantity;
+                } else {
+                  totalHPP += costPrice * quantity;
+                }
+              }
+            }
 
-      // Only create payment adjustment journal if status didn't change completely
-      // (to avoid double-journaling when we already recreated the sales journal above)
-      if (paymentDifference !== 0 && currentBranch?.id && !paymentStatusChanged) {
-        try {
-          if (paymentDifference > 0) {
-            // Pembayaran bertambah - buat jurnal pembayaran piutang
-            const journalResult = await createReceivablePaymentJournal({
-              receivableId: updatedTransaction.id,
-              paymentDate: new Date(),
-              amount: paymentDifference,
+            const journalResult = await createSalesJournal({
+              transactionId: savedTransaction.id,
+              transactionNumber: savedTransaction.id,
+              transactionDate: new Date(updatedTransaction.orderDate),
+              totalAmount: updatedTransaction.total,
+              paymentMethod: paymentMethod,
               customerName: updatedTransaction.customerName,
-              invoiceNumber: updatedTransaction.id,
               branchId: currentBranch.id,
+              hppAmount: totalHPP,
+              hppBonusAmount: totalHPPBonus,
+              ppnEnabled: updatedTransaction.ppnEnabled,
+              ppnAmount: updatedTransaction.ppnAmount,
+              subtotal: updatedTransaction.subtotal,
+              isOfficeSale: updatedTransaction.isOfficeSale || false,
+              paymentAccountId: updatedTransaction.paymentAccountId || undefined,
+              paidAmount: updatedTransaction.paidAmount,
             });
 
             if (journalResult.success) {
-              console.log('✅ Jurnal penyesuaian pembayaran auto-generated:', journalResult.journalId);
-            } else {
-              console.warn('⚠️ Gagal membuat jurnal penyesuaian pembayaran:', journalResult.error);
+              console.log('✅ New sales journal created:', journalResult.journalId);
             }
-          } else {
-            // Pembayaran berkurang - ini adalah koreksi/refund (Dr. Piutang, Cr. Kas)
-            // Untuk saat ini, kita log saja - jurnal koreksi perlu penanganan khusus
-            console.log('⚠️ Pembayaran dikurangi sebesar:', Math.abs(paymentDifference));
-            console.log('ℹ️ Jurnal koreksi pembayaran perlu dibuat manual untuk saat ini');
           }
         } catch (journalError) {
-          console.error('Error creating payment adjustment journal:', journalError);
+          console.error('Error updating sales journal:', journalError);
         }
       }
 

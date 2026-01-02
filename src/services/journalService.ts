@@ -400,8 +400,14 @@ export async function createSalesJournal(params: {
   isOfficeSale?: boolean;
   // Optional: specific payment account for cash payment (e.g., driver's cash account)
   paymentAccountId?: string;
+  // NEW: Partial payment support - amount actually paid in cash
+  // If paidAmount is provided, it overrides paymentMethod logic:
+  // - paidAmount === totalAmount → full cash
+  // - paidAmount === 0 → full credit
+  // - 0 < paidAmount < totalAmount → partial payment (Dr. Kas + Dr. Piutang)
+  paidAmount?: number;
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
-  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, hppBonusAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale, paymentAccountId } = params;
+  const { transactionId, transactionNumber, transactionDate, totalAmount, paymentMethod, customerName, branchId, hppAmount, hppBonusAmount, ppnEnabled, ppnAmount, subtotal, isOfficeSale, paymentAccountId, paidAmount } = params;
 
   // Find accounts - using actual database codes (1120, 1210, etc.)
   console.log('[JournalService] createSalesJournal - Finding accounts for branchId:', branchId, 'paymentAccountId:', paymentAccountId);
@@ -473,12 +479,42 @@ export async function createSalesJournal(params: {
     return { success: false, error: 'Akun Pendapatan tidak ditemukan' };
   }
 
-  const debitAccount = paymentMethod === 'credit' ? piutangAccount : kasAccount;
-  if (!debitAccount) {
-    return { success: false, error: paymentMethod === 'credit' ? 'Akun Piutang tidak ditemukan' : 'Akun Kas tidak ditemukan' };
+  // ============================================================================
+  // PARTIAL PAYMENT SUPPORT
+  // ============================================================================
+  // Determine actual cash and credit amounts based on paidAmount
+  // If paidAmount is provided, use it; otherwise fall back to paymentMethod logic
+  // ============================================================================
+  let cashAmount = 0;
+  let creditAmount = 0;
+
+  if (paidAmount !== undefined) {
+    // New logic: use paidAmount for precise calculation
+    cashAmount = Math.min(paidAmount, totalAmount); // Can't pay more than total
+    creditAmount = totalAmount - cashAmount;
+    console.log('[JournalService] Partial payment calculation:', { totalAmount, paidAmount, cashAmount, creditAmount });
+  } else {
+    // Legacy logic: use paymentMethod (backward compatible)
+    if (paymentMethod === 'credit') {
+      creditAmount = totalAmount;
+      cashAmount = 0;
+    } else {
+      cashAmount = totalAmount;
+      creditAmount = 0;
+    }
   }
 
-  const description = `Penjualan ${paymentMethod === 'credit' ? 'Kredit' : 'Tunai'} - ${transactionNumber || 'N/A'}${customerName ? ` - ${customerName}` : ''}${ppnEnabled ? ' (+ PPN)' : ''}`;
+  // Determine description based on payment type
+  let paymentTypeDesc: string;
+  if (creditAmount === 0) {
+    paymentTypeDesc = 'Tunai';
+  } else if (cashAmount === 0) {
+    paymentTypeDesc = 'Kredit';
+  } else {
+    paymentTypeDesc = 'Sebagian';
+  }
+
+  const description = `Penjualan ${paymentTypeDesc} - ${transactionNumber || 'N/A'}${customerName ? ` - ${customerName}` : ''}${ppnEnabled ? ' (+ PPN)' : ''}`;
 
   // Determine revenue amount (excluding PPN if applicable)
   // If PPN enabled and we have subtotal, use subtotal as revenue
@@ -488,26 +524,46 @@ export async function createSalesJournal(params: {
     : totalAmount;
 
   // Build journal lines
-  const lines: JournalLineInput[] = [
-    // Dr. Kas/Piutang (total amount including PPN)
-    {
-      accountId: debitAccount.id,
-      accountCode: debitAccount.code,
-      accountName: debitAccount.name,
-      debitAmount: totalAmount,
+  const lines: JournalLineInput[] = [];
+
+  // Dr. Kas (if any cash payment)
+  if (cashAmount > 0 && kasAccount) {
+    lines.push({
+      accountId: kasAccount.id,
+      accountCode: kasAccount.code,
+      accountName: kasAccount.name,
+      debitAmount: cashAmount,
       creditAmount: 0,
-      description: paymentMethod === 'credit' ? 'Piutang penjualan' : 'Penerimaan kas',
-    },
-    // Cr. Pendapatan Penjualan (revenue only, excluding PPN)
-    {
-      accountId: pendapatanAccount.id,
-      accountCode: pendapatanAccount.code,
-      accountName: pendapatanAccount.name,
-      debitAmount: 0,
-      creditAmount: revenueAmount,
-      description: 'Pendapatan penjualan',
-    },
-  ];
+      description: 'Penerimaan kas',
+    });
+  }
+
+  // Dr. Piutang (if any credit/remaining amount)
+  if (creditAmount > 0 && piutangAccount) {
+    lines.push({
+      accountId: piutangAccount.id,
+      accountCode: piutangAccount.code,
+      accountName: piutangAccount.name,
+      debitAmount: creditAmount,
+      creditAmount: 0,
+      description: 'Piutang penjualan',
+    });
+  }
+
+  // Validate: must have at least one debit account
+  if (lines.length === 0) {
+    return { success: false, error: 'Tidak ada akun debit yang valid (Kas atau Piutang tidak ditemukan)' };
+  }
+
+  // Cr. Pendapatan Penjualan (revenue only, excluding PPN)
+  lines.push({
+    accountId: pendapatanAccount.id,
+    accountCode: pendapatanAccount.code,
+    accountName: pendapatanAccount.name,
+    debitAmount: 0,
+    creditAmount: revenueAmount,
+    description: 'Pendapatan penjualan',
+  });
 
   // Add PPN liability if applicable
   if (ppnEnabled && ppnAmount && ppnAmount > 0 && hutangPajakAccount) {
