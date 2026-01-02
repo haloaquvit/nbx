@@ -1328,6 +1328,90 @@ export function useDeliveries() {
             }
           }
         }
+
+        // ============================================================================
+        // UPDATE DELIVERY JOURNAL - Edit jurnal langsung (bukan void + recreate)
+        // Jurnal Delivery: Dr. Hutang Barang Dagang (2140), Cr. Persediaan (1310)
+        // ============================================================================
+        try {
+          // Find existing delivery journal
+          const { data: existingJournalRaw } = await supabase
+            .from('journal_entries')
+            .select('id, entry_number')
+            .eq('reference_id', request.deliveryId)
+            .eq('reference_type', 'delivery')
+            .eq('status', 'posted')
+            .order('created_at', { ascending: false })
+            .limit(1)
+
+          const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw
+
+          if (existingJournal) {
+            console.log('📝 Updating delivery journal:', existingJournal.entry_number)
+
+            // Get branch ID from delivery
+            const branchId = deliveryData.branch_id
+
+            // Get account IDs
+            const hutangBDAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '2140').limit(1)
+            const persediaanAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '1310').limit(1)
+
+            const hutangBDId = hutangBDAccount.data?.[0]?.id
+            const persediaanId = persediaanAccount.data?.[0]?.id
+
+            if (hutangBDId && persediaanId) {
+              // Calculate new total HPP based on updated quantities
+              let newTotalHPP = 0
+              const updatedItems = request.items || []
+
+              for (const item of updatedItems) {
+                const originalItem = deliveryData.items?.find((i: any) => i.id === item.id)
+                if (originalItem) {
+                  // Get product HPP
+                  const { data: productRaw } = await supabase
+                    .from('products')
+                    .select('cost_price, base_price')
+                    .eq('id', originalItem.product_id)
+                    .limit(1)
+                  const product = Array.isArray(productRaw) ? productRaw[0] : productRaw
+                  const hppPerUnit = product?.cost_price || product?.base_price || 0
+                  newTotalHPP += hppPerUnit * item.quantityDelivered
+                }
+              }
+
+              if (newTotalHPP > 0) {
+                // Delete existing journal lines
+                await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existingJournal.id)
+
+                // Insert new journal lines
+                const newLines = [
+                  {
+                    journal_entry_id: existingJournal.id,
+                    account_id: hutangBDId,
+                    debit_amount: newTotalHPP,
+                    credit_amount: 0,
+                    description: 'Hutang barang dagang terbayar (edit)',
+                    line_number: 1
+                  },
+                  {
+                    journal_entry_id: existingJournal.id,
+                    account_id: persediaanId,
+                    debit_amount: 0,
+                    credit_amount: newTotalHPP,
+                    description: 'Pengurangan persediaan (edit)',
+                    line_number: 2
+                  }
+                ]
+
+                await supabase.from('journal_entry_lines').insert(newLines)
+                console.log('✅ Delivery journal updated, new HPP:', newTotalHPP)
+              }
+            }
+          }
+        } catch (journalError) {
+          console.error('Error updating delivery journal:', journalError)
+          // Don't fail the update if journal update fails
+        }
       }
 
       console.log('✅ Delivery updated successfully:', request.deliveryId)
@@ -1339,6 +1423,7 @@ export function useDeliveries() {
       queryClient.invalidateQueries({ queryKey: ['delivery-history'] })
       queryClient.invalidateQueries({ queryKey: ['products'] })
       queryClient.invalidateQueries({ queryKey: ['stock-movements'] })
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
     },
   })
 

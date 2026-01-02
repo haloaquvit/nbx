@@ -407,61 +407,116 @@ export function useUpdateAsset() {
       const priceChanged = newPrice !== undefined && newPrice !== oldPrice;
 
       // ============================================================================
-      // 2. IF PRICE CHANGED, VOID OLD JOURNAL AND CREATE NEW ONE
+      // 2. IF PRICE CHANGED, UPDATE JOURNAL LINES DIRECTLY (bukan void + recreate)
       // ============================================================================
       if (priceChanged && currentBranch?.id) {
         console.log(`[useUpdateAsset] Price changed from ${oldPrice} to ${newPrice}, updating journal...`);
 
-        // Void old journal entries for this asset
-        const { data: oldJournals } = await supabase
-          .from('journal_entries')
-          .select('id')
-          .eq('reference_id', id)
-          .eq('is_voided', false)
-          .ilike('description', '%Pembelian Aset%');
+        try {
+          // Find existing journal entry for this asset
+          const { data: existingJournalRaw } = await supabase
+            .from('journal_entries')
+            .select('id, entry_number')
+            .eq('reference_id', id)
+            .eq('reference_type', 'asset')
+            .eq('status', 'posted')
+            .order('created_at', { ascending: false })
+            .limit(1);
 
-        if (oldJournals && oldJournals.length > 0) {
-          for (const journal of oldJournals) {
-            const voidResult = await voidJournalEntry(journal.id, 'Harga aset diupdate');
-            if (voidResult.success) {
-              console.log(`✅ Voided old asset journal ${journal.id}`);
-            } else {
-              console.warn(`⚠️ Failed to void journal ${journal.id}:`, voidResult.error);
+          const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw;
+
+          if (existingJournal && newPrice > 0) {
+            console.log('📝 Updating asset journal:', existingJournal.entry_number);
+
+            // Get account info
+            const accountId = formData.accountId || currentAsset?.account_id;
+            const { data: assetAccountRaw } = await supabase
+              .from('accounts')
+              .select('id')
+              .eq('id', accountId)
+              .limit(1);
+            const assetAccountId = assetAccountRaw?.[0]?.id;
+
+            // Get kas account for credit side
+            const { data: kasAccountRaw } = await supabase
+              .from('accounts')
+              .select('id')
+              .eq('branch_id', currentBranch.id)
+              .eq('is_payment_account', true)
+              .like('code', '11%')
+              .order('code')
+              .limit(1);
+            const kasAccountId = kasAccountRaw?.[0]?.id;
+
+            if (assetAccountId && kasAccountId) {
+              // Delete existing journal lines
+              await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existingJournal.id);
+
+              // Insert new journal lines: Dr. Aset, Cr. Kas
+              const assetName = formData.assetName || currentAsset?.name || 'Aset';
+              const newLines = [
+                {
+                  journal_entry_id: existingJournal.id,
+                  account_id: assetAccountId,
+                  debit_amount: newPrice,
+                  credit_amount: 0,
+                  description: `Pembelian ${assetName} (edit)`,
+                  line_number: 1
+                },
+                {
+                  journal_entry_id: existingJournal.id,
+                  account_id: kasAccountId,
+                  debit_amount: 0,
+                  credit_amount: newPrice,
+                  description: 'Pengeluaran kas (edit)',
+                  line_number: 2
+                }
+              ];
+
+              await supabase.from('journal_entry_lines').insert(newLines);
+
+              // Update journal description
+              await supabase
+                .from('journal_entries')
+                .update({ description: `Pembelian Aset - ${assetName}` })
+                .eq('id', existingJournal.id);
+
+              console.log('✅ Asset journal updated, new price:', newPrice);
+            }
+          } else if (!existingJournal && newPrice > 0) {
+            // No existing journal, create new one
+            const accountId = formData.accountId || currentAsset?.account_id;
+            if (accountId) {
+              const { data: accountDataRaw } = await supabase
+                .from('accounts')
+                .select('id, code, name')
+                .eq('id', accountId)
+                .single();
+
+              if (accountDataRaw) {
+                const assetName = formData.assetName || currentAsset?.name || 'Aset';
+                const purchaseDate = formData.purchaseDate || new Date();
+
+                const journalResult = await createAssetPurchaseJournal({
+                  assetId: id,
+                  purchaseDate: purchaseDate,
+                  amount: newPrice,
+                  assetAccountId: accountDataRaw.id,
+                  assetAccountCode: accountDataRaw.code || '',
+                  assetAccountName: accountDataRaw.name,
+                  assetName: assetName,
+                  paymentMethod: formData.source || 'cash',
+                  branchId: currentBranch.id,
+                });
+
+                if (journalResult.success) {
+                  console.log('✅ New asset purchase journal created:', journalResult.journalId);
+                }
+              }
             }
           }
-        }
-
-        // Get account info for new journal
-        const accountId = formData.accountId || currentAsset?.account_id;
-        if (accountId && newPrice > 0) {
-          const { data: accountDataRaw } = await supabase
-            .from('accounts')
-            .select('id, code, name')
-            .eq('id', accountId)
-            .single();
-
-          if (accountDataRaw) {
-            const assetName = formData.assetName || currentAsset?.name || 'Aset';
-            const purchaseDate = formData.purchaseDate || new Date();
-
-            const journalResult = await createAssetPurchaseJournal({
-              assetId: id,
-              purchaseDate: purchaseDate,
-              amount: newPrice,
-              assetAccountId: accountDataRaw.id,
-              assetAccountCode: accountDataRaw.code || '',
-              assetAccountName: accountDataRaw.name,
-              assetName: assetName,
-              paymentMethod: formData.source || 'cash',
-              branchId: currentBranch.id,
-            });
-
-            if (journalResult.success) {
-              console.log('✅ New asset purchase journal created:', journalResult.journalId);
-            } else {
-              console.warn('⚠️ Failed to create new asset journal:', journalResult.error);
-            }
-          }
+        } catch (journalError) {
+          console.error('Error updating asset journal:', journalError);
         }
       }
 

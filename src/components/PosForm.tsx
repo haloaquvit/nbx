@@ -14,6 +14,7 @@ import { format } from 'date-fns'
 import { useToast } from '@/components/ui/use-toast'
 import { Switch } from '@/components/ui/switch'
 import { calculatePPN, calculatePPNWithMode, getDefaultPPNPercentage } from '@/utils/ppnCalculations'
+import { generateTransactionId } from '@/utils/idGenerator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table'
 import { Textarea } from './ui/textarea'
 import { useProducts } from '@/hooks/useProducts'
@@ -489,14 +490,14 @@ export const PosForm = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const validItems = items.filter(item => item.product && item.qty > 0);
 
     // Check if we have either selected customer or typed customer name
     const customerName = selectedCustomer?.name || customerSearch.trim();
-    
+
     if (!customerName || validItems.length === 0 || !currentUser) {
       toast({ variant: "destructive", title: "Validasi Gagal", description: "Harap isi Nama Pelanggan dan tambahkan minimal satu item produk yang valid." });
       return;
@@ -516,8 +517,8 @@ export const PosForm = () => {
       quantity: item.qty,
       price: item.harga,
       unit: item.unit,
-      width: 0, height: 0, 
-      notes: item.isBonus 
+      width: 0, height: 0,
+      notes: item.isBonus
         ? `${item.keterangan}${item.keterangan ? ' - ' : ''}BONUS: ${item.bonusDescription || 'Bonus Item'}`
         : item.keterangan,
       designFileName: item.designFileName,
@@ -526,8 +527,11 @@ export const PosForm = () => {
 
     const paymentStatus: PaymentStatus = sisaTagihan <= 0 ? 'Lunas' : 'Belum Lunas';
 
+    // Generate sequential transaction ID: AQV-DDMM-NNN
+    const transactionId = await generateTransactionId('kasir');
+
     const newTransaction: Omit<Transaction, 'createdAt'> = {
-      id: `KRP-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000)}`,
+      id: transactionId,
       customerId: selectedCustomer?.id || 'manual-customer',
       customerName: customerName,
       cashierId: currentUser.id,

@@ -427,6 +427,14 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
 
   const updatePayrollRecord = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<PayrollFormData> }) => {
+      // Get old payroll record first
+      const { data: oldRecordRaw } = await supabase
+        .from('payroll_records')
+        .select('*')
+        .eq('id', id)
+        .order('id').limit(1);
+      const oldRecord = Array.isArray(oldRecordRaw) ? oldRecordRaw[0] : oldRecordRaw;
+
       const updateData: any = {};
 
       if (data.baseSalaryAmount !== undefined) updateData.base_salary = data.baseSalaryAmount;
@@ -439,10 +447,14 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
       if (data.notes !== undefined) updateData.notes = data.notes;
 
       // Recalculate net_salary if any amount changed
+      let newNetSalary = oldRecord?.net_salary || 0;
       if (data.baseSalaryAmount !== undefined || data.commissionAmount !== undefined ||
           data.bonusAmount !== undefined || data.deductionAmount !== undefined) {
-        const grossSalary = (data.baseSalaryAmount || 0) + (data.commissionAmount || 0) + (data.bonusAmount || 0);
-        updateData.net_salary = grossSalary - (data.deductionAmount || 0);
+        const grossSalary = (data.baseSalaryAmount ?? oldRecord?.base_salary ?? 0) +
+                           (data.commissionAmount ?? oldRecord?.total_commission ?? 0) +
+                           (data.bonusAmount ?? oldRecord?.total_bonus ?? 0);
+        newNetSalary = grossSalary - (data.deductionAmount ?? oldRecord?.total_deductions ?? 0);
+        updateData.net_salary = newNetSalary;
       }
 
       // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
@@ -456,15 +468,108 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
       if (error) throw error;
       const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
       if (!result) throw new Error('Failed to update payroll record');
+
+      // ============================================================================
+      // UPDATE PAYROLL JOURNAL - jika status sudah 'paid' dan amount berubah
+      // Jurnal: Dr. Beban Gaji, Cr. Kas/Bank (dan Cr. Panjar jika ada potongan)
+      // ============================================================================
+      if (oldRecord?.status === 'paid') {
+        const oldNetSalary = oldRecord.net_salary || 0;
+        const amountChanged = newNetSalary !== oldNetSalary;
+
+        if (amountChanged) {
+          try {
+            // Find existing payroll journal
+            const { data: existingJournalRaw } = await supabase
+              .from('journal_entries')
+              .select('id, entry_number')
+              .eq('reference_id', id)
+              .eq('reference_type', 'payroll')
+              .eq('status', 'posted')
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+            const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw;
+
+            if (existingJournal) {
+              console.log('📝 Updating payroll journal:', existingJournal.entry_number);
+
+              const branchId = currentBranch?.id;
+
+              // Get accounts
+              const bebanGajiAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '6110').limit(1);
+              const kasAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('is_payment_account', true).like('code', '11%').order('code').limit(1);
+
+              const bebanGajiId = bebanGajiAccount.data?.[0]?.id;
+              const kasId = result.payment_account_id || kasAccount.data?.[0]?.id;
+
+              if (bebanGajiId && kasId) {
+                // Calculate new amounts
+                const newGrossSalary = (result.base_salary || 0) + (result.total_commission || 0) + (result.total_bonus || 0);
+                const newDeductions = result.total_deductions || 0;
+
+                // Delete existing journal lines
+                await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existingJournal.id);
+
+                // Insert new journal lines
+                const newLines: any[] = [];
+                let lineNumber = 1;
+
+                // Dr. Beban Gaji (gross)
+                newLines.push({
+                  journal_entry_id: existingJournal.id,
+                  account_id: bebanGajiId,
+                  debit_amount: newGrossSalary,
+                  credit_amount: 0,
+                  description: `Beban gaji ${result.employee_name || ''} (edit)`,
+                  line_number: lineNumber++
+                });
+
+                // Cr. Kas (net)
+                newLines.push({
+                  journal_entry_id: existingJournal.id,
+                  account_id: kasId,
+                  debit_amount: 0,
+                  credit_amount: newNetSalary,
+                  description: 'Pembayaran gaji (edit)',
+                  line_number: lineNumber++
+                });
+
+                // Cr. Panjar Karyawan (deductions) if any
+                if (newDeductions > 0) {
+                  const panjarAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '1260').limit(1);
+                  if (panjarAccount.data?.[0]?.id) {
+                    newLines.push({
+                      journal_entry_id: existingJournal.id,
+                      account_id: panjarAccount.data[0].id,
+                      debit_amount: 0,
+                      credit_amount: newDeductions,
+                      description: 'Potongan panjar karyawan (edit)',
+                      line_number: lineNumber++
+                    });
+                  }
+                }
+
+                await supabase.from('journal_entry_lines').insert(newLines);
+                console.log('✅ Payroll journal updated, new net salary:', newNetSalary);
+              }
+            }
+          } catch (journalError) {
+            console.error('Error updating payroll journal:', journalError);
+          }
+        }
+      }
+
       return result;
     },
     onSuccess: () => {
       // Invalidate all payroll-related queries
       queryClient.invalidateQueries({ queryKey: ['payrollRecords'] });
       queryClient.invalidateQueries({ queryKey: ['payrollSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
       toast({
-        title: 'Success',
-        description: 'Payroll record updated successfully',
+        title: 'Berhasil',
+        description: 'Data gaji berhasil diupdate',
       });
     },
   });

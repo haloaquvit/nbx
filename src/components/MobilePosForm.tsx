@@ -13,6 +13,7 @@ import { PlusCircle, Trash2, Search, UserPlus, Wallet, FileText, Check, Chevrons
 import { cn } from '@/lib/utils'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/use-toast'
+import { generateTransactionId } from '@/utils/idGenerator'
 import { Textarea } from './ui/textarea'
 import { useProducts } from '@/hooks/useProducts'
 import { useUsers } from '@/hooks/useUsers'
@@ -541,9 +542,9 @@ export const MobilePosForm = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const validItems = items.filter(item => item.product && item.qty > 0);
 
     if (!selectedCustomer || validItems.length === 0 || !currentUser) {
@@ -580,8 +581,11 @@ export const MobilePosForm = () => {
 
     const paymentStatus: PaymentStatus = sisaTagihan <= 0 ? 'Lunas' : 'Belum Lunas';
 
+    // Generate sequential transaction ID: AQVPOSSUP-DDMM-NNN
+    const transactionId = await generateTransactionId('supir');
+
     const newTransaction: Omit<Transaction, 'createdAt'> = {
-      id: `KRP-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000)}`,
+      id: transactionId,
       customerId: selectedCustomer.id,
       customerName: selectedCustomer.name,
       cashierId: currentUser.id,

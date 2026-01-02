@@ -300,6 +300,129 @@ export const useExpenses = () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+    }
+  });
+
+  // ============================================================================
+  // UPDATE EXPENSE - Edit langsung dengan update jurnal
+  // ============================================================================
+  const updateExpense = useMutation({
+    mutationFn: async (updatedExpense: Partial<Expense> & { id: string }): Promise<Expense> => {
+      // Get old expense data for comparison
+      const { data: oldExpenseRaw } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('id', updatedExpense.id)
+        .order('id').limit(1);
+
+      const oldExpense = Array.isArray(oldExpenseRaw) ? oldExpenseRaw[0] : oldExpenseRaw;
+      if (!oldExpense) throw new Error('Pengeluaran tidak ditemukan');
+
+      // Update expense record
+      const updateData: any = {};
+      if (updatedExpense.description !== undefined) updateData.description = updatedExpense.description;
+      if (updatedExpense.amount !== undefined) updateData.amount = updatedExpense.amount;
+      if (updatedExpense.category !== undefined) updateData.category = updatedExpense.category;
+      if (updatedExpense.date !== undefined) updateData.date = updatedExpense.date;
+      if (updatedExpense.accountId !== undefined) updateData.account_id = updatedExpense.accountId;
+
+      const { data: savedExpenseRaw, error: updateError } = await supabase
+        .from('expenses')
+        .update(updateData)
+        .eq('id', updatedExpense.id)
+        .select()
+        .order('id').limit(1);
+
+      if (updateError) throw new Error(updateError.message);
+      const savedExpense = Array.isArray(savedExpenseRaw) ? savedExpenseRaw[0] : savedExpenseRaw;
+      if (!savedExpense) throw new Error('Gagal update pengeluaran');
+
+      // Check if amount or account changed - need to update journal
+      const amountChanged = updatedExpense.amount !== undefined && updatedExpense.amount !== oldExpense.amount;
+      const accountChanged = updatedExpense.accountId !== undefined && updatedExpense.accountId !== oldExpense.account_id;
+
+      if (amountChanged || accountChanged) {
+        try {
+          // Find existing journal entry
+          const { data: existingJournalRaw } = await supabase
+            .from('journal_entries')
+            .select('id, entry_number')
+            .eq('reference_id', updatedExpense.id)
+            .eq('reference_type', 'expense')
+            .eq('status', 'posted')
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw;
+
+          if (existingJournal) {
+            console.log('📝 Updating expense journal:', existingJournal.entry_number);
+
+            // Get new amount and account
+            const newAmount = updatedExpense.amount || oldExpense.amount;
+            const newCashAccountId = updatedExpense.accountId || oldExpense.account_id;
+
+            // Get expense account based on category
+            const branchId = currentBranch?.id;
+            const category = updatedExpense.category || oldExpense.category;
+
+            // Find expense account by category (simplified - using default beban umum)
+            const { data: expenseAccountRaw } = await supabase
+              .from('accounts')
+              .select('id')
+              .eq('branch_id', branchId)
+              .like('code', '6%') // Expense accounts start with 6
+              .limit(1);
+            const expenseAccountId = expenseAccountRaw?.[0]?.id;
+
+            if (expenseAccountId && newCashAccountId) {
+              // Delete existing journal lines
+              await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existingJournal.id);
+
+              // Insert new journal lines: Dr. Beban, Cr. Kas
+              const newLines = [
+                {
+                  journal_entry_id: existingJournal.id,
+                  account_id: expenseAccountId,
+                  debit_amount: newAmount,
+                  credit_amount: 0,
+                  description: savedExpense.description || 'Beban pengeluaran (edit)',
+                  line_number: 1
+                },
+                {
+                  journal_entry_id: existingJournal.id,
+                  account_id: newCashAccountId,
+                  debit_amount: 0,
+                  credit_amount: newAmount,
+                  description: 'Pengeluaran kas (edit)',
+                  line_number: 2
+                }
+              ];
+
+              await supabase.from('journal_entry_lines').insert(newLines);
+
+              // Update journal description
+              await supabase
+                .from('journal_entries')
+                .update({ description: `Pengeluaran - ${savedExpense.description || category}` })
+                .eq('id', existingJournal.id);
+
+              console.log('✅ Expense journal updated, new amount:', newAmount);
+            }
+          }
+        } catch (journalError) {
+          console.error('Error updating expense journal:', journalError);
+        }
+      }
+
+      return fromDbToApp(savedExpense);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     }
   });
 
@@ -308,6 +431,7 @@ export const useExpenses = () => {
     expensesOnly: expenses, // Pure expenses tanpa pembayaran hutang
     isLoading: isLoading || isLoadingDebtPayments,
     addExpense,
+    updateExpense,
     deleteExpense,
   }
 }

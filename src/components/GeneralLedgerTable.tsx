@@ -69,6 +69,7 @@ interface LedgerEntry {
   reference: string;
   referenceType: string;
   journalNumber: string;
+  createdAt: string; // Waktu input untuk sorting yang benar
 }
 
 interface AccountLedger {
@@ -137,6 +138,7 @@ export function GeneralLedgerTable() {
           debit_amount,
           credit_amount,
           description,
+          created_at,
           journal_entries (
             id,
             entry_number,
@@ -146,7 +148,8 @@ export function GeneralLedgerTable() {
             reference_id,
             status,
             is_voided,
-            branch_id
+            branch_id,
+            created_at
           )
         `);
 
@@ -167,8 +170,10 @@ export function GeneralLedgerTable() {
 
         return true;
       }).sort((a: any, b: any) => {
-        // Sort by entry_date ascending
-        return a.journal_entries.entry_date.localeCompare(b.journal_entries.entry_date);
+        // Sort by created_at ascending (waktu input) untuk urutan yang benar
+        const aCreatedAt = a.journal_entries.created_at || a.created_at || '';
+        const bCreatedAt = b.journal_entries.created_at || b.created_at || '';
+        return aCreatedAt.localeCompare(bCreatedAt);
       });
 
       if (journalError) {
@@ -212,7 +217,8 @@ export function GeneralLedgerTable() {
           balance: 0, // Will be calculated below
           reference: journal.reference_id || '',
           referenceType: journal.reference_type || '',
-          journalNumber: journal.entry_number || ''
+          journalNumber: journal.entry_number || '',
+          createdAt: journal.created_at || line.created_at || '' // Waktu input untuk sorting
         });
 
         accountLedgers[accountId].totalDebit += debit;
@@ -228,11 +234,10 @@ export function GeneralLedgerTable() {
         const accountType = ledger.account.type;
         const isDebitNormal = ['Aset', 'Beban'].includes(accountType);
 
-        // Sort entries by date, then by journal number for same-date entries
+        // Sort entries by createdAt (waktu input) untuk urutan yang benar
+        // Ini memastikan transaksi ditampilkan sesuai urutan input, bukan hanya tanggal
         ledger.entries.sort((a, b) => {
-          const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
-          if (dateCompare !== 0) return dateCompare;
-          return (a.journalNumber || '').localeCompare(b.journalNumber || '');
+          return (a.createdAt || '').localeCompare(b.createdAt || '');
         });
 
         ledger.entries.forEach(entry => {

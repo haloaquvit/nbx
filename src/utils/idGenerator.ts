@@ -75,3 +75,55 @@ export function getModuleCodeFromTable(tableName: string): string {
 
   return moduleMap[tableName] || 'GN-XX';
 }
+
+/**
+ * Generate transaction ID with format: PREFIX-DDMM-NNN
+ * - POS Kasir: AQV-DDMM-001, AQV-DDMM-002, ... (nomor urut TIDAK reset, terus bertambah)
+ * - POS Supir: AQVPOSSUP-DDMM-001, AQVPOSSUP-DDMM-002, ...
+ *
+ * Nomor urut dihitung dari SELURUH transaksi dengan prefix yang sama (tidak reset harian)
+ *
+ * @param type - 'kasir' for POS Kasir, 'supir' for POS Supir
+ * @param branchId - Branch ID for filtering count (optional)
+ * @returns Promise<string> - Generated transaction ID
+ */
+export async function generateTransactionId(
+  type: 'kasir' | 'supir',
+  branchId?: string
+): Promise<string> {
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const dateCode = `${day}${month}`;
+
+  const prefix = type === 'supir' ? 'AQVPOSSUP' : 'AQV';
+
+  try {
+    // Count ALL transactions with the same prefix (tidak reset harian - terus bertambah selamanya)
+    let query = supabase
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .like('id', `${prefix}-%`);
+
+    if (branchId) {
+      query = query.eq('branch_id', branchId);
+    }
+
+    const { count, error } = await query;
+
+    if (error) {
+      console.error('Error getting transaction count:', error);
+      // Fallback to timestamp if count fails
+      const timestamp = Date.now().toString().slice(-6);
+      return `${prefix}-${dateCode}-${timestamp}`;
+    }
+
+    const sequentialNumber = String((count || 0) + 1).padStart(3, '0');
+    return `${prefix}-${dateCode}-${sequentialNumber}`;
+  } catch (err) {
+    console.error('Error generating transaction ID:', err);
+    // Fallback to timestamp
+    const timestamp = Date.now().toString().slice(-6);
+    return `${prefix}-${dateCode}-${timestamp}`;
+  }
+}
