@@ -214,11 +214,11 @@ export const useRetasi = (filters?: {
       })) : [];
     },
     enabled: !!currentBranch,
-    // Optimized for retasi management
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes cache
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    // Reduced staleTime to ensure data appears immediately after mutations
+    staleTime: 30 * 1000, // 30 seconds - short enough for real-time updates
+    gcTime: 5 * 60 * 1000, // 5 minutes cache
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchOnReconnect: true,
     retry: 1,
     retryDelay: 1000,
   });
@@ -411,7 +411,9 @@ export const useRetasi = (filters?: {
       return fromDb(retasi);
     },
     onSuccess: () => {
+      // Force refetch to ensure new data appears immediately
       queryClient.invalidateQueries({ queryKey: ['retasi'] });
+      queryClient.refetchQueries({ queryKey: ['retasi'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-items'] });
     }
