@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Plus, BookOpen, Filter, RefreshCw, List, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Plus, BookOpen, Filter, RefreshCw, List, FileText, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { supabase } from '@/integrations/supabase/client';
 import {
   Table,
   TableBody,
@@ -27,12 +28,36 @@ import { id as idLocale } from 'date-fns/locale';
 
 const ITEMS_PER_PAGE = 20;
 
+interface Account {
+  id: string;
+  code: string;
+  name: string;
+}
+
 export function JournalPage() {
   const [showForm, setShowForm] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [mainTab, setMainTab] = useState<string>('entries');
   const [entriesPage, setEntriesPage] = useState(1);
   const [linesPage, setLinesPage] = useState(1);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('all');
+
+  // Fetch accounts for filter
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      const { data, error } = await supabase
+        .from('accounts')
+        .select('id, code, name')
+        .eq('is_active', true)
+        .order('code');
+
+      if (!error && data) {
+        setAccounts(data);
+      }
+    };
+    fetchAccounts();
+  }, []);
 
   const {
     journalEntries,
@@ -59,14 +84,32 @@ export function JournalPage() {
     });
   };
 
-  // Filter entries by status
+  // Filter entries by status AND account
   const filteredEntries = useMemo(() => {
     return (journalEntries || []).filter(entry => {
-      if (statusFilter === 'all') return true;
-      if (statusFilter === 'voided') return entry.isVoided;
-      return entry.status === statusFilter && !entry.isVoided;
+      // Status filter
+      if (statusFilter === 'voided' && !entry.isVoided) return false;
+      if (statusFilter !== 'all' && statusFilter !== 'voided') {
+        if (entry.status !== statusFilter || entry.isVoided) return false;
+      }
+
+      // Account filter - check if any line matches the selected account
+      if (selectedAccountId !== 'all') {
+        const hasMatchingAccount = entry.lines?.some(line => line.accountId === selectedAccountId);
+        if (!hasMatchingAccount) return false;
+      }
+
+      return true;
     });
-  }, [journalEntries, statusFilter]);
+  }, [journalEntries, statusFilter, selectedAccountId]);
+
+  // Filter journal lines by account
+  const filteredJournalLines = useMemo(() => {
+    if (selectedAccountId === 'all') {
+      return allJournalLines || [];
+    }
+    return (allJournalLines || []).filter(line => line.accountId === selectedAccountId);
+  }, [allJournalLines, selectedAccountId]);
 
   // Reset to page 1 when filter changes
   const handleStatusFilterChange = (value: string) => {
@@ -81,12 +124,12 @@ export function JournalPage() {
     return filteredEntries.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredEntries, entriesPage]);
 
-  // Pagination for lines
-  const linesTotalPages = Math.ceil((allJournalLines?.length || 0) / ITEMS_PER_PAGE);
+  // Pagination for lines (menggunakan filteredJournalLines)
+  const linesTotalPages = Math.ceil(filteredJournalLines.length / ITEMS_PER_PAGE);
   const paginatedLines = useMemo(() => {
     const start = (linesPage - 1) * ITEMS_PER_PAGE;
-    return (allJournalLines || []).slice(start, start + ITEMS_PER_PAGE);
-  }, [allJournalLines, linesPage]);
+    return filteredJournalLines.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredJournalLines, linesPage]);
 
   // Count by status
   const counts = {
@@ -96,10 +139,24 @@ export function JournalPage() {
     voided: journalEntries?.filter(e => e.isVoided).length || 0,
   };
 
-  // Calculate totals for journal lines
+  // Calculate totals for journal lines (menggunakan filteredJournalLines)
   const linesTotals = {
-    totalDebit: allJournalLines?.reduce((sum, line) => sum + line.debitAmount, 0) || 0,
-    totalCredit: allJournalLines?.reduce((sum, line) => sum + line.creditAmount, 0) || 0,
+    totalDebit: filteredJournalLines.reduce((sum, line) => sum + line.debitAmount, 0),
+    totalCredit: filteredJournalLines.reduce((sum, line) => sum + line.creditAmount, 0),
+  };
+
+  // Handler untuk account filter change
+  const handleAccountFilterChange = (value: string) => {
+    setSelectedAccountId(value);
+    setEntriesPage(1);
+    setLinesPage(1);
+  };
+
+  // Clear account filter
+  const clearAccountFilter = () => {
+    setSelectedAccountId('all');
+    setEntriesPage(1);
+    setLinesPage(1);
   };
 
   return (
@@ -156,6 +213,36 @@ export function JournalPage() {
 
           {/* Filter & List Section */}
           <div className="space-y-4">
+            {/* Account Filter */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Select value={selectedAccountId} onValueChange={handleAccountFilterChange}>
+                  <SelectTrigger className="w-[300px]">
+                    <SelectValue placeholder="Filter berdasarkan Akun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Akun</SelectItem>
+                    {accounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.code} - {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedAccountId !== 'all' && (
+                  <Button variant="ghost" size="sm" onClick={clearAccountFilter}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              {selectedAccountId !== 'all' && (
+                <Badge variant="secondary">
+                  Filter: {accounts.find(a => a.id === selectedAccountId)?.code} - {accounts.find(a => a.id === selectedAccountId)?.name}
+                </Badge>
+              )}
+            </div>
+
             {/* Tabs for quick filter */}
             <Tabs value={statusFilter} onValueChange={handleStatusFilterChange}>
               <div className="flex items-center justify-between">
@@ -273,11 +360,41 @@ export function JournalPage() {
         {/* Tab: Journal Entry Lines */}
         <TabsContent value="lines">
           <div className="space-y-4">
+            {/* Account Filter for Lines */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Select value={selectedAccountId} onValueChange={handleAccountFilterChange}>
+                  <SelectTrigger className="w-[300px]">
+                    <SelectValue placeholder="Filter berdasarkan Akun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Akun</SelectItem>
+                    {accounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.code} - {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedAccountId !== 'all' && (
+                  <Button variant="ghost" size="sm" onClick={clearAccountFilter}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              {selectedAccountId !== 'all' && (
+                <Badge variant="secondary">
+                  Filter: {accounts.find(a => a.id === selectedAccountId)?.code} - {accounts.find(a => a.id === selectedAccountId)?.name}
+                </Badge>
+              )}
+            </div>
+
             {/* Summary */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="text-sm text-blue-600 font-medium">Total Baris</div>
-                <div className="text-2xl font-bold text-blue-800">{allJournalLines?.length || 0}</div>
+                <div className="text-2xl font-bold text-blue-800">{filteredJournalLines.length}</div>
               </div>
               <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                 <div className="text-sm text-green-600 font-medium">Total Debit</div>
@@ -367,7 +484,7 @@ export function JournalPage() {
             {linesTotalPages > 1 && (
               <div className="flex items-center justify-between mt-4 pt-4 border-t">
                 <div className="text-sm text-muted-foreground">
-                  Menampilkan {((linesPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(linesPage * ITEMS_PER_PAGE, allJournalLines?.length || 0)} dari {allJournalLines?.length || 0} baris
+                  Menampilkan {((linesPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(linesPage * ITEMS_PER_PAGE, filteredJournalLines.length)} dari {filteredJournalLines.length} baris
                 </div>
                 <div className="flex items-center gap-2">
                   <Button

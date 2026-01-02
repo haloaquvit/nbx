@@ -153,8 +153,14 @@ export function GeneralLedgerTable() {
           )
         `);
 
-      // Filter on client side since PostgREST doesn't support nested filtering with !inner
-      const journalLines = (rawJournalLines || []).filter((line: any) => {
+      if (journalError) {
+        console.error('Error fetching journal lines:', journalError);
+        setIsLoading(false);
+        return;
+      }
+
+      // Filter untuk jurnal yang valid (posted, not voided, branch match)
+      const validJournalLines = (rawJournalLines || []).filter((line: any) => {
         const journal = line.journal_entries;
         if (!journal) return false;
 
@@ -163,11 +169,19 @@ export function GeneralLedgerTable() {
         if (journal.status !== 'posted') return false;
         if (journal.is_voided !== false) return false;
 
-        // Date filters
-        const entryDate = journal.entry_date;
+        return true;
+      });
+
+      // Pisahkan: transaksi SEBELUM periode (untuk opening balance) dan DALAM periode
+      const linesBeforePeriod = validJournalLines.filter((line: any) => {
+        const entryDate = line.journal_entries.entry_date;
+        return fromDateStr && entryDate < fromDateStr;
+      });
+
+      const linesInPeriod = validJournalLines.filter((line: any) => {
+        const entryDate = line.journal_entries.entry_date;
         if (fromDateStr && entryDate < fromDateStr) return false;
         if (toDateStr && entryDate > toDateStr) return false;
-
         return true;
       }).sort((a: any, b: any) => {
         // Sort by created_at ascending (waktu input) untuk urutan yang benar
@@ -176,12 +190,6 @@ export function GeneralLedgerTable() {
         return aCreatedAt.localeCompare(bCreatedAt);
       });
 
-      if (journalError) {
-        console.error('Error fetching journal lines:', journalError);
-        setIsLoading(false);
-        return;
-      }
-
       // ============================================================================
       // GROUP ENTRIES BY ACCOUNT
       // ============================================================================
@@ -189,18 +197,38 @@ export function GeneralLedgerTable() {
 
       // Initialize ledgers for all accounts with initial_balance
       accounts.forEach(account => {
+        const accountType = account.type;
+        const isDebitNormal = ['Aset', 'Beban'].includes(accountType);
+
+        // Hitung saldo dari transaksi SEBELUM periode yang dipilih
+        let balanceFromPriorPeriod = 0;
+        linesBeforePeriod.forEach((line: any) => {
+          if (line.account_id !== account.id) return;
+          const debit = Number(line.debit_amount) || 0;
+          const credit = Number(line.credit_amount) || 0;
+
+          if (isDebitNormal) {
+            balanceFromPriorPeriod += debit - credit;
+          } else {
+            balanceFromPriorPeriod += credit - debit;
+          }
+        });
+
+        // Opening Balance = initial_balance + mutasi sebelum periode
+        const openingBalance = (account.initial_balance || 0) + balanceFromPriorPeriod;
+
         accountLedgers[account.id] = {
           account,
           entries: [],
-          openingBalance: account.initial_balance || 0,
+          openingBalance: openingBalance,
           totalDebit: 0,
           totalCredit: 0,
           closingBalance: 0
         };
       });
 
-      // Process journal lines
-      (journalLines || []).forEach((line: any) => {
+      // Process journal lines (hanya yang dalam periode)
+      linesInPeriod.forEach((line: any) => {
         const accountId = line.account_id;
         if (!accountId || !accountLedgers[accountId]) return;
 
