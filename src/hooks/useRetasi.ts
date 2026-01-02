@@ -166,6 +166,8 @@ export const useRetasi = (filters?: {
   const { data: retasiList, isLoading, refetch: refetchRetasiList } = useQuery<(Retasi & { items?: RetasiItem[] })[]>({
     queryKey: ['retasi', currentBranch?.id, filters],
     queryFn: async () => {
+      console.log('[useRetasi] Fetching retasi list with branch:', currentBranch?.id, 'filters:', filters);
+
       let query = supabase
         .from('retasi')
         .select(`
@@ -183,9 +185,11 @@ export const useRetasi = (filters?: {
         `)
         .order('created_at', { ascending: false });
 
-      // Apply branch filter - ALWAYS filter by selected branch
+      // Apply branch filter - filter by branch if available
+      // Also include records with NULL branch_id (legacy data or data created before branch was set)
       if (currentBranch?.id) {
-        query = query.eq('branch_id', currentBranch.id);
+        // Use OR to include both matching branch_id AND null branch_id
+        query = query.or(`branch_id.eq.${currentBranch.id},branch_id.is.null`);
       }
 
       if (filters?.is_returned !== undefined) {
@@ -359,7 +363,8 @@ export const useRetasi = (filters?: {
         created_by: user?.id || null,
         branch_id: currentBranch?.id || null
       };
-      
+
+      console.log('[useRetasi] Current branch for insert:', currentBranch?.id, currentBranch?.name);
       console.log('[useRetasi] Inserting retasi with data:', insertData);
       
       // Insert main retasi record
