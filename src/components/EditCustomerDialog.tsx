@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "@/hooks/useAuth"
 import { Customer, CustomerClassification } from "@/types/customer"
 import { MapPin, Camera, ExternalLink } from "lucide-react"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { compressImage, formatFileSize, isImageFile } from "@/utils/imageCompression"
 import { PhotoUploadService } from "@/services/photoUploadService"
 
@@ -46,6 +47,7 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
   const { toast } = useToast()
   const { updateCustomer } = useCustomers()
   const { user } = useAuth()
+  const isMobile = useIsMobile()
   
   // Photo upload states
   const [isUploading, setIsUploading] = useState(false)
@@ -62,8 +64,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
   // Show location and photo fields for admin/owner/cashier AND driver/helper
   const canEditLocationAndPhoto = canEditAllFields || isDriverOrHelper
 
-  // Check if user must provide coordinates and photo
-  const requiresLocationAndPhoto = user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
+  // Check if user must provide coordinates and photo (only on mobile, not on web view)
+  const requiresLocationAndPhoto = isMobile && user?.role && !['kasir', 'admin', 'owner'].includes(user.role.toLowerCase())
 
   const {
     register,
