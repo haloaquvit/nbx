@@ -421,10 +421,17 @@ export const PosForm = () => {
     if (field === 'qty' && newItems[index].product && !newItems[index].isBonus) {
       const itemId = newItems[index].id;
       const itemToUpdate = { ...newItems[index], qty: value };
+      const isMaterial = (newItems[index].product as any)?._isMaterial === true;
 
       // Update qty secara lokal dulu (UI responsif)
       newItems[index].qty = value;
       setItems(newItems);
+
+      // For materials: don't recalculate price, just update qty
+      // Materials allow custom pricing, so we preserve user's input
+      if (isMaterial) {
+        return;
+      }
 
       // Clear timer sebelumnya jika ada
       if (debounceTimers.current[itemId]) {
@@ -661,16 +668,22 @@ export const PosForm = () => {
   };
 
   const updateItemWithBonuses = async (existingItem: FormTransactionItem, newQty: number) => {
+    // Check if this is a material item - materials don't have pricing rules
+    // and user should be able to set custom prices
+    const isMaterial = (existingItem.product as any)?._isMaterial === true;
+
     // Use skipFetch=true to use cached pricing data (no database fetch)
     const { price, calculation } = await calculateDynamicPrice(existingItem.product!, newQty, true);
-    
+
     // Remove existing bonus items for this product
     let newItems = items.filter(item => item.parentItemId !== existingItem.id);
-    
+
     // Update main item
-    newItems = newItems.map(item => 
+    // For materials: preserve user's custom price, only update qty
+    // For products: update both qty and price (from dynamic pricing)
+    newItems = newItems.map(item =>
       item.id === existingItem.id
-        ? { ...item, qty: newQty, harga: price }
+        ? { ...item, qty: newQty, harga: isMaterial ? item.harga : price }
         : item
     );
     

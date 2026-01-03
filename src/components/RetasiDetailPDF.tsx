@@ -7,6 +7,7 @@ import { RetasiTransaction } from "@/hooks/useRetasi"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useCompanySettings } from "@/hooks/useCompanySettings"
+import { useBranch } from "@/contexts/BranchContext"
 import { createCompressedPDF } from "@/utils/pdfUtils"
 
 interface RetasiDetailPDFProps {
@@ -18,6 +19,7 @@ interface RetasiDetailPDFProps {
 
 export function RetasiDetailPDF({ retasi, items, transactions, children }: RetasiDetailPDFProps) {
   const { settings } = useCompanySettings()
+  const { currentBranch } = useBranch()
   const printRef = React.useRef<HTMLDivElement>(null)
   const [isGenerating, setIsGenerating] = React.useState(false)
 
@@ -93,9 +95,9 @@ export function RetasiDetailPDF({ retasi, items, transactions, children }: Retas
                 />
               )}
               <h1 className="text-sm font-bold text-gray-900">
-                {settings?.name || 'AQUAVIT'}
+                {currentBranch?.name || settings?.name || 'AQUAVIT'}
               </h1>
-              <p className="text-xs text-gray-600">{settings?.phone || ''}</p>
+              <p className="text-xs text-gray-600">{currentBranch?.phone || settings?.phone || ''}</p>
             </div>
             <div className="text-right">
               <h2 className="text-lg font-bold text-gray-400">RETASI</h2>

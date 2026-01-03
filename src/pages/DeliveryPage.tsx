@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar, Trash2, Loader2, Pencil } from "lucide-react"
+import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plus, History, Eye, Camera, Download, Filter, Calendar, Trash2, Loader2, Pencil, ChevronDown, ChevronUp, X } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { useTransactionsReadyForDelivery, useDeliveryHistory, useDeliveries } from "@/hooks/useDeliveries"
@@ -46,7 +46,7 @@ import { PhotoUploadService } from "@/services/photoUploadService"
 export default function DeliveryPage() {
   const { toast } = useToast()
   const { user } = useAuth()
-  const { canCreateDelivery } = useGranularPermission()
+  const { canCreateDelivery, canDeleteDelivery, canEditDelivery, canViewDeliveryHistory } = useGranularPermission()
   const { data: transactions, isLoading, refetch } = useTransactionsReadyForDelivery()
   const { data: deliveryHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useDeliveryHistory()
   const { deleteDelivery } = useDeliveries()
@@ -85,11 +85,20 @@ export default function DeliveryPage() {
   // Edit delivery state
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null)
 
-  // Check if user is owner (for delete permission)
-  const isOwner = user?.role === 'owner'
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [showFilters, setShowFilters] = useState(false)
 
-  // Check if user has access to history tab
-  const canAccessHistory = user?.role && ['admin', 'owner'].includes(user.role)
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Check permissions using granular system
+  const canDelete = canDeleteDelivery()
+  const canEdit = canEditDelivery()
+  const canAccessHistory = canViewDeliveryHistory()
 
   const filteredTransactions = transactions?.filter(transaction =>
     transaction.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -388,326 +397,491 @@ export default function DeliveryPage() {
           )}
         </TabsList>
 
-        <TabsContent value="active" className="space-y-6">
-          <div className="grid gap-6">
-
-        {/* Search and Filters */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Filter Pengantaran</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                <Input
-                  placeholder="Cari berdasarkan nama pelanggan atau nomor order..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <div className="text-sm text-muted-foreground">
-                {filteredTransactions.length} dari {transactions?.length || 0} transaksi
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Transactions Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Daftar Pengantaran</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-16 w-full" />
-                ))}
-              </div>
-            ) : filteredTransactions.length === 0 ? (
-              <div className="text-center py-12">
-                <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">Tidak Ada Pengantaran</h3>
-                <p className="text-muted-foreground">
-                  {searchQuery 
-                    ? "Tidak ada transaksi yang cocok dengan pencarian Anda" 
-                    : "Tidak ada transaksi yang perlu diantar saat ini"}
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table className="min-w-[900px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[100px]">Order ID</TableHead>
-                      <TableHead className="min-w-[150px]">Pelanggan</TableHead>
-                      <TableHead className="min-w-[140px]">Tanggal Order</TableHead>
-                      <TableHead className="min-w-[120px]">Total</TableHead>
-                      <TableHead className="min-w-[100px]">Status</TableHead>
-                      <TableHead className="min-w-[100px]">Kasir</TableHead>
-                      <TableHead className="min-w-[80px]">Item Sisa</TableHead>
-                      <TableHead className="w-[100px]">Aksi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredTransactions.map((transaction) => {
-                      const overallStatus = getOverallStatus(transaction)
-                      const StatusIcon = overallStatus.icon
-                      const remainingItems = transaction.deliverySummary.reduce((sum, item) => sum + item.remainingQuantity, 0)
-                      
-                      return (
-                        <TableRow 
-                          key={transaction.id} 
-                          className="cursor-pointer hover:bg-muted"
-                          onClick={() => {
-                            setSelectedTransaction(transaction)
-                          }}
-                        >
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">#{transaction.id}</Badge>
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            <div className="truncate max-w-[150px]" title={transaction.customerName}>
-                              {transaction.customerName}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            <div>{format(transaction.orderDate, "d MMM yyyy", { locale: idLocale })}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {format(transaction.orderDate, "HH:mm", { locale: idLocale })}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-semibold text-green-600 text-sm">
-                              {new Intl.NumberFormat("id-ID", {
-                                style: "currency",
-                                currency: "IDR",
-                                minimumFractionDigits: 0
-                              }).format(transaction.total)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={overallStatus.variant} className="flex items-center gap-1 w-fit text-xs">
-                              <StatusIcon className="h-3 w-3" />
-                              <span className="hidden sm:inline">{overallStatus.status}</span>
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              {transaction.cashierName || <span className="text-muted-foreground">-</span>}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">
-                              <div>{remainingItems} item</div>
-                              <div className="text-muted-foreground text-xs">
-                                {transaction.deliveries.length} pengantaran
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedDeliveryTransaction(transaction)
-                                  setIsDeliveryDialogOpen(true)
-                                }}
-                                size="sm"
-                                className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
-                              >
-                                <Truck className="h-3 w-3 sm:mr-1" />
-                                <span className="hidden sm:inline">Antar</span>
-                              </Button>
-                              {/* Owner-only: Delete last delivery button */}
-                              {isOwner && transaction.deliveries.length > 0 && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    // Delete the most recent delivery for this transaction
-                                    const lastDelivery = transaction.deliveries[transaction.deliveries.length - 1]
-                                    setDeliveryToDelete({
-                                      ...lastDelivery,
-                                      customerName: transaction.customerName,
-                                      transactionTotal: transaction.total
-                                    })
-                                    setIsDeleteDialogOpen(true)
-                                  }}
-                                  title={`Hapus pengantaran terakhir (${transaction.deliveries.length} pengantaran)`}
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+        <TabsContent value="active" className="space-y-4">
+          {/* Search - Always visible */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari nama pelanggan atau nomor order..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-10"
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                onClick={() => setSearchQuery('')}
+              >
+                <X className="h-4 w-4" />
+              </Button>
             )}
-          </CardContent>
-        </Card>
           </div>
 
+          {/* Info count */}
+          <div className="text-sm text-muted-foreground">
+            {filteredTransactions.length} dari {transactions?.length || 0} pengantaran
+          </div>
+
+          {/* Mobile View - Card List */}
+          {isMobile ? (
+            <div className="space-y-2">
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="bg-white dark:bg-gray-800 border rounded-lg p-3">
+                    <Skeleton className="h-16 w-full" />
+                  </div>
+                ))
+              ) : filteredTransactions.length === 0 ? (
+                <div className="text-center py-12">
+                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-lg font-medium mb-2">Tidak Ada Pengantaran</h3>
+                  <p className="text-muted-foreground text-sm">
+                    {searchQuery
+                      ? "Tidak ditemukan"
+                      : "Tidak ada transaksi siap antar"}
+                  </p>
+                </div>
+              ) : (
+                filteredTransactions.map((transaction, index) => {
+                  const overallStatus = getOverallStatus(transaction)
+                  const StatusIcon = overallStatus.icon
+                  const remainingItems = transaction.deliverySummary.reduce((sum, item) => sum + item.remainingQuantity, 0)
+
+                  return (
+                    <div
+                      key={transaction.id}
+                      className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm active:bg-gray-50 dark:active:bg-gray-700"
+                    >
+                      <div
+                        className="flex items-start justify-between gap-2"
+                        onClick={() => setSelectedTransaction(transaction)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs font-bold px-2 py-0.5 rounded">
+                              #{index + 1}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {format(transaction.orderDate, "d MMM", { locale: idLocale })}
+                            </span>
+                            <Badge variant={overallStatus.variant} className="text-[10px] px-1 py-0">
+                              <StatusIcon className="h-2.5 w-2.5 mr-0.5" />
+                              {overallStatus.status}
+                            </Badge>
+                          </div>
+                          <div className="font-medium text-sm truncate">{transaction.customerName}</div>
+                          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-semibold text-green-600 dark:text-green-400">
+                              {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}
+                            </span>
+                            <span>•</span>
+                            <span>{remainingItems} item sisa</span>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedDeliveryTransaction(transaction)
+                            setIsDeliveryDialogOpen(true)
+                          }}
+                          className="bg-green-600 hover:bg-green-700 text-white h-10 px-3 shrink-0"
+                        >
+                          <Truck className="h-4 w-4 mr-1" />
+                          Antar
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          ) : (
+            /* Desktop View - Full Table */
+            <Card>
+              <CardHeader>
+                <CardTitle>Daftar Pengantaran</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoading ? (
+                  <div className="space-y-3">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-16 w-full" />
+                    ))}
+                  </div>
+                ) : filteredTransactions.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">Tidak Ada Pengantaran</h3>
+                    <p className="text-muted-foreground">
+                      {searchQuery
+                        ? "Tidak ada transaksi yang cocok dengan pencarian Anda"
+                        : "Tidak ada transaksi yang perlu diantar saat ini"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table className="min-w-[900px]">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[100px]">Order ID</TableHead>
+                          <TableHead className="min-w-[150px]">Pelanggan</TableHead>
+                          <TableHead className="min-w-[140px]">Tanggal Order</TableHead>
+                          <TableHead className="min-w-[120px]">Total</TableHead>
+                          <TableHead className="min-w-[100px]">Status</TableHead>
+                          <TableHead className="min-w-[100px]">Kasir</TableHead>
+                          <TableHead className="min-w-[80px]">Item Sisa</TableHead>
+                          <TableHead className="w-[100px]">Aksi</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredTransactions.map((transaction) => {
+                          const overallStatus = getOverallStatus(transaction)
+                          const StatusIcon = overallStatus.icon
+                          const remainingItems = transaction.deliverySummary.reduce((sum, item) => sum + item.remainingQuantity, 0)
+
+                          return (
+                            <TableRow
+                              key={transaction.id}
+                              className="cursor-pointer hover:bg-muted"
+                              onClick={() => {
+                                setSelectedTransaction(transaction)
+                              }}
+                            >
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs">#{transaction.id}</Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                <div className="truncate max-w-[150px]" title={transaction.customerName}>
+                                  {transaction.customerName}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                <div>{format(transaction.orderDate, "d MMM yyyy", { locale: idLocale })}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {format(transaction.orderDate, "HH:mm", { locale: idLocale })}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="font-semibold text-green-600 text-sm">
+                                  {new Intl.NumberFormat("id-ID", {
+                                    style: "currency",
+                                    currency: "IDR",
+                                    minimumFractionDigits: 0
+                                  }).format(transaction.total)}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={overallStatus.variant} className="flex items-center gap-1 w-fit text-xs">
+                                  <StatusIcon className="h-3 w-3" />
+                                  <span className="hidden sm:inline">{overallStatus.status}</span>
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  {transaction.cashierName || <span className="text-muted-foreground">-</span>}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div>{remainingItems} item</div>
+                                  <div className="text-muted-foreground text-xs">
+                                    {transaction.deliveries.length} pengantaran
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  <Button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setSelectedDeliveryTransaction(transaction)
+                                      setIsDeliveryDialogOpen(true)
+                                    }}
+                                    size="sm"
+                                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
+                                  >
+                                    <Truck className="h-3 w-3 sm:mr-1" />
+                                    <span className="hidden sm:inline">Antar</span>
+                                  </Button>
+                                  {/* Delete last delivery button - controlled by granular permission */}
+                                  {canDelete && transaction.deliveries.length > 0 && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        // Delete the most recent delivery for this transaction
+                                        const lastDelivery = transaction.deliveries[transaction.deliveries.length - 1]
+                                        setDeliveryToDelete({
+                                          ...lastDelivery,
+                                          customerName: transaction.customerName,
+                                          transactionTotal: transaction.total
+                                        })
+                                        setIsDeleteDialogOpen(true)
+                                      }}
+                                      title={`Hapus pengantaran terakhir (${transaction.deliveries.length} pengantaran)`}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* History Tab - Only visible to admin/owner */}
         {canAccessHistory && (
-          <TabsContent value="history" className="space-y-6">
-            <div className="grid gap-6">
-              {/* History Search and Filters */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <Filter className="h-5 w-5" />
-                    Filter History Pengantaran
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {/* Search */}
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                      <Input
-                        placeholder="Cari berdasarkan pelanggan, order ID, driver, atau helper..."
-                        value={historySearchQuery}
-                        onChange={(e) => setHistorySearchQuery(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                    
-                    {/* Filter Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {/* Date Range */}
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                          <Calendar className="inline h-4 w-4 mr-1" />
-                          Dari Tanggal
-                        </label>
-                        <Input
-                          type="date"
-                          value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          className="text-sm"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                          <Calendar className="inline h-4 w-4 mr-1" />
-                          Sampai Tanggal
-                        </label>
-                        <Input
-                          type="date"
-                          value={endDate}
-                          onChange={(e) => setEndDate(e.target.value)}
-                          className="text-sm"
-                        />
-                      </div>
-                      
-                      {/* Driver Filter */}
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                          Driver
-                        </label>
-                        <Select value={selectedDriver} onValueChange={setSelectedDriver}>
-                          <SelectTrigger className="text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">Semua Driver</SelectItem>
-                            <SelectItem value="no-driver">Tanpa Driver</SelectItem>
-                            {uniqueDrivers.map(driver => (
-                              <SelectItem key={driver} value={driver}>
-                                {driver}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      {/* Helper Filter */}
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 mb-1 block">
-                          Helper
-                        </label>
-                        <Select value={selectedHelper} onValueChange={setSelectedHelper}>
-                          <SelectTrigger className="text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">Semua Helper</SelectItem>
-                            <SelectItem value="no-helper">Tanpa Helper</SelectItem>
-                            {uniqueHelpers.map(helper => (
-                              <SelectItem key={helper} value={helper}>
-                                {helper}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    
-                    {/* Summary and Actions */}
-                    <div className="flex items-center justify-between pt-4 border-t">
-                      <div className="text-sm text-muted-foreground">
-                        Menampilkan {filteredDeliveryHistory.length} dari {deliveryHistory?.length || 0} pengantaran
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button 
-                          onClick={() => {
-                            setHistorySearchQuery("")
-                            setStartDate("")
-                            setEndDate("")
-                            setSelectedDriver("all")
-                            setSelectedHelper("all")
-                          }}
-                          variant="outline" 
-                          size="sm"
-                        >
-                          Reset Filter
-                        </Button>
-                        <Button 
-                          onClick={generateHistoryPDF}
-                          disabled={isGeneratingPDF}
-                          variant="outline" 
-                          size="sm"
-                        >
-                          {isGeneratingPDF ? (
-                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4 mr-2" />
-                          )}
-                          {isGeneratingPDF ? "Generating..." : "Export PDF"}
-                        </Button>
-                        <Button 
-                          onClick={() => refetchHistory()} 
-                          variant="outline" 
-                          size="sm"
-                        >
-                          <RefreshCw className="h-4 w-4 sm:mr-2" />
-                          <span className="hidden sm:inline">Refresh</span>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+          <TabsContent value="history" className="space-y-4">
+            {/* Search - Always visible */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Cari pelanggan, order ID, driver..."
+                value={historySearchQuery}
+                onChange={(e) => setHistorySearchQuery(e.target.value)}
+                className="pl-10 pr-10"
+              />
+              {historySearchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1/2 transform -translate-y-1/2 h-7 w-7 p-0"
+                  onClick={() => setHistorySearchQuery('')}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
 
-              {/* History Table */}
+            {/* Filter Toggle */}
+            <div className="flex items-center justify-between">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilters(!showFilters)}
+                className="gap-2"
+              >
+                <Filter className="h-4 w-4" />
+                Filter
+                {showFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+              {(startDate || endDate || selectedDriver !== 'all' || selectedHelper !== 'all') && (
+                <Badge variant="secondary">Filter aktif</Badge>
+              )}
+            </div>
+
+            {/* Collapsible Filters */}
+            {showFilters && (
+              <div className="p-4 border rounded-lg bg-background space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">Dari</label>
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="text-sm h-9"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">Sampai</label>
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="text-sm h-9"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">Driver</label>
+                    <Select value={selectedDriver} onValueChange={setSelectedDriver}>
+                      <SelectTrigger className="text-sm h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua</SelectItem>
+                        <SelectItem value="no-driver">Tanpa Driver</SelectItem>
+                        {uniqueDrivers.map(driver => (
+                          <SelectItem key={driver} value={driver}>{driver}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1 block">Helper</label>
+                    <Select value={selectedHelper} onValueChange={setSelectedHelper}>
+                      <SelectTrigger className="text-sm h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Semua</SelectItem>
+                        <SelectItem value="no-helper">Tanpa Helper</SelectItem>
+                        {uniqueHelpers.map(helper => (
+                          <SelectItem key={helper} value={helper}>{helper}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-2 border-t">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setHistorySearchQuery("")
+                      setStartDate("")
+                      setEndDate("")
+                      setSelectedDriver("all")
+                      setSelectedHelper("all")
+                    }}
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Reset
+                  </Button>
+                  {!isMobile && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={generateHistoryPDF}
+                      disabled={isGeneratingPDF}
+                    >
+                      {isGeneratingPDF ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Download className="h-4 w-4 mr-1" />}
+                      PDF
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Info count */}
+            <div className="text-sm text-muted-foreground">
+              {filteredDeliveryHistory.length} dari {deliveryHistory?.length || 0} pengantaran
+            </div>
+
+            {/* Mobile View - Card List */}
+            {isMobile ? (
+              <div className="space-y-2">
+                {isLoadingHistory ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="bg-white dark:bg-gray-800 border rounded-lg p-3">
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  ))
+                ) : filteredDeliveryHistory.length === 0 ? (
+                  <div className="text-center py-12">
+                    <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">Tidak Ada History</h3>
+                    <p className="text-muted-foreground text-sm">
+                      {historySearchQuery ? "Tidak ditemukan" : "Belum ada history"}
+                    </p>
+                  </div>
+                ) : (
+                  filteredDeliveryHistory.map((delivery: any, index: number) => (
+                    <div
+                      key={delivery.id}
+                      className="bg-white dark:bg-gray-800 border rounded-lg p-3 shadow-sm"
+                      onClick={() => {
+                        setSelectedDelivery(delivery)
+                        setIsDetailModalOpen(true)
+                      }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs font-bold px-2 py-0.5 rounded">
+                              #{index + 1}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              {format(delivery.deliveryDate, "d MMM", { locale: idLocale })}
+                            </span>
+                            <Badge variant="success" className="text-[10px] px-1 py-0">
+                              <CheckCircle className="h-2.5 w-2.5 mr-0.5" />
+                              Selesai
+                            </Badge>
+                          </div>
+                          <div className="font-medium text-sm truncate">{delivery.customerName}</div>
+                          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span className="font-semibold text-green-600 dark:text-green-400">
+                              {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(delivery.transactionTotal)}
+                            </span>
+                            {delivery.driverName && (
+                              <>
+                                <span>•</span>
+                                <span>{delivery.driverName}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <DeliveryNotePDF delivery={delivery} />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 w-8 p-0"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedDelivery(delivery)
+                              setIsDetailModalOpen(true)
+                            }}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {/* Edit button - controlled by granular permission */}
+                          {canEdit && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 w-8 p-0"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setEditingDelivery(delivery)
+                              }}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {/* Delete button - controlled by granular permission */}
+                          {canDelete && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setDeliveryToDelete(delivery)
+                                setIsDeleteDialogOpen(true)
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              /* Desktop View - Full Table */
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
                     <span>History Pengantaran</span>
                     <Badge variant="secondary" className="text-xs">
-                      {deliveryHistory?.length || 0} total pengantaran
+                      {deliveryHistory?.length || 0} total
                     </Badge>
                   </CardTitle>
                 </CardHeader>
@@ -723,8 +897,8 @@ export default function DeliveryPage() {
                       <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                       <h3 className="text-lg font-medium mb-2">Tidak Ada History</h3>
                       <p className="text-muted-foreground">
-                        {historySearchQuery 
-                          ? "Tidak ada pengantaran yang cocok dengan pencarian Anda" 
+                        {historySearchQuery
+                          ? "Tidak ada pengantaran yang cocok dengan pencarian Anda"
                           : "Belum ada history pengantaran yang tercatat"}
                       </p>
                     </div>
@@ -851,8 +1025,8 @@ export default function DeliveryPage() {
                                     <Eye className="h-3 w-3 sm:mr-1" />
                                     <span className="hidden sm:inline">Detail</span>
                                   </Button>
-                                  {/* Owner-only edit button */}
-                                  {isOwner && (
+                                  {/* Edit button - controlled by granular permission */}
+                                  {canEdit && (
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -862,8 +1036,8 @@ export default function DeliveryPage() {
                                       <Pencil className="h-3 w-3" />
                                     </Button>
                                   )}
-                                  {/* Owner-only delete button */}
-                                  {isOwner && (
+                                  {/* Delete button - controlled by granular permission */}
+                                  {canDelete && (
                                     <Button
                                       size="sm"
                                       variant="outline"
@@ -886,7 +1060,7 @@ export default function DeliveryPage() {
                   )}
                 </CardContent>
               </Card>
-            </div>
+            )}
           </TabsContent>
         )}
       </Tabs>

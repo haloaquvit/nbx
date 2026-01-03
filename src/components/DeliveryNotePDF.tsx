@@ -20,6 +20,7 @@ function safeFormatDate(date: Date | string | null | undefined, formatStr: strin
 }
 import { useCompanySettings } from "@/hooks/useCompanySettings"
 import { useTransactionDeliveryInfo } from "@/hooks/useDeliveries"
+import { useBranch } from "@/contexts/BranchContext"
 import { createCompressedPDF } from "@/utils/pdfUtils"
 import { useIsMobile } from "@/hooks/use-mobile"
 
@@ -31,6 +32,7 @@ interface DeliveryNotePDFProps {
 
 export function DeliveryNotePDF({ delivery, transactionInfo, children }: DeliveryNotePDFProps) {
   const { settings } = useCompanySettings()
+  const { currentBranch } = useBranch()
   // Use useTransactionDeliveryInfo to get complete delivery summary with correct remaining quantities
   const { data: fetchedTransactionInfo } = useTransactionDeliveryInfo(delivery.transactionId)
   const printRef = React.useRef<HTMLDivElement>(null)
@@ -107,10 +109,10 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               <tr>
                 <td style="width: 40%; vertical-align: top;">
                   <div style="font-size: 17pt; font-weight: bold;">SURAT JALAN</div>
-                  <div style="font-size: 13pt; font-weight: bold;">${settings?.name || ''}</div>
+                  <div style="font-size: 13pt; font-weight: bold;">${currentBranch?.name || settings?.name || ''}</div>
                   <div style="font-size: 11pt;">
-                    ${settings?.address || ''}<br/>
-                    KANTOR: ${String(settings?.phone || '').replace(/,/g, '')}${settings?.salesPhone ? ` | SALES: ${String(settings.salesPhone).replace(/,/g, '')}` : ''}
+                    ${currentBranch?.address || settings?.address || ''}<br/>
+                    KANTOR: ${String(currentBranch?.phone || settings?.phone || '').replace(/,/g, '')}${settings?.salesPhone ? ` | SALES: ${String(settings.salesPhone).replace(/,/g, '')}` : ''}
                   </div>
                 </td>
                 <td style="width: 60%; vertical-align: top; font-size: 11pt;">
@@ -350,13 +352,13 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               )}
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                  {settings?.name || 'PT. AQUAVIT'}
+                  {currentBranch?.name || settings?.name || 'PT. AQUAVIT'}
                 </h1>
                 <p className="text-sm text-gray-600">
-                  {settings?.address || 'Alamat Perusahaan'}
+                  {currentBranch?.address || settings?.address || 'Alamat Perusahaan'}
                 </p>
                 <p className="text-sm text-gray-600">
-                  Telp: {settings?.phone || '-'}
+                  Telp: {currentBranch?.phone || settings?.phone || '-'}
                 </p>
               </div>
             </div>
@@ -519,9 +521,9 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         <div ref={dotMatrixRef} className="font-mono">
           <div className="flex justify-between items-start mb-2">
             <div className="text-left">
-              <h1 className="text-sm font-bold">{settings?.name || 'PT. AQUAVIT'}</h1>
-              <p className="text-xs">{settings?.address || 'Alamat Perusahaan'}</p>
-              <p className="text-xs">Telp: {settings?.phone || '-'}</p>
+              <h1 className="text-sm font-bold">{currentBranch?.name || settings?.name || 'PT. AQUAVIT'}</h1>
+              <p className="text-xs">{currentBranch?.address || settings?.address || 'Alamat Perusahaan'}</p>
+              <p className="text-xs">Telp: {currentBranch?.phone || settings?.phone || '-'}</p>
             </div>
             <div className="text-right">
               <div className="text-sm font-bold mb-1">SURAT JALAN</div>

@@ -925,11 +925,27 @@ export async function createAdvanceJournal(params: {
   type: 'given' | 'returned';
   description?: string;
   branchId: string;
+  paymentAccountId?: string;
+  paymentAccountName?: string;
+  paymentAccountCode?: string;
 }): Promise<{ success: boolean; journalId?: string; error?: string }> {
-  const { advanceId, advanceDate, amount, employeeName, type, description, branchId } = params;
+  const { advanceId, advanceDate, amount, employeeName, type, description, branchId, paymentAccountId, paymentAccountName, paymentAccountCode } = params;
 
-  // Find accounts
-  const kasAccount = await getAccountByCode('1120', branchId) || await findAccountByPattern('kas', 'Aset', branchId);
+  // Find accounts - use provided payment account or fallback to default kas
+  let kasAccount: { id: string; code: string; name: string } | null = null;
+
+  if (paymentAccountId && paymentAccountName) {
+    // Use the account selected by user
+    kasAccount = {
+      id: paymentAccountId,
+      code: paymentAccountCode || '',
+      name: paymentAccountName,
+    };
+  } else {
+    // Fallback to default kas account
+    kasAccount = await getAccountByCode('1120', branchId) || await findAccountByPattern('kas', 'Aset', branchId);
+  }
+
   const panjarAccount = await getAccountByCode('1220', branchId) || await findAccountByPattern('panjar', 'Aset', branchId);
 
   if (!kasAccount) {

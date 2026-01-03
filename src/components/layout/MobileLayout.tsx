@@ -99,6 +99,7 @@ const MobileLayout = () => {
   const canAccessAttendance = hasGranularPermission('attendance_access') || hasGranularPermission('attendance_view')
   const canAccessCustomerMap = hasGranularPermission('customer_map_access') || hasGranularPermission('customers_view')
   const canAccessQuotations = hasGranularPermission('quotations_view') || hasGranularPermission('quotations_create')
+  const canViewDelivery = hasGranularPermission('delivery_view') || hasGranularPermission('delivery_create')
 
   // Helper gets limited menu: POS Supir, Pelanggan Terdekat, Komisi Saya
   const helperMenuItems = [
@@ -146,6 +147,15 @@ const MobileLayout = () => {
       path: '/driver-pos',
       description: 'POS khusus Supir & Helper',
       color: 'bg-orange-500 hover:bg-orange-600',
+      textColor: 'text-white'
+    }] : []),
+    // Pengantaran - controlled by delivery_view permission
+    ...(canViewDelivery ? [{
+      title: 'Pengantaran',
+      icon: Truck,
+      path: '/delivery',
+      description: 'Kelola pengantaran barang',
+      color: 'bg-sky-500 hover:bg-sky-600',
       textColor: 'text-white'
     }] : []),
     // Data Transaksi - controlled by transactions_view permission
@@ -289,6 +299,8 @@ const MobileLayout = () => {
         return 'Pelanggan Terdekat'
       case '/quotations':
         return 'Penawaran'
+      case '/delivery':
+        return 'Pengantaran'
       default:
         return 'ERP System'
     }

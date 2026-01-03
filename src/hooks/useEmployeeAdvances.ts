@@ -76,13 +76,22 @@ const fromDbToApp = (dbAdvance: any): EmployeeAdvance => ({
   accountName: dbAdvance.account_name,
 });
 
+// Helper to format date to YYYY-MM-DD string (local date, avoid timezone shift)
+const formatDateToLocalString = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const fromAppToDb = (appAdvance: Partial<EmployeeAdvance>) => {
   const dbData: { [key: string]: any } = {};
   if (appAdvance.id !== undefined) dbData.id = appAdvance.id;
   if (appAdvance.employeeId !== undefined) dbData.employee_id = appAdvance.employeeId;
   if (appAdvance.employeeName !== undefined) dbData.employee_name = appAdvance.employeeName;
   if (appAdvance.amount !== undefined) dbData.amount = appAdvance.amount;
-  if (appAdvance.date !== undefined) dbData.date = appAdvance.date;
+  // Format date as YYYY-MM-DD string to prevent timezone conversion issues
+  if (appAdvance.date !== undefined) dbData.date = formatDateToLocalString(appAdvance.date);
   if (appAdvance.notes !== undefined) dbData.notes = appAdvance.notes;
   if (appAdvance.remainingAmount !== undefined) dbData.remaining_amount = appAdvance.remainingAmount;
   if (appAdvance.accountId !== undefined) dbData.account_id = appAdvance.accountId;
@@ -169,12 +178,14 @@ export const useEmployeeAdvances = () => {
         try {
           const journalResult = await createAdvanceJournal({
             advanceId: data.id,
-            advanceDate: new Date(newData.date),
+            advanceDate: newData.date, // Already a Date object from form
             amount: newData.amount,
             employeeName: newData.employeeName,
             type: 'given',
             description: newData.notes,
             branchId: currentBranch.id,
+            paymentAccountId: newData.accountId,
+            paymentAccountName: newData.accountName,
           });
 
           if (journalResult.success) {

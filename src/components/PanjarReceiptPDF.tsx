@@ -11,6 +11,7 @@ import autoTable from 'jspdf-autotable'
 import { terbilang } from '@/utils/terbilang'
 import { saveCompressedPDF } from '@/utils/pdfUtils'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
+import { useBranch } from '@/contexts/BranchContext'
 
 interface PanjarReceiptPDFProps {
   advance: EmployeeAdvance
@@ -25,6 +26,7 @@ export function PanjarReceiptPDF({
 }: PanjarReceiptPDFProps) {
   const [isThermalDialogOpen, setIsThermalDialogOpen] = useState(false)
   const { settings } = useCompanySettings()
+  const { currentBranch } = useBranch()
 
   const generatePDF = (action: 'download' | 'print' = 'download') => {
     // Custom size: 22cm x 10cm (220mm x 100mm)
@@ -38,10 +40,10 @@ export function PanjarReceiptPDF({
     const pageHeight = 100
     const margin = 20
 
-    // Header Company - simplified
+    // Header Company - use branch name
     doc.setFontSize(12)
     doc.setFont(undefined, 'bold')
-    doc.text('AQUVIT', pageWidth/2, 10, { align: 'center' })
+    doc.text(currentBranch?.name || settings?.name || 'AQUVIT', pageWidth/2, 10, { align: 'center' })
 
     // Title
     doc.setFontSize(11)
@@ -236,7 +238,7 @@ export function PanjarReceiptPDF({
         open={isThermalDialogOpen}
         onOpenChange={setIsThermalDialogOpen}
         advance={advance}
-        companyName={companyName}
+        companyName={currentBranch?.name || settings?.name || companyName}
         thermalPrinterWidth={settings?.thermalPrinterWidth}
       />
     </>

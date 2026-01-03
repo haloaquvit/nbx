@@ -10,6 +10,8 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { terbilang } from '@/utils/terbilang'
 import { saveCompressedPDF } from '@/utils/pdfUtils'
+import { useCompanySettings } from '@/hooks/useCompanySettings'
+import { useBranch } from '@/contexts/BranchContext'
 
 interface ExpenseReceiptPDFProps {
   expense: Expense
@@ -17,12 +19,14 @@ interface ExpenseReceiptPDFProps {
   companyAddress?: string
 }
 
-export function ExpenseReceiptPDF({ 
-  expense, 
+export function ExpenseReceiptPDF({
+  expense,
   companyName = "AQUVIT",
   companyAddress = "Jl. Contoh No. 123, Kota ABC"
 }: ExpenseReceiptPDFProps) {
   const [isThermalDialogOpen, setIsThermalDialogOpen] = useState(false)
+  const { settings } = useCompanySettings()
+  const { currentBranch } = useBranch()
 
   const generatePDF = (action: 'download' | 'print' = 'download') => {
     // A4 page format with 1/3 page content area at top
@@ -50,10 +54,10 @@ export function ExpenseReceiptPDF({
     doc.setLineWidth(0.3)
     doc.rect(startX, startY, contentWidth, contentHeight, 'S')
 
-    // Header Company
+    // Header Company - use branch name
     doc.setFontSize(14)
     doc.setFont(undefined, 'bold')
-    doc.text('AQUVIT', startX + contentWidth / 2, startY + 8, { align: 'center' })
+    doc.text(currentBranch?.name || settings?.name || 'AQUVIT', startX + contentWidth / 2, startY + 8, { align: 'center' })
 
     // Title
     doc.setFontSize(12)
@@ -221,7 +225,7 @@ export function ExpenseReceiptPDF({
         open={isThermalDialogOpen}
         onOpenChange={setIsThermalDialogOpen}
         expense={expense}
-        companyName={companyName}
+        companyName={currentBranch?.name || settings?.name || companyName}
       />
     </>
   )

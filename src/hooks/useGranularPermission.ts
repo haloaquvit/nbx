@@ -157,6 +157,21 @@ export const useGranularPermission = () => {
     return hasGranularPermission('delivery_view');
   };
 
+  /**
+   * Check if user can delete delivery
+   */
+  const canDeleteDelivery = (): boolean => {
+    return hasGranularPermission('delivery_delete');
+  };
+
+  /**
+   * Check if user can view delivery history
+   * History access requires delivery_view or delivery_edit permission
+   */
+  const canViewDeliveryHistory = (): boolean => {
+    return hasGranularPermission('delivery_view') || hasGranularPermission('delivery_edit');
+  };
+
   return {
     hasGranularPermission,
     userGranularPermissions,
@@ -169,5 +184,7 @@ export const useGranularPermission = () => {
     canDeleteRetasi,
     canViewRetasi,
     canViewDelivery,
+    canDeleteDelivery,
+    canViewDeliveryHistory,
   };
 };

@@ -180,8 +180,20 @@ export function EmployeeAdvanceManagement() {
                   {errors.accountId && <p className="text-sm text-destructive">{errors.accountId.message}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="date">Tanggal</Label>
-                  <Input type="date" {...register("date", { valueAsDate: true })} defaultValue={format(new Date(), 'yyyy-MM-dd')} />
+                  <Label htmlFor="date">Tanggal {!isOwnerRole && <span className="text-xs text-muted-foreground">(Hanya Owner dapat ubah)</span>}</Label>
+                  <Input
+                    type="date"
+                    {...register("date", {
+                      setValueAs: (value: string) => {
+                        // Parse date string as local date (avoid timezone shift)
+                        if (!value) return new Date();
+                        const [year, month, day] = value.split('-').map(Number);
+                        return new Date(year, month - 1, day, 12, 0, 0); // noon to avoid timezone issues
+                      }
+                    })}
+                    defaultValue={format(new Date(), 'yyyy-MM-dd')}
+                    disabled={!isOwnerRole}
+                  />
                   {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
                 </div>
               </div>
