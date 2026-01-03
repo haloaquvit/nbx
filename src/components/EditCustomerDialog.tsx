@@ -323,31 +323,49 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
             {canEditLocationAndPhoto && (
               <>
                 <div className="space-y-2">
-                  <Label>Koordinat GPS</Label>
+                  <Label>Koordinat GPS {!isMobile && <span className="text-xs text-gray-500">(dapat diedit manual)</span>}</Label>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label htmlFor="latitude" className="text-xs text-gray-500">Latitude</Label>
-                      <Input
-                        id="latitude"
-                        type="number"
-                        step="any"
-                        {...register("latitude")}
-                        placeholder="Latitude"
-                        readOnly={isMobile}
-                        className={isMobile ? "bg-gray-50" : ""}
-                      />
+                      {isMobile ? (
+                        <Input
+                          id="latitude"
+                          type="number"
+                          step="any"
+                          {...register("latitude")}
+                          placeholder="Latitude"
+                          readOnly
+                          className="bg-gray-50"
+                        />
+                      ) : (
+                        <Input
+                          id="latitude"
+                          type="text"
+                          {...register("latitude")}
+                          placeholder="Contoh: -6.123456"
+                        />
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="longitude" className="text-xs text-gray-500">Longitude</Label>
-                      <Input
-                        id="longitude"
-                        type="number"
-                        step="any"
-                        {...register("longitude")}
-                        placeholder="Longitude"
-                        readOnly={isMobile}
-                        className={isMobile ? "bg-gray-50" : ""}
-                      />
+                      {isMobile ? (
+                        <Input
+                          id="longitude"
+                          type="number"
+                          step="any"
+                          {...register("longitude")}
+                          placeholder="Longitude"
+                          readOnly
+                          className="bg-gray-50"
+                        />
+                      ) : (
+                        <Input
+                          id="longitude"
+                          type="text"
+                          {...register("longitude")}
+                          placeholder="Contoh: 106.123456"
+                        />
+                      )}
                     </div>
                   </div>
                   {latitude && longitude && (
