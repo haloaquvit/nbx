@@ -56,7 +56,6 @@ export function useCashFlow() {
             description,
             reference_type,
             reference_id,
-            reference_number,
             status,
             is_voided,
             branch_id,
@@ -183,8 +182,8 @@ export function useCashFlow() {
           amount: amount,
           description: line.description || journal.description,
           reference_id: journal.reference_id,
-          // Prioritas: nomor dari tabel sumber > reference_number di jurnal > entry_number
-          reference_number: sourceRefNumber || journal.reference_number || journal.entry_number,
+          // Prioritas: nomor dari tabel sumber > entry_number
+          reference_number: sourceRefNumber || journal.entry_number,
           created_at: journal.created_at,
           created_by: journal.created_by,
         };
