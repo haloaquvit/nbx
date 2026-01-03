@@ -104,13 +104,15 @@ export function useCashFlow() {
       const refNumberMap: Record<string, string> = {};
 
       // Fetch transaction numbers
+      // reference_id stores transaction_number (e.g., AQV-0301-017), not UUID
       if (refIdsByType['transaction']?.length) {
         const { data: transactions } = await supabase
           .from('transactions')
           .select('id, transaction_number')
-          .in('id', refIdsByType['transaction']);
+          .in('transaction_number', refIdsByType['transaction']);
         transactions?.forEach((t: any) => {
-          refNumberMap[t.id] = t.transaction_number;
+          // Map transaction_number to itself (since reference_id = transaction_number)
+          refNumberMap[t.transaction_number] = t.transaction_number;
         });
       }
 
