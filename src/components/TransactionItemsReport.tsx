@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Download, Calendar, Package, CalendarDays, ShoppingCart, Truck, Store, Navigation, FileSpreadsheet, User, Wallet } from 'lucide-react'
+import { Download, Calendar, Package, CalendarDays, ShoppingCart, Truck, Store, Navigation, FileSpreadsheet, User, Wallet, CreditCard } from 'lucide-react'
 import { format, startOfMonth, endOfMonth } from 'date-fns'
 import { id } from 'date-fns/locale/id'
 import jsPDF from 'jspdf'
@@ -38,6 +38,7 @@ interface SoldProduct {
   isBonus: boolean
   paymentAccountId?: string // ID akun pembayaran
   paymentAccountName?: string // Nama akun pembayaran
+  paymentStatus?: 'Lunas' | 'Belum Lunas' // Status pembayaran
 }
 
 export const TransactionItemsReport = () => {
@@ -55,6 +56,7 @@ export const TransactionItemsReport = () => {
   const [retasiKeFilter, setRetasiKeFilter] = useState<string>('all')
   const [availableRetasiKe, setAvailableRetasiKe] = useState<{value: string, label: string}[]>([])
   const [paymentAccountFilter, setPaymentAccountFilter] = useState<string>('all')
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'Lunas' | 'Belum Lunas'>('all')
   const [reportData, setReportData] = useState<SoldProduct[]>([])
   const [isLoading, setIsLoading] = useState(false)
 
@@ -143,6 +145,7 @@ export const TransactionItemsReport = () => {
               cashier_id,
               retasi_id,
               payment_account_id,
+              payment_status,
               cashier:profiles!transactions_cashier_id_fkey(full_name),
               items
             )
@@ -225,7 +228,8 @@ export const TransactionItemsReport = () => {
                 cashierName: transaction?.cashier?.full_name || 'Unknown',
                 isBonus: isBonus,
                 paymentAccountId: transaction?.payment_account_id,
-                paymentAccountName: paymentAcct?.name
+                paymentAccountName: paymentAcct?.name,
+                paymentStatus: transaction?.payment_status || 'Belum Lunas'
               })
             })
           })
@@ -243,6 +247,7 @@ export const TransactionItemsReport = () => {
             items,
             cashier_id,
             payment_account_id,
+            payment_status,
             cashier:profiles!transactions_cashier_id_fkey(full_name)
           `)
           .eq('is_office_sale', true)
@@ -293,7 +298,8 @@ export const TransactionItemsReport = () => {
                 cashierName: transaction.cashier?.full_name || 'Unknown',
                 isBonus: isBonus,
                 paymentAccountId: transaction.payment_account_id,
-                paymentAccountName: paymentAcct?.name
+                paymentAccountName: paymentAcct?.name,
+                paymentStatus: transaction.payment_status || 'Belum Lunas'
               })
             })
           })
@@ -315,7 +321,8 @@ export const TransactionItemsReport = () => {
             retasi_id,
             retasi_number,
             cashier_name,
-            payment_account_id
+            payment_account_id,
+            payment_status
           `)
           .not('retasi_id', 'is', null)
           .gte('order_date', fromDate.toISOString())
@@ -398,7 +405,8 @@ export const TransactionItemsReport = () => {
                 cashierName: transaction.cashier_name || 'Unknown',
                 isBonus: isBonus,
                 paymentAccountId: transaction.payment_account_id,
-                paymentAccountName: paymentAcct?.name
+                paymentAccountName: paymentAcct?.name,
+                paymentStatus: transaction.payment_status || 'Belum Lunas'
               })
             })
           })
@@ -465,6 +473,11 @@ export const TransactionItemsReport = () => {
         filteredItems = filteredItems.filter(item => item.paymentAccountId === paymentAccountFilter)
       }
 
+      // Apply payment status filter if selected
+      if (paymentStatusFilter !== 'all') {
+        filteredItems = filteredItems.filter(item => item.paymentStatus === paymentStatusFilter)
+      }
+
       setReportData(filteredItems)
     } catch (error) {
       console.error('Error generating report:', error)
@@ -506,33 +519,33 @@ export const TransactionItemsReport = () => {
       item.customerName,
       item.isBonus ? `${item.productName} [BONUS]` : item.productName,
       item.quantity.toString(),
-      item.unit,
       `Rp ${item.price.toLocaleString()}`,
       `Rp ${item.total.toLocaleString()}`,
       item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
-      item.retasiNumber || '-',
       item.source === 'delivery' ? (item.driverName || '-') :
-      item.source === 'retasi' ? (item.driverName || '-') : item.cashierName
+      item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
+      item.paymentAccountName || '-',
+      item.paymentStatus || 'Belum Lunas'
     ])
 
     autoTable(doc, {
-      head: [['Tanggal', 'No. Transaksi', 'Customer', 'Produk', 'Qty', 'Unit', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir']],
+      head: [['Tanggal', 'No. Trx', 'Customer', 'Produk', 'Qty', 'Harga', 'Total', 'Sumber', 'Supir/Kasir', 'Akun Bayar', 'Status']],
       body: tableData,
       startY: 42,
-      styles: { fontSize: 7 },
+      styles: { fontSize: 6.5 },
       headStyles: { fillColor: [66, 139, 202] },
       columnStyles: {
-        0: { cellWidth: 20 },
-        1: { cellWidth: 22 },
-        2: { cellWidth: 30 },
-        3: { cellWidth: 40 },
-        4: { cellWidth: 12 },
-        5: { cellWidth: 12 },
+        0: { cellWidth: 18 },
+        1: { cellWidth: 18 },
+        2: { cellWidth: 28 },
+        3: { cellWidth: 38 },
+        4: { cellWidth: 10 },
+        5: { cellWidth: 20 },
         6: { cellWidth: 22 },
-        7: { cellWidth: 25 },
-        8: { cellWidth: 18 },
-        9: { cellWidth: 35 },
-        10: { cellWidth: 28 }
+        7: { cellWidth: 18 },
+        8: { cellWidth: 25 },
+        9: { cellWidth: 28 },
+        10: { cellWidth: 20 }
       }
     })
 
@@ -589,7 +602,9 @@ export const TransactionItemsReport = () => {
       'Total': item.total,
       'Sumber': item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
       'Retasi': item.retasiNumber || '-',
-      'Supir/Kasir': item.source === 'delivery' || item.source === 'retasi' ? (item.driverName || '-') : item.cashierName
+      'Supir/Kasir': item.source === 'delivery' || item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
+      'Akun Pembayaran': item.paymentAccountName || '-',
+      'Status': item.paymentStatus || 'Belum Lunas'
     }))
 
     // Create workbook and worksheet
@@ -601,7 +616,7 @@ export const TransactionItemsReport = () => {
     XLSX.utils.sheet_add_aoa(ws, [['']], { origin: 'A3' })
 
     // Re-add data with header starting from row 4
-    const headers = ['Tanggal Laku', 'No. Transaksi', 'Customer', 'Produk', 'Qty', 'Unit', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir']
+    const headers = ['Tanggal Laku', 'No. Transaksi', 'Customer', 'Produk', 'Qty', 'Unit', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir', 'Akun Pembayaran', 'Status']
     XLSX.utils.sheet_add_aoa(ws, [headers], { origin: 'A4' })
 
     // Add data rows starting from row 5
@@ -638,7 +653,9 @@ export const TransactionItemsReport = () => {
       { wch: 18 }, // Total
       { wch: 15 }, // Sumber
       { wch: 25 }, // Retasi
-      { wch: 20 }  // Supir/Kasir
+      { wch: 20 }, // Supir/Kasir
+      { wch: 20 }, // Akun Pembayaran
+      { wch: 12 }  // Status
     ]
 
     const wb = XLSX.utils.book_new()
@@ -786,7 +803,7 @@ export const TransactionItemsReport = () => {
               </div>
             </div>
 
-            {/* Payment Account Filter */}
+            {/* Payment Account & Status Filter */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
                 <Label className="text-sm font-medium flex items-center gap-1">
@@ -804,6 +821,23 @@ export const TransactionItemsReport = () => {
                         {account.code ? `${account.code} - ${account.name}` : account.name}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-1">
+                  <CreditCard className="h-3 w-3" />
+                  Status Pembayaran
+                </Label>
+                <Select value={paymentStatusFilter} onValueChange={(value: 'all' | 'Lunas' | 'Belum Lunas') => setPaymentStatusFilter(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Semua Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Status</SelectItem>
+                    <SelectItem value="Lunas">Lunas</SelectItem>
+                    <SelectItem value="Belum Lunas">Belum Lunas</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -969,6 +1003,8 @@ export const TransactionItemsReport = () => {
                     <TableHead className="text-center">Sumber</TableHead>
                     <TableHead>Retasi</TableHead>
                     <TableHead>Supir/Kasir</TableHead>
+                    <TableHead>Akun Bayar</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1015,6 +1051,19 @@ export const TransactionItemsReport = () => {
                         {item.source === 'delivery' || item.source === 'retasi'
                           ? (item.driverName || '-')
                           : item.cashierName}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {item.paymentAccountName || '-'}
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Badge
+                          variant="secondary"
+                          className={item.paymentStatus === 'Lunas'
+                            ? 'bg-green-100 text-green-800 border-green-300'
+                            : 'bg-yellow-100 text-yellow-800 border-yellow-300'}
+                        >
+                          {item.paymentStatus || 'Belum Lunas'}
+                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))}

@@ -144,13 +144,18 @@ export const useProducts = () => {
         // AUTO-JOURNAL: Create adjustment journal when initial_stock changes
         if (dbData.initial_stock !== undefined && existing && currentBranch?.id) {
           const stockDiff = Number(dbData.initial_stock) - oldInitialStock;
-          if (stockDiff !== 0 && newCostPrice > 0) {
+          if (stockDiff !== 0) {
+            // Use costPrice or 0 - journal will be created even if costPrice = 0 (with warning)
+            const effectiveCostPrice = newCostPrice || 0;
+            if (effectiveCostPrice === 0) {
+              console.warn('⚠️ Creating stock journal with HPP = 0. Jurnal tetap dibuat tapi nilai = 0.');
+            }
             const journalResult = await createProductStockAdjustmentJournal({
               productId: product.id!,
               productName: product.name || data.name || 'Unknown Product',
               oldStock: oldInitialStock,
               newStock: Number(dbData.initial_stock),
-              costPrice: newCostPrice,
+              costPrice: effectiveCostPrice,
               branchId: currentBranch.id,
             });
             if (journalResult.success) {

@@ -348,7 +348,7 @@ function TreeNodeRow({
 // MAIN COMPONENT
 // ============================================================================
 export default function ChartOfAccountsPage() {
-  const { accounts, isLoading, addAccount, updateAccount, deleteAccount } = useAccounts()
+  const { accounts, isLoading, addAccount, updateAccount, deleteAccount, updateInitialBalance } = useAccounts()
   const { currentBranch } = useBranch()
   const { employees } = useEmployees()
   const { toast } = useToast()
@@ -1207,7 +1207,7 @@ export default function ChartOfAccountsPage() {
       // Calculate level based on code length (4 digits = level 1, 6 = level 2, etc)
       const level = parentCodeForNew ? Math.floor(formData.code.length / 2) : 1
 
-      await addAccount.mutateAsync({
+      const newAccount = await addAccount.mutateAsync({
         name: formData.name,
         type: formData.type,
         code: formData.code,
@@ -1215,12 +1215,20 @@ export default function ChartOfAccountsPage() {
         isHeader: formData.isHeader,
         isPaymentAccount: formData.isPaymentAccount,
         isActive: true,
-        balance: formData.initialBalance,
+        balance: 0, // Balance is calculated from journals
         initialBalance: formData.initialBalance,
         sortOrder: parseInt(formData.code) || 0,
         parentId,
         branchId: currentBranch.id
       })
+
+      // If initial balance is set, create opening journal
+      if (formData.initialBalance && formData.initialBalance !== 0 && newAccount?.id) {
+        await updateInitialBalance.mutateAsync({
+          accountId: newAccount.id,
+          initialBalance: formData.initialBalance
+        })
+      }
 
       toast({ title: "Sukses", description: "Akun berhasil ditambahkan" })
       setIsAddDialogOpen(false)
@@ -1234,6 +1242,12 @@ export default function ChartOfAccountsPage() {
     if (!accountToEdit) return
 
     try {
+      // Check if initial balance changed
+      const oldInitialBalance = accountToEdit.initialBalance || 0
+      const newInitialBalance = formData.initialBalance || 0
+      const initialBalanceChanged = oldInitialBalance !== newInitialBalance
+
+      // Update account basic data (without initialBalance if it changed)
       await updateAccount.mutateAsync({
         accountId: accountToEdit.id,
         newData: {
@@ -1242,11 +1256,20 @@ export default function ChartOfAccountsPage() {
           type: formData.type,
           isHeader: formData.isHeader,
           isPaymentAccount: formData.isPaymentAccount,
-          initialBalance: formData.initialBalance,
+          // Only include initialBalance if it didn't change (to avoid double update)
+          ...(!initialBalanceChanged && { initialBalance: formData.initialBalance }),
           // Only include employeeId for payment accounts (cash/bank)
           ...(formData.isPaymentAccount && { employeeId: formData.employeeId || undefined })
         }
       })
+
+      // If initial balance changed, use updateInitialBalance which creates opening journal
+      if (initialBalanceChanged) {
+        await updateInitialBalance.mutateAsync({
+          accountId: accountToEdit.id,
+          initialBalance: newInitialBalance
+        })
+      }
 
       toast({ title: "Sukses", description: "Akun berhasil diupdate" })
       setIsEditDialogOpen(false)

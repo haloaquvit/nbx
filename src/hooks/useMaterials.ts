@@ -143,13 +143,18 @@ export const useMaterials = () => {
       const pricePerUnit = Number(data.price_per_unit) || oldPricePerUnit;
       const stockDiff = newStock - oldStock;
 
-      if (material.id && stockDiff !== 0 && pricePerUnit > 0 && currentBranch?.id) {
+      if (material.id && stockDiff !== 0 && currentBranch?.id) {
+        // Use pricePerUnit or 0 - journal will be created even if pricePerUnit = 0 (with warning)
+        const effectivePricePerUnit = pricePerUnit || 0;
+        if (effectivePricePerUnit === 0) {
+          console.warn('⚠️ Creating material stock journal with Harga/Unit = 0. Jurnal tetap dibuat tapi nilai = 0.');
+        }
         const journalResult = await createMaterialStockAdjustmentJournal({
           materialId: material.id,
           materialName: data.name || material.name || 'Unknown Material',
           oldStock,
           newStock,
-          pricePerUnit,
+          pricePerUnit: effectivePricePerUnit,
           branchId: currentBranch.id,
         });
         if (journalResult.success) {

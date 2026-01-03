@@ -3149,8 +3149,14 @@ export async function createProductStockAdjustmentJournal(params: {
   const stockDiff = newStock - oldStock;
   const valueChange = Math.abs(stockDiff * costPrice);
 
-  if (stockDiff === 0 || valueChange === 0) {
-    return { success: true }; // No change needed
+  // Only skip if no stock change - still create journal even if value = 0 (for tracking purposes)
+  if (stockDiff === 0) {
+    return { success: true }; // No stock change
+  }
+
+  // If costPrice is 0, valueChange will be 0 - still create journal for tracking
+  if (valueChange === 0) {
+    console.log(`[JournalService] Creating stock adjustment journal with value = 0 (costPrice = ${costPrice})`);
   }
 
   // Find Persediaan Barang Dagang account (1310)
@@ -3248,8 +3254,14 @@ export async function createMaterialStockAdjustmentJournal(params: {
   const stockDiff = newStock - oldStock;
   const valueChange = Math.abs(stockDiff * pricePerUnit);
 
-  if (stockDiff === 0 || valueChange === 0) {
-    return { success: true }; // No change needed
+  // Only skip if no stock change - still create journal even if value = 0 (for tracking purposes)
+  if (stockDiff === 0) {
+    return { success: true }; // No stock change
+  }
+
+  // If pricePerUnit is 0, valueChange will be 0 - still create journal for tracking
+  if (valueChange === 0) {
+    console.log(`[JournalService] Creating material stock adjustment journal with value = 0 (pricePerUnit = ${pricePerUnit})`);
   }
 
   // Find Persediaan Bahan Baku account (1320)
