@@ -56,6 +56,7 @@ export function useCashFlow() {
             description,
             reference_type,
             reference_id,
+            reference_number,
             status,
             is_voided,
             branch_id,
@@ -86,6 +87,67 @@ export function useCashFlow() {
         return dateB.getTime() - dateA.getTime();
       });
 
+      // Collect reference IDs by type for batch fetching
+      const refIdsByType: Record<string, string[]> = {};
+      filteredLines.forEach((line: any) => {
+        const journal = line.journal_entries;
+        if (journal?.reference_id && journal?.reference_type) {
+          if (!refIdsByType[journal.reference_type]) {
+            refIdsByType[journal.reference_type] = [];
+          }
+          if (!refIdsByType[journal.reference_type].includes(journal.reference_id)) {
+            refIdsByType[journal.reference_type].push(journal.reference_id);
+          }
+        }
+      });
+
+      // Fetch reference numbers from source tables
+      const refNumberMap: Record<string, string> = {};
+
+      // Fetch transaction numbers
+      if (refIdsByType['transaction']?.length) {
+        const { data: transactions } = await supabase
+          .from('transactions')
+          .select('id, transaction_number')
+          .in('id', refIdsByType['transaction']);
+        transactions?.forEach((t: any) => {
+          refNumberMap[t.id] = t.transaction_number;
+        });
+      }
+
+      // Fetch expense IDs (expense table uses 'id' as the number)
+      if (refIdsByType['expense']?.length) {
+        const { data: expenses } = await supabase
+          .from('expenses')
+          .select('id')
+          .in('id', refIdsByType['expense']);
+        expenses?.forEach((e: any) => {
+          refNumberMap[e.id] = e.id; // Expense uses ID as number
+        });
+      }
+
+      // Fetch employee advance IDs
+      if (refIdsByType['advance']?.length) {
+        const { data: advances } = await supabase
+          .from('employee_advances')
+          .select('id')
+          .in('id', refIdsByType['advance']);
+        advances?.forEach((a: any) => {
+          refNumberMap[a.id] = a.id; // Advance uses ID as number
+        });
+      }
+
+      // Fetch payroll IDs
+      if (refIdsByType['payroll']?.length) {
+        const { data: payrolls } = await supabase
+          .from('payroll_periods')
+          .select('id, name')
+          .in('id', refIdsByType['payroll']);
+        payrolls?.forEach((p: any) => {
+          refNumberMap[p.id] = p.name || p.id;
+        });
+      }
+
       // Transform to CashHistory format
       // For payment accounts: Debit = kas masuk (income), Credit = kas keluar (expense)
       const cashHistoryData: CashHistory[] = filteredLines.map((line: any) => {
@@ -109,6 +171,9 @@ export function useCashFlow() {
           'manual': isIncome ? 'kas_masuk_manual' : 'kas_keluar_manual',
         };
 
+        // Get the actual transaction number from source table
+        const sourceRefNumber = journal.reference_id ? refNumberMap[journal.reference_id] : null;
+
         return {
           id: line.id,
           account_id: line.account_id,
@@ -118,7 +183,8 @@ export function useCashFlow() {
           amount: amount,
           description: line.description || journal.description,
           reference_id: journal.reference_id,
-          reference_number: journal.entry_number,
+          // Prioritas: nomor dari tabel sumber > reference_number di jurnal > entry_number
+          reference_number: sourceRefNumber || journal.reference_number || journal.entry_number,
           created_at: journal.created_at,
           created_by: journal.created_by,
         };
