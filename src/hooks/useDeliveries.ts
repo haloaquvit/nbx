@@ -938,12 +938,17 @@ export function useDeliveries() {
       }
 
       // Generate delivery commission for driver and helper
-      try {
-        const { generateDeliveryCommission } = await import('@/utils/commissionUtils');
-        await generateDeliveryCommission(result);
-      } catch (commissionError) {
-        // Don't fail delivery creation if commission generation fails
-        console.warn('Failed to generate commission:', commissionError);
+      // Only generate commission if driver is assigned
+      if (result.driverId) {
+        try {
+          const { generateDeliveryCommission } = await import('@/utils/commissionUtils');
+          await generateDeliveryCommission(result);
+        } catch (commissionError) {
+          // Don't fail delivery creation if commission generation fails
+          console.warn('Failed to generate commission:', commissionError);
+        }
+      } else {
+        console.log('ℹ️ Skipping commission - no driver assigned');
       }
 
       // ============================================================================
@@ -1067,39 +1072,19 @@ export function useDeliveries() {
       // ============================================================================
       try {
         if (itemsData && itemsData.length > 0) {
-          console.log('📦 Reducing product stock for delivery items...');
+          // ============================================================================
+          // products.current_stock is DEPRECATED - stock derived from inventory_batches
+          // Only deduct via FIFO - don't update current_stock directly
+          // ============================================================================
+          console.log('📦 Reducing product stock for delivery items via FIFO...');
 
           for (const item of itemsData) {
             if (item.product_id && item.quantity_delivered > 0) {
-              // Get current stock
-              // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-              const { data: productRawData } = await supabase
-                .from('products')
-                .select('current_stock, name')
-                .eq('id', item.product_id)
-                .order('id').limit(1);
+              console.log(`📦 Deducting ${item.quantity_delivered} units from product ${item.product_id} via FIFO`);
 
-              // Handle array response from PostgREST
-              const productData = Array.isArray(productRawData) ? productRawData[0] : productRawData;
-
-              if (productData) {
-                const currentStock = productData.current_stock || 0;
-                const newStock = currentStock - item.quantity_delivered;
-
-                const { error: stockError } = await supabase
-                  .from('products')
-                  .update({ current_stock: newStock })
-                  .eq('id', item.product_id);
-
-                if (stockError) {
-                  console.error(`Failed to reduce stock for ${productData.name}:`, stockError);
-                } else {
-                  console.log(`📦 Stock reduced for ${productData.name}: ${currentStock} → ${newStock}`);
-
-                  // Also deduct from inventory batches (FIFO)
-                  await deductBatchFIFO(item.product_id, item.quantity_delivered, currentBranch?.id || null);
-                }
-              }
+              // Deduct from inventory batches (FIFO) - this is the source of truth
+              await deductBatchFIFO(item.product_id, item.quantity_delivered, currentBranch?.id || null);
+              console.log(`✅ Stock deducted via FIFO for product ${item.product_id}`);
             }
           }
         }
@@ -1196,28 +1181,14 @@ export function useDeliveries() {
                 continue
               }
 
-              // Calculate new stock (restore delivered quantity)
-              const newStock = productData.current_stock + item.quantity_delivered
-              
+              // Restore stock via inventory batches (FIFO) - source of truth
+              // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
               console.log(`📦 Restoring stock for ${item.product_name}:`, {
                 productId: item.product_id,
-                currentStock: productData.current_stock,
-                quantityToRestore: item.quantity_delivered,
-                newStock: newStock
+                quantityToRestore: item.quantity_delivered
               })
 
-              // Update product stock directly
-              const { error: stockUpdateError } = await supabase
-                .from('products')
-                .update({ current_stock: newStock })
-                .eq('id', item.product_id)
-
-              if (stockUpdateError) {
-                console.error(`❌ Error updating stock for ${item.product_name}:`, stockUpdateError)
-                continue
-              }
-
-              // Also restore to inventory batches (FIFO)
+              // Restore to inventory batches (FIFO) - THIS IS THE SOURCE OF TRUTH
               await restoreBatchFIFO(item.product_id, item.quantity_delivered, deliveryData.branch_id || null);
 
               // Create stock movement record for audit trail
@@ -1519,138 +1490,118 @@ export function useDeliveries() {
           }
 
           // Adjust stock if quantity changed
+          // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
+          // Hanya update inventory_batches sebagai source of truth
           if (quantityDiff !== 0) {
-            const { data: productRawData } = await supabase
-              .from('products')
-              .select('current_stock, name')
-              .eq('id', originalItem.product_id)
-              .order('id').limit(1)
+            console.log(`📦 Adjusting stock for product ${originalItem.product_id}: diff = ${quantityDiff}`)
 
-            const productData = Array.isArray(productRawData) ? productRawData[0] : productRawData
+            // Adjust inventory batches (FIFO) - THIS IS THE SOURCE OF TRUTH
+            if (quantityDiff > 0) {
+              // More delivered = deduct more from batch
+              await deductBatchFIFO(originalItem.product_id, quantityDiff, deliveryData.branch_id || null);
+            } else {
+              // Less delivered = restore to batch
+              await restoreBatchFIFO(originalItem.product_id, Math.abs(quantityDiff), deliveryData.branch_id || null);
+            }
 
-            if (productData) {
-              // If quantity increased, reduce more stock. If decreased, restore stock.
-              const newStock = productData.current_stock - quantityDiff
+            // Create stock movement record
+            await supabase.from('stock_movements').insert({
+              product_id: originalItem.product_id,
+              product_name: originalItem.product_name,
+              movement_type: quantityDiff > 0 ? 'out' : 'in',
+              quantity: Math.abs(quantityDiff),
+              reference_id: request.deliveryId,
+              reference_type: 'delivery_edit',
+              notes: `Delivery edit adjustment: ${quantityDiff > 0 ? 'increased' : 'decreased'} by ${Math.abs(quantityDiff)}`,
+              created_by: user?.id || null,
+              created_by_name: user?.name || user?.email || 'Unknown User'
+            })
+          }
+        }
+      }
 
-              const { error: stockError } = await supabase
-                .from('products')
-                .update({ current_stock: newStock })
-                .eq('id', originalItem.product_id)
+      // ============================================================================
+      // UPDATE DELIVERY JOURNAL - Edit jurnal langsung (bukan void + recreate)
+      // Jurnal Delivery: Dr. Hutang Barang Dagang (2140), Cr. Persediaan (1310)
+      // ============================================================================
+      try {
+        // Find existing delivery journal
+        const { data: existingJournalRaw } = await supabase
+          .from('journal_entries')
+          .select('id, entry_number')
+          .eq('reference_id', request.deliveryId)
+          .eq('reference_type', 'delivery')
+          .eq('status', 'posted')
+          .order('created_at', { ascending: false })
+          .limit(1)
 
-              if (stockError) {
-                console.error(`Failed to adjust stock for ${productData.name}:`, stockError)
-              } else {
-                console.log(`📦 Stock adjusted for ${productData.name}: ${productData.current_stock} → ${newStock} (diff: ${quantityDiff})`)
+        const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw
 
-                // Also adjust inventory batches (FIFO)
-                if (quantityDiff > 0) {
-                  // More delivered = deduct more from batch
-                  await deductBatchFIFO(originalItem.product_id, quantityDiff, deliveryData.branch_id || null);
-                } else {
-                  // Less delivered = restore to batch
-                  await restoreBatchFIFO(originalItem.product_id, Math.abs(quantityDiff), deliveryData.branch_id || null);
-                }
+        if (existingJournal) {
+          console.log('📝 Updating delivery journal:', existingJournal.entry_number)
 
-                // Create stock movement record
-                await supabase.from('stock_movements').insert({
-                  product_id: originalItem.product_id,
-                  product_name: originalItem.product_name,
-                  movement_type: quantityDiff > 0 ? 'out' : 'in',
-                  quantity: Math.abs(quantityDiff),
-                  reference_id: request.deliveryId,
-                  reference_type: 'delivery_edit',
-                  notes: `Delivery edit adjustment: ${quantityDiff > 0 ? 'increased' : 'decreased'} by ${Math.abs(quantityDiff)}`,
-                  created_by: user?.id || null,
-                  created_by_name: user?.name || user?.email || 'Unknown User'
-                })
+          // Get branch ID from delivery
+          const branchId = deliveryData.branch_id
+
+          // Get account IDs
+          const hutangBDAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '2140').limit(1)
+          const persediaanAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '1310').limit(1)
+
+          const hutangBDId = hutangBDAccount.data?.[0]?.id
+          const persediaanId = persediaanAccount.data?.[0]?.id
+
+          if (hutangBDId && persediaanId) {
+            // Calculate new total HPP based on updated quantities
+            let newTotalHPP = 0
+            const updatedItems = request.items || []
+
+            for (const item of updatedItems) {
+              const originalItem = deliveryData.items?.find((i: any) => i.id === item.id)
+              if (originalItem) {
+                // Get product HPP
+                const { data: productRaw } = await supabase
+                  .from('products')
+                  .select('cost_price, base_price')
+                  .eq('id', originalItem.product_id)
+                  .limit(1)
+                const product = Array.isArray(productRaw) ? productRaw[0] : productRaw
+                const hppPerUnit = product?.cost_price || product?.base_price || 0
+                newTotalHPP += hppPerUnit * item.quantityDelivered
               }
+            }
+
+            if (newTotalHPP > 0) {
+              // Delete existing journal lines
+              await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existingJournal.id)
+
+              // Insert new journal lines
+              const newLines = [
+                {
+                  journal_entry_id: existingJournal.id,
+                  account_id: hutangBDId,
+                  debit_amount: newTotalHPP,
+                  credit_amount: 0,
+                  description: 'Hutang barang dagang terbayar (edit)',
+                  line_number: 1
+                },
+                {
+                  journal_entry_id: existingJournal.id,
+                  account_id: persediaanId,
+                  debit_amount: 0,
+                  credit_amount: newTotalHPP,
+                  description: 'Pengurangan persediaan (edit)',
+                  line_number: 2
+                }
+              ]
+
+              await supabase.from('journal_entry_lines').insert(newLines)
+              console.log('✅ Delivery journal updated, new HPP:', newTotalHPP)
             }
           }
         }
-
-        // ============================================================================
-        // UPDATE DELIVERY JOURNAL - Edit jurnal langsung (bukan void + recreate)
-        // Jurnal Delivery: Dr. Hutang Barang Dagang (2140), Cr. Persediaan (1310)
-        // ============================================================================
-        try {
-          // Find existing delivery journal
-          const { data: existingJournalRaw } = await supabase
-            .from('journal_entries')
-            .select('id, entry_number')
-            .eq('reference_id', request.deliveryId)
-            .eq('reference_type', 'delivery')
-            .eq('status', 'posted')
-            .order('created_at', { ascending: false })
-            .limit(1)
-
-          const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw
-
-          if (existingJournal) {
-            console.log('📝 Updating delivery journal:', existingJournal.entry_number)
-
-            // Get branch ID from delivery
-            const branchId = deliveryData.branch_id
-
-            // Get account IDs
-            const hutangBDAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '2140').limit(1)
-            const persediaanAccount = await supabase.from('accounts').select('id').eq('branch_id', branchId).eq('code', '1310').limit(1)
-
-            const hutangBDId = hutangBDAccount.data?.[0]?.id
-            const persediaanId = persediaanAccount.data?.[0]?.id
-
-            if (hutangBDId && persediaanId) {
-              // Calculate new total HPP based on updated quantities
-              let newTotalHPP = 0
-              const updatedItems = request.items || []
-
-              for (const item of updatedItems) {
-                const originalItem = deliveryData.items?.find((i: any) => i.id === item.id)
-                if (originalItem) {
-                  // Get product HPP
-                  const { data: productRaw } = await supabase
-                    .from('products')
-                    .select('cost_price, base_price')
-                    .eq('id', originalItem.product_id)
-                    .limit(1)
-                  const product = Array.isArray(productRaw) ? productRaw[0] : productRaw
-                  const hppPerUnit = product?.cost_price || product?.base_price || 0
-                  newTotalHPP += hppPerUnit * item.quantityDelivered
-                }
-              }
-
-              if (newTotalHPP > 0) {
-                // Delete existing journal lines
-                await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existingJournal.id)
-
-                // Insert new journal lines
-                const newLines = [
-                  {
-                    journal_entry_id: existingJournal.id,
-                    account_id: hutangBDId,
-                    debit_amount: newTotalHPP,
-                    credit_amount: 0,
-                    description: 'Hutang barang dagang terbayar (edit)',
-                    line_number: 1
-                  },
-                  {
-                    journal_entry_id: existingJournal.id,
-                    account_id: persediaanId,
-                    debit_amount: 0,
-                    credit_amount: newTotalHPP,
-                    description: 'Pengurangan persediaan (edit)',
-                    line_number: 2
-                  }
-                ]
-
-                await supabase.from('journal_entry_lines').insert(newLines)
-                console.log('✅ Delivery journal updated, new HPP:', newTotalHPP)
-              }
-            }
-          }
-        } catch (journalError) {
-          console.error('Error updating delivery journal:', journalError)
-          // Don't fail the update if journal update fails
-        }
+      } catch (journalError) {
+        console.error('Error updating delivery journal:', journalError)
+        // Don't fail the update if journal update fails
       }
 
       console.log('✅ Delivery updated successfully:', request.deliveryId)

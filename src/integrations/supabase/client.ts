@@ -75,7 +75,18 @@ function getPostgRESTToken(): string | null {
 }
 
 // Valid anon JWT for PostgREST (expires in 100 years)
-const ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3NjYzMzM3MjgsImV4cCI6NDkyMjA5MzcyOH0.3N0XiX6YWpWpli3TuKsVx1eV0IoqXsb9_z8CER_1bR8';
+// Production JWT (signed with production JWT secret)
+const PROD_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3NjYzMzM3MjgsImV4cCI6NDkyMjA5MzcyOH0.3N0XiX6YWpWpli3TuKsVx1eV0IoqXsb9_z8CER_1bR8';
+// Local JWT (signed with local JWT secret from database.md)
+const LOCAL_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3Njc0MDYzMDksImV4cCI6NDkyMTAwNjMwOX0.Nd9t21dis6DlfT5NQmHDwlidKJMm8xFxzbmG9Bb3Pok';
+
+// Use local JWT for localhost, production JWT otherwise
+function getAnonJWT(): string {
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    return LOCAL_ANON_JWT;
+  }
+  return PROD_ANON_JWT;
+}
 
 // Check if running in Capacitor/mobile app
 function isCapacitorApp(): boolean {
@@ -168,11 +179,12 @@ function getBaseUrl(): string {
     return '';
   }
 
-  // For localhost/development, use Manokwari server for testing
+  // For localhost/development, use local proxy server for testing
   // IMPORTANT: Change this to match server you want to test against
   // 'https://nbx.aquvit.id' for Nabire
   // 'https://mkw.aquvit.id' for Manokwari
-  return 'https://mkw.aquvit.id';
+  // 'http://localhost:8090' for local database (via proxy)
+  return 'http://localhost:8090';
 }
 
 function getTenantConfig(): TenantConfig {
@@ -180,7 +192,7 @@ function getTenantConfig(): TenantConfig {
 
   return {
     supabaseUrl: baseUrl,
-    supabaseAnonKey: ANON_JWT, // Valid JWT for anon role
+    supabaseAnonKey: getAnonJWT(), // Valid JWT for anon role (local or production)
     authUrl: `${baseUrl}/auth`,
     isPostgREST: true,
   };
@@ -228,6 +240,12 @@ function createSupabaseClient(): SupabaseClient {
             const urlObj = new URL(finalUrl);
             if (urlObj.searchParams.has('columns')) {
               urlObj.searchParams.delete('columns');
+              finalUrl = urlObj.toString();
+            }
+            // For localhost: PostgREST doesn't use /rest/v1/ prefix
+            // Remove the prefix for local development
+            if (urlObj.hostname === 'localhost' && urlObj.pathname.startsWith('/rest/v1/')) {
+              urlObj.pathname = urlObj.pathname.replace('/rest/v1/', '/');
               finalUrl = urlObj.toString();
             }
           } catch (e) {

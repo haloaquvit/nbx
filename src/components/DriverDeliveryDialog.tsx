@@ -341,7 +341,7 @@ export function DriverDeliveryDialog({
                   <SelectContent>
                     {(drivers as Driver[])?.map((driver: Driver) => (
                       <SelectItem key={driver.id} value={driver.id}>
-                        {driver.name}
+                        {driver.name}{driver.role?.toLowerCase() === 'helper' ? ' (Helper)' : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>

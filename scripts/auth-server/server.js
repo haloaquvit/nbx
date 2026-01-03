@@ -3,6 +3,9 @@
  * Provides JWT authentication compatible with Supabase Auth API format
  */
 
+// Load .env file FIRST (for local development)
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');

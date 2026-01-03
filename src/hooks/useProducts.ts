@@ -110,33 +110,15 @@ export const useProducts = () => {
         const oldInitialStock = Number(existing?.initial_stock) || 0;
         const oldCurrentStock = Number(existing?.current_stock) || 0;
 
-        console.log('[Product Update] Stock check:', {
-          'product.initialStock': product.initialStock,
-          'dbData.initial_stock': dbData.initial_stock,
-          oldInitialStock,
-          oldCurrentStock,
-          existing
-        });
+        // ============================================================================
+        // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
+        // Stock hanya di-track via inventory_batches (source of truth untuk FIFO HPP)
+        // Perubahan initial_stock akan update inventory_batches di bawah
+        // ============================================================================
+        console.log('[Product Update] Stock managed via inventory_batches, not current_stock');
 
-        // Always recalculate current_stock when initial_stock is provided (even if 0)
-        if (dbData.initial_stock !== undefined && existing) {
-          const newInitialStock = Number(dbData.initial_stock);
-          const stockDiff = newInitialStock - oldInitialStock;
-
-          if (stockDiff !== 0) {
-            // Add the difference to current_stock
-            // Example: oldInitial=10, oldCurrent=8 (sold 2), newInitial=15
-            // stockDiff = 15-10 = 5, newCurrent = 8+5 = 13
-            dbData.current_stock = oldCurrentStock + stockDiff;
-            logDebug('Adjusting current_stock based on initial_stock change', {
-              oldInitialStock,
-              newInitialStock,
-              oldCurrentStock,
-              stockDiff,
-              newCurrentStock: dbData.current_stock
-            });
-          }
-        }
+        // Remove current_stock from update to prevent confusion
+        delete dbData.current_stock;
 
         const { data: dataRaw, error } = await supabase
           .from('products')
@@ -215,11 +197,15 @@ export const useProducts = () => {
 
         return fromDb(data);
       } else {
+        // ============================================================================
+        // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
+        // Stock hanya di-track via inventory_batches (dibuat di bawah setelah insert)
+        // ============================================================================
         const insertData = {
           ...dbData,
           branch_id: currentBranch?.id || null,
-          current_stock: dbData.current_stock || dbData.initial_stock || 0,
         };
+        delete insertData.current_stock; // Don't set current_stock, use inventory_batches
         logDebug('Product Insert', { insertData });
 
         const { data: dataRaw, error } = await supabase
@@ -262,18 +248,24 @@ export const useProducts = () => {
     }
   });
 
+  // ============================================================================
+  // DEPRECATED: updateStock - products.current_stock tidak lagi digunakan
+  // Stock dihitung dari v_product_current_stock (sum inventory_batches.remaining_quantity)
+  // Gunakan inventory_batches untuk track stock secara FIFO
+  // ============================================================================
   const updateStock = useMutation({
     mutationFn: async ({ productId, newStock }: { productId: string, newStock: number }): Promise<Product> => {
+      console.warn('⚠️ updateStock is DEPRECATED - stock should be managed via inventory_batches');
+      // Return current product without update
       const { data: dataRaw, error } = await supabase
         .from('products')
-        .update({ current_stock: newStock })
-        .eq('id', productId)
         .select()
+        .eq('id', productId)
         .order('id')
         .limit(1);
       if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to update stock');
+      if (!data) throw new Error('Product not found');
       return fromDb(data);
     },
     onSuccess: () => {

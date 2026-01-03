@@ -48,7 +48,6 @@ const dataCategories: DataCategory[] = [
     tables: [
       'transactions',
       'transaction_items',
-      'transaction_payments',
       'quotations',
       'deliveries',
       'delivery_items',
@@ -121,11 +120,7 @@ const dataCategories: DataCategory[] = [
       'expenses',
       'expense_categories',
       'expense_category_mapping',
-      'cash_history',
-      'account_transfers',
-      'manual_journal_entries',
-      'manual_journal_entry_lines',
-      'balance_adjustments'
+      'account_transfers'
     ],
     dependencies: ['journal']
   },

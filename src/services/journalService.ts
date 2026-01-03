@@ -306,7 +306,9 @@ export async function createJournalEntry(input: CreateJournalInput, retryCount =
 
     // Create journal entry using RPC function (SECURITY DEFINER)
     // This bypasses RLS SELECT restrictions and guarantees RETURNING works
-    console.log('[JournalService] Inserting journal entry via RPC...', { entryNumber, retryCount });
+    // IMPORTANT: Always create with status 'draft' first, then add lines, then post
+    // This is required because trigger prevents adding lines to posted journals
+    console.log('[JournalService] Inserting journal entry via RPC...', { entryNumber, retryCount, autoPost: input.autoPost });
 
     const { data: rpcResult, error: journalError } = await supabase
       .rpc('insert_journal_entry', {
@@ -315,13 +317,13 @@ export async function createJournalEntry(input: CreateJournalInput, retryCount =
         p_description: input.description,
         p_reference_type: input.referenceType,
         p_reference_id: input.referenceId || null,
-        p_status: input.autoPost ? 'posted' : 'draft',
+        p_status: 'draft', // Always create as draft first, then post after lines added
         p_total_debit: totalDebit,
         p_total_credit: totalCredit,
         p_branch_id: input.branchId,
         p_created_by: user.id,
-        p_approved_by: input.autoPost ? user.id : null,
-        p_approved_at: input.autoPost ? new Date().toISOString() : null,
+        p_approved_by: null, // Will be set when posting
+        p_approved_at: null, // Will be set when posting
       });
 
     console.log('[JournalService] RPC insert_journal_entry result:', { rpcResult, journalError });
@@ -417,6 +419,31 @@ export async function createJournalEntry(input: CreateJournalInput, retryCount =
     }
 
     console.log('[JournalService] Journal lines created and verified successfully:', fetchedLines.length, 'lines, balanced:', insertedDebit);
+
+    // ============================================================================
+    // POST JOURNAL IF AUTO-POST IS ENABLED
+    // Journal was created as 'draft' to allow adding lines
+    // Now we update status to 'posted' if autoPost was requested
+    // ============================================================================
+    if (input.autoPost) {
+      const { error: postError } = await supabase
+        .from('journal_entries')
+        .update({
+          status: 'posted',
+          approved_by: user.id,
+          approved_at: new Date().toISOString(),
+        })
+        .eq('id', journalId);
+
+      if (postError) {
+        console.error('[JournalService] Failed to post journal:', postError);
+        // Don't rollback - journal was created successfully, just not posted
+        // Return success but log the warning
+        console.warn('[JournalService] Journal created but could not be auto-posted:', journalId);
+      } else {
+        console.log('[JournalService] Journal auto-posted successfully:', journalId);
+      }
+    }
 
     // ============================================================================
     // BALANCE TIDAK DIUPDATE LANGSUNG DI SINI
@@ -2772,24 +2799,26 @@ export async function createOrUpdateAccountOpeningJournal(params: {
   }
 
   // ============================================================================
-  // STEP 3: Find Laba Ditahan account (3200) as balancing account
+  // STEP 3: Find Modal Disetor account (3100) as balancing account
+  // Modal Disetor digunakan untuk saldo awal bisnis baru (setoran modal pemilik)
   // ============================================================================
-  console.log(`[JournalService] Looking for Laba Ditahan account (3200) in branch ${branchId}...`);
+  console.log(`[JournalService] Looking for Modal Disetor account (3100) in branch ${branchId}...`);
 
-  const labaDitahanAccount = await getAccountByCode('3200', branchId)
-    || await findAccountByPattern('laba ditahan', 'Modal', branchId)
-    || await findAccountByPattern('retained', 'Modal', branchId);
+  const modalDisetorAccount = await getAccountByCode('3100', branchId)
+    || await findAccountByPattern('modal disetor', 'Modal', branchId)
+    || await findAccountByPattern('modal pemilik', 'Modal', branchId)
+    || await findAccountByPattern('capital', 'Modal', branchId);
 
-  if (!labaDitahanAccount) {
-    console.warn(`[JournalService] Laba Ditahan (3200) not found for branch ${branchId}`);
+  if (!modalDisetorAccount) {
+    console.warn(`[JournalService] Modal Disetor (3100) not found for branch ${branchId}`);
     return {
       success: false,
-      error: 'Akun Laba Ditahan (3200) tidak ditemukan. Pastikan akun sudah dibuat di COA.',
+      error: 'Akun Modal Disetor (3100) tidak ditemukan. Pastikan akun sudah dibuat di COA.',
       voidedJournalId,
     };
   }
 
-  console.log(`[JournalService] Found Laba Ditahan: ${labaDitahanAccount.code} - ${labaDitahanAccount.name}`);
+  console.log(`[JournalService] Found Modal Disetor: ${modalDisetorAccount.code} - ${modalDisetorAccount.name}`);
 
   // ============================================================================
   // STEP 4: Create journal lines based on account type
@@ -2815,12 +2844,12 @@ export async function createOrUpdateAccountOpeningJournal(params: {
         description: `Saldo awal ${accountName}`,
       });
       lines.push({
-        accountId: labaDitahanAccount.id,
-        accountCode: labaDitahanAccount.code || '3200',
-        accountName: labaDitahanAccount.name,
+        accountId: modalDisetorAccount.id,
+        accountCode: modalDisetorAccount.code || '3100',
+        accountName: modalDisetorAccount.name,
         debitAmount: 0,
         creditAmount: absBalance,
-        description: `Penyeimbang saldo awal ${accountName}`,
+        description: `Setoran modal - saldo awal ${accountName}`,
       });
     } else {
       // Negative balance for asset (unusual but handle it)
@@ -2833,16 +2862,16 @@ export async function createOrUpdateAccountOpeningJournal(params: {
         description: `Saldo awal ${accountName} (negatif)`,
       });
       lines.push({
-        accountId: labaDitahanAccount.id,
-        accountCode: labaDitahanAccount.code || '3200',
-        accountName: labaDitahanAccount.name,
+        accountId: modalDisetorAccount.id,
+        accountCode: modalDisetorAccount.code || '3100',
+        accountName: modalDisetorAccount.name,
         debitAmount: absBalance,
         creditAmount: 0,
         description: `Penyeimbang saldo awal ${accountName}`,
       });
     }
   } else {
-    // Kewajiban/Modal/Pendapatan: Credit the account, Debit Laba Ditahan
+    // Kewajiban/Modal/Pendapatan: Credit the account, Debit Modal Disetor
     if (initialBalance > 0) {
       lines.push({
         accountId,
@@ -2853,9 +2882,9 @@ export async function createOrUpdateAccountOpeningJournal(params: {
         description: `Saldo awal ${accountName}`,
       });
       lines.push({
-        accountId: labaDitahanAccount.id,
-        accountCode: labaDitahanAccount.code || '3200',
-        accountName: labaDitahanAccount.name,
+        accountId: modalDisetorAccount.id,
+        accountCode: modalDisetorAccount.code || '3100',
+        accountName: modalDisetorAccount.name,
         debitAmount: absBalance,
         creditAmount: 0,
         description: `Penyeimbang saldo awal ${accountName}`,
@@ -2871,9 +2900,9 @@ export async function createOrUpdateAccountOpeningJournal(params: {
         description: `Saldo awal ${accountName} (negatif)`,
       });
       lines.push({
-        accountId: labaDitahanAccount.id,
-        accountCode: labaDitahanAccount.code || '3200',
-        accountName: labaDitahanAccount.name,
+        accountId: modalDisetorAccount.id,
+        accountCode: modalDisetorAccount.code || '3100',
+        accountName: modalDisetorAccount.name,
         debitAmount: 0,
         creditAmount: absBalance,
         description: `Penyeimbang saldo awal ${accountName}`,

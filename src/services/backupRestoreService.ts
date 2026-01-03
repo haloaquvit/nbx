@@ -29,7 +29,6 @@ export const BACKUP_TABLES = [
 
   // Data transaksional (punya foreign key)
   'transactions',
-  'transaction_payments',
   'quotations',
   'purchase_orders',
   'purchase_order_items',
@@ -41,8 +40,6 @@ export const BACKUP_TABLES = [
   'retasi_items',
   'journal_entries',
   'journal_entry_lines',
-  'manual_journal_entries',
-  'manual_journal_entry_lines',
   'payroll_records',
   'employee_salaries',
   'commission_entries',
@@ -55,8 +52,6 @@ export const BACKUP_TABLES = [
   'inventory_batch_consumptions',
   'production_records',
   'production_errors',
-  'balance_adjustments',
-  // 'cash_history', // DIHAPUS - tidak lagi digunakan
   'payment_history',
   'assets',
   'asset_maintenance',
@@ -87,7 +82,6 @@ const TABLES_WITH_BRANCH_ID = [
   'material_stock_movements',
   'stock_movements',
   'production_records',
-  // 'cash_history', // DIHAPUS - tidak lagi digunakan
   'payment_history',
   'assets',
   'zakat_records',

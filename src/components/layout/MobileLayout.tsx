@@ -81,6 +81,9 @@ const MobileLayout = () => {
   // Check if user is owner
   const isOwner = user?.role?.toLowerCase() === 'owner'
 
+  // Check if user is helper - helper only gets limited menu access
+  const isHelper = user?.role?.toLowerCase() === 'helper'
+
   // Permission checks for mobile features
   // POS Kasir = transactions_create (bisa buat transaksi)
   const canAccessPOS = hasGranularPermission('transactions_create') || hasGranularPermission('pos_access')
@@ -97,7 +100,36 @@ const MobileLayout = () => {
   const canAccessCustomerMap = hasGranularPermission('customer_map_access') || hasGranularPermission('customers_view')
   const canAccessQuotations = hasGranularPermission('quotations_view') || hasGranularPermission('quotations_create')
 
-  const menuItems = [
+  // Helper gets limited menu: POS Supir, Pelanggan Terdekat, Komisi Saya
+  const helperMenuItems = [
+    {
+      title: 'POS Supir',
+      icon: Truck,
+      path: '/driver-pos',
+      description: 'POS khusus Supir & Helper',
+      color: 'bg-orange-500 hover:bg-orange-600',
+      textColor: 'text-white'
+    },
+    {
+      title: 'Pelanggan Terdekat',
+      icon: MapPin,
+      path: '/customer-map',
+      description: 'Cari pelanggan via GPS',
+      color: 'bg-rose-500 hover:bg-rose-600',
+      textColor: 'text-white'
+    },
+    {
+      title: 'Komisi Saya',
+      icon: Coins,
+      path: '/my-commission',
+      description: 'Lihat laporan komisi',
+      color: 'bg-yellow-500 hover:bg-yellow-600',
+      textColor: 'text-white'
+    }
+  ]
+
+  // Regular menu items (for non-helper roles)
+  const regularMenuItems = [
     // POS Kasir - controlled by pos_access permission
     ...(canAccessPOS ? [{
       title: 'Point of Sale',
@@ -208,6 +240,9 @@ const MobileLayout = () => {
     }] : [])
   ]
 
+  // Use helper menu if user is helper, otherwise use regular menu
+  const menuItems = isHelper ? helperMenuItems : regularMenuItems
+
   const handleLogout = async () => {
     try {
       await signOut()
@@ -305,7 +340,7 @@ const MobileLayout = () => {
               {currentPath === '/' ? (settings?.name || 'ERP System') : getPageTitle(currentPath)}
             </h1>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {isOwner && currentBranch ? (
+              {canAccessAllBranches && currentBranch ? (
                 <span className="flex items-center justify-center gap-1">
                   <Building2 className="h-3 w-3" />
                   {currentBranch.name}
@@ -514,8 +549,8 @@ const MobileLayout = () => {
               Pengaturan
             </p>
 
-            {/* Branch Selector - Owner Only */}
-            {isOwner && canAccessAllBranches && availableBranches.length > 1 && (
+            {/* Branch Selector - For roles that can switch branches */}
+            {canAccessAllBranches && availableBranches.length > 1 && (
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 flex items-center gap-2 px-1">
                   <Building2 className="h-3 w-3" />

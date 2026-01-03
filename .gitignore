@@ -33,6 +33,7 @@ scripts/auth-server/package-lock.json
 scripts/local-proxy/
 mkw_db_backup.sql
 *.backup.sql
+database.md
 
 # Claude local settings
 .claude/settings.local.json

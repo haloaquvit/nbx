@@ -251,7 +251,7 @@ export interface IncomeStatementItem {
   accountName: string;
   amount: number;
   formattedAmount: string;
-  source: 'transactions' | 'cash_history' | 'expenses' | 'manual_journal' | 'calculated';
+  source: 'transactions' | 'journal' | 'expenses' | 'calculated';
 }
 
 export interface CashFlowCategoryItem {

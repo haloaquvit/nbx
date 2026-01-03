@@ -169,22 +169,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     lastActivityRef.current = Date.now();
   }, []);
 
-  // Fetch owner PIN from company_settings
-  const fetchOwnerPin = useCallback(async () => {
+  // Fetch user's PIN from profiles table (per-user PIN)
+  const fetchUserPin = useCallback(async (userId: string) => {
     try {
       const { data } = await supabase
-        .from('company_settings')
-        .select('value')
-        .eq('key', 'owner_pin')
+        .from('profiles')
+        .select('pin')
+        .eq('id', userId)
         .limit(1);
-      const setting = Array.isArray(data) ? data[0] : data;
-      if (setting?.value) {
-        setOwnerPin(setting.value);
+      const profile = Array.isArray(data) ? data[0] : data;
+      if (profile?.pin) {
+        setOwnerPin(profile.pin);
       } else {
-        setOwnerPin(null);
+        setOwnerPin(null); // No PIN set = bypass PIN validation
       }
     } catch (error) {
-      console.error('Failed to fetch owner PIN:', error);
+      console.error('Failed to fetch user PIN:', error);
       setOwnerPin(null);
     }
   }, []);
@@ -214,14 +214,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signOut();
     }, IDLE_TIMEOUT_MS);
 
-    // Set PIN validation timer for owner (3 minutes of idle)
-    if (user?.role === 'owner' && ownerPin) {
+    // Set PIN validation timer for any user with PIN (3 minutes of idle)
+    if (ownerPin) {
       pinValidationTimerRef.current = setTimeout(() => {
-        console.log('🔐 PIN validation required for owner after 3 minutes idle');
+        console.log('🔐 PIN validation required after 3 minutes idle');
         setPinRequired(true);
       }, PIN_VALIDATION_INTERVAL_MS);
     }
-  }, [session, signOut, user?.role, ownerPin]);
+  }, [session, signOut, ownerPin]);
 
   // Setup idle detection listeners
   useEffect(() => {
@@ -256,19 +256,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [session, resetIdleTimer]);
 
-  // Fetch owner PIN when user logs in as owner
+  // Fetch user's PIN when logged in (all users can have PIN now)
   useEffect(() => {
     if (!session || !user) return;
 
-    // Only fetch PIN for owner role
-    if (user.role === 'owner') {
-      fetchOwnerPin();
-    }
-  }, [session, user, fetchOwnerPin]);
+    // Fetch PIN for any logged-in user
+    fetchUserPin(user.id);
+  }, [session, user, fetchUserPin]);
 
-  // Trigger PIN validation on page load/refresh for owner with PIN
+  // Trigger PIN validation on page load/refresh for users with PIN
   useEffect(() => {
-    if (!session || !user || user.role !== 'owner' || !ownerPin) return;
+    if (!session || !user || !ownerPin) return;
 
     // Check if this is a fresh page load (not just a state update)
     const sessionStartKey = 'pin_validated_session';

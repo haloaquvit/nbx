@@ -70,7 +70,6 @@ export function getModuleCodeFromTable(tableName: string): string {
     'retasi': 'RT-RT',
     'zakat': 'ZK-ZK',
     'accounts': 'AK-AC',
-    'cash_history': 'KA-CH',
   };
 
   return moduleMap[tableName] || 'GN-XX';

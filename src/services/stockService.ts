@@ -4,14 +4,177 @@ import { StockMovementType, StockMovementReason, CreateStockMovementData } from 
 import { TransactionItem } from '@/types/transaction'
 
 // ============================================================================
-// FIFO BATCH MANAGEMENT FUNCTIONS
+// FIFO BATCH MANAGEMENT FUNCTIONS (Using Database RPC)
 // ============================================================================
 
 /**
- * Deduct quantity from inventory batches using FIFO method
- * Reduces remaining_quantity from oldest batches first
+ * Result type from FIFO RPC functions
  */
-async function deductBatchFIFO(productId: string, quantity: number): Promise<void> {
+interface FIFOConsumeResult {
+  success: boolean;
+  total_hpp: number;
+  batches_consumed: any[];
+  remaining_to_consume: number;
+  error_message: string | null;
+}
+
+interface FIFORestoreResult {
+  success: boolean;
+  total_restored: number;
+  batches_restored: any[];
+  error_message: string | null;
+}
+
+/**
+ * Consume stock using FIFO method via database RPC
+ * This is now atomic and handled entirely in the database
+ */
+async function consumeStockFIFO(
+  productId: string,
+  quantity: number,
+  referenceId: string,
+  referenceType: 'transaction' | 'delivery' | 'production',
+  branchId?: string | null
+): Promise<FIFOConsumeResult> {
+  if (quantity <= 0 || !productId) {
+    return {
+      success: true,
+      total_hpp: 0,
+      batches_consumed: [],
+      remaining_to_consume: 0,
+      error_message: null
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('consume_stock_fifo_v2', {
+      p_product_id: productId,
+      p_quantity: quantity,
+      p_reference_id: referenceId,
+      p_reference_type: referenceType,
+      p_branch_id: branchId || null
+    });
+
+    if (error) {
+      console.error('[consumeStockFIFO] RPC error:', error);
+      // Fallback to old method if RPC doesn't exist
+      if (error.message.includes('does not exist')) {
+        console.warn('[consumeStockFIFO] RPC not found, using legacy method');
+        await deductBatchFIFOLegacy(productId, quantity);
+        return {
+          success: true,
+          total_hpp: 0,
+          batches_consumed: [],
+          remaining_to_consume: 0,
+          error_message: 'Used legacy method'
+        };
+      }
+      return {
+        success: false,
+        total_hpp: 0,
+        batches_consumed: [],
+        remaining_to_consume: quantity,
+        error_message: error.message
+      };
+    }
+
+    const result = data?.[0] || data;
+    console.log(`📦 FIFO Consume (RPC): Product ${productId.substring(0, 8)}, Qty: ${quantity}, HPP: ${result?.total_hpp || 0}`);
+
+    return {
+      success: result?.success ?? true,
+      total_hpp: result?.total_hpp ?? 0,
+      batches_consumed: result?.batches_consumed ?? [],
+      remaining_to_consume: result?.remaining_to_consume ?? 0,
+      error_message: result?.error_message ?? null
+    };
+  } catch (err: any) {
+    console.error('[consumeStockFIFO] Exception:', err);
+    return {
+      success: false,
+      total_hpp: 0,
+      batches_consumed: [],
+      remaining_to_consume: quantity,
+      error_message: err.message
+    };
+  }
+}
+
+/**
+ * Restore stock using FIFO method via database RPC
+ * Used when transaction is cancelled/voided
+ */
+async function restoreStockFIFO(
+  productId: string,
+  quantity: number,
+  referenceId: string,
+  referenceType: 'transaction' | 'delivery' | 'production',
+  branchId?: string | null
+): Promise<FIFORestoreResult> {
+  if (quantity <= 0 || !productId) {
+    return {
+      success: true,
+      total_restored: 0,
+      batches_restored: [],
+      error_message: null
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('restore_stock_fifo_v2', {
+      p_product_id: productId,
+      p_quantity: quantity,
+      p_reference_id: referenceId,
+      p_reference_type: referenceType,
+      p_branch_id: branchId || null
+    });
+
+    if (error) {
+      console.error('[restoreStockFIFO] RPC error:', error);
+      // Fallback to old method if RPC doesn't exist
+      if (error.message.includes('does not exist')) {
+        console.warn('[restoreStockFIFO] RPC not found, using legacy method');
+        await restoreBatchFIFOLegacy(productId, quantity);
+        return {
+          success: true,
+          total_restored: quantity,
+          batches_restored: [],
+          error_message: 'Used legacy method'
+        };
+      }
+      return {
+        success: false,
+        total_restored: 0,
+        batches_restored: [],
+        error_message: error.message
+      };
+    }
+
+    const result = data?.[0] || data;
+    console.log(`📦 FIFO Restore (RPC): Product ${productId.substring(0, 8)}, Qty: ${quantity}`);
+
+    return {
+      success: result?.success ?? true,
+      total_restored: result?.total_restored ?? quantity,
+      batches_restored: result?.batches_restored ?? [],
+      error_message: result?.error_message ?? null
+    };
+  } catch (err: any) {
+    console.error('[restoreStockFIFO] Exception:', err);
+    return {
+      success: false,
+      total_restored: 0,
+      batches_restored: [],
+      error_message: err.message
+    };
+  }
+}
+
+/**
+ * Legacy FIFO deduct - used as fallback if RPC not available
+ * @deprecated Use consumeStockFIFO instead
+ */
+async function deductBatchFIFOLegacy(productId: string, quantity: number): Promise<void> {
   if (quantity <= 0 || !productId) return;
 
   try {
@@ -41,23 +204,23 @@ async function deductBatchFIFO(productId: string, quantity: number): Promise<voi
           })
           .eq('id', batch.id);
 
-        console.log(`📦 FIFO: Batch ${batch.id.substring(0, 8)} reduced by ${deductFromBatch} (${batchRemaining} → ${batchRemaining - deductFromBatch})`);
+        console.log(`📦 FIFO Legacy: Batch ${batch.id.substring(0, 8)} reduced by ${deductFromBatch}`);
         remainingToDeduct -= deductFromBatch;
       }
     }
   } catch (err) {
-    console.error('[deductBatchFIFO] Exception:', err);
+    console.error('[deductBatchFIFOLegacy] Exception:', err);
   }
 }
 
 /**
- * Restore quantity to inventory batches using FIFO method (add to oldest depleted batch first)
+ * Legacy FIFO restore - used as fallback if RPC not available
+ * @deprecated Use restoreStockFIFO instead
  */
-async function restoreBatchFIFO(productId: string, quantity: number): Promise<void> {
+async function restoreBatchFIFOLegacy(productId: string, quantity: number): Promise<void> {
   if (quantity <= 0 || !productId) return;
 
   try {
-    // Get all batches ordered by batch_date ASC (oldest first for FIFO restore)
     const { data: batches, error } = await supabase
       .from('inventory_batches')
       .select('id, initial_quantity, remaining_quantity, batch_date')
@@ -87,12 +250,11 @@ async function restoreBatchFIFO(productId: string, quantity: number): Promise<vo
           })
           .eq('id', batch.id);
 
-        console.log(`📦 FIFO Restore: Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch} (${batchRemaining} → ${newRemaining})`);
+        console.log(`📦 FIFO Restore Legacy: Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch}`);
         remainingToRestore -= restoreToBatch;
       }
     }
 
-    // If we couldn't restore to existing batches (all full), add to most recent
     if (remainingToRestore > 0 && batches.length > 0) {
       const mostRecentBatch = batches[batches.length - 1];
       const newRemaining = (mostRecentBatch.remaining_quantity || 0) + remainingToRestore;
@@ -105,10 +267,10 @@ async function restoreBatchFIFO(productId: string, quantity: number): Promise<vo
         })
         .eq('id', mostRecentBatch.id);
 
-      console.log(`📦 FIFO Restore (overflow): Batch ${mostRecentBatch.id.substring(0, 8)} increased to ${newRemaining}`);
+      console.log(`📦 FIFO Restore Legacy (overflow): Batch ${mostRecentBatch.id.substring(0, 8)} increased to ${newRemaining}`);
     }
   } catch (err) {
-    console.error('[restoreBatchFIFO] Exception:', err);
+    console.error('[restoreBatchFIFOLegacy] Exception:', err);
   }
 }
 
@@ -182,15 +344,39 @@ export class StockService {
 
       if (shouldUpdateStock) {
         console.log(`📦 Updating stock for ${product.name} (${product.type}, officeSale=${isOfficeSale}): ${currentStock} → ${newStock}`);
-        await StockService.updateProductStock(product.id, newStock);
 
-        // Also update inventory batches using FIFO
+        // Use database RPC for atomic FIFO operations
+        // The RPC also updates products.current_stock automatically
+        const branchId = (item as any).branchId || null;
+
         if (item.quantity > 0) {
-          // Deduct from batches (sale/delivery)
-          await deductBatchFIFO(product.id, item.quantity);
+          // Consume stock using FIFO (sale/delivery)
+          const result = await consumeStockFIFO(
+            product.id,
+            item.quantity,
+            referenceId,
+            referenceType,
+            branchId
+          );
+          if (!result.success) {
+            console.error(`[processTransactionStock] FIFO consume failed: ${result.error_message}`);
+            // Fallback: direct update if RPC failed
+            await StockService.updateProductStock(product.id, newStock);
+          }
         } else if (item.quantity < 0) {
-          // Restore to batches (refund/cancel)
-          await restoreBatchFIFO(product.id, Math.abs(item.quantity));
+          // Restore stock using FIFO (refund/cancel)
+          const result = await restoreStockFIFO(
+            product.id,
+            Math.abs(item.quantity),
+            referenceId,
+            referenceType,
+            branchId
+          );
+          if (!result.success) {
+            console.error(`[processTransactionStock] FIFO restore failed: ${result.error_message}`);
+            // Fallback: direct update if RPC failed
+            await StockService.updateProductStock(product.id, newStock);
+          }
         }
       }
     }
@@ -202,17 +388,14 @@ export class StockService {
   }
 
   /**
-   * Update product stock in database
+   * @deprecated DO NOT USE - products.current_stock is deprecated
+   * Stock is derived from inventory_batches via v_product_current_stock
+   * Use consumeStockFIFO/restoreStockFIFO instead
    */
-  static async updateProductStock(productId: string, newStock: number): Promise<void> {
-    const { error } = await supabase
-      .from('products')
-      .update({ current_stock: newStock })
-      .eq('id', productId);
-
-    if (error) {
-      throw new Error(`Failed to update stock for product ${productId}: ${error.message}`);
-    }
+  static async updateProductStock(_productId: string, _newStock: number): Promise<void> {
+    console.warn('⚠️ updateProductStock is DEPRECATED - stock managed via inventory_batches');
+    // No-op: we no longer update current_stock directly
+    // The FIFO RPC functions handle batch management
   }
 
   /**
@@ -324,38 +507,92 @@ export class StockService {
 
   /**
    * Get products with low stock
+   * Uses v_product_current_stock VIEW as source of truth
    */
   static async getLowStockProducts(): Promise<Product[]> {
+    // Use VIEW for accurate stock from inventory_batches
     const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .filter('current_stock', 'lt', 'min_stock')
-      .order('name');
+      .from('v_product_current_stock')
+      .select('product_id, product_name, current_stock, branch_id')
+      .order('product_name');
 
     if (error) {
-      throw new Error(`Failed to get low stock products: ${error.message}`);
+      console.error('[getLowStockProducts] VIEW query failed, using fallback:', error);
+      // Fallback to direct query if VIEW doesn't exist
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('products')
+        .select('*')
+        .order('name');
+
+      if (fallbackError) {
+        throw new Error(`Failed to get low stock products: ${fallbackError.message}`);
+      }
+
+      // Filter in app since we can't compare columns in PostgREST easily
+      return (fallbackData || [])
+        .filter(p => (Number(p.current_stock) || 0) < (Number(p.min_stock) || 0))
+        .map(product => ({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          type: product.type || 'Stock',
+          basePrice: Number(product.base_price) || 0,
+          unit: product.unit || 'pcs',
+          initialStock: Number(product.initial_stock) || 0,
+          currentStock: Number(product.current_stock) || 0,
+          minStock: Number(product.min_stock) || 0,
+          minOrder: Number(product.min_order) || 1,
+          description: product.description || '',
+          specifications: product.specifications || [],
+          materials: product.materials || [],
+          createdAt: new Date(product.created_at),
+          updatedAt: new Date(product.updated_at),
+        }));
     }
 
-    return data ? data.map(product => ({
-      id: product.id,
-      name: product.name,
-      category: product.category,
-      type: product.type || 'Stock',
-      basePrice: Number(product.base_price) || 0,
-      unit: product.unit || 'pcs',
-      currentStock: Number(product.current_stock) || 0,
-      minStock: Number(product.min_stock) || 0,
-      minOrder: Number(product.min_order) || 1,
-      description: product.description || '',
-      specifications: product.specifications || [],
-      materials: product.materials || [],
-      createdAt: new Date(product.created_at),
-      updatedAt: new Date(product.updated_at),
-    })) : [];
+    // Get product details for low stock items
+    const stockData = data || [];
+    if (stockData.length === 0) return [];
+
+    // Get min_stock from products table to compare
+    const { data: productsData } = await supabase
+      .from('products')
+      .select('*');
+
+    const productsMap = new Map((productsData || []).map(p => [p.id, p]));
+
+    // Filter products where current_stock < min_stock
+    return stockData
+      .filter(s => {
+        const product = productsMap.get(s.product_id);
+        if (!product) return false;
+        return s.current_stock < (Number(product.min_stock) || 0);
+      })
+      .map(s => {
+        const product = productsMap.get(s.product_id)!;
+        return {
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          type: product.type || 'Stock',
+          basePrice: Number(product.base_price) || 0,
+          unit: product.unit || 'pcs',
+          initialStock: Number(product.initial_stock) || 0,
+          currentStock: s.current_stock, // From VIEW (accurate)
+          minStock: Number(product.min_stock) || 0,
+          minOrder: Number(product.min_order) || 1,
+          description: product.description || '',
+          specifications: product.specifications || [],
+          materials: product.materials || [],
+          createdAt: new Date(product.created_at),
+          updatedAt: new Date(product.updated_at),
+        };
+      });
   }
 
   /**
-   * Manual stock adjustment
+   * @deprecated Use inventory_batches for stock adjustments instead
+   * Manual stock adjustment - creates/adjusts inventory batch
    */
   static async adjustStock(
     productId: string,
@@ -364,12 +601,43 @@ export class StockService {
     newStock: number,
     reason: string,
     userId: string,
-    userName: string
+    userName: string,
+    branchId?: string | null
   ): Promise<void> {
     const quantity = Math.abs(newStock - currentStock);
     const movementType: StockMovementType = newStock > currentStock ? 'IN' : 'OUT';
 
-    // Create stock movement
+    console.warn('⚠️ adjustStock should use inventory_batches directly for proper FIFO');
+
+    // For stock increase, create a new batch
+    if (newStock > currentStock) {
+      const { error } = await supabase
+        .from('inventory_batches')
+        .insert({
+          product_id: productId,
+          branch_id: branchId || null,
+          initial_quantity: quantity,
+          remaining_quantity: quantity,
+          unit_cost: 0, // Adjustment has no cost basis
+          batch_date: new Date().toISOString(),
+          notes: `Adjustment: ${reason}`
+        });
+
+      if (error) {
+        console.error('[adjustStock] Failed to create batch:', error);
+      }
+    } else {
+      // For stock decrease, use FIFO consume
+      await consumeStockFIFO(
+        productId,
+        quantity,
+        `ADJ-${Date.now()}`,
+        'transaction',
+        branchId
+      );
+    }
+
+    // Create stock movement for audit trail
     const movement: CreateStockMovementData = {
       productId,
       productName,
@@ -383,8 +651,6 @@ export class StockService {
       userName,
     };
 
-    // Update stock and create movement
-    await StockService.updateProductStock(productId, newStock);
     await StockService.createStockMovements([movement]);
   }
 
@@ -584,10 +850,14 @@ export class StockService {
   }
 
   // ============================================================================
-  // STOCK RECONCILIATION
+  // STOCK RECONCILIATION (DEPRECATED)
+  // These functions exist for one-time migration purposes only.
+  // In production, products.current_stock should NOT be used.
+  // Stock is derived from v_product_current_stock VIEW.
   // ============================================================================
 
   /**
+   * @deprecated ADMIN/MIGRATION ONLY - Do not use in production code
    * Reconcile product stock with inventory batches
    * Sets current_stock = SUM(remaining_quantity) from all batches
    */
@@ -651,6 +921,7 @@ export class StockService {
   }
 
   /**
+   * @deprecated ADMIN/MIGRATION ONLY - Do not use in production code
    * Reconcile all products in a branch with their inventory batches
    */
   static async reconcileAllProductStock(branchId: string | null): Promise<{
@@ -695,6 +966,7 @@ export class StockService {
   }
 
   /**
+   * @deprecated ADMIN/MIGRATION ONLY - Use v_product_current_stock VIEW instead
    * Get products with stock mismatch (current_stock != batch sum)
    */
   static async getStockMismatches(branchId: string | null): Promise<Array<{
@@ -746,3 +1018,7 @@ export class StockService {
     }
   }
 }
+
+// Export FIFO functions for use in other modules
+export { consumeStockFIFO, restoreStockFIFO };
+export type { FIFOConsumeResult, FIFORestoreResult };

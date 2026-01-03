@@ -78,7 +78,7 @@ const dataCategories: DataCategory[] = [
     name: 'Sales & Revenue',
     description: 'Transaksi penjualan, quotasi, dan pengiriman',
     icon: <ShoppingCart className="w-4 h-4" />,
-    tables: ['transactions', 'transaction_items', 'transaction_payments', 'quotations', 'deliveries', 'delivery_items', 'payment_history', 'stock_pricings', 'bonus_pricings'],
+    tables: ['transactions', 'transaction_items', 'quotations', 'deliveries', 'delivery_items', 'payment_history', 'stock_pricings', 'bonus_pricings'],
     dependencies: ['customers']
   },
   {
@@ -121,7 +121,7 @@ const dataCategories: DataCategory[] = [
     name: 'Finance & Accounting',
     description: 'Pengeluaran, kas, dan laporan keuangan',
     icon: <DollarSign className="w-4 h-4" />,
-    tables: ['expenses', 'expense_categories', 'expense_category_mapping', 'cash_history', 'account_transfers', 'manual_journal_entries', 'manual_journal_entry_lines', 'balance_adjustments'],
+    tables: ['expenses', 'expense_categories', 'expense_category_mapping', 'account_transfers'],
     dependencies: ['journal']
   },
   {

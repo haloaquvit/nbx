@@ -3,16 +3,29 @@ import { Transaction } from '@/types/transaction'
 import { Material } from '@/types/material'
 import { MaterialMovement, CreateMaterialMovementData } from '@/types/materialMovement'
 
+// ============================================================================
+// MATERIAL MOVEMENT SERVICE
+// ============================================================================
+// This service is for REPORTING/AUDIT only.
+// Actual stock updates should go through MaterialStockService using FIFO RPC.
+// materials.stock is DEPRECATED - use v_material_current_stock VIEW instead.
+// ============================================================================
+
 export class MaterialMovementService {
-  
+
   /**
+   * @deprecated Use MaterialStockService.processProductionStockChanges instead
+   * This function creates movements AND updates stock - causing double writes.
+   *
    * Generate material movements from a completed transaction
    * This should be called when transaction status changes to 'Proses Produksi' or 'Pesanan Selesai'
    */
   static async generateMovementsFromTransaction(
-    transaction: Transaction, 
+    transaction: Transaction,
     materials: Material[]
   ): Promise<void> {
+    console.warn('⚠️ generateMovementsFromTransaction is DEPRECATED - use MaterialStockService.processProductionStockChanges');
+
     const movements: CreateMaterialMovementData[] = [];
 
     // Process each item in the transaction
@@ -27,8 +40,6 @@ export class MaterialMovementService {
         if (!material) continue;
 
         const totalMaterialUsed = productMaterial.quantity * item.quantity;
-        const currentStock = material.stock || 0;
-        const newStock = Math.max(0, currentStock - totalMaterialUsed);
 
         const movement: CreateMaterialMovementData = {
           materialId: productMaterial.materialId,
@@ -36,8 +47,8 @@ export class MaterialMovementService {
           type: 'OUT',
           reason: 'PRODUCTION_CONSUMPTION',
           quantity: totalMaterialUsed,
-          previousStock: currentStock,
-          newStock: newStock,
+          previousStock: 0, // Not tracking absolute stock anymore
+          newStock: 0, // Stock derived from batches
           referenceId: transaction.id,
           referenceType: 'transaction',
           notes: `Digunakan untuk produksi ${item.product.name} (${item.quantity} unit) - Order: ${transaction.id}`,
@@ -49,11 +60,12 @@ export class MaterialMovementService {
       }
     }
 
-    // Save all movements to database
+    // Save movements for audit trail only
+    // DO NOT update material stock - that's handled by MaterialStockService FIFO
     if (movements.length > 0) {
       await this.createMaterialMovements(movements);
-      // Also update material stock
-      await this.updateMaterialStocks(movements);
+      // REMOVED: await this.updateMaterialStocks(movements);
+      // Stock updates now handled via FIFO RPC in MaterialStockService
     }
   }
 
@@ -87,20 +99,13 @@ export class MaterialMovementService {
   }
 
   /**
-   * Update material stock based on movements
+   * @deprecated DO NOT USE - materials.stock is deprecated
+   * Stock is derived from inventory_batches via v_material_current_stock
+   * Use MaterialStockService with FIFO RPC instead
    */
-  private static async updateMaterialStocks(movements: CreateMaterialMovementData[]): Promise<void> {
-    for (const movement of movements) {
-      const { error } = await supabase
-        .from('materials')
-        .update({ stock: movement.newStock })
-        .eq('id', movement.materialId);
-
-      if (error) {
-        console.error(`Failed to update stock for material ${movement.materialId}:`, error);
-        throw new Error(`Failed to update material stock: ${error.message}`);
-      }
-    }
+  private static async _updateMaterialStocks_DEPRECATED(_movements: CreateMaterialMovementData[]): Promise<void> {
+    console.warn('⚠️ updateMaterialStocks is DEPRECATED - stock managed via inventory_batches FIFO');
+    // No-op: we no longer update materials.stock directly
   }
 
   /**

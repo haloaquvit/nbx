@@ -244,101 +244,25 @@ export const useProduction = () => {
       if (productionError) throw productionError;
       if (!productionRecord) throw new Error('Failed to create production record');
 
-      // Update product stock
-      const newStock = (product.current_stock || 0) + input.quantity;
-      console.log(`Updating product ${input.productId} stock from ${product.current_stock} to ${newStock}`);
-      
-      const { error: stockError } = await supabase
-        .from('products')
-        .update({
-          current_stock: newStock,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', input.productId);
+      // ============================================================================
+      // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
+      // Stock hanya di-track via inventory_batches (dibuat di bawah setelah produksi)
+      // inventory_batches adalah source of truth untuk FIFO HPP
+      // ============================================================================
+      console.log(`📦 Production: ${input.quantity} units of ${product.name} will be added to inventory_batches`);
 
-      if (stockError) {
-        console.error('Error updating product stock:', stockError);
-        throw stockError;
-      }
-
-      console.log('Product stock updated successfully');
-
-      // If consume BOM is enabled, reduce material stocks
+      // If consume BOM is enabled, reduce material stocks via FIFO
       if (input.consumeBOM) {
-        console.log('Consuming BOM for production...');
+        console.log('Consuming BOM for production via FIFO...');
         const bom = await getBOM(input.productId);
         console.log('BOM items:', bom);
-        
-        for (const bomItem of bom) {
-          const requiredQty = bomItem.quantity * input.quantity;
-          console.log(`Processing BOM item: ${bomItem.materialName}, required qty: ${requiredQty}`);
-          
-          // Get current material stock
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: materialRaw2, error: materialError } = await supabase
-            .from('materials')
-            .select('stock')
-            .eq('id', bomItem.materialId)
-            .order('id').limit(1);
-          const material = Array.isArray(materialRaw2) ? materialRaw2[0] : materialRaw2;
 
-          if (materialError || !material) {
-            console.warn(`Could not fetch material ${bomItem.materialId}:`, materialError);
-            continue;
-          }
-
-          console.log(`Current stock for ${bomItem.materialName}: ${material.stock}`);
-
-          // Note: Stock validation sudah dilakukan di awal processProduction
-          // Jika sampai di sini, stok pasti cukup
-
-          // Update material stock
-          const newMaterialStock = Math.max(0, material.stock - requiredQty);
-          console.log(`Updating ${bomItem.materialName} stock from ${material.stock} to ${newMaterialStock}`);
-          
-          const { error: updateError } = await supabase
-            .from('materials')
-            .update({
-              stock: newMaterialStock,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', bomItem.materialId);
-
-          if (updateError) {
-            console.error(`Could not update material stock for ${bomItem.materialId}:`, updateError);
-          } else {
-            console.log(`Successfully updated stock for ${bomItem.materialName}`);
-          }
-
-          // Record material movement using correct table and schema
-          try {
-            const { error: movementError } = await supabase
-              .from('material_stock_movements')
-              .insert({
-                material_id: bomItem.materialId,
-                material_name: bomItem.materialName,
-                type: 'OUT',
-                reason: 'PRODUCTION_CONSUMPTION',
-                quantity: requiredQty,
-                previous_stock: material.stock,
-                new_stock: newMaterialStock,
-                notes: `Production: ${ref} (${product.name})`,
-                reference_id: productionRecord.id,
-                reference_type: 'production',
-                user_id: input.createdBy,
-                user_name: user?.name || user?.email || 'Unknown User',
-                branch_id: currentBranch?.id || null
-              });
-
-            if (movementError) {
-              console.error(`Error recording material movement for ${bomItem.materialName}:`, movementError);
-            } else {
-              console.log(`Successfully recorded material movement for ${bomItem.materialName}`);
-            }
-          } catch (movementRecordError) {
-            console.error('Error recording material movement:', movementRecordError);
-          }
-        }
+        // ============================================================================
+        // MATERIAL CONSUMPTION VIA FIFO
+        // materials.stock is DEPRECATED - stock derived from inventory_batches
+        // Use consume_material_fifo_v2 RPC for atomic FIFO consumption
+        // Movement logging is handled by the RPC function
+        // ============================================================================
 
         // ============================================================================
         // PRODUCTION OUTPUT ACCOUNTING VIA JOURNAL + FIFO CONSUMPTION
@@ -357,30 +281,57 @@ export const useProduction = () => {
           for (const bomItem of bom) {
             const requiredQty = bomItem.quantity * input.quantity;
 
-            // Try FIFO consumption first - this will use actual purchase prices
-            // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+            // Use consume_material_fifo_v2 RPC for atomic FIFO consumption
+            // This handles batch consumption AND movement logging in one atomic operation
             const { data: fifoResultRaw, error: fifoError } = await supabase
-              .rpc('consume_inventory_fifo', {
-                p_product_id: null,
-                p_branch_id: currentBranch?.id || null,
+              .rpc('consume_material_fifo_v2', {
+                p_material_id: bomItem.materialId,
                 p_quantity: requiredQty,
-                p_transaction_id: ref,
-                p_material_id: bomItem.materialId
-              })
-              .order('id').limit(1);
+                p_reference_id: ref,
+                p_reference_type: 'production',
+                p_branch_id: currentBranch?.id || null,
+                p_user_id: input.createdBy,
+                p_user_name: user?.name || user?.email || 'Unknown User'
+              });
             const fifoResult = Array.isArray(fifoResultRaw) ? fifoResultRaw[0] : fifoResultRaw;
 
-            if (!fifoError && fifoResult && fifoResult.total_hpp > 0) {
+            if (!fifoError && fifoResult && fifoResult.success && fifoResult.total_cost > 0) {
               // FIFO berhasil - gunakan harga dari batch
-              const materialCost = fifoResult.total_hpp;
+              const materialCost = fifoResult.total_cost;
               totalMaterialCost += materialCost;
               materialDetails.push(`${bomItem.materialName} x${requiredQty} (FIFO: Rp${Math.round(materialCost).toLocaleString()})`);
               console.log(`✅ FIFO consumed for ${bomItem.materialName}: ${requiredQty} units @ Rp${Math.round(materialCost / requiredQty)}/unit = Rp${Math.round(materialCost)}`);
+            } else if (fifoError?.message?.includes('does not exist')) {
+              // Fallback to legacy RPC if new one doesn't exist
+              console.log(`⚠️ consume_material_fifo_v2 not found, trying legacy consume_inventory_fifo`);
+
+              const { data: legacyResultRaw, error: legacyError } = await supabase
+                .rpc('consume_inventory_fifo', {
+                  p_product_id: null,
+                  p_branch_id: currentBranch?.id || null,
+                  p_quantity: requiredQty,
+                  p_transaction_id: ref,
+                  p_material_id: bomItem.materialId
+                });
+              const legacyResult = Array.isArray(legacyResultRaw) ? legacyResultRaw[0] : legacyResultRaw;
+
+              if (!legacyError && legacyResult && legacyResult.total_hpp > 0) {
+                const materialCost = legacyResult.total_hpp;
+                totalMaterialCost += materialCost;
+                materialDetails.push(`${bomItem.materialName} x${requiredQty} (FIFO Legacy: Rp${Math.round(materialCost).toLocaleString()})`);
+                console.log(`✅ Legacy FIFO consumed for ${bomItem.materialName}: ${requiredQty} units = Rp${Math.round(materialCost)}`);
+              } else {
+                // Ultimate fallback: use material price
+                await useMaterialPriceFallback();
+              }
             } else {
               // Fallback: Get material cost price from materials table
-              console.log(`⚠️ FIFO fallback for ${bomItem.materialName}:`, fifoError?.message || 'No batches available');
+              console.log(`⚠️ FIFO fallback for ${bomItem.materialName}:`, fifoError?.message || fifoResult?.error_message || 'No batches available');
+              await useMaterialPriceFallback();
+            }
 
-              // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
+            // Helper function for price fallback
+            async function useMaterialPriceFallback() {
               const { data: materialDataRaw } = await supabase
                 .from('materials')
                 .select('cost_price, price_per_unit, name')
@@ -388,7 +339,6 @@ export const useProduction = () => {
                 .order('id').limit(1);
               const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
 
-              // Use cost_price if available, otherwise fallback to price_per_unit
               const unitCost = materialData?.cost_price || materialData?.price_per_unit || 0;
               const materialCost = unitCost * requiredQty;
               totalMaterialCost += materialCost;
@@ -765,24 +715,12 @@ export const useProduction = () => {
           }
         }
 
-        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-        const { data: productRaw2, error: productError } = await supabase
-          .from('products')
-          .select('current_stock')
-          .eq('id', record.product_id)
-          .order('id').limit(1);
-        const product = Array.isArray(productRaw2) ? productRaw2[0] : productRaw2;
-
-        if (!productError && product) {
-          const newProductStock = Math.max(0, product.current_stock - record.quantity);
-          await supabase
-            .from('products')
-            .update({
-              current_stock: newProductStock,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', record.product_id);
-        }
+        // ============================================================================
+        // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
+        // Stock rollback otomatis terjadi via delete inventory_batches di bawah
+        // inventory_batches adalah source of truth untuk FIFO HPP
+        // ============================================================================
+        console.log(`📦 Production delete: Stock will be restored via inventory_batches deletion`);
       }
 
       // ============================================================================

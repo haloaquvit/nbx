@@ -12,6 +12,9 @@ import { format } from "date-fns"
 import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
 import { compressImage, isImageFile } from "@/utils/imageCompression"
+import { useAuthContext } from "@/contexts/AuthContext"
+import { canDeliverWithoutDriver } from "@/utils/roleUtils"
+import { Capacitor } from "@capacitor/core"
 
 interface DeliveryFormContentProps {
   transaction: TransactionDeliveryInfo;
@@ -19,11 +22,32 @@ interface DeliveryFormContentProps {
   onDeliveryCreated?: (delivery: Delivery, transaction: TransactionDeliveryInfo) => void;
 }
 
+// Helper to check if running in Capacitor/APK
+function isCapacitorApp(): boolean {
+  try {
+    if (Capacitor.isNativePlatform()) return true;
+    const platform = Capacitor.getPlatform();
+    if (platform === 'android' || platform === 'ios') return true;
+  } catch (e) {
+    // Capacitor not available
+  }
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol;
+    if (protocol === 'capacitor:' || protocol === 'file:') return true;
+  }
+  return false;
+}
+
 export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated }: DeliveryFormContentProps) {
   const { toast } = useToast()
   const { createDelivery } = useDeliveries()
   const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()
+  const { user } = useAuthContext()
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Check if driver is optional (web view + allowed role)
+  const isWebView = !isCapacitorApp()
+  const driverOptional = isWebView && canDeliverWithoutDriver(user?.role)
   
   const [formData, setFormData] = useState<DeliveryFormData>(() => ({
     transactionId: transaction.id,
@@ -196,8 +220,8 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
       return
     }
 
-    // Validate driver
-    if (!formData.driverId) {
+    // Validate driver (required unless driverOptional is true)
+    if (!formData.driverId && !driverOptional) {
       toast({
         variant: "destructive",
         title: "Error",
@@ -289,18 +313,19 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-sm">Supir *</Label>
+          <Label className="text-sm">Supir {driverOptional ? '(Opsional)' : '*'}</Label>
           <Select
-            value={formData.driverId}
-            onValueChange={(value) => setFormData(prev => ({ ...prev, driverId: value }))}
+            value={formData.driverId || "no-driver"}
+            onValueChange={(value) => setFormData(prev => ({ ...prev, driverId: value === "no-driver" ? "" : value }))}
           >
             <SelectTrigger className="h-9">
               <SelectValue placeholder="Pilih Supir" />
             </SelectTrigger>
             <SelectContent>
-              {employees?.filter(emp => emp.role?.toLowerCase() === 'supir').map((driver) => (
-                <SelectItem key={driver.id} value={driver.id}>
-                  {driver.name}
+              {driverOptional && <SelectItem value="no-driver">Tanpa Supir</SelectItem>}
+              {employees?.filter(emp => ['supir', 'helper'].includes(emp.role?.toLowerCase())).map((emp) => (
+                <SelectItem key={emp.id} value={emp.id}>
+                  {emp.name}{emp.role?.toLowerCase() === 'helper' ? ' (Helper)' : ''}
                 </SelectItem>
               ))}
             </SelectContent>

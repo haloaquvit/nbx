@@ -71,10 +71,10 @@ export const PinValidationDialog = () => {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-5 w-5 text-primary" />
-            Verifikasi PIN Owner
+            Verifikasi PIN
           </DialogTitle>
           <DialogDescription>
-            Sesi Anda telah idle selama 3 menit. Masukkan PIN untuk melanjutkan.
+            Sesi Anda telah idle. Masukkan PIN untuk melanjutkan.
           </DialogDescription>
         </DialogHeader>
 

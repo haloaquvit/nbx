@@ -1215,34 +1215,15 @@ export const useTransactions = (filters?: {
             console.log(`Processing item: productId=${productId}, productName=${productName}, quantity=${quantity}`);
 
             if (productId && quantity > 0) {
-              // Get current stock - use .order('id').limit(1) and handle array response
-              const { data: productRaw } = await supabase
-                .from('products')
-                .select('current_stock, name')
-                .eq('id', productId)
-                .order('id').limit(1);
+              // ============================================================================
+              // products.current_stock is DEPRECATED - stock derived from inventory_batches
+              // Only restore via FIFO - don't update current_stock directly
+              // ============================================================================
+              console.log(`📦 Restoring stock for product ${productId}: ${quantity} units via FIFO`);
 
-              const productData = Array.isArray(productRaw) ? productRaw[0] : productRaw;
-              if (productData) {
-                const currentStock = productData.current_stock || 0;
-                const newStock = currentStock + quantity; // Restore stock
-
-                const { error: stockError } = await supabase
-                  .from('products')
-                  .update({ current_stock: newStock })
-                  .eq('id', productId);
-
-                if (stockError) {
-                  console.error(`Failed to restore stock for ${productData.name}:`, stockError);
-                } else {
-                  console.log(`📦 Stock restored for ${productData.name}: ${currentStock} → ${newStock}`);
-
-                  // Also restore to inventory batches (FIFO)
-                  await restoreBatchFIFO(productId, quantity);
-                }
-              } else {
-                console.warn(`Product not found for ID: ${productId}`);
-              }
+              // Restore to inventory batches (FIFO) - this is the source of truth
+              await restoreBatchFIFO(productId, quantity);
+              console.log(`✅ Stock restored via FIFO for product ${productId}`);
             } else {
               console.warn(`Skipping item - no productId or quantity: productId=${productId}, quantity=${quantity}`);
             }
@@ -1507,36 +1488,19 @@ export const useTransactions = (filters?: {
 
                 const deliveryData = Array.isArray(deliveryRaw) ? deliveryRaw[0] : deliveryRaw;
                 if (deliveryData?.items && deliveryData.items.length > 0) {
-                  // Get all unique product IDs
-                  const productIds = [...new Set(deliveryData.items.map((item: any) => item.product_id))];
+                  // ============================================================================
+                  // products.current_stock is DEPRECATED - stock derived from inventory_batches
+                  // Only restore via FIFO - don't update current_stock directly
+                  // ============================================================================
 
-                  if (productIds.length > 0) {
-                    const { data: productsData } = await supabase
-                      .from('products')
-                      .select('id, name, current_stock')
-                      .in('id', productIds);
+                  // Restore stock for each delivered item via FIFO
+                  for (const item of deliveryData.items) {
+                    if (item.product_id && item.quantity_delivered > 0) {
+                      console.log(`📦 Restoring stock for ${item.product_name}: ${item.quantity_delivered} units via FIFO`);
 
-                    // Restore stock for each delivered item
-                    for (const item of deliveryData.items) {
-                      const productData = productsData?.find(p => p.id === item.product_id);
-
-                      if (productData) {
-                        const currentStock = productData.current_stock || 0;
-                        const newStock = currentStock + item.quantity_delivered;
-
-                        console.log(`📦 Restoring stock for ${item.product_name}: ${currentStock} + ${item.quantity_delivered} = ${newStock}`);
-
-                        const { error: updateError } = await supabase
-                          .from('products')
-                          .update({ current_stock: newStock })
-                          .eq('id', item.product_id);
-
-                        if (updateError) {
-                          console.error(`Failed to restore stock for ${item.product_name}:`, updateError);
-                        } else {
-                          console.log(`✅ Stock restored for ${item.product_name}`);
-                        }
-                      }
+                      // Restore to inventory batches (FIFO) - this is the source of truth
+                      await restoreBatchFIFO(item.product_id, item.quantity_delivered);
+                      console.log(`✅ Stock restored via FIFO for ${item.product_name}`);
                     }
                   }
                 }

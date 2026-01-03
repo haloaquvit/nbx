@@ -8,6 +8,7 @@ export interface Driver {
   phone?: string;
   license_number?: string;
   is_active: boolean;
+  role?: string; // 'supir' or 'helper'
 }
 
 export const useDrivers = () => {
@@ -40,6 +41,7 @@ export const useDrivers = () => {
             phone: profile.phone,
             license_number: null,
             is_active: true,
+            role: profile.role,
           }));
         }
       } catch (error) {

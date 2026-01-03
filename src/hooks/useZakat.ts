@@ -29,7 +29,7 @@ export function useZakat() {
         paymentAccountId: zakat.payment_account_id,
         paymentMethod: zakat.payment_method,
         status: zakat.status,
-        cashHistoryId: zakat.cash_history_id,
+        journalEntryId: zakat.journal_entry_id,
         receiptNumber: zakat.receipt_number,
         calculationBasis: zakat.calculation_basis,
         calculationNotes: zakat.calculation_notes,
@@ -182,7 +182,7 @@ export function useCreateZakat() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['zakat'] });
-      queryClient.invalidateQueries({ queryKey: ['cash_history'] });
+      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });

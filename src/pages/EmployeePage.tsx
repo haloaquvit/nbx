@@ -19,7 +19,8 @@ import {
   Plus,
   CheckCircle,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Shield
 } from "lucide-react"
 import { useEmployees } from "@/hooks/useEmployees"
 import { Employee } from "@/types/employee"
@@ -31,6 +32,7 @@ import { EditPayrollDialog } from "@/components/EditPayrollDialog"
 import { PaymentConfirmationDialog } from "@/components/PaymentConfirmationDialog"
 import { PayrollHistoryTable } from "@/components/PayrollHistoryTable"
 import { RoleCommissionSetup } from "@/components/RoleCommissionSetup"
+import { PinSetupDialog } from "@/components/PinSetupDialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
@@ -52,6 +54,7 @@ import {
 export default function EmployeePage() {
   const [isEmployeeDialogOpen, setIsEmployeeDialogOpen] = useState(false)
   const [isResetPasswordDialogOpen, setIsResetPasswordDialogOpen] = useState(false)
+  const [isPinSetupDialogOpen, setIsPinSetupDialogOpen] = useState(false)
   const [isSalaryConfigDialogOpen, setIsSalaryConfigDialogOpen] = useState(false)
   const [isPayrollRecordDialogOpen, setIsPayrollRecordDialogOpen] = useState(false)
   const [isEditPayrollDialogOpen, setIsEditPayrollDialogOpen] = useState(false)
@@ -86,6 +89,11 @@ export default function EmployeePage() {
   const handleOpenResetPasswordDialog = (employee: Employee) => {
     setSelectedEmployee(employee)
     setIsResetPasswordDialogOpen(true)
+  }
+
+  const handleOpenPinSetupDialog = (employee: Employee) => {
+    setSelectedEmployee(employee)
+    setIsPinSetupDialogOpen(true)
   }
 
   const handleOpenSalaryConfigDialog = (employee: Employee, existingConfig?: EmployeeSalary) => {
@@ -251,6 +259,11 @@ export default function EmployeePage() {
       <ResetPasswordDialog
         open={isResetPasswordDialogOpen}
         onOpenChange={setIsResetPasswordDialogOpen}
+        employee={selectedEmployee}
+      />
+      <PinSetupDialog
+        open={isPinSetupDialogOpen}
+        onOpenChange={setIsPinSetupDialogOpen}
         employee={selectedEmployee}
       />
       <SalaryConfigDialog
@@ -425,6 +438,9 @@ export default function EmployeePage() {
                           <TableCell className="text-right">
                             {userIsOwnerRole ? (
                               <>
+                                <Button variant="ghost" size="icon" onClick={() => handleOpenPinSetupDialog(employee)} title="Set PIN">
+                                  <Shield className="h-4 w-4 text-muted-foreground" />
+                                </Button>
                                 <Button variant="ghost" size="icon" onClick={() => handleOpenResetPasswordDialog(employee)} title="Reset Password">
                                   <KeyRound className="h-4 w-4 text-muted-foreground" />
                                 </Button>

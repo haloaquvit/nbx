@@ -36,7 +36,16 @@ export function BranchProvider({ children }: { children: ReactNode }) {
     user?.role === 'super_admin' || user?.role === 'head_office_admin' || user?.role === 'owner',
     [user?.role]
   );
-  const canAccessAllBranches = isHeadOffice;
+
+  // Roles that can switch branches: owner, admin, sales, kasir, kasir sales
+  const canAccessAllBranches = useMemo(() => {
+    const role = user?.role?.toLowerCase();
+    return isHeadOffice ||
+           role === 'admin' ||
+           role === 'sales' ||
+           role === 'kasir' ||
+           role === 'kasir sales';
+  }, [user?.role, isHeadOffice]);
 
   // Fetch user's branch and available branches
   const fetchBranches = async () => {

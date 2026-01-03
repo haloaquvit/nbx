@@ -32,7 +32,7 @@ export interface ZakatRecord {
   status: PaymentStatus;
 
   // Reference
-  cashHistoryId?: string; // Link to cash_history table
+  journalEntryId?: string; // Link to journal_entries table
   receiptNumber?: string;
 
   // Calculation Details (for zakat)
