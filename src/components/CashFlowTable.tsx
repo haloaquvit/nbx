@@ -473,12 +473,25 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       },
     },
     {
+      id: "reference",
+      header: "No. Transaksi",
+      cell: ({ row }) => {
+        const item = row.original;
+        const refNumber = item.reference_number || item.reference_name || item.reference_id || '-';
+        return (
+          <div className="max-w-[100px] text-xs font-mono truncate" title={refNumber}>
+            {refNumber}
+          </div>
+        );
+      },
+    },
+    {
       accessorKey: "account_name",
       header: "Akun",
       cell: ({ row }) => {
         const accountName = row.getValue("account_name") as string;
         return (
-          <div className="max-w-[100px] text-xs truncate" title={accountName}>
+          <div className="max-w-[90px] text-xs truncate" title={accountName}>
             {accountName}
           </div>
         );
@@ -502,7 +515,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       cell: ({ row }) => {
         const description = row.getValue("description") as string;
         return (
-          <div className="max-w-[150px] text-xs truncate" title={description}>
+          <div className="max-w-[120px] text-xs truncate" title={description}>
             {description}
           </div>
         );
@@ -618,10 +631,10 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
   const handleExportExcel = () => {
     const exportData = (displayData || []).map(item => ({
       'Tanggal': item.created_at ? format(new Date(item.created_at), "d/M/yy HH:mm", { locale: id }) : '-',
+      'No. Transaksi': item.reference_number || item.reference_name || item.reference_id || '-',
       'Jenis': getTypeLabel(item),
       'Akun': item.account_name || '-',
       'Deskripsi': item.description || '-',
-      'Referensi': item.reference_name || item.reference_number || '-',
       'Kas Masuk': isIncomeType(item) ? item.amount : '',
       'Kas Keluar': isExpenseType(item) ? item.amount : '',
       'Saldo Awal': item.previousBalance || 0,
@@ -713,7 +726,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     // Table with compact layout
     autoTable(doc, {
       startY: currentY,
-      head: [['Tgl', 'Jenis', 'Akun', 'Deskripsi', 'Jumlah', 'Saldo']],
+      head: [['Tgl', 'No. Transaksi', 'Jenis', 'Akun', 'Deskripsi', 'Jumlah', 'Saldo']],
       body: (displayData || []).map(item => {
         const isIncome = isIncomeType(item);
         const isExpense = isExpenseType(item);
@@ -722,12 +735,14 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
           : isExpense
           ? `-${formatCompactCurrency(item.amount)}`
           : '-';
+        const refNumber = item.reference_number || item.reference_name || item.reference_id || '-';
 
         return [
           item.created_at ? format(new Date(item.created_at), "d/M", { locale: id }) : '-',
+          refNumber.length > 15 ? refNumber.substring(0, 15) + '...' : refNumber,
           getTypeLabel(item),
           item.account_name?.substring(0, 12) || '-',
-          item.description?.length > 25 ? item.description.substring(0, 25) + '...' : item.description || '',
+          item.description?.length > 20 ? item.description.substring(0, 20) + '...' : item.description || '',
           amountStr,
           item.afterBalance !== undefined ? formatCompactCurrency(item.afterBalance) : '-'
         ];
@@ -742,12 +757,13 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         fontStyle: 'bold'
       },
       columnStyles: {
-        0: { cellWidth: 18 }, // Tgl
-        1: { cellWidth: 28 }, // Jenis
-        2: { cellWidth: 30 }, // Akun
-        3: { cellWidth: 55 }, // Deskripsi
-        4: { cellWidth: 28, halign: 'right' }, // Jumlah
-        5: { cellWidth: 30, halign: 'right' }  // Saldo
+        0: { cellWidth: 16 }, // Tgl
+        1: { cellWidth: 35 }, // No. Transaksi
+        2: { cellWidth: 25 }, // Jenis
+        3: { cellWidth: 28 }, // Akun
+        4: { cellWidth: 45 }, // Deskripsi
+        5: { cellWidth: 25, halign: 'right' }, // Jumlah
+        6: { cellWidth: 28, halign: 'right' }  // Saldo
       }
     });
     

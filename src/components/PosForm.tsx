@@ -146,7 +146,31 @@ export const PosForm = () => {
       // Set items from quotation
       if (quotation.items && quotation.items.length > 0) {
         const formItems: FormTransactionItem[] = quotation.items.map((item, index) => {
-          const product = products?.find(p => p.id === item.product_id);
+          // Find product in products list
+          let product = products?.find(p => p.id === item.product_id);
+
+          // If product not found by ID, create a placeholder product from quotation data
+          // This ensures the item is still displayed with correct name and price
+          if (!product && item.product_name) {
+            product = {
+              id: item.product_id || `quotation-item-${index}`,
+              name: item.product_name,
+              type: (item.product_type as any) || 'Jasa',
+              basePrice: item.unit_price,
+              costPrice: 0,
+              unit: item.unit || 'pcs',
+              initialStock: 0,
+              currentStock: 0,
+              minStock: 0,
+              minOrder: 1,
+              description: '',
+              specifications: [],
+              materials: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            } as Product;
+          }
+
           return {
             id: index + 1,
             product: product || null,
