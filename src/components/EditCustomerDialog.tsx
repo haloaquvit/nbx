@@ -44,7 +44,7 @@ interface EditCustomerDialogProps {
 
 export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustomerDialogProps) {
   const { toast } = useToast()
-  const { updateCustomer, isLoading } = useCustomers()
+  const { updateCustomer } = useCustomers()
   const { user } = useAuth()
   
   // Photo upload states
@@ -264,10 +264,22 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
     onOpenChange(false)
   }
 
+  const onFormError = (errors: any) => {
+    console.error('Form validation errors:', errors)
+    const firstError = Object.values(errors)[0] as any
+    if (firstError?.message) {
+      toast({
+        variant: "destructive",
+        title: "Validasi Gagal",
+        description: firstError.message,
+      })
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-        <form onSubmit={handleSubmit(onSubmit)}>
+        <form onSubmit={handleSubmit(onSubmit, onFormError)}>
           <DialogHeader>
             <DialogTitle>Edit Pelanggan</DialogTitle>
             <DialogDescription>
@@ -424,8 +436,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
             <Button type="button" variant="outline" onClick={handleCancel} className="order-2 sm:order-1">
               Batal
             </Button>
-            <Button type="submit" disabled={isLoading} className="order-1 sm:order-2">
-              {isLoading ? "Menyimpan..." : "Simpan Perubahan"}
+            <Button type="submit" disabled={updateCustomer.isPending || isUploading} className="order-1 sm:order-2">
+              {updateCustomer.isPending ? "Menyimpan..." : "Simpan Perubahan"}
             </Button>
           </DialogFooter>
         </form>
