@@ -29,10 +29,10 @@ const customerSchema = z.object({
   phone: z.string().min(10, { message: "Nomor telepon tidak valid." }),
   address: z.string().min(5, { message: "Alamat harus diisi (minimal 5 karakter)." }),
   full_address: z.string().optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
+  latitude: z.coerce.number().optional(),
+  longitude: z.coerce.number().optional(),
   jumlah_galon_titip: z.coerce.number().min(0, { message: "Jumlah galon tidak boleh negatif." }).optional(),
-  classification: z.enum(['Rumahan', 'Kios/Toko']).optional(),
+  classification: z.enum(['Rumahan', 'Kios/Toko', '']).optional().transform(val => val === '' ? undefined : val),
 })
 
 type CustomerFormData = z.infer<typeof customerSchema>
@@ -221,6 +221,8 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       }
     }
 
+    console.log('Form data classification:', data.classification)
+
     const updateData: any = {
       id: customer.id,
       name: data.name,
@@ -230,11 +232,18 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
       classification: data.classification || null,
     }
 
+    console.log('Update data:', updateData)
+
     // Include location and photo fields if user can edit them (admin/owner/cashier/driver/helper)
     if (canEditLocationAndPhoto) {
-      updateData.full_address = data.full_address
-      updateData.latitude = data.latitude
-      updateData.longitude = data.longitude
+      // Generate full_address from coordinates if available
+      if (data.latitude && data.longitude) {
+        updateData.full_address = `${data.latitude}, ${data.longitude}`
+      } else {
+        updateData.full_address = data.full_address
+      }
+      updateData.latitude = data.latitude || null
+      updateData.longitude = data.longitude || null
       updateData.store_photo_url = storePhotoUrl
     }
 
@@ -314,15 +323,34 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
             {canEditLocationAndPhoto && (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="full_address">Koordinat GPS</Label>
-                  <Textarea 
-                    id="full_address" 
-                    {...register("full_address")} 
-                    placeholder="Koordinat GPS akan terisi otomatis saat ambil lokasi"
-                    readOnly
-                    className="bg-gray-50"
-                  />
-                  {latitude && longitude && watch('full_address') && (
+                  <Label>Koordinat GPS</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor="latitude" className="text-xs text-gray-500">Latitude</Label>
+                      <Input
+                        id="latitude"
+                        type="number"
+                        step="any"
+                        {...register("latitude")}
+                        placeholder="Latitude"
+                        readOnly={isMobile}
+                        className={isMobile ? "bg-gray-50" : ""}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="longitude" className="text-xs text-gray-500">Longitude</Label>
+                      <Input
+                        id="longitude"
+                        type="number"
+                        step="any"
+                        {...register("longitude")}
+                        placeholder="Longitude"
+                        readOnly={isMobile}
+                        className={isMobile ? "bg-gray-50" : ""}
+                      />
+                    </div>
+                  </div>
+                  {latitude && longitude && (
                     <Button
                       type="button"
                       variant="link"
@@ -334,12 +362,12 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
                     </Button>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
-                  <Label>Lokasi</Label>
+                  <Label>Ambil Lokasi Otomatis</Label>
                   <div className="space-y-2">
-                    <Button 
-                      type="button" 
+                    <Button
+                      type="button"
                       onClick={handleGetCurrentLocation}
                       variant="outline"
                       className="w-full"
@@ -347,21 +375,6 @@ export function EditCustomerDialog({ open, onOpenChange, customer }: EditCustome
                       <MapPin className="w-4 h-4 mr-2" />
                       Ambil Lokasi Saat Ini
                     </Button>
-                    {latitude && longitude && (
-                      <div className="text-sm text-gray-600 space-y-1">
-                        <p>Lat: {latitude.toFixed(6)}</p>
-                        <p>Long: {longitude.toFixed(6)}</p>
-                        <Button
-                          type="button"
-                          variant="link"
-                          className="p-0 h-auto text-blue-600"
-                          onClick={() => window.open(`https://www.google.com/maps/dir//${latitude},${longitude}`, '_blank')}
-                        >
-                          <ExternalLink className="w-3 h-3 mr-1" />
-                          Lihat di Google Maps
-                        </Button>
-                      </div>
-                    )}
                   </div>
                 </div>
                 
