@@ -11,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Badge } from './ui/badge'
 import { Product } from '@/types/product'
 import { Material } from '@/types/material'
-import { PlusCircle, Trash2, ChevronDown, ChevronUp, ShoppingBag, Search, X } from 'lucide-react'
+import { PlusCircle, Trash2, ChevronDown, ChevronUp, ShoppingBag, Search, X, MinusCircle } from 'lucide-react'
 import { Textarea } from './ui/textarea'
 import { useToast } from './ui/use-toast'
 import { useProducts } from '@/hooks/useProducts'
@@ -28,9 +28,18 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useAuth } from '@/hooks/useAuth'
 import { isUserRole } from '@/utils/roleUtils'
 import { useNavigate } from 'react-router-dom'
+import { useProductStockMovements, STOCK_OUT_REASONS } from '@/hooks/useProductStockMovements'
 
 interface ProductManagementProps {
   materials?: Material[]
@@ -55,6 +64,7 @@ const EMPTY_FORM_DATA: Omit<Product, 'id' | 'createdAt' | 'updatedAt'> = {
 export const ProductManagement = ({ materials = [] }: ProductManagementProps) => {
   const { toast } = useToast()
   const { products, isLoading, upsertProduct, deleteProduct } = useProducts()
+  const { createStockOut } = useProductStockMovements()
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [formData, setFormData] = useState(EMPTY_FORM_DATA)
   const [isProductListOpen, setIsProductListOpen] = useState(true)
@@ -63,6 +73,13 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
   const [isMaterialDetailsOpen, setMaterialDetailsOpen] = useState(false);
   const navigate = useNavigate()
+
+  // Stock Out Dialog State
+  const [stockOutDialogOpen, setStockOutDialogOpen] = useState(false)
+  const [stockOutProduct, setStockOutProduct] = useState<Product | null>(null)
+  const [stockOutQuantity, setStockOutQuantity] = useState(0)
+  const [stockOutReason, setStockOutReason] = useState('')
+  const [stockOutNotes, setStockOutNotes] = useState('')
 
   const canManageProducts = user && ['admin', 'owner', 'supervisor', 'cashier', 'designer'].includes(user.role)
   const canDeleteProducts = user && ['admin', 'owner'].includes(user.role)
@@ -218,6 +235,38 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
     setSelectedMaterial(null);
     setMaterialDetailsOpen(false);
   };
+
+  // Stock Out Functions
+  const openStockOutDialog = (product: Product) => {
+    setStockOutProduct(product)
+    setStockOutQuantity(0)
+    setStockOutReason('')
+    setStockOutNotes('')
+    setStockOutDialogOpen(true)
+  }
+
+  const handleStockOut = () => {
+    if (!stockOutProduct || stockOutQuantity <= 0 || !stockOutReason) {
+      toast({ variant: "destructive", title: "Error", description: "Lengkapi semua field yang diperlukan" })
+      return
+    }
+
+    createStockOut.mutate({
+      productId: stockOutProduct.id,
+      quantity: stockOutQuantity,
+      reason: stockOutReason,
+      notes: stockOutNotes,
+    }, {
+      onSuccess: () => {
+        toast({ title: "Sukses!", description: `Stok ${stockOutProduct.name} berhasil dikurangi ${stockOutQuantity} unit` })
+        setStockOutDialogOpen(false)
+        setStockOutProduct(null)
+      },
+      onError: (error) => {
+        toast({ variant: "destructive", title: "Gagal!", description: error.message })
+      }
+    })
+  }
 
   const handleRowClick = (product: Product) => {
     if (isDesigner) {
@@ -506,6 +555,16 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
                       {canManageProducts && (
                         <TableCell>
                           <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); openStockOutDialog(product); }}
+                              disabled={product.currentStock <= 0}
+                              title="Stok Keluar"
+                            >
+                              <MinusCircle className="h-4 w-4 mr-1" />
+                              Keluar
+                            </Button>
                             {canDeleteProducts && (
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -555,6 +614,66 @@ export const ProductManagement = ({ materials = [] }: ProductManagementProps) =>
           </div>
         </div>
       )}
+
+      {/* Stock Out Dialog */}
+      <Dialog open={stockOutDialogOpen} onOpenChange={setStockOutDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stok Keluar</DialogTitle>
+            <DialogDescription>
+              Kurangi stok produk: <strong>{stockOutProduct?.name}</strong>
+              <br />
+              Stok saat ini: <Badge variant="secondary">{stockOutProduct?.currentStock || 0}</Badge>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="stockOutQuantity">Jumlah Keluar</Label>
+              <NumberInput
+                id="stockOutQuantity"
+                value={stockOutQuantity}
+                onChange={(value) => setStockOutQuantity(value || 0)}
+                min={1}
+                max={stockOutProduct?.currentStock || 0}
+                decimalPlaces={0}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stockOutReason">Alasan</Label>
+              <Select value={stockOutReason} onValueChange={setStockOutReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih alasan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {STOCK_OUT_REASONS.map((reason) => (
+                    <SelectItem key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stockOutNotes">Catatan (Opsional)</Label>
+              <Textarea
+                id="stockOutNotes"
+                value={stockOutNotes}
+                onChange={(e) => setStockOutNotes(e.target.value)}
+                placeholder="Catatan tambahan..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStockOutDialogOpen(false)}>Batal</Button>
+            <Button
+              onClick={handleStockOut}
+              disabled={createStockOut.isPending || stockOutQuantity <= 0 || !stockOutReason}
+            >
+              {createStockOut.isPending ? 'Menyimpan...' : 'Simpan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

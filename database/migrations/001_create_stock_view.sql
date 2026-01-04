@@ -10,6 +10,7 @@ SELECT
   p.branch_id,
   p.current_stock as stored_stock,  -- Current value in products table
   COALESCE(SUM(ib.remaining_quantity), 0) as calculated_stock,  -- Derived from batches
+  COALESCE(SUM(ib.remaining_quantity), 0) as current_stock,  -- Alias for app compatibility
   COALESCE(SUM(ib.remaining_quantity), 0) - p.current_stock as difference  -- Mismatch detection
 FROM products p
 LEFT JOIN inventory_batches ib ON ib.product_id = p.id AND ib.remaining_quantity > 0
