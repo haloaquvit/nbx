@@ -1438,6 +1438,81 @@ export async function voidJournalEntry(journalId: string, reason: string): Promi
 }
 
 /**
+ * Void all journals by reference type and reference ID
+ * Useful for voiding all journals related to a specific transaction (e.g., PO, Transaction)
+ *
+ * @param referenceType - Type of reference (e.g., 'adjustment', 'payable', 'transaction')
+ * @param referenceId - ID of the reference document
+ * @param reason - Reason for voiding
+ * @returns Object with success status and list of voided journal IDs
+ */
+export async function voidJournalsByReference(
+  referenceType: string,
+  referenceId: string,
+  reason: string
+): Promise<{ success: boolean; voidedJournalIds?: string[]; error?: string }> {
+  try {
+    // Find all journals with this reference
+    const { data: journals, error: fetchError } = await supabase
+      .from('journal_entries')
+      .select('id, entry_number, status, is_voided')
+      .eq('reference_type', referenceType)
+      .eq('reference_id', referenceId)
+      .eq('is_voided', false);
+
+    if (fetchError) {
+      return { success: false, error: fetchError.message };
+    }
+
+    if (!journals || journals.length === 0) {
+      console.log(`[JournalService] No journals found for ${referenceType}:${referenceId}`);
+      return { success: true, voidedJournalIds: [] };
+    }
+
+    const voidedIds: string[] = [];
+    const errors: string[] = [];
+
+    // Void each journal
+    for (const journal of journals) {
+      if (journal.status === 'posted') {
+        const result = await voidJournalEntry(journal.id, reason);
+        if (result.success) {
+          voidedIds.push(journal.id);
+          console.log(`✅ Voided journal: ${journal.entry_number}`);
+        } else {
+          errors.push(`Failed to void ${journal.entry_number}: ${result.error}`);
+        }
+      } else {
+        // For non-posted journals, just mark as voided
+        const { error: updateError } = await supabase
+          .from('journal_entries')
+          .update({
+            status: 'voided',
+            is_voided: true,
+            void_reason: reason,
+            voided_at: new Date().toISOString(),
+          })
+          .eq('id', journal.id);
+
+        if (!updateError) {
+          voidedIds.push(journal.id);
+          console.log(`✅ Voided draft journal: ${journal.entry_number}`);
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      return { success: false, error: errors.join('; '), voidedJournalIds: voidedIds };
+    }
+
+    return { success: true, voidedJournalIds: voidedIds };
+  } catch (error) {
+    console.error('Error voiding journals by reference:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
  * Generate journal for Manual Cash In (Kas Masuk Manual)
  *
  * Untuk kas masuk manual, kita perlu akun lawan:
@@ -2201,6 +2276,112 @@ export async function createDebtJournal(params: {
         debitAmount: amount,
         creditAmount: 0,
         description: `Penerimaan dana dari ${creditorName}`,
+      },
+      {
+        accountId: hutangAccount.id,
+        accountCode: hutangAccount.code,
+        accountName: hutangAccount.name,
+        debitAmount: 0,
+        creditAmount: amount,
+        description: `Hutang kepada ${creditorName}`,
+      },
+    ],
+  });
+}
+
+/**
+ * Generate journal for DEBT MIGRATION (Migrasi Saldo Awal Hutang)
+ *
+ * PENTING: Fungsi ini HANYA untuk migrasi hutang lama yang sudah ada sebelum sistem berjalan.
+ * BUKAN untuk hutang baru dari transaksi berjalan!
+ *
+ * Jurnal migrasi hutang:
+ * Dr. Saldo Awal / Opening Balance Equity (3200)     xxx
+ *   Cr. Hutang Usaha/Bank/Lainnya (2xxx)                  xxx
+ *
+ * Mengapa bukan Kas?
+ * - Karena ini hutang yang sudah ada sebelumnya, bukan penerimaan kas baru
+ * - Akun penyeimbang adalah ekuitas (Saldo Awal)
+ */
+export async function createDebtMigrationJournal(params: {
+  debtId: string;
+  debtDate: Date;
+  amount: number;
+  creditorName: string;
+  creditorType: 'supplier' | 'bank' | 'credit_card' | 'other';
+  description: string;
+  branchId: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const { debtId, debtDate, amount, creditorName, creditorType, description, branchId } = params;
+
+  // Find Saldo Awal / Opening Balance Equity account (3200 or similar)
+  let saldoAwalAccount = await getAccountByCode('3200', branchId) // Saldo Awal
+    || await getAccountByCode('3100', branchId) // Modal Disetor (fallback)
+    || await findAccountByPattern('saldo awal', 'Ekuitas', branchId)
+    || await findAccountByPattern('opening balance', 'Ekuitas', branchId)
+    || await findAccountByPattern('modal awal', 'Ekuitas', branchId)
+    || await findAccountByPattern('modal disetor', 'Ekuitas', branchId);
+
+  if (!saldoAwalAccount) {
+    return { success: false, error: 'Akun Saldo Awal / Modal tidak ditemukan. Pastikan ada akun ekuitas dengan kode 3xxx.' };
+  }
+
+  // Find appropriate liability account based on creditor type
+  let hutangAccount: { id: string; code: string; name: string } | null = null;
+
+  switch (creditorType) {
+    case 'bank':
+      hutangAccount = await getAccountByCode('2210', branchId)
+        || await getAccountByCode('2220', branchId) // BNI specific
+        || await getAccountByCode('2200', branchId)
+        || await findAccountByPattern('hutang bank', 'Kewajiban', branchId);
+      break;
+    case 'credit_card':
+      hutangAccount = await getAccountByCode('2150', branchId)
+        || await findAccountByPattern('kartu kredit', 'Kewajiban', branchId);
+      break;
+    case 'supplier':
+      hutangAccount = await getAccountByCode('2110', branchId)
+        || await findAccountByPattern('hutang usaha', 'Kewajiban', branchId);
+      break;
+    case 'other':
+    default:
+      hutangAccount = await getAccountByCode('2900', branchId)
+        || await findAccountByPattern('hutang lain', 'Kewajiban', branchId);
+      break;
+  }
+
+  if (!hutangAccount) {
+    hutangAccount = await getAccountByCode('2110', branchId)
+      || await findAccountByPattern('hutang', 'Kewajiban', branchId);
+  }
+
+  if (!hutangAccount) {
+    return { success: false, error: 'Akun Hutang tidak ditemukan. Pastikan ada akun dengan kode 2xxx dan tipe Kewajiban.' };
+  }
+
+  const creditorTypeLabel = {
+    bank: 'Bank',
+    credit_card: 'Kartu Kredit',
+    supplier: 'Supplier',
+    other: 'Lainnya'
+  }[creditorType];
+
+  return createJournalEntry({
+    entryDate: debtDate,
+    description: `Saldo Awal Hutang ${creditorTypeLabel} - ${creditorName}: ${description}`,
+    referenceType: 'payable',
+    referenceId: debtId,
+    branchId,
+    autoPost: true,
+    lines: [
+      {
+        accountId: saldoAwalAccount.id,
+        accountCode: saldoAwalAccount.code,
+        accountName: saldoAwalAccount.name,
+        debitAmount: amount,
+        creditAmount: 0,
+        description: `Saldo Awal Hutang ${creditorName}`,
       },
       {
         accountId: hutangAccount.id,

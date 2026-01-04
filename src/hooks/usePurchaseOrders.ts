@@ -10,7 +10,7 @@ import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
 import { findAccountByLookup, AccountLookupType } from '@/services/accountLookupService'
 import { Account } from '@/types/account'
-import { createMaterialPurchaseJournal, createProductPurchaseJournal } from '@/services/journalService'
+import { createMaterialPurchaseJournal, createProductPurchaseJournal, voidJournalsByReference } from '@/services/journalService'
 
 // Helper to map DB account to App account format
 const fromDbToAppAccount = (dbAccount: any): Account => ({
@@ -712,9 +712,286 @@ export const usePurchaseOrders = () => {
     }
   });
 
+  // ============================================================================
+  // CHECK IF PO CAN BE DELETED
+  // Returns validation result with details of what will be affected
+  // ============================================================================
+  const checkCanDeletePO = async (poId: string): Promise<{
+    canDelete: boolean;
+    reason?: string;
+    warnings: string[];
+    details: {
+      hasInventoryBatchesUsed: boolean;
+      inventoryBatchesCount: number;
+      usedBatchesCount: number;
+      journalsCount: number;
+      accountsPayableCount: number;
+      materialMovementsCount: number;
+      poStatus: string;
+    };
+  }> => {
+    const warnings: string[] = [];
+    let hasInventoryBatchesUsed = false;
+    let usedBatchesCount = 0;
+
+    // 1. Get PO data
+    const { data: poDataRaw } = await supabase
+      .from('purchase_orders')
+      .select('id, status, supplier_name, total_cost')
+      .eq('id', poId)
+      .order('id').limit(1);
+    const poData = Array.isArray(poDataRaw) ? poDataRaw[0] : poDataRaw;
+
+    if (!poData) {
+      return {
+        canDelete: false,
+        reason: 'Purchase Order tidak ditemukan',
+        warnings: [],
+        details: {
+          hasInventoryBatchesUsed: false,
+          inventoryBatchesCount: 0,
+          usedBatchesCount: 0,
+          journalsCount: 0,
+          accountsPayableCount: 0,
+          materialMovementsCount: 0,
+          poStatus: 'unknown',
+        },
+      };
+    }
+
+    // 2. Check inventory batches - CRITICAL: If batches are used, cannot delete
+    const { data: batches } = await supabase
+      .from('inventory_batches')
+      .select('id, initial_quantity, remaining_quantity, material_id, product_id')
+      .eq('purchase_order_id', poId);
+
+    const inventoryBatchesCount = batches?.length || 0;
+
+    if (batches && batches.length > 0) {
+      for (const batch of batches) {
+        // If remaining_quantity < initial_quantity, batch has been used
+        if (batch.remaining_quantity < batch.initial_quantity) {
+          hasInventoryBatchesUsed = true;
+          usedBatchesCount++;
+        }
+      }
+    }
+
+    if (hasInventoryBatchesUsed) {
+      return {
+        canDelete: false,
+        reason: `Tidak dapat menghapus PO karena ${usedBatchesCount} batch inventory sudah terpakai (FIFO). Stok dari PO ini sudah digunakan dalam produksi atau penjualan.`,
+        warnings: [],
+        details: {
+          hasInventoryBatchesUsed: true,
+          inventoryBatchesCount,
+          usedBatchesCount,
+          journalsCount: 0,
+          accountsPayableCount: 0,
+          materialMovementsCount: 0,
+          poStatus: poData.status,
+        },
+      };
+    }
+
+    // 3. Check journals
+    const { data: journals } = await supabase
+      .from('journal_entries')
+      .select('id')
+      .eq('reference_id', poId)
+      .eq('is_voided', false);
+    const journalsCount = journals?.length || 0;
+    if (journalsCount > 0) {
+      warnings.push(`${journalsCount} jurnal akan di-void`);
+    }
+
+    // 4. Check accounts payable
+    const { data: payables } = await supabase
+      .from('accounts_payable')
+      .select('id, paid_amount, amount')
+      .eq('purchase_order_id', poId);
+    const accountsPayableCount = payables?.length || 0;
+
+    // Check if any payable has been partially/fully paid
+    if (payables && payables.length > 0) {
+      for (const payable of payables) {
+        if (payable.paid_amount > 0) {
+          return {
+            canDelete: false,
+            reason: `Tidak dapat menghapus PO karena hutang sudah ada pembayaran sebesar Rp ${payable.paid_amount.toLocaleString('id-ID')}`,
+            warnings: [],
+            details: {
+              hasInventoryBatchesUsed: false,
+              inventoryBatchesCount,
+              usedBatchesCount: 0,
+              journalsCount,
+              accountsPayableCount,
+              materialMovementsCount: 0,
+              poStatus: poData.status,
+            },
+          };
+        }
+      }
+      warnings.push(`${accountsPayableCount} hutang akan dihapus`);
+    }
+
+    // 5. Check material movements
+    const { data: movements } = await supabase
+      .from('material_movements')
+      .select('id')
+      .eq('reference_id', poId)
+      .eq('reference_type', 'purchase_order');
+    const materialMovementsCount = movements?.length || 0;
+    if (materialMovementsCount > 0) {
+      warnings.push(`${materialMovementsCount} pergerakan bahan akan dihapus`);
+    }
+
+    // 6. Add warning about stock rollback
+    if (inventoryBatchesCount > 0) {
+      warnings.push(`${inventoryBatchesCount} batch inventory akan dihapus dan stok akan dikurangi`);
+    }
+
+    return {
+      canDelete: true,
+      warnings,
+      details: {
+        hasInventoryBatchesUsed: false,
+        inventoryBatchesCount,
+        usedBatchesCount: 0,
+        journalsCount,
+        accountsPayableCount,
+        materialMovementsCount,
+        poStatus: poData.status,
+      },
+    };
+  };
+
   const deletePurchaseOrder = useMutation({
-    mutationFn: async (poId: string) => {
-      // Delete related accounts payable first
+    mutationFn: async ({ poId, skipValidation = false }: { poId: string; skipValidation?: boolean }) => {
+      console.log('[deletePurchaseOrder] Starting deletion for PO:', poId);
+
+      // ============================================================================
+      // STEP 0: VALIDATION - Check if PO can be deleted
+      // ============================================================================
+      if (!skipValidation) {
+        const validation = await checkCanDeletePO(poId);
+        if (!validation.canDelete) {
+          throw new Error(validation.reason || 'PO tidak dapat dihapus');
+        }
+      }
+
+      // ============================================================================
+      // STEP 1: VOID ALL RELATED JOURNALS (don't delete, keep audit trail)
+      // ============================================================================
+      console.log('[deletePurchaseOrder] Step 1: Voiding related journals...');
+
+      // Void adjustment journals (pembelian bahan/produk)
+      const voidResult = await voidJournalsByReference('adjustment', poId, `PO ${poId} dihapus`);
+      if (voidResult.voidedJournalIds && voidResult.voidedJournalIds.length > 0) {
+        console.log(`✅ Voided ${voidResult.voidedJournalIds.length} adjustment journals`);
+      }
+
+      // Also void any payable-related journals
+      const { data: payables } = await supabase
+        .from('accounts_payable')
+        .select('id')
+        .eq('purchase_order_id', poId);
+
+      if (payables) {
+        for (const payable of payables) {
+          const payableVoidResult = await voidJournalsByReference('payable', payable.id, `PO ${poId} dihapus`);
+          if (payableVoidResult.voidedJournalIds && payableVoidResult.voidedJournalIds.length > 0) {
+            console.log(`✅ Voided ${payableVoidResult.voidedJournalIds.length} payable journals for ${payable.id}`);
+          }
+        }
+      }
+
+      // ============================================================================
+      // STEP 2: GET INVENTORY BATCHES AND ROLLBACK STOCK
+      // ============================================================================
+      console.log('[deletePurchaseOrder] Step 2: Rolling back inventory...');
+
+      const { data: batches } = await supabase
+        .from('inventory_batches')
+        .select('id, material_id, product_id, remaining_quantity')
+        .eq('purchase_order_id', poId);
+
+      if (batches && batches.length > 0) {
+        for (const batch of batches) {
+          // Rollback material stock
+          if (batch.material_id) {
+            const { data: materialRaw } = await supabase
+              .from('materials')
+              .select('stock')
+              .eq('id', batch.material_id)
+              .order('id').limit(1);
+            const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
+
+            if (material) {
+              const newStock = Math.max(0, (Number(material.stock) || 0) - batch.remaining_quantity);
+              await supabase
+                .from('materials')
+                .update({ stock: newStock })
+                .eq('id', batch.material_id);
+              console.log(`✅ Rolled back material stock: -${batch.remaining_quantity}`);
+            }
+          }
+
+          // Rollback product stock
+          if (batch.product_id) {
+            const { data: productRaw } = await supabase
+              .from('products')
+              .select('current_stock')
+              .eq('id', batch.product_id)
+              .order('id').limit(1);
+            const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
+
+            if (product) {
+              const newStock = Math.max(0, (Number(product.current_stock) || 0) - batch.remaining_quantity);
+              await supabase
+                .from('products')
+                .update({ current_stock: newStock })
+                .eq('id', batch.product_id);
+              console.log(`✅ Rolled back product stock: -${batch.remaining_quantity}`);
+            }
+          }
+        }
+
+        // Delete inventory batches
+        const { error: batchDeleteError } = await supabase
+          .from('inventory_batches')
+          .delete()
+          .eq('purchase_order_id', poId);
+
+        if (batchDeleteError) {
+          console.warn('Failed to delete inventory batches:', batchDeleteError.message);
+        } else {
+          console.log(`✅ Deleted ${batches.length} inventory batches`);
+        }
+      }
+
+      // ============================================================================
+      // STEP 3: DELETE MATERIAL MOVEMENTS
+      // ============================================================================
+      console.log('[deletePurchaseOrder] Step 3: Deleting material movements...');
+
+      const { error: movementError } = await supabase
+        .from('material_movements')
+        .delete()
+        .eq('reference_id', poId)
+        .eq('reference_type', 'purchase_order');
+
+      if (movementError) {
+        console.warn('Failed to delete material movements:', movementError.message);
+      } else {
+        console.log('✅ Deleted material movements');
+      }
+
+      // ============================================================================
+      // STEP 4: DELETE ACCOUNTS PAYABLE
+      // ============================================================================
+      console.log('[deletePurchaseOrder] Step 4: Deleting accounts payable...');
+
       const { error: apError } = await supabase
         .from('accounts_payable')
         .delete()
@@ -722,16 +999,48 @@ export const usePurchaseOrders = () => {
 
       if (apError) {
         console.warn('Failed to delete accounts payable:', apError.message);
-        // Continue anyway, accounts payable might not exist
+      } else {
+        console.log('✅ Deleted accounts payable');
       }
 
-      // Delete purchase order
-      const { error } = await supabase.from('purchase_orders').delete().eq('id', poId);
+      // ============================================================================
+      // STEP 5: DELETE PO ITEMS
+      // ============================================================================
+      console.log('[deletePurchaseOrder] Step 5: Deleting PO items...');
+
+      const { error: itemsError } = await supabase
+        .from('purchase_order_items')
+        .delete()
+        .eq('purchase_order_id', poId);
+
+      if (itemsError) {
+        console.warn('Failed to delete PO items:', itemsError.message);
+      } else {
+        console.log('✅ Deleted PO items');
+      }
+
+      // ============================================================================
+      // STEP 6: DELETE PURCHASE ORDER
+      // ============================================================================
+      console.log('[deletePurchaseOrder] Step 6: Deleting purchase order...');
+
+      const { error } = await supabase
+        .from('purchase_orders')
+        .delete()
+        .eq('id', poId);
+
       if (error) throw new Error(error.message);
+
+      console.log('✅ Purchase Order deleted successfully:', poId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
       queryClient.invalidateQueries({ queryKey: ['accountsPayable'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['materialMovements'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 
@@ -744,5 +1053,6 @@ export const usePurchaseOrders = () => {
     payPurchaseOrder,
     receivePurchaseOrder,
     deletePurchaseOrder,
+    checkCanDeletePO, // Validation function for UI confirmation
   }
 }

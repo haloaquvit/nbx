@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
 import { generateSequentialId } from '@/utils/idGenerator'
-import { createPayablePaymentJournal } from '@/services/journalService'
+import { createPayablePaymentJournal, createDebtJournal } from '@/services/journalService'
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -107,10 +107,41 @@ export const useAccountsPayable = () => {
       if (error) throw new Error(error.message)
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
       if (!data) throw new Error('Failed to create accounts payable')
+
+      // ============================================================================
+      // AUTO-GENERATE JOURNAL ENTRY FOR HUTANG BARU
+      // ============================================================================
+      // Jurnal otomatis untuk pencatatan hutang baru:
+      // Dr. Kas/Bank (jika ada penerimaan dana)    xxx
+      //   Cr. Hutang Usaha/Hutang Bank                  xxx
+      // ============================================================================
+      if (currentBranch?.id && newPayable.amount > 0) {
+        try {
+          const journalResult = await createDebtJournal({
+            debtId: payableId,
+            debtDate: new Date(),
+            amount: newPayable.amount,
+            creditorName: newPayable.supplierName || 'Unknown',
+            creditorType: (newPayable.creditorType as 'supplier' | 'bank' | 'credit_card' | 'other') || 'other',
+            description: newPayable.description || 'Hutang Baru',
+            branchId: currentBranch.id,
+          });
+
+          if (journalResult.success) {
+            console.log('✅ Jurnal hutang baru auto-generated:', journalResult.journalId);
+          } else {
+            console.warn('⚠️ Gagal membuat jurnal hutang otomatis:', journalResult.error);
+          }
+        } catch (journalError) {
+          console.error('Error creating debt journal:', journalError);
+        }
+      }
+
       return fromDb(data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accountsPayable'] })
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
     },
   })
 
