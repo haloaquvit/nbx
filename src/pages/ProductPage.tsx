@@ -4,11 +4,13 @@ import { DataTable } from "@/components/DataTable"
 import { BOMManagement } from "@/components/BOMManagement"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { NumberInput } from "@/components/ui/number-input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import * as XLSX from "xlsx"
 import { useProducts } from "@/hooks/useProducts"
 import { useAuth } from "@/hooks/useAuth"
@@ -16,12 +18,15 @@ import { useToast } from "@/components/ui/use-toast"
 import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions"
 import { ProductType } from "@/types/product"
 import { Link } from "react-router-dom"
+import { useProductStockMovements, STOCK_OUT_REASONS } from "@/hooks/useProductStockMovements"
+import { MinusCircle } from "lucide-react"
 
 export default function ProductPage() {
   const { products, upsertProduct, deleteProduct, isLoading } = useProducts()
   const { user } = useAuth()
   const { hasPermission } = usePermissions()
   const { toast } = useToast()
+  const { createStockOut } = useProductStockMovements()
 
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({
@@ -35,6 +40,13 @@ export default function ProductPage() {
     minOrder: 1,
     description: "",
   })
+
+  // Stock Out Dialog State
+  const [stockOutDialogOpen, setStockOutDialogOpen] = useState(false)
+  const [stockOutProduct, setStockOutProduct] = useState<any>(null)
+  const [stockOutQuantity, setStockOutQuantity] = useState(0)
+  const [stockOutReason, setStockOutReason] = useState('')
+  const [stockOutNotes, setStockOutNotes] = useState('')
 
   const canManage = hasPermission(PERMISSIONS.PRODUCTS)
   const canDelete = hasPermission(PERMISSIONS.PRODUCTS)
@@ -148,18 +160,30 @@ export default function ProductPage() {
         key: "delete",
         header: "Aksi",
         render: (row: any) => (
-          <Button
-            size="sm"
-            variant="outline"
-            className="text-red-600 hover:text-red-700"
-            onClick={() => handleDelete(row)}
-          >
-            Hapus
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openStockOutDialog(row)}
+              disabled={row.currentStock <= 0}
+              title="Stok Keluar"
+            >
+              <MinusCircle className="h-4 w-4 mr-1" />
+              Keluar
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-red-600 hover:text-red-700"
+              onClick={() => handleDelete(row)}
+            >
+              Hapus
+            </Button>
+          </div>
         ),
       })
     }
-    
+
     return cols
   }, [canManage, canDelete])
 
@@ -177,10 +201,42 @@ export default function ProductPage() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error", 
+        title: "Error",
         description: error.message || "Gagal menghapus produk"
       })
     }
+  }
+
+  // Stock Out Functions
+  const openStockOutDialog = (product: any) => {
+    setStockOutProduct(product)
+    setStockOutQuantity(0)
+    setStockOutReason('')
+    setStockOutNotes('')
+    setStockOutDialogOpen(true)
+  }
+
+  const handleStockOut = () => {
+    if (!stockOutProduct || stockOutQuantity <= 0 || !stockOutReason) {
+      toast({ variant: "destructive", title: "Error", description: "Lengkapi semua field yang diperlukan" })
+      return
+    }
+
+    createStockOut.mutate({
+      productId: stockOutProduct.id,
+      quantity: stockOutQuantity,
+      reason: stockOutReason,
+      notes: stockOutNotes,
+    }, {
+      onSuccess: () => {
+        toast({ title: "Sukses!", description: `Stok ${stockOutProduct.name} berhasil dikurangi ${stockOutQuantity} unit` })
+        setStockOutDialogOpen(false)
+        setStockOutProduct(null)
+      },
+      onError: (error) => {
+        toast({ variant: "destructive", title: "Gagal!", description: error.message })
+      }
+    })
   }
 
   const handleAdd = async () => {
@@ -440,12 +496,72 @@ export default function ProductPage() {
       </div>
       
       <DataTable data={products || []} columns={columns as any} />
-      
+
       {!canManage && (
         <div className="mt-3 text-sm text-muted-foreground">
           Hanya pengguna dengan permission yang dapat mengelola produk.
         </div>
       )}
+
+      {/* Stock Out Dialog */}
+      <Dialog open={stockOutDialogOpen} onOpenChange={setStockOutDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stok Keluar</DialogTitle>
+            <DialogDescription>
+              Kurangi stok produk: <strong>{stockOutProduct?.name}</strong>
+              <br />
+              Stok saat ini: <Badge variant="secondary">{stockOutProduct?.currentStock || 0}</Badge>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="stockOutQuantity">Jumlah Keluar</Label>
+              <NumberInput
+                id="stockOutQuantity"
+                value={stockOutQuantity}
+                onChange={(value) => setStockOutQuantity(value || 0)}
+                min={1}
+                max={stockOutProduct?.currentStock || 0}
+                decimalPlaces={0}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stockOutReason">Alasan</Label>
+              <Select value={stockOutReason} onValueChange={setStockOutReason}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih alasan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {STOCK_OUT_REASONS.map((reason) => (
+                    <SelectItem key={reason.value} value={reason.value}>
+                      {reason.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stockOutNotes">Catatan (Opsional)</Label>
+              <Textarea
+                id="stockOutNotes"
+                value={stockOutNotes}
+                onChange={(e) => setStockOutNotes(e.target.value)}
+                placeholder="Catatan tambahan..."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStockOutDialogOpen(false)}>Batal</Button>
+            <Button
+              onClick={handleStockOut}
+              disabled={createStockOut.isPending || stockOutQuantity <= 0 || !stockOutReason}
+            >
+              {createStockOut.isPending ? 'Menyimpan...' : 'Simpan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

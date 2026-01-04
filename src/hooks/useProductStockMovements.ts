@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useBranch } from './useBranch';
+import { useBranch } from '@/contexts/BranchContext';
 import { useAuth } from './useAuth';
 import { consumeStockFIFO, restoreStockFIFO } from '@/services/stockService';
 
