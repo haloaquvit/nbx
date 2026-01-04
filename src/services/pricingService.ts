@@ -151,28 +151,53 @@ export class PricingService {
 
       const { data: productDataRaw, error: productError } = await supabase
         .from('products')
-        .select('id, name, base_price, current_stock')
+        .select('id, name, base_price')
         .eq('id', productId)
         .order('id').limit(1)
 
-      productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+      const productRaw = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+
+      if (productRaw) {
+        // Get stock from VIEW (source of truth)
+        const { data: stockDataRaw } = await supabase
+          .from('v_product_current_stock')
+          .select('current_stock')
+          .eq('product_id', productId)
+          .order('product_id').limit(1);
+        const stockData = Array.isArray(stockDataRaw) ? stockDataRaw[0] : stockDataRaw;
+
+        productData = {
+          id: productRaw.id,
+          name: productRaw.name,
+          base_price: productRaw.base_price || 0,
+          current_stock: Number(stockData?.current_stock) || 0
+        };
+      }
 
       // If not found in products, try materials table
       if (!productData) {
         const { data: materialDataRaw, error: materialError } = await supabase
           .from('materials')
-          .select('id, name, price_per_unit, stock')
+          .select('id, name, price_per_unit')
           .eq('id', productId)
           .order('id').limit(1)
 
         const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
 
         if (materialData) {
+          // Get stock from VIEW for materials
+          const { data: matStockRaw } = await supabase
+            .from('v_material_current_stock')
+            .select('current_stock')
+            .eq('material_id', productId)
+            .order('material_id').limit(1);
+          const matStock = Array.isArray(matStockRaw) ? matStockRaw[0] : matStockRaw;
+
           productData = {
             id: materialData.id,
             name: materialData.name,
             base_price: materialData.price_per_unit || 0,
-            current_stock: materialData.stock || 0
+            current_stock: Number(matStock?.current_stock) || 0
           };
         } else if (materialError) {
           console.error('Failed to fetch material:', materialError);

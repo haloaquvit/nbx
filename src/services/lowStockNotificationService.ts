@@ -21,33 +21,50 @@ export interface LowStockCheckResult {
 export const LowStockNotificationService = {
   /**
    * Check for products with stock below minimum
+   * Stock is fetched from v_product_current_stock VIEW (source of truth)
    */
   async checkLowStockProducts(branchId?: string): Promise<LowStockItem[]> {
-    let query = supabase
+    // Get products with min_stock
+    let productsQuery = supabase
       .from('products')
-      .select('id, name, current_stock, min_stock, unit')
+      .select('id, name, min_stock, unit')
       .not('min_stock', 'is', null)
       .gt('min_stock', 0);
 
     if (branchId) {
-      query = query.or(`branch_id.eq.${branchId},is_shared.eq.true`);
+      productsQuery = productsQuery.or(`branch_id.eq.${branchId},is_shared.eq.true`);
     }
 
-    const { data, error } = await query;
+    const { data: products, error } = await productsQuery;
 
     if (error) {
       console.error('[LowStockNotificationService] Error fetching products:', error);
       return [];
     }
 
+    if (!products || products.length === 0) return [];
+
+    // Get actual stock from VIEW (source of truth)
+    let stockQuery = supabase.from('v_product_current_stock').select('product_id, current_stock');
+    if (branchId) {
+      stockQuery = stockQuery.eq('branch_id', branchId);
+    }
+    const { data: stockData } = await stockQuery;
+    const stockMap = new Map<string, number>();
+    (stockData || []).forEach((s: any) => stockMap.set(s.product_id, Number(s.current_stock) || 0));
+
     // Filter products where current_stock <= min_stock
-    return (data || [])
-      .filter((p: any) => Number(p.current_stock || 0) <= Number(p.min_stock || 0))
+    return products
+      .map((p: any) => ({
+        ...p,
+        current_stock: stockMap.get(p.id) || 0
+      }))
+      .filter((p: any) => p.current_stock <= Number(p.min_stock || 0))
       .map((p: any) => ({
         id: p.id,
         name: p.name,
         type: 'product' as const,
-        currentStock: Number(p.current_stock || 0),
+        currentStock: p.current_stock,
         minStock: Number(p.min_stock || 0),
         unit: p.unit || 'pcs',
       }));
@@ -55,34 +72,51 @@ export const LowStockNotificationService = {
 
   /**
    * Check for materials with stock below minimum (only Stock type)
+   * Stock is fetched from v_material_current_stock VIEW (source of truth)
    */
   async checkLowStockMaterials(branchId?: string): Promise<LowStockItem[]> {
-    let query = supabase
+    // Get materials with min_stock
+    let materialsQuery = supabase
       .from('materials')
-      .select('id, name, stock, min_stock, unit, type')
+      .select('id, name, min_stock, unit, type')
       .eq('type', 'Stock')
       .not('min_stock', 'is', null)
       .gt('min_stock', 0);
 
     if (branchId) {
-      query = query.eq('branch_id', branchId);
+      materialsQuery = materialsQuery.eq('branch_id', branchId);
     }
 
-    const { data, error } = await query;
+    const { data: materials, error } = await materialsQuery;
 
     if (error) {
       console.error('[LowStockNotificationService] Error fetching materials:', error);
       return [];
     }
 
+    if (!materials || materials.length === 0) return [];
+
+    // Get actual stock from VIEW (source of truth)
+    let stockQuery = supabase.from('v_material_current_stock').select('material_id, current_stock');
+    if (branchId) {
+      stockQuery = stockQuery.eq('branch_id', branchId);
+    }
+    const { data: stockData } = await stockQuery;
+    const stockMap = new Map<string, number>();
+    (stockData || []).forEach((s: any) => stockMap.set(s.material_id, Number(s.current_stock) || 0));
+
     // Filter materials where stock <= min_stock
-    return (data || [])
-      .filter((m: any) => Number(m.stock || 0) <= Number(m.min_stock || 0))
+    return materials
+      .map((m: any) => ({
+        ...m,
+        stock: stockMap.get(m.id) || 0
+      }))
+      .filter((m: any) => m.stock <= Number(m.min_stock || 0))
       .map((m: any) => ({
         id: m.id,
         name: m.name,
         type: 'material' as const,
-        currentStock: Number(m.stock || 0),
+        currentStock: m.stock,
         minStock: Number(m.min_stock || 0),
         unit: m.unit || 'pcs',
       }));

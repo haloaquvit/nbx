@@ -201,6 +201,7 @@ export function useOptimizedProductSearch(
 }
 
 // Fallback function for direct product search
+// Stock is fetched from v_product_current_stock VIEW (source of truth)
 async function fallbackProductSearch(
   searchTerm: string = '',
   categoryFilter: string | null = null,
@@ -215,7 +216,6 @@ async function fallbackProductSearch(
       base_price,
       unit,
       min_order,
-      current_stock,
       min_stock,
       description,
       specifications
@@ -235,17 +235,32 @@ async function fallbackProductSearch(
 
   if (error) throw error
 
+  // Get stock from VIEW (source of truth)
+  const productIds = (data || []).map(p => p.id);
+  let stockMap = new Map<string, number>();
+
+  if (productIds.length > 0) {
+    const { data: stockData } = await supabase
+      .from('v_product_current_stock')
+      .select('product_id, current_stock')
+      .in('product_id', productIds);
+    (stockData || []).forEach((s: any) => stockMap.set(s.product_id, Number(s.current_stock) || 0));
+  }
+
   // Transform data to match RPC output format
-  return (data || []).map(product => ({
-    id: product.id,
-    name: product.name,
-    category: product.type || 'Produksi', // Use type instead of category
-    base_price: product.base_price,
-    unit: product.unit,
-    current_stock: product.current_stock || (product.specifications as any)?.stock || 0,
-    min_order: product.min_order,
-    is_low_stock: (product.current_stock || (product.specifications as any)?.stock || 0) <= product.min_order
-  }))
+  return (data || []).map(product => {
+    const currentStock = stockMap.get(product.id) || 0;
+    return {
+      id: product.id,
+      name: product.name,
+      category: product.type || 'Produksi',
+      base_price: product.base_price,
+      unit: product.unit,
+      current_stock: currentStock,
+      min_order: product.min_order,
+      is_low_stock: currentStock <= (product.min_order || 0)
+    };
+  })
 }
 
 /**

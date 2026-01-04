@@ -60,10 +60,10 @@ export const StockConsumptionReport = () => {
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i)
 
   const generateReport = async (fromDate: Date, toDate: Date): Promise<StockReportItem[]> => {
-    // Get all products
+    // Get all products (without current_stock - will get from VIEW)
     let productsQuery = supabase
       .from('products')
-      .select('id, name, type, unit, current_stock')
+      .select('id, name, type, unit')
       .order('name')
 
     if (currentBranch?.id) {
@@ -72,6 +72,15 @@ export const StockConsumptionReport = () => {
 
     const { data: products, error: productsError } = await productsQuery
     if (productsError) throw productsError
+
+    // Get actual stock from VIEW (source of truth)
+    let stockQuery = supabase.from('v_product_current_stock').select('product_id, current_stock');
+    if (currentBranch?.id) {
+      stockQuery = stockQuery.eq('branch_id', currentBranch.id);
+    }
+    const { data: stockData } = await stockQuery;
+    const stockMap = new Map<string, number>();
+    (stockData || []).forEach((s: any) => stockMap.set(s.product_id, Number(s.current_stock) || 0));
 
     // Get production records in date range (MASUK dari produksi)
     let productionsQuery = supabase
@@ -178,7 +187,8 @@ export const StockConsumptionReport = () => {
       // Skip service products
       if (product.type === 'Jasa') continue
 
-      const currentStock = Number(product.current_stock) || 0
+      // Get stock from VIEW map (source of truth)
+      const currentStock = stockMap.get(product.id) || 0
       const periodProduction = productionByProduct[product.id] || 0
       const periodSales = salesByProduct[product.id] || 0
 

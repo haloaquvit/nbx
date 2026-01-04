@@ -529,29 +529,47 @@ export default function ChartOfAccountsPage() {
     setIsLoadingInventory(true)
 
     try {
-      // Get products inventory value (current_stock × cost_price)
+      // Get products with cost_price
       const { data: products, error: productsError } = await supabase
         .from('products')
-        .select('id, name, current_stock, cost_price, base_price')
+        .select('id, name, cost_price, base_price')
         .eq('branch_id', currentBranch.id)
 
       if (productsError) throw productsError
 
+      // Get stock from VIEW (source of truth)
+      const { data: productStockData } = await supabase
+        .from('v_product_current_stock')
+        .select('product_id, current_stock')
+        .eq('branch_id', currentBranch.id)
+      const productStockMap = new Map<string, number>();
+      (productStockData || []).forEach((s: any) => productStockMap.set(s.product_id, Number(s.current_stock) || 0));
+
       const productsValue = (products || []).reduce((sum, p) => {
         const costPrice = p.cost_price || p.base_price || 0
-        return sum + ((p.current_stock || 0) * costPrice)
+        const stock = productStockMap.get(p.id) || 0
+        return sum + (stock * costPrice)
       }, 0)
 
-      // Get materials inventory value (stock × price_per_unit)
+      // Get materials with price
       const { data: materials, error: materialsError } = await supabase
         .from('materials')
-        .select('id, name, stock, price_per_unit')
+        .select('id, name, price_per_unit')
         .eq('branch_id', currentBranch.id)
 
       if (materialsError) throw materialsError
 
+      // Get material stock from VIEW (source of truth)
+      const { data: materialStockData } = await supabase
+        .from('v_material_current_stock')
+        .select('material_id, current_stock')
+        .eq('branch_id', currentBranch.id)
+      const materialStockMap = new Map<string, number>();
+      (materialStockData || []).forEach((s: any) => materialStockMap.set(s.material_id, Number(s.current_stock) || 0));
+
       const materialsValue = (materials || []).reduce((sum, m) => {
-        return sum + ((m.stock || 0) * (m.price_per_unit || 0))
+        const stock = materialStockMap.get(m.id) || 0
+        return sum + (stock * (m.price_per_unit || 0))
       }, 0)
 
       // Get current journal values for inventory accounts
@@ -775,24 +793,42 @@ export default function ChartOfAccountsPage() {
     setIsSyncingAll(true)
 
     try {
-      // 1. Get inventory data (products + materials)
+      // 1. Get inventory data (products + materials) - stock from VIEW
       const { data: products } = await supabase
         .from('products')
-        .select('id, name, current_stock, cost_price, base_price')
+        .select('id, name, cost_price, base_price')
         .eq('branch_id', currentBranch.id)
+
+      // Get stock from VIEW (source of truth)
+      const { data: productStockData } = await supabase
+        .from('v_product_current_stock')
+        .select('product_id, current_stock')
+        .eq('branch_id', currentBranch.id)
+      const productStockMap = new Map<string, number>();
+      (productStockData || []).forEach((s: any) => productStockMap.set(s.product_id, Number(s.current_stock) || 0));
 
       const productsValue = (products || []).reduce((sum, p) => {
         const costPrice = p.cost_price || p.base_price || 0
-        return sum + ((p.current_stock || 0) * costPrice)
+        const stock = productStockMap.get(p.id) || 0
+        return sum + (stock * costPrice)
       }, 0)
 
       const { data: materials } = await supabase
         .from('materials')
-        .select('id, name, stock, price_per_unit')
+        .select('id, name, price_per_unit')
         .eq('branch_id', currentBranch.id)
 
+      // Get material stock from VIEW (source of truth)
+      const { data: materialStockData } = await supabase
+        .from('v_material_current_stock')
+        .select('material_id, current_stock')
+        .eq('branch_id', currentBranch.id)
+      const materialStockMap = new Map<string, number>();
+      (materialStockData || []).forEach((s: any) => materialStockMap.set(s.material_id, Number(s.current_stock) || 0));
+
       const materialsValue = (materials || []).reduce((sum, m) => {
-        return sum + ((m.stock || 0) * (m.price_per_unit || 0))
+        const stock = materialStockMap.get(m.id) || 0
+        return sum + (stock * (m.price_per_unit || 0))
       }, 0)
 
       // Get current journal values

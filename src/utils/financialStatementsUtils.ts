@@ -459,20 +459,32 @@ export async function generateBalanceSheet(asOfDate?: Date, branchId?: string): 
   // Nilai persediaan dihitung langsung dari:
   // - Persediaan Barang Dagang (1310) = Semua produk × cost_price
   // - Persediaan Bahan Baku (1320) = Semua materials × price_per_unit
-  // Ini lebih akurat daripada menggunakan saldo akun COA karena:
-  // 1. Stock selalu up-to-date dari tabel products/materials
-  // 2. Tidak perlu initial_balance yang bisa menyebabkan ketidaksesuaian
+  // Stock diambil dari v_product_current_stock VIEW (source of truth)
   // ============================================================================
   let productsQuery = supabase
     .from('products')
-    .select('id, name, type, current_stock, cost_price, base_price, branch_id');
+    .select('id, name, type, cost_price, base_price, branch_id');
 
   if (branchId) {
     productsQuery = productsQuery.eq('branch_id', branchId);
   }
 
   const { data: products, error: productsError } = await productsQuery;
-  const productsData = productsError ? [] : (products || []);
+
+  // Get actual stock from VIEW (source of truth)
+  let stockQuery = supabase.from('v_product_current_stock').select('product_id, current_stock');
+  if (branchId) {
+    stockQuery = stockQuery.eq('branch_id', branchId);
+  }
+  const { data: stockData } = await stockQuery;
+  const stockMap = new Map<string, number>();
+  (stockData || []).forEach((s: any) => stockMap.set(s.product_id, Number(s.current_stock) || 0));
+
+  // Merge products with stock from VIEW
+  const productsData = productsError ? [] : (products || []).map((p: any) => ({
+    ...p,
+    current_stock: stockMap.get(p.id) || 0
+  }));
 
   // ============================================================================
   // PIUTANG USAHA - USING ACCOUNT LOOKUP SERVICE

@@ -630,39 +630,16 @@ export const usePurchaseOrders = () => {
 
         } else if (item.itemType === 'product' && item.productId) {
           // Process PRODUCT (Jual Langsung)
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: productRaw } = await supabase
-            .from('products')
-            .select('current_stock')
-            .eq('id', item.productId)
-            .order('id').limit(1);
-          const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
+          // products.current_stock is DEPRECATED - stock derived from inventory_batches
+          // Only create inventory_batches, stock will be calculated via v_product_current_stock VIEW
 
-          const previousStock = Number(product?.current_stock) || 0;
-          const newStock = previousStock + item.quantity;
-
-          console.log('Updating product stock:', {
+          console.log('Creating inventory batch for product:', {
             productId: item.productId,
             productName: item.itemName,
             quantity: item.quantity,
-            previousStock,
-            newStock,
           });
 
-          // Update product stock directly in database
-          const { error: updateError } = await supabase
-            .from('products')
-            .update({ current_stock: newStock })
-            .eq('id', item.productId);
-
-          if (updateError) {
-            console.error('Failed to update product stock:', updateError);
-            throw new Error(`Failed to update stock for product ${item.itemName}`);
-          }
-
-          console.log('Product stock updated successfully');
-
-          // Create inventory batch for FIFO tracking
+          // Create inventory batch for FIFO tracking - this IS the stock
           const { error: batchError } = await supabase
             .from('inventory_batches')
             .insert({
@@ -918,7 +895,7 @@ export const usePurchaseOrders = () => {
 
       if (batches && batches.length > 0) {
         for (const batch of batches) {
-          // Rollback material stock
+          // Rollback material stock (materials.stock is still used for backward compatibility)
           if (batch.material_id) {
             const { data: materialRaw } = await supabase
               .from('materials')
@@ -937,27 +914,14 @@ export const usePurchaseOrders = () => {
             }
           }
 
-          // Rollback product stock
+          // products.current_stock is DEPRECATED - stock derived from inventory_batches
+          // Deleting the batch below will automatically reduce stock via VIEW
           if (batch.product_id) {
-            const { data: productRaw } = await supabase
-              .from('products')
-              .select('current_stock')
-              .eq('id', batch.product_id)
-              .order('id').limit(1);
-            const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
-
-            if (product) {
-              const newStock = Math.max(0, (Number(product.current_stock) || 0) - batch.remaining_quantity);
-              await supabase
-                .from('products')
-                .update({ current_stock: newStock })
-                .eq('id', batch.product_id);
-              console.log(`✅ Rolled back product stock: -${batch.remaining_quantity}`);
-            }
+            console.log(`📦 Product stock will be reduced via batch deletion: -${batch.remaining_quantity}`);
           }
         }
 
-        // Delete inventory batches
+        // Delete inventory batches - this automatically updates stock via v_product_current_stock VIEW
         const { error: batchDeleteError } = await supabase
           .from('inventory_batches')
           .delete()
