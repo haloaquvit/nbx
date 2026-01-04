@@ -837,7 +837,7 @@ export const usePurchaseOrders = () => {
 
     // 5. Check material movements
     const { data: movements } = await supabase
-      .from('material_movements')
+      .from('material_stock_movements')
       .select('id')
       .eq('reference_id', poId)
       .eq('reference_type', 'purchase_order');
@@ -976,7 +976,7 @@ export const usePurchaseOrders = () => {
       console.log('[deletePurchaseOrder] Step 3: Deleting material movements...');
 
       const { error: movementError } = await supabase
-        .from('material_movements')
+        .from('material_stock_movements')
         .delete()
         .eq('reference_id', poId)
         .eq('reference_type', 'purchase_order');
