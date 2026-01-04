@@ -164,10 +164,11 @@ export const useMaterials = () => {
         }
       }
 
-      // SYNC BATCH: Update material_inventory_batches when stock changes
+      // SYNC BATCH: Update inventory_batches (with material_id) when stock changes
+      // Note: Materials use inventory_batches table with material_id column, NOT separate table
       if (material.id && newStock > 0 && pricePerUnit > 0) {
         const { data: existingBatch } = await supabase
-          .from('material_inventory_batches')
+          .from('inventory_batches')
           .select('id, initial_quantity, remaining_quantity')
           .eq('material_id', material.id)
           .eq('notes', 'Stok Awal')
@@ -179,7 +180,7 @@ export const useMaterials = () => {
         if (batch) {
           // Update existing "Stok Awal" batch - sync remaining_quantity with stock diff
           const newRemaining = Math.max(0, (batch.remaining_quantity || 0) + stockDiff);
-          await supabase.from('material_inventory_batches').update({
+          await supabase.from('inventory_batches').update({
             initial_quantity: newStock,
             remaining_quantity: newRemaining,
             unit_cost: pricePerUnit,
@@ -187,8 +188,8 @@ export const useMaterials = () => {
           }).eq('id', batch.id);
           console.log(`📦 Material batch synced: ${batch.id.substring(0, 8)} (remaining: ${batch.remaining_quantity} → ${newRemaining})`);
         } else {
-          // Create new "Stok Awal" batch
-          await supabase.from('material_inventory_batches').insert({
+          // Create new "Stok Awal" batch for material
+          await supabase.from('inventory_batches').insert({
             material_id: material.id,
             branch_id: currentBranch?.id || null,
             initial_quantity: newStock,

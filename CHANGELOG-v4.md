@@ -103,11 +103,31 @@ mkw.aquvit.id
 | `auth-server-new` | 3006 | `aquvit_new` | `/home/deployer/auth-server/server.js` |
 | `auth-server-mkw` | 3003 | `mkw_db` | `/home/deployer/auth-server-mkw/server.js` |
 
-### SSH Access
+### SSH & Database Access
 
 ```bash
-ssh -i Aquvit.pem deployer@103.197.190.54
+# SSH ke server (file pem ada di root folder project)
+ssh -i "Aquvit.pem" -o StrictHostKeyChecking=no deployer@103.197.190.54
+
+# Akses PostgreSQL (gunakan sudo -u postgres)
+sudo -u postgres psql -d mkw_db       # Database Manokwari
+sudo -u postgres psql -d aquvit_new   # Database Nabire
+
+# Contoh query
+sudo -u postgres psql -d mkw_db -c "SELECT COUNT(*) FROM products;"
+
+# Restart PostgREST (untuk reload schema setelah GRANT/migration)
+sudo systemctl restart postgrest
+
+# Cek status PostgREST
+sudo systemctl status postgrest
 ```
+
+**PENTING untuk AI:**
+- File `Aquvit.pem` ada di root folder project
+- Gunakan `sudo -u postgres psql` (bukan `PGPASSWORD=xxx psql -U postgres`)
+- PostgREST berjalan sebagai systemd service, bukan Docker
+- Setelah GRANT atau migration, restart PostgREST: `sudo systemctl restart postgrest`
 
 ### Useful Commands
 

@@ -656,23 +656,129 @@ export const useProduction = () => {
       if (fetchError) throw fetchError;
       if (!record) throw new Error('Production record not found');
 
-      // If normal production, restore stock
-      if (record.quantity > 0 && record.product_id) {
-        const bom = await getBOM(record.product_id);
+      // If normal production, restore material stock via FIFO batch restoration
+      if (record.quantity > 0 && record.product_id && record.consume_bom) {
+        // ============================================================================
+        // RESTORE MATERIAL BATCHES FROM CONSUMPTION LOG
+        // When production is deleted, we need to restore the material batches
+        // that were consumed. This is done by reading inventory_batch_consumptions
+        // and adding back the quantities to the original batches.
+        // ============================================================================
 
+        // First, try to restore from consumption log (preferred - FIFO accurate)
+        const { data: consumptions } = await supabase
+          .from('inventory_batch_consumptions')
+          .select('batch_id, quantity_consumed')
+          .eq('reference_id', record.ref)
+          .eq('reference_type', 'production');
+
+        if (consumptions && consumptions.length > 0) {
+          console.log(`📦 Found ${consumptions.length} consumption records to restore`);
+
+          for (const consumption of consumptions) {
+            // Restore remaining_quantity to the original batch
+            const { error: restoreError } = await supabase
+              .from('inventory_batches')
+              .update({
+                remaining_quantity: supabase.rpc('increment_remaining', {
+                  batch_id: consumption.batch_id,
+                  qty: consumption.quantity_consumed
+                })
+              })
+              .eq('id', consumption.batch_id);
+
+            // Direct update if RPC doesn't exist
+            if (restoreError) {
+              // Fallback: direct update
+              const { data: batchRaw } = await supabase
+                .from('inventory_batches')
+                .select('remaining_quantity')
+                .eq('id', consumption.batch_id)
+                .order('id').limit(1);
+              const batch = Array.isArray(batchRaw) ? batchRaw[0] : batchRaw;
+
+              if (batch) {
+                const newRemaining = (batch.remaining_quantity || 0) + consumption.quantity_consumed;
+                await supabase
+                  .from('inventory_batches')
+                  .update({
+                    remaining_quantity: newRemaining,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', consumption.batch_id);
+                console.log(`✅ Batch ${consumption.batch_id} restored: +${consumption.quantity_consumed}`);
+              }
+            }
+          }
+
+          // Delete consumption records
+          await supabase
+            .from('inventory_batch_consumptions')
+            .delete()
+            .eq('reference_id', record.ref)
+            .eq('reference_type', 'production');
+
+          console.log('✅ Material batch consumptions deleted and restored');
+        } else {
+          // Fallback: Restore using BOM calculation (less accurate but works if no consumption log)
+          console.log('⚠️ No consumption log found, falling back to BOM-based restoration');
+
+          const bom = await getBOM(record.product_id);
+
+          for (const bomItem of bom) {
+            const requiredQty = bomItem.quantity * record.quantity;
+
+            // Find the most recent batch for this material and restore to it
+            const { data: latestBatchRaw } = await supabase
+              .from('inventory_batches')
+              .select('id, remaining_quantity')
+              .eq('material_id', bomItem.materialId)
+              .eq('branch_id', currentBranch?.id)
+              .order('batch_date', { ascending: false })
+              .limit(1);
+            const latestBatch = Array.isArray(latestBatchRaw) ? latestBatchRaw[0] : latestBatchRaw;
+
+            if (latestBatch) {
+              const newRemaining = (latestBatch.remaining_quantity || 0) + requiredQty;
+              await supabase
+                .from('inventory_batches')
+                .update({
+                  remaining_quantity: newRemaining,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', latestBatch.id);
+              console.log(`✅ Material ${bomItem.materialName} restored to batch: +${requiredQty}`);
+            } else {
+              // No batch exists - create a restoration batch
+              await supabase
+                .from('inventory_batches')
+                .insert({
+                  material_id: bomItem.materialId,
+                  branch_id: currentBranch?.id || null,
+                  initial_quantity: requiredQty,
+                  remaining_quantity: requiredQty,
+                  unit_cost: 0,
+                  notes: `Restoration from deleted production ${record.ref}`,
+                  batch_date: new Date().toISOString()
+                });
+              console.log(`✅ Created restoration batch for ${bomItem.materialName}: ${requiredQty}`);
+            }
+          }
+        }
+
+        // Also update materials.stock for backward compatibility (deprecated but some UI may use it)
+        const bom = await getBOM(record.product_id);
         for (const bomItem of bom) {
           const requiredQty = bomItem.quantity * record.quantity;
-
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: materialRaw3, error: materialError } = await supabase
+          const { data: materialRaw3 } = await supabase
             .from('materials')
             .select('stock')
             .eq('id', bomItem.materialId)
             .order('id').limit(1);
           const material = Array.isArray(materialRaw3) ? materialRaw3[0] : materialRaw3;
 
-          if (!materialError && material) {
-            const restoredStock = material.stock + requiredQty;
+          if (material) {
+            const restoredStock = (material.stock || 0) + requiredQty;
             await supabase
               .from('materials')
               .update({
@@ -680,47 +786,18 @@ export const useProduction = () => {
                 updated_at: new Date().toISOString()
               })
               .eq('id', bomItem.materialId);
-
-            // DELETE the original OUT movement instead of creating IN movement
-            // This ensures HPP is correctly reduced in financial reports
-            const { error: deleteMovementError } = await supabase
-              .from('material_stock_movements')
-              .delete()
-              .eq('reference_id', record.id)
-              .eq('reference_type', 'production')
-              .eq('material_id', bomItem.materialId)
-              .eq('type', 'OUT');
-
-            if (deleteMovementError) {
-              console.warn('Could not delete material movement:', deleteMovementError);
-              // Fallback: create IN movement if delete fails
-              await supabase
-                .from('material_stock_movements')
-                .insert({
-                  material_id: bomItem.materialId,
-                  material_name: bomItem.materialName,
-                  type: 'IN',
-                  reason: 'ADJUSTMENT',
-                  quantity: requiredQty,
-                  previous_stock: material.stock,
-                  new_stock: restoredStock,
-                  notes: `PRODUCTION_DELETE_RESTORE: Production delete restore: ${record.ref}`,
-                  reference_id: record.id,
-                  reference_type: 'production',
-                  user_id: user?.id,
-                  user_name: user?.name || user?.email || 'Unknown User',
-                  branch_id: currentBranch?.id || null
-                });
-            }
           }
         }
 
-        // ============================================================================
-        // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
-        // Stock rollback otomatis terjadi via delete inventory_batches di bawah
-        // inventory_batches adalah source of truth untuk FIFO HPP
-        // ============================================================================
-        console.log(`📦 Production delete: Stock will be restored via inventory_batches deletion`);
+        // Delete material movement records
+        await supabase
+          .from('material_stock_movements')
+          .delete()
+          .eq('reference_id', record.id)
+          .eq('reference_type', 'production')
+          .eq('type', 'OUT');
+
+        console.log(`📦 Production delete: Material stock restored via FIFO batch restoration`);
       }
 
       // ============================================================================

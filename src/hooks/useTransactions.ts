@@ -612,7 +612,8 @@ export const useTransactions = (filters?: {
           }
 
           // Calculate HPP for BONUS items (goes to account 5210 - HPP Bonus)
-          // Bonus items reduce inventory but don't generate revenue
+          // Bonus items reduce inventory AND don't generate revenue
+          // IMPORTANT: Bonus items MUST consume stock via FIFO just like regular items
           if (bonusItems.length > 0) {
             for (const item of bonusItems) {
               const productId = item.product?.id;
@@ -623,7 +624,7 @@ export const useTransactions = (filters?: {
               if (productId && quantity > 0) {
                 try {
                   if (isMaterial && materialId) {
-                    // For material bonus items: Use FIFO cost
+                    // For material bonus items: Use FIFO cost and consume stock
                     const { data: fifoPrice, error: fifoError } = await supabase
                       .rpc('get_material_fifo_cost', {
                         p_material_id: materialId,
@@ -646,17 +647,79 @@ export const useTransactions = (filters?: {
                       totalHPPBonus += costPrice * quantity;
                       console.log('Material HPP Bonus FIFO:', { materialId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
                     }
+                    // TODO: Add material FIFO consumption when material batches are implemented
                   } else {
-                    // For regular product bonus items: Get cost_price directly
-                    const { data: productDataRaw } = await supabase
-                      .from('products')
-                      .select('cost_price, base_price')
-                      .eq('id', productId)
-                      .order('id').limit(1);
-                    const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
-                    const costPrice = productData?.cost_price || productData?.base_price || 0;
-                    totalHPPBonus += costPrice * quantity;
-                    console.log('HPP Bonus calculated:', { productId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                    // For regular product bonus items: Use consume_inventory_fifo (same as regular items)
+                    const { data: fifoResult, error: fifoError } = await supabase
+                      .rpc('consume_inventory_fifo', {
+                        p_product_id: productId,
+                        p_branch_id: currentBranch?.id || null,
+                        p_quantity: quantity,
+                        p_transaction_id: savedTransaction.id,
+                      });
+
+                    if (fifoError) {
+                      console.warn('Bonus FIFO consumption failed, using fallback:', fifoError.message);
+                      // Fallback: Use product's cost_price or base_price directly
+                      const { data: productDataRaw } = await supabase
+                        .from('products')
+                        .select('cost_price, base_price')
+                        .eq('id', productId)
+                        .order('id').limit(1);
+                      const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                      const costPrice = productData?.cost_price || productData?.base_price || 0;
+                      totalHPPBonus += costPrice * quantity;
+                      console.log('Bonus HPP Fallback:', { productId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                    } else if (fifoResult && fifoResult.length > 0) {
+                      // FIFO returned result - use the HPP from consumed batches
+                      const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
+
+                      // Parse batches_consumed to get total consumed quantity
+                      let consumedQty = 0;
+                      try {
+                        const batchesConsumed = typeof fifoResult[0].batches_consumed === 'string'
+                          ? JSON.parse(fifoResult[0].batches_consumed)
+                          : fifoResult[0].batches_consumed;
+                        consumedQty = Array.isArray(batchesConsumed)
+                          ? batchesConsumed.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0)
+                          : 0;
+                      } catch (parseErr) {
+                        console.warn('Could not parse bonus batches_consumed:', parseErr);
+                      }
+
+                      if (fifoHpp > 0 && consumedQty >= quantity) {
+                        // FIFO consumed all qty
+                        totalHPPBonus += fifoHpp;
+                        console.log('Bonus FIFO HPP calculated (full):', {
+                          productId,
+                          quantity,
+                          hpp: fifoHpp,
+                          batches: fifoResult[0].batches_consumed,
+                        });
+                      } else {
+                        // FIFO not enough - calculate fallback for remaining qty
+                        const remainingQty = quantity - consumedQty;
+                        const { data: productDataRaw } = await supabase
+                          .from('products')
+                          .select('cost_price, base_price')
+                          .eq('id', productId)
+                          .order('id').limit(1);
+                        const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                        const costPrice = productData?.cost_price || productData?.base_price || 0;
+                        const fallbackHpp = costPrice * remainingQty;
+                        totalHPPBonus += fifoHpp + fallbackHpp;
+                        console.log('Bonus HPP calculated (FIFO + Fallback):', {
+                          productId,
+                          requestedQty: quantity,
+                          fifoConsumedQty: consumedQty,
+                          fifoHpp,
+                          remainingQty,
+                          fallbackCostPrice: costPrice,
+                          fallbackHpp,
+                          totalItemHPPBonus: fifoHpp + fallbackHpp
+                        });
+                      }
+                    }
                   }
                 } catch (err) {
                   console.error('Error calculating HPP Bonus:', err);
