@@ -185,7 +185,10 @@ export const useProducts = () => {
           }
         }
 
-        if (newInitialStock > 0 && newCostPrice > 0) {
+        // Update batch "Stok Awal" - initial_stock adalah nilai awal yang ditambahkan ke total
+        // Rumus: Stock = Initial Stock + PO + Produksi - Keluar - Penjualan
+        if (dbData.initial_stock !== undefined) {
+          // Cari batch "Stok Awal" yang ada
           const { data: existingBatch } = await supabase
             .from('inventory_batches')
             .select('id, initial_quantity, remaining_quantity')
@@ -197,16 +200,28 @@ export const useProducts = () => {
           const batch = Array.isArray(existingBatch) ? existingBatch[0] : existingBatch;
 
           if (batch) {
-            const qtyDiff = newInitialStock - oldInitialStock;
-            const newRemaining = Math.max(0, (batch.remaining_quantity || 0) + qtyDiff);
+            // Update batch yang ada: sesuaikan remaining berdasarkan perubahan initial
+            const oldInitial = Number(batch.initial_quantity) || 0;
+            const qtyDiff = newInitialStock - oldInitial;
+            const newRemaining = (batch.remaining_quantity || 0) + qtyDiff;
+
             await supabase.from('inventory_batches').update({
               initial_quantity: newInitialStock,
               remaining_quantity: newRemaining,
               unit_cost: newCostPrice,
               updated_at: new Date().toISOString()
             }).eq('id', batch.id);
-            logDebug('Updated inventory batch for HPP', { batchId: batch.id, newInitialStock, newRemaining, newCostPrice });
-          } else {
+
+            logDebug('Updated Stok Awal batch', {
+              batchId: batch.id,
+              oldInitial,
+              newInitialStock,
+              qtyDiff,
+              oldRemaining: batch.remaining_quantity,
+              newRemaining
+            });
+          } else if (newInitialStock > 0) {
+            // Buat batch baru jika belum ada
             await supabase.from('inventory_batches').insert({
               product_id: product.id,
               branch_id: currentBranch?.id || null,
@@ -215,7 +230,7 @@ export const useProducts = () => {
               unit_cost: newCostPrice,
               notes: 'Stok Awal'
             });
-            logDebug('Created inventory batch for HPP', { productId: product.id, initialStock: newInitialStock, costPrice: newCostPrice });
+            logDebug('Created Stok Awal batch', { productId: product.id, initialStock: newInitialStock, costPrice: newCostPrice });
           }
         }
 

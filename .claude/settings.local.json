@@ -277,7 +277,8 @@
       "Bash(node server.js:*)",
       "Bash(node proxy.js:*)",
       "Bash(docker inspect:*)",
-      "Bash(docker restart:*)"
+      "Bash(docker restart:*)",
+      "Bash(del \"d:\\App\\Aquvit Fix - Copy\\src\\components\\ProductManagement.tsx\")"
     ],
     "deny": [],
     "ask": [],
