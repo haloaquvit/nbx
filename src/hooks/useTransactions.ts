@@ -501,81 +501,66 @@ export const useTransactions = (filters?: {
                       console.log('Material HPP FIFO:', { materialId, quantity, costPrice, itemHPP: costPrice * quantity });
                     }
                   } else {
-                    // For regular products: Use consume_inventory_fifo
-                    const { data: fifoResult, error: fifoError } = await supabase
-                      .rpc('consume_inventory_fifo', {
-                        p_product_id: productId,
-                        p_branch_id: currentBranch?.id || null,
-                        p_quantity: quantity,
-                        p_transaction_id: savedTransaction.id,
-                      });
+                    // For regular products:
+                    // BUG FIX #3: Use different functions based on isOfficeSale
+                    // - Office Sale (isOfficeSale=true): consume_inventory_fifo (reduces batch NOW)
+                    // - Non-Office Sale (isOfficeSale=false): calculate_fifo_cost (READ-ONLY, batch reduced at delivery)
+                    const isOfficeSale = newTransaction.isOfficeSale === true;
 
-                    if (fifoError) {
-                      console.warn('FIFO consumption failed, using fallback:', fifoError.message);
-                      // Fallback: Use product's cost_price or base_price directly
-                      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-                      const { data: productDataRaw } = await supabase
-                        .from('products')
-                        .select('cost_price, base_price')
-                        .eq('id', productId)
-                        .order('id').limit(1);
-                      const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
-                      // Use cost_price if available, otherwise use base_price (selling price as approximation)
-                      const costPrice = productData?.cost_price || productData?.base_price || 0;
-                      totalHPP += costPrice * quantity;
-                      console.log('Fallback HPP calculated:', { productId, quantity, costPrice, itemHPP: costPrice * quantity });
-                    } else if (fifoResult && fifoResult.length > 0) {
-                      // FIFO returned result - check if it consumed enough quantity
-                      const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
-
-                      // Parse batches_consumed to get total consumed quantity
-                      let consumedQty = 0;
-                      try {
-                        const batchesConsumed = typeof fifoResult[0].batches_consumed === 'string'
-                          ? JSON.parse(fifoResult[0].batches_consumed)
-                          : fifoResult[0].batches_consumed;
-                        consumedQty = Array.isArray(batchesConsumed)
-                          ? batchesConsumed.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0)
-                          : 0;
-                      } catch (parseErr) {
-                        console.warn('Could not parse batches_consumed:', parseErr);
-                      }
-
-                      if (fifoHpp > 0 && consumedQty >= quantity) {
-                        // FIFO berhasil consume semua qty
-                        totalHPP += fifoHpp;
-                        console.log('FIFO HPP calculated (full):', {
-                          productId,
-                          quantity,
-                          hpp: fifoHpp,
-                          batches: fifoResult[0].batches_consumed,
+                    if (isOfficeSale) {
+                      // OFFICE SALE: Consume batch immediately (no delivery)
+                      const { data: fifoResult, error: fifoError } = await supabase
+                        .rpc('consume_inventory_fifo', {
+                          p_product_id: productId,
+                          p_branch_id: currentBranch?.id || null,
+                          p_quantity: quantity,
+                          p_transaction_id: savedTransaction.id,
                         });
-                      } else {
-                        // FIFO tidak cukup - hitung fallback untuk sisa qty
-                        const remainingQty = quantity - consumedQty;
 
-                        // Get product cost_price for fallback
-                        const { data: productDataRaw3 } = await supabase
+                      if (fifoError) {
+                        console.warn('FIFO consumption failed, using fallback:', fifoError.message);
+                        const { data: productDataRaw } = await supabase
                           .from('products')
                           .select('cost_price, base_price')
                           .eq('id', productId)
                           .order('id').limit(1);
-                        const productData3 = Array.isArray(productDataRaw3) ? productDataRaw3[0] : productDataRaw3;
-                        const costPrice = productData3?.cost_price || productData3?.base_price || 0;
+                        const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                        const costPrice = productData?.cost_price || productData?.base_price || 0;
+                        totalHPP += costPrice * quantity;
+                        console.log('Office Sale - Fallback HPP:', { productId, quantity, costPrice });
+                      } else if (fifoResult && fifoResult.length > 0) {
+                        const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
+                        totalHPP += fifoHpp;
+                        console.log('Office Sale - FIFO HPP consumed:', { productId, quantity, hpp: fifoHpp });
+                      }
+                    } else {
+                      // NON-OFFICE SALE: Calculate HPP only (batch reduced at delivery)
+                      const { data: fifoResult, error: fifoError } = await supabase
+                        .rpc('calculate_fifo_cost', {
+                          p_product_id: productId,
+                          p_branch_id: currentBranch?.id || null,
+                          p_quantity: quantity,
+                        });
 
-                        // HPP = FIFO portion + Fallback portion
-                        const fallbackHpp = costPrice * remainingQty;
-                        totalHPP += fifoHpp + fallbackHpp;
-
-                        console.log('HPP calculated (FIFO + Fallback):', {
+                      if (fifoError) {
+                        console.warn('calculate_fifo_cost failed, using fallback:', fifoError.message);
+                        const { data: productDataRaw } = await supabase
+                          .from('products')
+                          .select('cost_price, base_price')
+                          .eq('id', productId)
+                          .order('id').limit(1);
+                        const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                        const costPrice = productData?.cost_price || productData?.base_price || 0;
+                        totalHPP += costPrice * quantity;
+                        console.log('Non-Office Sale - Fallback HPP:', { productId, quantity, costPrice });
+                      } else if (fifoResult && fifoResult.length > 0) {
+                        const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
+                        totalHPP += fifoHpp;
+                        console.log('Non-Office Sale - Calculated HPP (batch NOT reduced):', {
                           productId,
-                          requestedQty: quantity,
-                          fifoConsumedQty: consumedQty,
-                          fifoHpp,
-                          remainingQty,
-                          fallbackCostPrice: costPrice,
-                          fallbackHpp,
-                          totalItemHPP: fifoHpp + fallbackHpp
+                          quantity,
+                          hpp: fifoHpp,
+                          info: fifoResult[0].batches_info,
                         });
                       }
                     }

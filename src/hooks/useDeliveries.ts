@@ -21,63 +21,38 @@ import { StockService } from '@/services/stockService'
 /**
  * Deduct quantity from inventory batches using FIFO method
  * Called when delivery is created - reduces remaining_quantity from oldest batches first
+ * BUG FIX #4: Now uses database RPC consume_inventory_fifo for consistency
  */
-async function deductBatchFIFO(productId: string, quantity: number, branchId: string | null): Promise<void> {
-  if (quantity <= 0 || !productId) return;
+async function deductBatchFIFO(productId: string, quantity: number, branchId: string | null, deliveryId?: string): Promise<{ success: boolean; hpp: number }> {
+  if (quantity <= 0 || !productId) return { success: true, hpp: 0 };
 
   try {
-    // Get all batches with remaining stock, ordered by batch_date (FIFO)
-    const { data: batches, error } = await supabase
-      .from('inventory_batches')
-      .select('id, remaining_quantity, batch_date')
-      .eq('product_id', productId)
-      .gt('remaining_quantity', 0)
-      .order('batch_date', { ascending: true });
+    // Use database RPC for atomic FIFO consumption
+    const { data: fifoResult, error: fifoError } = await supabase
+      .rpc('consume_inventory_fifo', {
+        p_product_id: productId,
+        p_branch_id: branchId,
+        p_quantity: quantity,
+        p_transaction_id: deliveryId || null,
+      });
 
-    if (error) {
-      console.error('[deductBatchFIFO] Error fetching batches:', error);
-      return;
+    if (fifoError) {
+      console.error('[deductBatchFIFO] consume_inventory_fifo failed:', fifoError);
+      return { success: false, hpp: 0 };
     }
 
-    if (!batches || batches.length === 0) {
-      console.warn(`[deductBatchFIFO] No batches found for product ${productId}`);
-      return;
+    if (fifoResult && fifoResult.length > 0) {
+      const totalHpp = Number(fifoResult[0].total_hpp) || 0;
+      console.log(`📦 FIFO consumed via RPC: product=${productId}, qty=${quantity}, hpp=${totalHpp}`);
+      return { success: true, hpp: totalHpp };
     }
 
-    let remainingToDeduct = quantity;
-
-    for (const batch of batches) {
-      if (remainingToDeduct <= 0) break;
-
-      const batchRemaining = batch.remaining_quantity || 0;
-      const deductFromBatch = Math.min(batchRemaining, remainingToDeduct);
-
-      if (deductFromBatch > 0) {
-        const newRemaining = batchRemaining - deductFromBatch;
-
-        const { error: updateError } = await supabase
-          .from('inventory_batches')
-          .update({
-            remaining_quantity: newRemaining,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', batch.id);
-
-        if (updateError) {
-          console.error(`[deductBatchFIFO] Error updating batch ${batch.id}:`, updateError);
-        } else {
-          console.log(`📦 FIFO: Batch ${batch.id.substring(0, 8)} reduced by ${deductFromBatch} (${batchRemaining} → ${newRemaining})`);
-        }
-
-        remainingToDeduct -= deductFromBatch;
-      }
-    }
-
-    if (remainingToDeduct > 0) {
-      console.warn(`[deductBatchFIFO] Could not fully deduct ${quantity} from product ${productId}. Remaining: ${remainingToDeduct}`);
-    }
+    // If no result, it means no batches available - this is OK for oversold scenarios
+    console.warn(`[deductBatchFIFO] No batches consumed for product ${productId} - possibly oversold`);
+    return { success: true, hpp: 0 };
   } catch (err) {
     console.error('[deductBatchFIFO] Exception:', err);
+    return { success: false, hpp: 0 };
   }
 }
 
@@ -1083,8 +1058,13 @@ export function useDeliveries() {
               console.log(`📦 Deducting ${item.quantity_delivered} units from product ${item.product_id} via FIFO`);
 
               // Deduct from inventory batches (FIFO) - this is the source of truth
-              await deductBatchFIFO(item.product_id, item.quantity_delivered, currentBranch?.id || null);
-              console.log(`✅ Stock deducted via FIFO for product ${item.product_id}`);
+              // BUG FIX #4: Now uses consume_inventory_fifo RPC for consistency
+              const result = await deductBatchFIFO(item.product_id, item.quantity_delivered, currentBranch?.id || null, deliveryData.id);
+              if (result.success) {
+                console.log(`✅ Stock deducted via FIFO for product ${item.product_id}, HPP=${result.hpp}`);
+              } else {
+                console.warn(`⚠️ FIFO deduction failed for product ${item.product_id}`);
+              }
             }
           }
         }
@@ -1498,7 +1478,7 @@ export function useDeliveries() {
             // Adjust inventory batches (FIFO) - THIS IS THE SOURCE OF TRUTH
             if (quantityDiff > 0) {
               // More delivered = deduct more from batch
-              await deductBatchFIFO(originalItem.product_id, quantityDiff, deliveryData.branch_id || null);
+              await deductBatchFIFO(originalItem.product_id, quantityDiff, deliveryData.branch_id || null, request.deliveryId);
             } else {
               // Less delivered = restore to batch
               await restoreBatchFIFO(originalItem.product_id, Math.abs(quantityDiff), deliveryData.branch_id || null);

@@ -277,6 +277,25 @@ export const useProducts = () => {
             notes: 'Stok Awal'
           });
           logDebug('Created inventory batch for new product HPP', { productId: data.id, initialStock, costPrice });
+
+          // BUG FIX #1: Create journal for initial stock (same as UPDATE does)
+          // Dr. Persediaan Barang Dagang (1310)  xxx
+          //   Cr. Modal Pemilik (3100)               xxx
+          if (currentBranch?.id) {
+            const journalResult = await createProductStockAdjustmentJournal({
+              productId: data.id,
+              productName: product.name || data.name || 'Unknown Product',
+              oldStock: 0,
+              newStock: initialStock,
+              costPrice: costPrice,
+              branchId: currentBranch.id,
+            });
+            if (journalResult.success) {
+              logDebug('Auto-generated initial stock journal for new product', { journalId: journalResult.journalId });
+            } else {
+              console.warn('Failed to create initial stock journal:', journalResult.error);
+            }
+          }
         }
 
         return fromDb(data);
