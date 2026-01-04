@@ -14,12 +14,14 @@ import { useCustomers } from "@/hooks/useCustomers"
 import { useMaterials } from "@/hooks/useMaterials"
 import { useAccounts } from "@/hooks/useAccounts"
 import { useProducts } from "@/hooks/useProducts"
+import { useTax } from "@/hooks/useTax"
 import { Material } from "@/types/material"
 import { format, subDays, startOfDay, endOfDay, startOfMonth, isWithinInterval, eachDayOfInterval } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
-import { Users, AlertTriangle, DollarSign, TrendingDown, Scale, Award, ShoppingCart, TrendingUp, Activity, PieChart, BarChart3, ChevronLeft, ChevronRight, UserCheck, UserX } from "lucide-react"
+import { Users, AlertTriangle, DollarSign, TrendingDown, Scale, Award, ShoppingCart, TrendingUp, Activity, PieChart, BarChart3, ChevronLeft, ChevronRight, UserCheck, UserX, Receipt, Calendar } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export function Dashboard() {
   const { user } = useAuthContext()
@@ -29,6 +31,10 @@ export function Dashboard() {
   const { materials, isLoading: materialsLoading } = useMaterials()
   const { accounts, isLoading: accountsLoading } = useAccounts()
   const { products, isLoading: productsLoading } = useProducts()
+  const { taxSummary, checkTaxReminder } = useTax()
+
+  // Get tax reminder status
+  const taxReminder = checkTaxReminder()
 
   // Helper function to calculate production cost based on BOM and material prices
   const calculateProductionCost = (product: any, quantity: number, materials: Material[] | undefined): number => {
@@ -363,7 +369,40 @@ export function Dashboard() {
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-3xl font-bold tracking-tight">Selamat Datang, {user?.name || 'Pengguna'}!</h1>
-      
+
+      {/* Tax Payment Reminder */}
+      {taxReminder.isDue && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Peringatan Pajak!</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>{taxReminder.message}</span>
+            <Link to="/tax">
+              <Button variant="outline" size="sm" className="ml-4">
+                <Receipt className="h-4 w-4 mr-2" />
+                Bayar Sekarang
+              </Button>
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {!taxReminder.isDue && taxReminder.daysUntilDue > 0 && taxReminder.daysUntilDue <= 5 && (taxSummary?.netTaxPayable || 0) > 0 && (
+        <Alert>
+          <Calendar className="h-4 w-4" />
+          <AlertTitle>Pengingat Pajak</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>{taxReminder.message}</span>
+            <Link to="/tax">
+              <Button variant="outline" size="sm" className="ml-4">
+                <Receipt className="h-4 w-4 mr-2" />
+                Lihat Detail
+              </Button>
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Pendapatan Hari Ini</CardTitle><DollarSign className="h-4 w-4 text-muted-foreground" /></CardHeader><CardContent><div className="text-2xl font-bold">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(summaryData.todayIncome)}</div><p className="text-xs text-muted-foreground">{summaryData.todayTransactionsCount} transaksi</p></CardContent></Card>
         <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Pengeluaran Hari Ini</CardTitle><TrendingDown className="h-4 w-4 text-muted-foreground" /></CardHeader><CardContent><div className="text-2xl font-bold">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(summaryData.todayExpense)}</div><p className="text-xs text-muted-foreground">dari semua akun</p></CardContent></Card>

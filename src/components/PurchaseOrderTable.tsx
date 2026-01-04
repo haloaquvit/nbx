@@ -91,7 +91,7 @@ export function PurchaseOrderTable() {
   };
 
   const handleDeletePo = (poId: string) => {
-    deletePurchaseOrder.mutate(poId, {
+    deletePurchaseOrder.mutate({ poId }, {
       onSuccess: () => toast({ title: "Sukses", description: "Purchase Order berhasil dihapus." }),
       onError: (error) => toast({ variant: "destructive", title: "Gagal", description: error.message }),
     });

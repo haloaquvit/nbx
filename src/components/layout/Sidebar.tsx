@@ -42,6 +42,7 @@ import {
   Server,
   MapPin,
   History,
+  Receipt,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -55,7 +56,7 @@ const sectionColors: Record<string, { bg: string; text: string; activeBg: string
   "Utama": { bg: "bg-blue-50", text: "text-blue-700", activeBg: "bg-blue-600" },
   "Manajemen Data": { bg: "bg-emerald-50", text: "text-emerald-700", activeBg: "bg-emerald-600" },
   "Keuangan": { bg: "bg-amber-50", text: "text-amber-700", activeBg: "bg-amber-600" },
-  "Aset & Zakat": { bg: "bg-purple-50", text: "text-purple-700", activeBg: "bg-purple-600" },
+  "Aset, Zakat & Pajak": { bg: "bg-purple-50", text: "text-purple-700", activeBg: "bg-purple-600" },
   "Laporan": { bg: "bg-rose-50", text: "text-rose-700", activeBg: "bg-rose-600" },
   "Pengaturan": { bg: "bg-slate-100", text: "text-slate-700", activeBg: "bg-slate-600" },
 };
@@ -121,11 +122,12 @@ const getMenuItems = (hasPermission: (permission: Permission) => boolean, hasGra
     ].filter(item => hasPermission(item.permission)),
   },
   {
-    title: "Aset & Zakat",
+    title: "Aset, Zakat & Pajak",
     items: [
       { href: "/assets", label: "Aset & Maintenance", icon: Wrench, permission: PERMISSIONS.FINANCIAL },
       { href: "/maintenance", label: "Jadwal Maintenance", icon: Wrench, permission: PERMISSIONS.FINANCIAL },
       { href: "/zakat", label: "Zakat & Sedekah", icon: Sparkles, permission: PERMISSIONS.FINANCIAL },
+      { href: "/tax", label: "Pajak (PPN)", icon: Receipt, permission: PERMISSIONS.FINANCIAL },
     ].filter(item => hasPermission(item.permission)),
   },
   {

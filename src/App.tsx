@@ -62,6 +62,7 @@ const AccountsPayablePage = lazy(() => import("@/pages/AccountsPayablePage"));
 const AssetsPage = lazy(() => import("@/pages/AssetsPage"));
 const MaintenancePage = lazy(() => import("@/pages/MaintenancePage"));
 const ZakatPage = lazy(() => import("@/pages/ZakatPage"));
+const TaxPage = lazy(() => import("@/pages/TaxPage"));
 const BranchManagementPage = lazy(() => import("@/pages/BranchManagementPage"));
 const JournalPage = lazy(() => import("@/pages/JournalPage"));
 const MaterialUsageSummaryPage = lazy(() => import("@/pages/MaterialUsageSummaryPage"));
@@ -323,6 +324,7 @@ function WebApp() {
                   <Route path="/assets" element={<AssetsPage />} />
                   <Route path="/maintenance" element={<MaintenancePage />} />
                   <Route path="/zakat" element={<ZakatPage />} />
+                  <Route path="/tax" element={<TaxPage />} />
                   <Route path="/branches" element={<BranchManagementPage />} />
                   <Route path="/journal" element={<JournalPage />} />
                   <Route path="/material-usage-summary" element={<MaterialUsageSummaryPage />} />

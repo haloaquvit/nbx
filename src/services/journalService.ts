@@ -23,7 +23,7 @@ export interface JournalLineInput {
 export interface CreateJournalInput {
   entryDate: Date;
   description: string;
-  referenceType: 'transaction' | 'expense' | 'payroll' | 'advance' | 'transfer' | 'receivable' | 'payable' | 'manual' | 'adjustment' | 'closing' | 'opening';
+  referenceType: 'transaction' | 'expense' | 'payroll' | 'advance' | 'transfer' | 'receivable' | 'payable' | 'manual' | 'adjustment' | 'closing' | 'opening' | 'tax_payment';
   referenceId?: string;
   branchId: string;
   lines: JournalLineInput[];
@@ -3509,6 +3509,141 @@ export async function createMaterialStockAdjustmentJournal(params: {
     description,
     referenceType: 'adjustment',
     referenceId: `stock-adj-material-${materialId}-${Date.now()}`,
+    branchId,
+    autoPost: true,
+    lines,
+  });
+}
+
+/**
+ * Generate journal for Tax Payment (Pembayaran Pajak)
+ *
+ * Jurnal pembayaran pajak:
+ * Dr. PPN Keluaran / Hutang Pajak (2130)    xxx  (mengurangi kewajiban)
+ *   Cr. PPN Masukan / Piutang Pajak (1230)       xxx  (menggunakan kredit pajak)
+ *   Cr. Kas/Bank (11xx)                          xxx  (pembayaran bersih)
+ *
+ * Contoh:
+ * - PPN Keluaran (Hutang): Rp 100.000
+ * - PPN Masukan (Piutang): Rp 30.000
+ * - Net yang harus dibayar: Rp 70.000
+ *
+ * Jurnal:
+ * Dr. PPN Keluaran     100.000
+ *   Cr. PPN Masukan      30.000
+ *   Cr. Kas              70.000
+ */
+export async function createTaxPaymentJournal(params: {
+  paymentDate: Date;
+  period: string; // "YYYY-MM"
+  ppnMasukanUsed: number;
+  ppnKeluaranPaid: number;
+  netPayment: number;
+  paymentAccountId: string;
+  branchId: string;
+  notes?: string;
+}): Promise<{ success: boolean; journalId?: string; error?: string }> {
+  const {
+    paymentDate,
+    period,
+    ppnMasukanUsed,
+    ppnKeluaranPaid,
+    netPayment,
+    paymentAccountId,
+    branchId,
+    notes,
+  } = params;
+
+  // Validate amounts
+  if (ppnKeluaranPaid <= 0) {
+    return { success: false, error: 'Jumlah PPN Keluaran yang dibayar harus lebih dari 0' };
+  }
+
+  const expectedNet = ppnKeluaranPaid - ppnMasukanUsed;
+  if (Math.abs(netPayment - expectedNet) > 0.01) {
+    return { success: false, error: 'Pembayaran bersih tidak sesuai: PPN Keluaran - PPN Masukan' };
+  }
+
+  // Find PPN Keluaran account (2130 - Hutang Pajak)
+  const ppnKeluaranAccount = await getAccountByCode('2130', branchId)
+    || await findAccountByPattern('ppn keluaran', 'Kewajiban', branchId)
+    || await findAccountByPattern('hutang pajak', 'Kewajiban', branchId);
+
+  if (!ppnKeluaranAccount) {
+    return { success: false, error: 'Akun PPN Keluaran (2130) tidak ditemukan' };
+  }
+
+  // Find PPN Masukan account (1230 - Piutang Pajak) if used
+  let ppnMasukanAccount: { id: string; code: string; name: string } | null = null;
+  if (ppnMasukanUsed > 0) {
+    ppnMasukanAccount = await getAccountByCode('1230', branchId)
+      || await findAccountByPattern('ppn masukan', 'Aset', branchId)
+      || await findAccountByPattern('piutang pajak', 'Aset', branchId);
+
+    if (!ppnMasukanAccount) {
+      return { success: false, error: 'Akun PPN Masukan (1230) tidak ditemukan' };
+    }
+  }
+
+  // Get payment account (Kas/Bank)
+  const { data: paymentAccountRaw } = await supabase
+    .from('accounts')
+    .select('id, code, name')
+    .eq('id', paymentAccountId)
+    .order('id').limit(1);
+  const paymentAccount = Array.isArray(paymentAccountRaw) ? paymentAccountRaw[0] : paymentAccountRaw;
+
+  if (!paymentAccount) {
+    return { success: false, error: 'Akun pembayaran tidak ditemukan' };
+  }
+
+  const lines: JournalLineInput[] = [];
+
+  // Debit: PPN Keluaran (mengurangi kewajiban)
+  lines.push({
+    accountId: ppnKeluaranAccount.id,
+    accountCode: ppnKeluaranAccount.code,
+    accountName: ppnKeluaranAccount.name,
+    debitAmount: ppnKeluaranPaid,
+    creditAmount: 0,
+    description: `Pembayaran PPN Keluaran periode ${period}`,
+  });
+
+  // Credit: PPN Masukan (menggunakan kredit pajak) - if used
+  if (ppnMasukanUsed > 0 && ppnMasukanAccount) {
+    lines.push({
+      accountId: ppnMasukanAccount.id,
+      accountCode: ppnMasukanAccount.code,
+      accountName: ppnMasukanAccount.name,
+      debitAmount: 0,
+      creditAmount: ppnMasukanUsed,
+      description: `Penggunaan kredit PPN Masukan periode ${period}`,
+    });
+  }
+
+  // Credit: Kas/Bank (pembayaran bersih) - if net payment > 0
+  if (netPayment > 0) {
+    lines.push({
+      accountId: paymentAccount.id,
+      accountCode: paymentAccount.code,
+      accountName: paymentAccount.name,
+      debitAmount: 0,
+      creditAmount: netPayment,
+      description: `Pembayaran pajak periode ${period}`,
+    });
+  }
+
+  // Generate reference ID with period
+  const periodFormatted = period.replace('-', '');
+  const referenceId = `TAX-${periodFormatted}-${Date.now().toString().slice(-6)}`;
+
+  const description = notes || `Pembayaran Pajak Periode ${period}`;
+
+  return createJournalEntry({
+    entryDate: paymentDate,
+    description,
+    referenceType: 'tax_payment',
+    referenceId,
     branchId,
     autoPost: true,
     lines,
