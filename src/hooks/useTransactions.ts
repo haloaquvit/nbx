@@ -12,68 +12,90 @@ import { createSalesJournal, createReceivablePaymentJournal } from '@/services/j
 import { markAsVisitedAsync } from '@/utils/customerVisitUtils'
 
 // ============================================================================
-// FIFO BATCH MANAGEMENT FUNCTIONS (for office sales)
+// FIFO BATCH MANAGEMENT FUNCTIONS (Consolidated - using RPC)
+// ============================================================================
+// CONSOLIDATION: Semua FIFO operations sekarang menggunakan RPC untuk konsistensi
+// - deductBatchFIFO: Menggunakan consume_inventory_fifo RPC
+// - restoreBatchFIFO: Menggunakan restore_stock_fifo_v2 RPC dengan fallback LIFO manual
 // ============================================================================
 
 /**
- * Deduct quantity from inventory batches using FIFO method
+ * Deduct quantity from inventory batches using FIFO method via RPC
+ * @deprecated Gunakan StockService.consumeStockFIFO untuk operasi baru
  */
-async function deductBatchFIFO(productId: string, quantity: number): Promise<void> {
-  if (quantity <= 0 || !productId) return;
+async function deductBatchFIFO(productId: string, quantity: number, branchId?: string | null, referenceId?: string): Promise<{ success: boolean; hpp: number }> {
+  if (quantity <= 0 || !productId) return { success: true, hpp: 0 };
 
   try {
-    const { data: batches, error } = await supabase
-      .from('inventory_batches')
-      .select('id, remaining_quantity, batch_date')
-      .eq('product_id', productId)
-      .gt('remaining_quantity', 0)
-      .order('batch_date', { ascending: true });
+    // Use RPC for atomic FIFO consumption
+    const { data: fifoResult, error: fifoError } = await supabase
+      .rpc('consume_inventory_fifo', {
+        p_product_id: productId,
+        p_branch_id: branchId || null,
+        p_quantity: quantity,
+        p_transaction_id: referenceId || null,
+      });
 
-    if (error || !batches || batches.length === 0) return;
-
-    let remainingToDeduct = quantity;
-
-    for (const batch of batches) {
-      if (remainingToDeduct <= 0) break;
-
-      const batchRemaining = batch.remaining_quantity || 0;
-      const deductFromBatch = Math.min(batchRemaining, remainingToDeduct);
-
-      if (deductFromBatch > 0) {
-        await supabase
-          .from('inventory_batches')
-          .update({
-            remaining_quantity: batchRemaining - deductFromBatch,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', batch.id);
-
-        console.log(`📦 FIFO (office sale): Batch ${batch.id.substring(0, 8)} reduced by ${deductFromBatch}`);
-        remainingToDeduct -= deductFromBatch;
-      }
+    if (fifoError) {
+      console.error('[deductBatchFIFO] RPC error:', fifoError);
+      return { success: false, hpp: 0 };
     }
+
+    const result = Array.isArray(fifoResult) ? fifoResult[0] : fifoResult;
+    const totalHpp = Number(result?.total_hpp) || 0;
+    console.log(`📦 FIFO consumed via RPC: product=${productId.substring(0, 8)}, qty=${quantity}, hpp=${totalHpp}`);
+    return { success: true, hpp: totalHpp };
   } catch (err) {
     console.error('[deductBatchFIFO] Exception:', err);
+    return { success: false, hpp: 0 };
   }
 }
 
 /**
- * Restore quantity to inventory batches using FIFO method
+ * Restore quantity to inventory batches using LIFO method (reverse of FIFO consume)
+ * LIFO restore: Batch yang TERAKHIR dikonsumsi harus di-restore DULUAN
+ * Ini berarti restore ke batch TERBARU (DESC order) yang punya space
  */
-async function restoreBatchFIFO(productId: string, quantity: number): Promise<void> {
+async function restoreBatchFIFO(productId: string, quantity: number, branchId?: string | null, referenceId?: string): Promise<void> {
   if (quantity <= 0 || !productId) return;
 
   try {
+    // Try RPC first
+    const { data: rpcResult, error: rpcError } = await supabase
+      .rpc('restore_stock_fifo_v2', {
+        p_product_id: productId,
+        p_quantity: quantity,
+        p_reference_id: referenceId || `restore-${Date.now()}`,
+        p_reference_type: 'transaction',
+        p_branch_id: branchId || null
+      });
+
+    if (!rpcError && rpcResult) {
+      const result = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
+      if (result?.success) {
+        console.log(`📦 LIFO Restore via RPC: product=${productId.substring(0, 8)}, qty=${quantity}`);
+        return;
+      }
+    }
+
+    // Fallback: Manual LIFO restore (batch terbaru duluan)
+    console.log(`⚠️ RPC restore failed, using manual LIFO restore`);
+
+    // Get batches ordered by batch_date DESC (terbaru duluan untuk LIFO restore)
     const { data: batches, error } = await supabase
       .from('inventory_batches')
       .select('id, initial_quantity, remaining_quantity, batch_date')
       .eq('product_id', productId)
-      .order('batch_date', { ascending: true });
+      .order('batch_date', { ascending: false }); // DESC = terbaru duluan
 
-    if (error || !batches || batches.length === 0) return;
+    if (error || !batches || batches.length === 0) {
+      console.warn(`[restoreBatchFIFO] No batches found for product ${productId}`);
+      return;
+    }
 
     let remainingToRestore = quantity;
 
+    // Restore ke batch terbaru duluan (LIFO - kebalikan dari FIFO consume)
     for (const batch of batches) {
       if (remainingToRestore <= 0) break;
 
@@ -83,29 +105,35 @@ async function restoreBatchFIFO(productId: string, quantity: number): Promise<vo
 
       if (spaceInBatch > 0) {
         const restoreToBatch = Math.min(spaceInBatch, remainingToRestore);
+        const newRemaining = batchRemaining + restoreToBatch;
 
         await supabase
           .from('inventory_batches')
           .update({
-            remaining_quantity: batchRemaining + restoreToBatch,
+            remaining_quantity: newRemaining,
             updated_at: new Date().toISOString()
           })
           .eq('id', batch.id);
 
-        console.log(`📦 FIFO Restore (office sale): Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch}`);
+        console.log(`📦 LIFO Restore: Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch} (${batchRemaining} → ${newRemaining})`);
         remainingToRestore -= restoreToBatch;
       }
     }
 
+    // Jika masih ada sisa, tambahkan ke batch terbaru
     if (remainingToRestore > 0 && batches.length > 0) {
-      const mostRecentBatch = batches[0];
+      const newestBatch = batches[0]; // Sudah DESC, index 0 = terbaru
+      const newRemaining = (newestBatch.remaining_quantity || 0) + remainingToRestore;
+
       await supabase
         .from('inventory_batches')
         .update({
-          remaining_quantity: (mostRecentBatch.remaining_quantity || 0) + remainingToRestore,
+          remaining_quantity: newRemaining,
           updated_at: new Date().toISOString()
         })
-        .eq('id', mostRecentBatch.id);
+        .eq('id', newestBatch.id);
+
+      console.log(`📦 LIFO Restore (overflow): Batch ${newestBatch.id.substring(0, 8)} increased to ${newRemaining}`);
     }
   } catch (err) {
     console.error('[restoreBatchFIFO] Exception:', err);
@@ -598,7 +626,11 @@ export const useTransactions = (filters?: {
 
           // Calculate HPP for BONUS items (goes to account 5210 - HPP Bonus)
           // Bonus items reduce inventory AND don't generate revenue
-          // IMPORTANT: Bonus items MUST consume stock via FIFO just like regular items
+          // BUG FIX: Bonus items MUST follow same pattern as regular items:
+          // - Office Sale: consume_inventory_fifo (batch reduced at transaction)
+          // - Non-Office Sale: calculate_fifo_cost (batch reduced at delivery)
+          const isOfficeSaleTxn = newTransaction.isOfficeSale === true;
+
           if (bonusItems.length > 0) {
             for (const item of bonusItems) {
               const productId = item.product?.id;
@@ -609,7 +641,7 @@ export const useTransactions = (filters?: {
               if (productId && quantity > 0) {
                 try {
                   if (isMaterial && materialId) {
-                    // For material bonus items: Use FIFO cost and consume stock
+                    // For material bonus items: Use FIFO cost (read-only for now)
                     const { data: fifoPrice, error: fifoError } = await supabase
                       .rpc('get_material_fifo_cost', {
                         p_material_id: materialId,
@@ -626,64 +658,27 @@ export const useTransactions = (filters?: {
                       const materialData = Array.isArray(materialDataRaw) ? materialDataRaw[0] : materialDataRaw;
                       const costPrice = materialData?.price_per_unit || item.product?.costPrice || 0;
                       totalHPPBonus += costPrice * quantity;
-                      console.log('Material HPP Bonus Fallback:', { materialId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                      console.log('Material HPP Bonus Fallback:', { materialId, quantity, costPrice });
                     } else {
                       const costPrice = Number(fifoPrice) || item.product?.costPrice || 0;
                       totalHPPBonus += costPrice * quantity;
-                      console.log('Material HPP Bonus FIFO:', { materialId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
+                      console.log('Material HPP Bonus FIFO:', { materialId, quantity, costPrice });
                     }
-                    // TODO: Add material FIFO consumption when material batches are implemented
                   } else {
-                    // For regular product bonus items: Use consume_inventory_fifo (same as regular items)
-                    const { data: fifoResult, error: fifoError } = await supabase
-                      .rpc('consume_inventory_fifo', {
-                        p_product_id: productId,
-                        p_branch_id: currentBranch?.id || null,
-                        p_quantity: quantity,
-                        p_transaction_id: savedTransaction.id,
-                      });
-
-                    if (fifoError) {
-                      console.warn('Bonus FIFO consumption failed, using fallback:', fifoError.message);
-                      // Fallback: Use product's cost_price or base_price directly
-                      const { data: productDataRaw } = await supabase
-                        .from('products')
-                        .select('cost_price, base_price')
-                        .eq('id', productId)
-                        .order('id').limit(1);
-                      const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
-                      const costPrice = productData?.cost_price || productData?.base_price || 0;
-                      totalHPPBonus += costPrice * quantity;
-                      console.log('Bonus HPP Fallback:', { productId, quantity, costPrice, itemHPPBonus: costPrice * quantity });
-                    } else if (fifoResult && fifoResult.length > 0) {
-                      // FIFO returned result - use the HPP from consumed batches
-                      const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
-
-                      // Parse batches_consumed to get total consumed quantity
-                      let consumedQty = 0;
-                      try {
-                        const batchesConsumed = typeof fifoResult[0].batches_consumed === 'string'
-                          ? JSON.parse(fifoResult[0].batches_consumed)
-                          : fifoResult[0].batches_consumed;
-                        consumedQty = Array.isArray(batchesConsumed)
-                          ? batchesConsumed.reduce((sum: number, b: any) => sum + Number(b.quantity || 0), 0)
-                          : 0;
-                      } catch (parseErr) {
-                        console.warn('Could not parse bonus batches_consumed:', parseErr);
-                      }
-
-                      if (fifoHpp > 0 && consumedQty >= quantity) {
-                        // FIFO consumed all qty
-                        totalHPPBonus += fifoHpp;
-                        console.log('Bonus FIFO HPP calculated (full):', {
-                          productId,
-                          quantity,
-                          hpp: fifoHpp,
-                          batches: fifoResult[0].batches_consumed,
+                    // For regular product bonus items:
+                    // Same logic as regular items - use different RPC based on isOfficeSale
+                    if (isOfficeSaleTxn) {
+                      // OFFICE SALE BONUS: Consume batch immediately
+                      const { data: fifoResult, error: fifoError } = await supabase
+                        .rpc('consume_inventory_fifo', {
+                          p_product_id: productId,
+                          p_branch_id: currentBranch?.id || null,
+                          p_quantity: quantity,
+                          p_transaction_id: savedTransaction.id,
                         });
-                      } else {
-                        // FIFO not enough - calculate fallback for remaining qty
-                        const remainingQty = quantity - consumedQty;
+
+                      if (fifoError) {
+                        console.warn('Bonus FIFO consumption failed, using fallback:', fifoError.message);
                         const { data: productDataRaw } = await supabase
                           .from('products')
                           .select('cost_price, base_price')
@@ -691,17 +686,40 @@ export const useTransactions = (filters?: {
                           .order('id').limit(1);
                         const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
                         const costPrice = productData?.cost_price || productData?.base_price || 0;
-                        const fallbackHpp = costPrice * remainingQty;
-                        totalHPPBonus += fifoHpp + fallbackHpp;
-                        console.log('Bonus HPP calculated (FIFO + Fallback):', {
+                        totalHPPBonus += costPrice * quantity;
+                        console.log('Office Sale Bonus - Fallback HPP:', { productId, quantity, costPrice });
+                      } else if (fifoResult && fifoResult.length > 0) {
+                        const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
+                        totalHPPBonus += fifoHpp;
+                        console.log('Office Sale Bonus - FIFO HPP consumed:', { productId, quantity, hpp: fifoHpp });
+                      }
+                    } else {
+                      // NON-OFFICE SALE BONUS: Calculate HPP only (batch reduced at delivery)
+                      const { data: fifoResult, error: fifoError } = await supabase
+                        .rpc('calculate_fifo_cost', {
+                          p_product_id: productId,
+                          p_branch_id: currentBranch?.id || null,
+                          p_quantity: quantity,
+                        });
+
+                      if (fifoError) {
+                        console.warn('Bonus calculate_fifo_cost failed, using fallback:', fifoError.message);
+                        const { data: productDataRaw } = await supabase
+                          .from('products')
+                          .select('cost_price, base_price')
+                          .eq('id', productId)
+                          .order('id').limit(1);
+                        const productData = Array.isArray(productDataRaw) ? productDataRaw[0] : productDataRaw;
+                        const costPrice = productData?.cost_price || productData?.base_price || 0;
+                        totalHPPBonus += costPrice * quantity;
+                        console.log('Non-Office Sale Bonus - Fallback HPP:', { productId, quantity, costPrice });
+                      } else if (fifoResult && fifoResult.length > 0) {
+                        const fifoHpp = Number(fifoResult[0].total_hpp) || 0;
+                        totalHPPBonus += fifoHpp;
+                        console.log('Non-Office Sale Bonus - Calculated HPP (batch NOT reduced):', {
                           productId,
-                          requestedQty: quantity,
-                          fifoConsumedQty: consumedQty,
-                          fifoHpp,
-                          remainingQty,
-                          fallbackCostPrice: costPrice,
-                          fallbackHpp,
-                          totalItemHPPBonus: fifoHpp + fallbackHpp
+                          quantity,
+                          hpp: fifoHpp,
                         });
                       }
                     }

@@ -57,19 +57,41 @@ async function deductBatchFIFO(productId: string, quantity: number, branchId: st
 }
 
 /**
- * Restore quantity to inventory batches using FIFO method
- * Called when delivery is deleted - adds back to oldest depleted batch first
+ * Restore quantity to inventory batches using LIFO method (reverse of FIFO consume)
+ * Called when delivery is deleted - restores to NEWEST depleted batch first
+ * LIFO restore ensures correct HPP tracking when transactions are cancelled
  */
 async function restoreBatchFIFO(productId: string, quantity: number, branchId: string | null): Promise<void> {
   if (quantity <= 0 || !productId) return;
 
   try {
-    // Get all batches ordered by batch_date ASC (oldest first for FIFO restore)
+    // Try RPC first
+    const { data: rpcResult, error: rpcError } = await supabase
+      .rpc('restore_stock_fifo_v2', {
+        p_product_id: productId,
+        p_quantity: quantity,
+        p_reference_id: `delivery-restore-${Date.now()}`,
+        p_reference_type: 'delivery',
+        p_branch_id: branchId
+      });
+
+    if (!rpcError && rpcResult) {
+      const result = Array.isArray(rpcResult) ? rpcResult[0] : rpcResult;
+      if (result?.success) {
+        console.log(`📦 LIFO Restore via RPC: product=${productId.substring(0, 8)}, qty=${quantity}`);
+        return;
+      }
+    }
+
+    // Fallback: Manual LIFO restore (batch terbaru duluan)
+    console.log(`⚠️ RPC restore failed, using manual LIFO restore`);
+
+    // Get batches ordered by batch_date DESC (newest first for LIFO restore)
     const { data: batches, error } = await supabase
       .from('inventory_batches')
       .select('id, initial_quantity, remaining_quantity, batch_date')
       .eq('product_id', productId)
-      .order('batch_date', { ascending: true });
+      .order('batch_date', { ascending: false }); // DESC = terbaru duluan
 
     if (error) {
       console.error('[restoreBatchFIFO] Error fetching batches:', error);
@@ -83,6 +105,7 @@ async function restoreBatchFIFO(productId: string, quantity: number, branchId: s
 
     let remainingToRestore = quantity;
 
+    // Restore ke batch terbaru duluan (LIFO - kebalikan dari FIFO consume)
     for (const batch of batches) {
       if (remainingToRestore <= 0) break;
 
@@ -105,17 +128,17 @@ async function restoreBatchFIFO(productId: string, quantity: number, branchId: s
         if (updateError) {
           console.error(`[restoreBatchFIFO] Error updating batch ${batch.id}:`, updateError);
         } else {
-          console.log(`📦 FIFO Restore: Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch} (${batchRemaining} → ${newRemaining})`);
+          console.log(`📦 LIFO Restore: Batch ${batch.id.substring(0, 8)} restored by ${restoreToBatch} (${batchRemaining} → ${newRemaining})`);
         }
 
         remainingToRestore -= restoreToBatch;
       }
     }
 
-    if (remainingToRestore > 0) {
-      // If we couldn't restore to existing batches, add to the most recent one anyway
-      const mostRecentBatch = batches[0];
-      const newRemaining = (mostRecentBatch.remaining_quantity || 0) + remainingToRestore;
+    if (remainingToRestore > 0 && batches.length > 0) {
+      // If we couldn't restore to existing batches, add to the newest one
+      const newestBatch = batches[0]; // Sudah DESC, index 0 = terbaru
+      const newRemaining = (newestBatch.remaining_quantity || 0) + remainingToRestore;
 
       await supabase
         .from('inventory_batches')
@@ -123,9 +146,9 @@ async function restoreBatchFIFO(productId: string, quantity: number, branchId: s
           remaining_quantity: newRemaining,
           updated_at: new Date().toISOString()
         })
-        .eq('id', mostRecentBatch.id);
+        .eq('id', newestBatch.id);
 
-      console.log(`📦 FIFO Restore (overflow): Batch ${mostRecentBatch.id.substring(0, 8)} increased to ${newRemaining}`);
+      console.log(`📦 LIFO Restore (overflow): Batch ${newestBatch.id.substring(0, 8)} increased to ${newRemaining}`);
     }
   } catch (err) {
     console.error('[restoreBatchFIFO] Exception:', err);

@@ -74,7 +74,7 @@ BEGIN
     remaining_qty := remaining_qty - consume_qty;
   END LOOP;
 
-  -- If batch not enough, try to get cost from BOM or cost_price
+  -- If batch not enough, try to get cost from BOM or cost_price (for products)
   IF remaining_qty > 0 AND p_product_id IS NOT NULL THEN
     DECLARE
       bom_cost NUMERIC := 0;
@@ -110,6 +110,28 @@ BEGIN
             'notes', 'Fallback to cost_price'
           );
         END IF;
+      END IF;
+    END;
+  END IF;
+
+  -- If batch not enough for materials, fallback to price_per_unit or cost_price
+  IF remaining_qty > 0 AND p_material_id IS NOT NULL THEN
+    DECLARE
+      material_cost NUMERIC := 0;
+    BEGIN
+      -- Get material's cost_price or price_per_unit
+      SELECT COALESCE(cost_price, price_per_unit, 0) INTO material_cost
+      FROM materials WHERE id = p_material_id;
+
+      IF material_cost > 0 THEN
+        total_cost := total_cost + (material_cost * remaining_qty);
+        batch_list := batch_list || jsonb_build_object(
+          'batch_id', 'material_price_fallback',
+          'quantity', remaining_qty,
+          'unit_cost', material_cost,
+          'subtotal', material_cost * remaining_qty,
+          'notes', 'Fallback to material price'
+        );
       END IF;
     END;
   END IF;

@@ -436,7 +436,14 @@ export const useProduction = () => {
   }, [toast, user, getBOM, currentBranch]); // Dependencies: toast, user, getBOM, currentBranch for branch validation
 
 
-  // Process error input
+  // Process error input (Item Keluar / Bahan Rusak)
+  // ============================================================================
+  // BUG FIX: Item Keluar sekarang menggunakan FIFO untuk konsumsi material batch
+  // Ini memastikan:
+  // 1. inventory_batches.remaining_quantity berkurang (konsisten dengan produksi)
+  // 2. HPP journal dihitung dari harga batch FIFO (bukan price_per_unit)
+  // 3. materials.stock juga di-update untuk backward compatibility
+  // ============================================================================
   const processError = useCallback(async (input: ErrorInput): Promise<boolean> => {
     try {
       setIsLoading(true);
@@ -445,7 +452,6 @@ export const useProduction = () => {
       const ref = `ERR-${format(new Date(), 'yyMMdd')}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
 
       // Get material details
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: materialRaw, error: materialError } = await supabase
         .from('materials')
         .select('*')
@@ -456,62 +462,98 @@ export const useProduction = () => {
       if (materialError) throw materialError;
       if (!material) throw new Error('Material not found');
 
-      // Calculate new stock first
+      // ============================================================================
+      // CONSUME MATERIAL VIA FIFO (same pattern as processProduction)
+      // This ensures inventory_batches are properly consumed
+      // ============================================================================
+      let spoilageAmount = 0;
+      let fifoSuccess = false;
+
+      // Try consume_material_fifo_v2 first (preferred)
+      const { data: fifoResultRaw, error: fifoError } = await supabase
+        .rpc('consume_material_fifo_v2', {
+          p_material_id: input.materialId,
+          p_quantity: input.quantity,
+          p_reference_id: ref,
+          p_reference_type: 'production_error',
+          p_branch_id: currentBranch?.id || null,
+          p_user_id: input.createdBy,
+          p_user_name: user?.name || user?.email || 'Unknown User'
+        });
+      const fifoResult = Array.isArray(fifoResultRaw) ? fifoResultRaw[0] : fifoResultRaw;
+
+      if (!fifoError && fifoResult && fifoResult.success && fifoResult.total_cost > 0) {
+        spoilageAmount = fifoResult.total_cost;
+        fifoSuccess = true;
+        console.log(`✅ FIFO consumed for spoilage ${material.name}: ${input.quantity} units = Rp${Math.round(spoilageAmount)}`);
+      } else if (fifoError?.message?.includes('does not exist')) {
+        // Fallback to legacy RPC
+        console.log(`⚠️ consume_material_fifo_v2 not found, trying legacy consume_inventory_fifo`);
+
+        const { data: legacyResultRaw, error: legacyError } = await supabase
+          .rpc('consume_inventory_fifo', {
+            p_product_id: null,
+            p_branch_id: currentBranch?.id || null,
+            p_quantity: input.quantity,
+            p_transaction_id: ref,
+            p_material_id: input.materialId
+          });
+        const legacyResult = Array.isArray(legacyResultRaw) ? legacyResultRaw[0] : legacyResultRaw;
+
+        if (!legacyError && legacyResult && legacyResult.total_hpp > 0) {
+          spoilageAmount = legacyResult.total_hpp;
+          fifoSuccess = true;
+          console.log(`✅ Legacy FIFO consumed for spoilage ${material.name}: ${input.quantity} units = Rp${Math.round(spoilageAmount)}`);
+        }
+      }
+
+      // Fallback: use material price if FIFO fails
+      if (!fifoSuccess) {
+        console.log(`⚠️ FIFO fallback for spoilage ${material.name}:`, fifoError?.message || 'No batches available');
+        spoilageAmount = input.quantity * (material.cost_price || material.price_per_unit || 0);
+      }
+
+      // Calculate new stock for backward compatibility
       const newStock = Math.max(0, material.stock - input.quantity);
 
-      // Use a transaction-like approach: batch the operations
-      const operations = [];
-
       // 1. Record error entry directly in production_records table
-      // Use .order('id').limit(1) instead of .single() because our client forces Accept: application/json
-      operations.push(
-        supabase
-          .from('production_records')
-          .insert({
-            ref: ref,
-            product_id: null,
-            quantity: -input.quantity,
-            note: `BAHAN RUSAK: ${material.name} - ${input.note || 'Tidak ada catatan'}`,
-            consume_bom: false,
-            created_by: input.createdBy,
-            user_input_id: input.createdBy,
-            user_input_name: user?.name || user?.email || 'Unknown User',
-            branch_id: currentBranch?.id || null
-          })
-          .select('id')
-          .order('id').limit(1)
-      );
+      const { data: productionRecordRaw, error: productionError } = await supabase
+        .from('production_records')
+        .insert({
+          ref: ref,
+          product_id: null,
+          quantity: -input.quantity,
+          note: `BAHAN RUSAK: ${material.name} - ${input.note || 'Tidak ada catatan'}`,
+          consume_bom: false,
+          created_by: input.createdBy,
+          user_input_id: input.createdBy,
+          user_input_name: user?.name || user?.email || 'Unknown User',
+          branch_id: currentBranch?.id || null
+        })
+        .select('id')
+        .order('id').limit(1);
 
-      // 2. Reduce material stock
-      operations.push(
-        supabase
-          .from('materials')
-          .update({
-            stock: newStock,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', input.materialId)
-      );
-
-      // Execute the first two critical operations
-      const [productionResult, stockResult] = await Promise.allSettled(operations);
-
-      if (productionResult.status === 'rejected') {
-        throw productionResult.reason;
-      }
-      if (stockResult.status === 'rejected') {
-        throw stockResult.reason;
-      }
-
-      const productionRecordData = productionResult.value.data;
-      const productionRecord = Array.isArray(productionRecordData) ? productionRecordData[0] : productionRecordData;
-      if (productionResult.value.error) throw productionResult.value.error;
+      const productionRecord = Array.isArray(productionRecordRaw) ? productionRecordRaw[0] : productionRecordRaw;
+      if (productionError) throw productionError;
       if (!productionRecord) throw new Error('Failed to create production record');
-      if (stockResult.value.error) throw stockResult.value.error;
 
-      // 3. Record material movement (non-critical - can fail without breaking the process)
+      // 2. Update materials.stock for backward compatibility
+      // (FIFO already consumed batch, this is for legacy UI)
+      const { error: stockError } = await supabase
+        .from('materials')
+        .update({
+          stock: newStock,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', input.materialId);
+
+      if (stockError) {
+        console.warn('Failed to update material stock:', stockError);
+      }
+
+      // 3. Record material movement (non-critical)
       try {
-        const { error: movementError } = await supabase
+        await supabase
           .from('material_stock_movements')
           .insert({
             material_id: input.materialId,
@@ -528,47 +570,35 @@ export const useProduction = () => {
             user_name: user?.name || user?.email || 'Unknown User',
             branch_id: currentBranch?.id || null
           });
-
-        if (movementError) {
-          console.warn('Failed to record material movement:', movementError);
-          // Don't throw - the main operation (stock update) succeeded
-        }
       } catch (movementErr) {
         console.warn('Error recording material movement:', movementErr);
-        // Continue - main operation succeeded
       }
 
-      // 4. Create journal entry for spoilage (Dr. Beban Bahan Rusak, Cr. Persediaan)
-      if (currentBranch?.id) {
+      // 4. Create journal entry for spoilage using FIFO amount
+      if (currentBranch?.id && spoilageAmount > 0) {
         try {
-          // Calculate spoilage amount based on material price
-          const spoilageAmount = input.quantity * (material.price_per_unit || 0);
+          const journalResult = await createSpoilageJournal({
+            errorId: productionRecord.id,
+            errorRef: ref,
+            errorDate: new Date(),
+            amount: spoilageAmount,
+            materialName: material.name,
+            quantity: input.quantity,
+            unit: material.unit || 'pcs',
+            notes: input.note,
+            branchId: currentBranch.id,
+          });
 
-          if (spoilageAmount > 0) {
-            const journalResult = await createSpoilageJournal({
-              errorId: productionRecord.id,
-              errorRef: ref,
-              errorDate: new Date(),
-              amount: spoilageAmount,
-              materialName: material.name,
-              quantity: input.quantity,
-              unit: material.unit || 'pcs',
-              notes: input.note,
-              branchId: currentBranch.id,
-            });
-
-            if (journalResult.success) {
-              console.log('✅ Jurnal bahan rusak auto-generated:', journalResult.journalId);
-            } else {
-              console.warn('⚠️ Gagal membuat jurnal bahan rusak:', journalResult.error);
-            }
+          if (journalResult.success) {
+            console.log('✅ Jurnal bahan rusak auto-generated:', journalResult.journalId);
           } else {
-            console.warn('⚠️ Skipping journal - material price is 0');
+            console.warn('⚠️ Gagal membuat jurnal bahan rusak:', journalResult.error);
           }
         } catch (journalError) {
           console.error('Error creating spoilage journal:', journalError);
-          // Don't fail the whole operation - journal is secondary
         }
+      } else if (spoilageAmount <= 0) {
+        console.warn('⚠️ Skipping journal - spoilage amount is 0');
       }
 
       toast({
@@ -576,13 +606,13 @@ export const useProduction = () => {
         description: `Bahan rusak ${ref} berhasil dicatat. Stock ${material.name} berkurang ${input.quantity}.`
       });
 
-      // Refresh productions in background - don't wait for it
+      // Refresh productions in background
       setTimeout(() => {
-        fetchProductions().catch(err => 
+        fetchProductions().catch(err =>
           console.warn('Failed to refresh productions after error input:', err)
         );
       }, 100);
-      
+
       return true;
     } catch (error: any) {
       console.error('Error processing error input:', error);
