@@ -76,11 +76,30 @@ export const useProducts = () => {
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ['products', currentBranch?.id],
     queryFn: async () => {
+      // Fetch products
       let query = supabase.from('products').select('*').order('name', { ascending: true });
       if (currentBranch?.id) query = query.eq('branch_id', currentBranch.id);
       const { data, error } = await query;
       if (error) throw new Error(error.message);
-      return data ? data.map(fromDb) : [];
+
+      // Fetch actual stock from v_product_current_stock VIEW
+      let stockQuery = supabase.from('v_product_current_stock').select('product_id, current_stock');
+      if (currentBranch?.id) stockQuery = stockQuery.eq('branch_id', currentBranch.id);
+      const { data: stockData } = await stockQuery;
+
+      // Create stock map for quick lookup
+      const stockMap = new Map<string, number>();
+      if (stockData) {
+        stockData.forEach((s: any) => stockMap.set(s.product_id, Number(s.current_stock) || 0));
+      }
+
+      // Map products with actual stock from VIEW
+      return data ? data.map(p => {
+        const product = fromDb(p);
+        // Override current_stock with value from VIEW (source of truth)
+        product.currentStock = stockMap.get(p.id) ?? product.currentStock;
+        return product;
+      }) : [];
     },
     enabled: !!currentBranch,
     staleTime: 10 * 60 * 1000,
