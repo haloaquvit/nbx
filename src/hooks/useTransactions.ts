@@ -117,7 +117,7 @@ export const useTransactions = (filters?: {
     queryKey: ['transactions', filters, currentBranch?.id],
     queryFn: async () => {
       // Join dengan customers untuk mendapatkan classification
-      const selectFields = '*, customer:customers!customer_id(classification)';
+      const selectFields = '*, customer:customers(classification)';
 
       let query = supabase
         .from('transactions')

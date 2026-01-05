@@ -146,7 +146,7 @@ const getMenuItems = (hasPermission: (permission: Permission) => boolean, hasGra
       { href: "/roles", label: "Manajemen Roles", icon: Shield, permission: PERMISSIONS.ROLES },
       { href: "/branches", label: "Manajemen Cabang", icon: Building2, permission: PERMISSIONS.SETTINGS },
       { href: "/web-management", label: "Web Management", icon: Server, permission: PERMISSIONS.SETTINGS, roles: ['owner'] },
-      { href: "/audit-log", label: "Audit Log", icon: History, permission: PERMISSIONS.SETTINGS, roles: ['owner'] },
+
     ].filter(item => {
       if (!hasPermission(item.permission)) return false;
       if (item.roles && userRole && !item.roles.includes(userRole.toLowerCase())) return false;
@@ -253,11 +253,11 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   const filteredMenuItems = searchQuery.trim() === ""
     ? menuItems
     : menuItems.map(section => ({
-        ...section,
-        items: section.items.filter(item =>
-          item.label.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      })).filter(section => section.items.length > 0);
+      ...section,
+      items: section.items.filter(item =>
+        item.label.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    })).filter(section => section.items.length > 0);
 
   // Get first search result for Enter key navigation
   const firstSearchResult = filteredMenuItems.length > 0 && filteredMenuItems[0].items.length > 0

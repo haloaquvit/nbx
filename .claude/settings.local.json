@@ -297,7 +297,15 @@
       "Bash(do echo \"Deploying $f...\" cat \"d:/App/Aquvit Fix - Copy/database/rpc/$f.sql\")",
       "Bash(docker-compose:*)",
       "Bash(echo:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Complete RPC migration and database sync\n\nMajor changes:\n- Migrate all hooks to use atomic RPC functions\n- Add QuotationsPage lazy import fix\n- Fix delivery driver_id empty string to null conversion\n- Fix DeliveryCompletionDialog undefined items error\n- Add NotificationsPage component\n- Update database RPC files for production/spoilage fixes\n- Sync aquvit_dev schema to mkw_db (structures and RPC only)\n\nRPC improvements:\n- Fix spoilage reason mapping to PRODUCTION_ERROR\n- Fix journal draft-first for production operations\n- Add TIMESTAMPTZ support for accurate timestamps\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Complete RPC migration and database sync\n\nMajor changes:\n- Migrate all hooks to use atomic RPC functions\n- Add QuotationsPage lazy import fix\n- Fix delivery driver_id empty string to null conversion\n- Fix DeliveryCompletionDialog undefined items error\n- Add NotificationsPage component\n- Update database RPC files for production/spoilage fixes\n- Sync aquvit_dev schema to mkw_db (structures and RPC only)\n\nRPC improvements:\n- Fix spoilage reason mapping to PRODUCTION_ERROR\n- Fix journal draft-first for production operations\n- Add TIMESTAMPTZ support for accurate timestamps\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Make delivery status filter case-insensitive and support legacy status\n\n- Filter now handles delivery_status variations: Delivered, delivered, Completed, completed, Selesai\n- Also excludes transactions with legacy status=''Selesai'' for backward compatibility\n- Client-side filtering ensures old data with inconsistent casing works correctly\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(ssh root@aquvit.id \"psql -U postgres -d aquvit_new -c \"\"\\df create_transaction_atomic\"\"\")",
+      "Bash(curl -s \"https://nbx.aquvit.id/rest/v1/rpc/create_transaction_atomic\" -X OPTIONS)",
+      "Bash(ssh root@aquvit.id \"psql -U postgres -d aquvit_new\")",
+      "Bash(for table in production_records material_stock_movements inventory_batches products materials)",
+      "Bash(do echo \"=== $table ===\" docker exec aquvit-postgres psql -U postgres -d aquvit_test -c \"\\d $table\")",
+      "Bash(__NEW_LINE__ ssh -i 'd:/App/Aquvit Fix - Copy/Aquvit.pem' -o StrictHostKeyChecking=no deployer@103.197.190.54 \"sudo -u postgres psql -d aquvit_new -c \"\"\nSELECT \n  table_name, \n  column_name, \n  data_type,\n  CASE WHEN character_maximum_length IS NOT NULL THEN ''('' || character_maximum_length || '')'' ELSE '''' END as length,\n  column_default,\n  is_nullable\nFROM information_schema.columns \nWHERE table_schema = ''public''\nORDER BY table_name, ordinal_position;\n\"\"\")",
+      "Bash(__NEW_LINE__ echo \"Local columns:\")"
     ],
     "deny": [],
     "ask": [],

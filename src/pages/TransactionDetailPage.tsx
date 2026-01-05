@@ -24,7 +24,17 @@ import { useCompanySettings } from "@/hooks/useCompanySettings"
 export default function TransactionDetailPage() {
   const { id: transactionId } = useParams<{ id: string }>()
   const { transactions, isLoading } = useTransactions()
-  const { data: deliveryInfo, isLoading: isLoadingDelivery } = useTransactionDeliveryInfo(transactionId || '')
+  const { data: deliveryInfo, isLoading: isLoadingDelivery, error: deliveryError } = useTransactionDeliveryInfo(transactionId || '')
+
+  // Debug: Log delivery info
+  console.log('📦 TransactionDetailPage - deliveryInfo:', {
+    transactionId,
+    deliveryInfo,
+    isLoadingDelivery,
+    deliveryError,
+    deliverySummaryCount: deliveryInfo?.deliverySummary?.length,
+    deliverySummary: deliveryInfo?.deliverySummary
+  })
   const { customers } = useCustomers()
   const { toast } = useToast()
   const { settings: companyInfo } = useCompanySettings()

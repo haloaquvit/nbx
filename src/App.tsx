@@ -66,14 +66,14 @@ const TaxPage = lazy(() => import("@/pages/TaxPage"));
 const BranchManagementPage = lazy(() => import("@/pages/BranchManagementPage"));
 const JournalPage = lazy(() => import("@/pages/JournalPage"));
 const MaterialUsageSummaryPage = lazy(() => import("@/pages/MaterialUsageSummaryPage"));
-const AuditLogPage = lazy(() => import("@/pages/AuditLogPage"));
+
 const WebManagementPage = lazy(() => import("@/pages/WebManagementPage"));
 const CustomerMapPage = lazy(() => import("@/pages/CustomerMapPage"));
 const WarehousePage = lazy(() => import("@/pages/WarehousePage"));
 const MobileRetasiPage = lazy(() => import("@/pages/MobileRetasiPage"));
 const MobileSoldItemsPage = lazy(() => import("@/pages/MobileSoldItemsPage"));
 const MobileCommissionPage = lazy(() => import("@/pages/MobileCommissionPage"));
-const NotificationsPage = lazy(() => import("@/pages/NotificationsPage"));
+
 
 const QuotationsPage = lazy(() => import("@/pages/QuotationsPage"));
 const SERVERS = [
@@ -279,7 +279,7 @@ function WebApp() {
                       <Route path="/my-commission" element={<MobileCommissionPage />} />
                       <Route path="/quotations" element={<QuotationsPage />} />
                       <Route path="/quotations/new" element={<QuotationsPage />} />
-                      <Route path="/notifications" element={<NotificationsPage />} />
+
                       <Route path="*" element={<NotFound />} />
                     </Route>
                   ) : (
@@ -333,8 +333,7 @@ function WebApp() {
                       <Route path="/customer-map" element={<CustomerMapPage />} />
                       <Route path="/quotations" element={<QuotationsPage />} />
                       <Route path="/quotations/new" element={<QuotationsPage />} />
-                      <Route path="/notifications" element={<NotificationsPage />} />
-                      <Route path="/audit-log" element={<AuditLogPage />} />
+
                       <Route path="*" element={<NotFound />} />
                     </Route>
                   )}

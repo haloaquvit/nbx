@@ -21,37 +21,26 @@ export function useOptimizedQuery<T>(
     ...options,
     queryFn: async () => {
       const startTime = performance.now()
-      
+
       try {
         const result = await options.queryFn()
-        
+
         // Log performance if enabled - with safe fallback
         if (options.logPerformance && options.tableName) {
           const duration = Math.round(performance.now() - startTime)
-          
+
           // Only log if duration is significant (> 100ms)
           if (duration > 100) {
             // Use safe performance logging with fallback
-            import('@/utils/safeAuditLog').then(({ safePerformanceLog }) => {
-              safePerformanceLog(
-                options.queryKey.join('_'),
-                duration,
-                options.tableName,
-                {
-                  query_key: options.queryKey,
-                  browser: navigator.userAgent.split(' ')[0]
-                }
-              )
-            }).catch(error => {
-              console.warn('Performance logging failed:', error)
-            })
+            // Performance logging removed as per request
+            // console.debug(`[Perf] ${options.queryKey.join('_')}: ${duration}ms`);
           }
         }
-        
+
         return result
       } catch (error) {
         const duration = Math.round(performance.now() - startTime)
-        
+
         // Log failed queries for debugging
         if (options.logPerformance) {
           supabase.rpc('log_performance', {
@@ -67,7 +56,7 @@ export function useOptimizedQuery<T>(
             console.warn('Error logging failed:', logError)
           })
         }
-        
+
         throw error
       }
     },

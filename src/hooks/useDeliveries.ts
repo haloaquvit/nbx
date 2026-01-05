@@ -377,7 +377,7 @@ export const useTransactionsReadyForDelivery = () => {
 
         // Calculate delivery summary
         const deliverySummary = (Array.isArray(txn.items) ? txn.items : []).map((item: any) => {
-          const productId = item.product_id || item.productId;
+          const productId = item.product_id || item.productId || item.product?.id;
 
           // Calculate total delivered for this item across all deliveries
           const totalDelivered = deliveries.reduce((sum, d) => {
@@ -387,7 +387,7 @@ export const useTransactionsReadyForDelivery = () => {
 
           return {
             productId: productId,
-            productName: item.product_name || item.productName,
+            productName: item.product_name || item.productName || item.product?.name || 'Unknown Product',
             orderedQuantity: item.quantity,
             deliveredQuantity: totalDelivered,
             remainingQuantity: item.quantity - totalDelivered,
@@ -456,6 +456,15 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
 
       if (!data) return null;
 
+      // Debug: Log raw data from database
+      console.log('📦 useTransactionDeliveryInfo - raw data:', {
+        transactionId,
+        items: data.items,
+        itemsType: typeof data.items,
+        itemsIsArray: Array.isArray(data.items),
+        itemsLength: Array.isArray(data.items) ? data.items.length : 'N/A'
+      })
+
       // Get customer details
       let customerAddress = '';
       let customerPhone = '';
@@ -477,7 +486,7 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
 
       // Calculate delivery summary
       const deliverySummary = (Array.isArray(data.items) ? data.items : []).map((item: any) => {
-        const productId = item.product_id || item.productId;
+        const productId = item.product_id || item.productId || item.product?.id;
 
         // Calculate total delivered for this item across all deliveries
         const totalDelivered = deliveries.reduce((sum: number, d: Delivery) => {
@@ -487,7 +496,7 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
 
         return {
           productId: productId,
-          productName: item.product_name || item.productName,
+          productName: item.product_name || item.productName || item.product?.name || 'Unknown Product',
           orderedQuantity: item.quantity,
           deliveredQuantity: totalDelivered,
           remainingQuantity: item.quantity - totalDelivered,

@@ -15,7 +15,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Sidebar } from "./Sidebar";
 import { ThemeToggle } from "../ThemeToggle";
-import { NotificationBell } from "../NotificationBell";
+
 import { BranchSelector } from "../BranchSelector";
 import { useAuth } from "@/hooks/useAuth";
 import { useCompanySettings } from "@/hooks/useCompanySettings";
@@ -77,10 +77,10 @@ export function Header() {
     <header className="border-b bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 shadow-2xl w-full relative overflow-hidden">
       {/* Glossy glass overlay */}
       <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-white/5 to-transparent backdrop-blur-sm"></div>
-      
+
       {/* Elegant shine effect */}
       <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-50 animate-pulse"></div>
-      
+
       {/* Decorative glass orbs */}
       <div className="absolute top-0 left-0 w-full h-full">
         <div className="absolute -top-10 -left-10 w-40 h-40 bg-gradient-radial from-white/20 via-white/10 to-transparent rounded-full blur-2xl"></div>
@@ -91,7 +91,7 @@ export function Header() {
 
       {/* Subtle border highlight */}
       <div className="absolute bottom-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-white/30 to-transparent"></div>
-      
+
       {/* Top Row - Logo, Menu, User */}
       <div className="flex h-28 items-center px-8 w-full max-w-none relative z-10">
         {/* Mobile Menu */}
@@ -103,7 +103,7 @@ export function Header() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="flex flex-col p-0">
-            <Sidebar isCollapsed={false} setCollapsed={() => {}} />
+            <Sidebar isCollapsed={false} setCollapsed={() => { }} />
           </SheetContent>
         </Sheet>
 
@@ -117,30 +117,30 @@ export function Header() {
         {/* Desktop Navigation Menu - Auto-responsive */}
         <nav className="hidden md:block flex-1 min-w-0">
           <div className="flex flex-wrap items-center justify-center gap-1 md:gap-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = location.pathname === item.href;
-            
-            return (
-              <Link
-                key={item.href}
-                to={item.href}
-                className={cn(
-                  "flex items-center gap-1 px-1 md:px-2 lg:px-3 py-1 md:py-2 rounded-md lg:rounded-lg text-xs md:text-sm lg:text-base font-medium lg:font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 btn-glossy",
-                  isActive 
-                    ? "bg-white/30 text-white backdrop-blur-lg border border-white/50 scale-105 shadow-lg" 
-                    : "text-white/90 hover:text-white hover:bg-white/20 hover:backdrop-blur-lg hover:scale-105 hover:shadow-lg"
-                )}
-                style={{
-                  minWidth: 'fit-content',
-                  maxWidth: `${Math.max(80, 100 - menuItems.length * 2)}px`
-                }}
-              >
-                <Icon className="h-3 w-3 md:h-4 md:w-4 lg:h-5 lg:w-5 flex-shrink-0" />
-                <span className="hidden md:inline truncate text-xs lg:text-sm">{item.label}</span>
-              </Link>
-            );
-          })}
+            {menuItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.href;
+
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    "flex items-center gap-1 px-1 md:px-2 lg:px-3 py-1 md:py-2 rounded-md lg:rounded-lg text-xs md:text-sm lg:text-base font-medium lg:font-semibold transition-all duration-300 whitespace-nowrap flex-shrink-0 btn-glossy",
+                    isActive
+                      ? "bg-white/30 text-white backdrop-blur-lg border border-white/50 scale-105 shadow-lg"
+                      : "text-white/90 hover:text-white hover:bg-white/20 hover:backdrop-blur-lg hover:scale-105 hover:shadow-lg"
+                  )}
+                  style={{
+                    minWidth: 'fit-content',
+                    maxWidth: `${Math.max(80, 100 - menuItems.length * 2)}px`
+                  }}
+                >
+                  <Icon className="h-3 w-3 md:h-4 md:w-4 lg:h-5 lg:w-5 flex-shrink-0" />
+                  <span className="hidden md:inline truncate text-xs lg:text-sm">{item.label}</span>
+                </Link>
+              );
+            })}
 
             {/* Admin Menu Dropdown - Auto-responsive */}
             {adminMenuItems.length > 0 && (
@@ -151,19 +151,19 @@ export function Header() {
                     <span className="hidden md:inline text-xs lg:text-sm">Admin</span>
                   </Button>
                 </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {adminMenuItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <DropdownMenuItem key={item.href} asChild className="dropdown-item-hover">
-                      <Link to={item.href} className="flex items-center">
-                        <Icon className="h-4 w-4 mr-2" />
-                        {item.label}
-                      </Link>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
+                <DropdownMenuContent align="end">
+                  {adminMenuItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <DropdownMenuItem key={item.href} asChild className="dropdown-item-hover">
+                        <Link to={item.href} className="flex items-center">
+                          <Icon className="h-4 w-4 mr-2" />
+                          {item.label}
+                        </Link>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
               </DropdownMenu>
             )}
           </div>
@@ -176,7 +176,7 @@ export function Header() {
             <span className="text-sm font-semibold text-white drop-shadow-sm">{user?.name || 'User'}</span>
             <span className="text-xs text-white/80 capitalize">{user?.role || 'Guest'} • <span className="text-green-300">Online</span></span>
           </div>
-          
+
           {/* Live Clock - Show on largest screens (menggunakan timezone kantor) */}
           <div className="hidden 2xl:flex flex-col items-center px-3 py-2 rounded-lg bg-white/15 backdrop-blur-lg border border-white/30 btn-glossy shadow-lg">
             <span className="text-sm font-bold text-white drop-shadow-sm">
@@ -193,9 +193,7 @@ export function Header() {
           <div className="scale-110">
             <ThemeToggle />
           </div>
-          <div className="scale-110">
-            <NotificationBell />
-          </div>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-full text-white hover:bg-white/30 hover:scale-110 transition-all duration-300 h-10 w-10 md:h-12 md:w-12 shadow-xl border border-white/30 relative btn-glossy backdrop-blur-lg">

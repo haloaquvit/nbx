@@ -14,10 +14,9 @@ import { useBranch } from '@/contexts/BranchContext'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useGranularPermission } from '@/hooks/useGranularPermission'
-import { useUnreadNotificationsCount } from '@/hooks/useNotifications'
-import { useLowStockCheck } from '@/hooks/useLowStockCheck'
-import { useDuePaymentCheck } from '@/hooks/useDuePaymentCheck'
-import { MobileNotificationBell } from '@/components/MobileNotificationBell'
+
+
+
 
 const MobileLayout = () => {
   const { user, signOut } = useAuth()
@@ -30,11 +29,7 @@ const MobileLayout = () => {
   const { currentBranch, availableBranches, canAccessAllBranches, switchBranch } = useBranch()
   const { hasGranularPermission } = useGranularPermission()
 
-  // Low stock check for owner/supervisor/admin
-  useLowStockCheck()
 
-  // Due payment check for owner/supervisor/admin/finance
-  useDuePaymentCheck()
 
   // Ref for active menu item to scroll into view
   const activeMenuRef = useRef<HTMLButtonElement>(null)
@@ -267,7 +262,7 @@ const MobileLayout = () => {
   }
 
   const currentPath = location.pathname
-  
+
   const getPageTitle = (path: string) => {
     if (path.startsWith('/transactions/')) {
       return 'Detail Transaksi'
@@ -275,7 +270,7 @@ const MobileLayout = () => {
     if (path.startsWith('/customers/')) {
       return 'Detail Pelanggan'
     }
-    
+
     switch (path) {
       case '/pos':
         return 'Point of Sale'
@@ -305,7 +300,7 @@ const MobileLayout = () => {
         return 'ERP System'
     }
   }
-  
+
   const handleBack = () => {
     if (currentPath === '/') {
       // Already at home, can't go back further
@@ -345,7 +340,7 @@ const MobileLayout = () => {
               <Package className="h-8 w-8 text-primary" />
             )}
           </div>
-          
+
           {/* Center - Title */}
           <div className="flex-1 text-center px-4">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">
@@ -362,10 +357,10 @@ const MobileLayout = () => {
               )}
             </p>
           </div>
-          
+
           {/* Right - User Actions */}
           <div className="flex items-center space-x-1">
-            <MobileNotificationBell />
+
             <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(true)} className="h-10 w-10 rounded-full p-0">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user?.avatar} />
@@ -383,8 +378,8 @@ const MobileLayout = () => {
 
       {/* Sidebar Overlay - Auto close when clicking outside */}
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 z-40 bg-black/50" 
+        <div
+          className="fixed inset-0 z-40 bg-black/50"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -456,15 +451,15 @@ const MobileLayout = () => {
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <p className="font-medium truncate text-gray-900 dark:text-white">Kembali</p>
                   <p className="text-sm truncate text-gray-500 dark:text-gray-400">
-                    {currentPath.startsWith('/transactions/') ? 'Ke Daftar Transaksi' : 
-                     currentPath.startsWith('/customers/') ? 'Ke Daftar Pelanggan' : 
-                     'Ke Beranda'}
+                    {currentPath.startsWith('/transactions/') ? 'Ke Daftar Transaksi' :
+                      currentPath.startsWith('/customers/') ? 'Ke Daftar Pelanggan' :
+                        'Ke Beranda'}
                   </p>
                 </div>
               </div>
             </Button>
           )}
-          
+
           {/* Home Button - Always visible */}
           <Button
             variant={currentPath === '/' ? "default" : "ghost"}

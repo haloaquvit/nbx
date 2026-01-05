@@ -30,8 +30,8 @@ DECLARE
   v_consume_result RECORD;
   v_total_hpp_real NUMERIC := 0; -- Based on REAL FIFO at delivery moment
   v_journal_id UUID;
-  v_acc_tertahan UUID;
-  v_acc_persediaan UUID;
+  v_acc_tertahan TEXT;  -- Changed from UUID to TEXT for compatibility
+  v_acc_persediaan TEXT;  -- Changed from UUID to TEXT for compatibility
   v_delivery_number INTEGER;
   v_product_id UUID;
   v_qty NUMERIC;
@@ -40,7 +40,7 @@ DECLARE
   v_total_ordered NUMERIC;
   v_total_delivered NUMERIC;
   v_new_status TEXT;
-  v_hpp_account_id UUID;
+  v_hpp_account_id TEXT;  -- Changed from UUID to TEXT for compatibility
   v_entry_number TEXT;
 BEGIN
   -- ==================== VALIDASI ====================
