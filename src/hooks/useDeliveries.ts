@@ -427,9 +427,8 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
     queryFn: async () => {
       if (!transactionId) return null;
 
-      // Note: items are stored as JSONB in transactions.items column
-      // Column mapping: id=order_number, total=total_amount
-      const { data, error } = await supabase
+      // 1. Fetch Transaction Details
+      const { data: txn, error: txnError } = await supabase
         .from('transactions')
         .select(`
           id,
@@ -439,40 +438,56 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
           order_date,
           status,
           delivery_status,
-          items,
-          deliveries (
-            *,
-            delivery_items (*)
-          )
+          items
         `)
         .eq('id', transactionId)
         .eq('branch_id', currentBranch?.id)
         .single();
 
-      if (error) {
-        if (error.code === 'PGRST116') return null; // Not found
-        throw error;
+      if (txnError) {
+        if (txnError.code === 'PGRST116') return null; // Not found
+        throw txnError;
       }
 
-      if (!data) return null;
+      if (!txn) return null;
 
-      // Debug: Log raw data from database
-      console.log('📦 useTransactionDeliveryInfo - raw data:', {
-        transactionId,
-        items: data.items,
-        itemsType: typeof data.items,
-        itemsIsArray: Array.isArray(data.items),
-        itemsLength: Array.isArray(data.items) ? data.items.length : 'N/A'
-      })
+      // 2. Fetch Deliveries Manually
+      // Fetching separately avoids potential Foreign Key relationship detection issues in Supabase/PostgREST
+      const { data: deliveriesData, error: delError } = await supabase
+        .from('deliveries')
+        .select(`
+          *,
+          delivery_items(*),
+          driver:driver_id(full_name),
+          helper:helper_id(full_name)
+        `)
+        .eq('transaction_id', transactionId)
+        .eq('branch_id', currentBranch?.id)
+        .order('created_at', { ascending: false });
+
+      if (delError) throw delError;
+
+      console.log('📦 Manual Delivery Fetch:', {
+        txnId: transactionId,
+        deliveriesFound: deliveriesData?.length,
+        deliveries: deliveriesData
+      });
+
+      // Prepare data for mapping
+      // Inject transaction total into deliveries for fromDbToDelivery to use
+      const enhancedDeliveries = (deliveriesData || []).map(d => ({
+        ...d,
+        transactions: { total: txn.total }
+      }));
 
       // Get customer details
       let customerAddress = '';
       let customerPhone = '';
-      if (data.customer_id) {
+      if (txn.customer_id) {
         const { data: customer } = await supabase
           .from('customers')
           .select('address, phone')
-          .eq('id', data.customer_id)
+          .eq('id', txn.customer_id)
           .single();
         if (customer) {
           customerAddress = customer.address || '';
@@ -481,11 +496,11 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
       }
 
       // Map deliveries
-      const deliveries = (data.deliveries || []).map(fromDbToDelivery)
+      const deliveries = enhancedDeliveries.map(fromDbToDelivery)
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
       // Calculate delivery summary
-      const deliverySummary = (Array.isArray(data.items) ? data.items : []).map((item: any) => {
+      const deliverySummary = (Array.isArray(txn.items) ? txn.items : []).map((item: any) => {
         const productId = item.product_id || item.productId || item.product?.id;
 
         // Calculate total delivered for this item across all deliveries
@@ -508,15 +523,15 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
       });
 
       return {
-        id: data.id,
-        orderNumber: data.id,  // id is used as order number
-        customerName: data.customer_name,
+        id: txn.id,
+        orderNumber: txn.id,  // id is used as order number
+        customerName: txn.customer_name,
         customerAddress,
         customerPhone,
-        totalAmount: data.total,  // 'total' not 'total_amount'
-        total: data.total,
-        orderDate: new Date(data.order_date),
-        status: data.status,
+        totalAmount: txn.total,
+        total: txn.total,
+        orderDate: new Date(txn.order_date),
+        status: txn.status,
         deliveries,
         deliverySummary,
       };
