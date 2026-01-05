@@ -51,14 +51,14 @@ import { usePermissions, PERMISSIONS, Permission } from "@/hooks/usePermissions"
 import { useAuth } from "@/hooks/useAuth";
 import { useGranularPermission } from "@/hooks/useGranularPermission";
 
-// Section color configuration for modern gradient look
+// Section color configuration for modern gradient look (with dark mode support)
 const sectionColors: Record<string, { bg: string; text: string; activeBg: string }> = {
-  "Utama": { bg: "bg-blue-50", text: "text-blue-700", activeBg: "bg-blue-600" },
-  "Manajemen Data": { bg: "bg-emerald-50", text: "text-emerald-700", activeBg: "bg-emerald-600" },
-  "Keuangan": { bg: "bg-amber-50", text: "text-amber-700", activeBg: "bg-amber-600" },
-  "Aset, Zakat & Pajak": { bg: "bg-purple-50", text: "text-purple-700", activeBg: "bg-purple-600" },
-  "Laporan": { bg: "bg-rose-50", text: "text-rose-700", activeBg: "bg-rose-600" },
-  "Pengaturan": { bg: "bg-slate-100", text: "text-slate-700", activeBg: "bg-slate-600" },
+  "Utama": { bg: "bg-blue-50 dark:bg-blue-950/50", text: "text-blue-700 dark:text-blue-300", activeBg: "bg-blue-600 dark:bg-blue-500" },
+  "Manajemen Data": { bg: "bg-emerald-50 dark:bg-emerald-950/50", text: "text-emerald-700 dark:text-emerald-300", activeBg: "bg-emerald-600 dark:bg-emerald-500" },
+  "Keuangan": { bg: "bg-amber-50 dark:bg-amber-950/50", text: "text-amber-700 dark:text-amber-300", activeBg: "bg-amber-600 dark:bg-amber-500" },
+  "Aset, Zakat & Pajak": { bg: "bg-purple-50 dark:bg-purple-950/50", text: "text-purple-700 dark:text-purple-300", activeBg: "bg-purple-600 dark:bg-purple-500" },
+  "Laporan": { bg: "bg-rose-50 dark:bg-rose-950/50", text: "text-rose-700 dark:text-rose-300", activeBg: "bg-rose-600 dark:bg-rose-500" },
+  "Pengaturan": { bg: "bg-slate-100 dark:bg-slate-800/50", text: "text-slate-700 dark:text-slate-300", activeBg: "bg-slate-600 dark:bg-slate-500" },
 };
 
 /*
@@ -291,8 +291,8 @@ export function Sidebar({ isCollapsed, setCollapsed }: SidebarProps) {
   return (
     <div
       className={cn(
-        "border-r bg-amber-50/60 backdrop-blur-sm transition-all duration-200 ease-in-out",
-        isHoverExpanded && isCollapsed && "absolute left-0 top-0 z-50 h-full shadow-lg bg-amber-50/90"
+        "border-r bg-amber-50/60 dark:bg-slate-900/90 backdrop-blur-sm transition-all duration-200 ease-in-out dark:border-slate-700",
+        isHoverExpanded && isCollapsed && "absolute left-0 top-0 z-50 h-full shadow-lg bg-amber-50/90 dark:bg-slate-900/95"
       )}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
