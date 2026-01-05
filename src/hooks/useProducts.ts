@@ -83,9 +83,17 @@ export const useProducts = () => {
       const { data, error } = await query;
       if (error) throw new Error(error.message);
 
-      // Fetch actual stock from v_product_current_stock VIEW
+      // Fetch actual stock from v_product_current_stock VIEW for the fetched products
       let stockQuery = supabase.from('v_product_current_stock').select('product_id, current_stock');
-      if (currentBranch?.id) stockQuery = stockQuery.eq('branch_id', currentBranch.id);
+
+      if (data && data.length > 0) {
+        const productIds = data.map(p => p.id);
+        stockQuery = stockQuery.in('product_id', productIds);
+      } else {
+        // No products, no stock to fetch
+        return [];
+      }
+
       const { data: stockData } = await stockQuery;
 
       // Create stock map for quick lookup

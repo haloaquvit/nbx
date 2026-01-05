@@ -419,12 +419,14 @@ export const useTransactionsReadyForDelivery = () => {
 
 // Hook to get delivery info for a specific transaction
 // Hook to get delivery info for a specific transaction
-export const useTransactionDeliveryInfo = (transactionId: string) => {
+export const useTransactionDeliveryInfo = (transactionId: string, options?: { enabled?: boolean }) => {
   const { currentBranch } = useBranch();
 
   return useQuery<TransactionDeliveryInfo | null>({
     queryKey: ['transactionDeliveryInfo', transactionId, currentBranch?.id],
     queryFn: async () => {
+      // Return null if explicitly disabled (though enabled flag should handle this, this is extra safety)
+      if (options?.enabled === false) return null;
       if (!transactionId) return null;
 
       // 1. Fetch Transaction Details
@@ -536,6 +538,6 @@ export const useTransactionDeliveryInfo = (transactionId: string) => {
         deliverySummary,
       };
     },
-    enabled: !!transactionId && !!currentBranch,
+    enabled: !!transactionId && !!currentBranch && (options?.enabled ?? true),
   });
 };

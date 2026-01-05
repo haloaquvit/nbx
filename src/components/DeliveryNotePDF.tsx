@@ -34,7 +34,8 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
   const { settings } = useCompanySettings()
   const { currentBranch } = useBranch()
   // Use useTransactionDeliveryInfo to get complete delivery summary with correct remaining quantities
-  const { data: fetchedTransactionInfo } = useTransactionDeliveryInfo(delivery.transactionId)
+  // Only fetch if transactionInfo is not provided (optimization)
+  const { data: fetchedTransactionInfo } = useTransactionDeliveryInfo(delivery.transactionId, { enabled: !transactionInfo })
   const printRef = React.useRef<HTMLDivElement>(null)
   const dotMatrixRef = React.useRef<HTMLDivElement>(null)
   const [isDialogOpen, setIsDialogOpen] = React.useState(false)
