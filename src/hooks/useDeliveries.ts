@@ -312,6 +312,8 @@ export const useTransactionsReadyForDelivery = () => {
     queryKey: ['transactionsReadyForDelivery', currentBranch?.id],
     queryFn: async () => {
       // Get transactions that have items not fully delivered
+      // Filter transactions that are NOT delivered/completed (case-insensitive)
+      // We use 'in' filter for pending statuses instead of 'neq' for delivered
       const { data, error } = await supabase
         .from('transactions')
         .select(`
@@ -330,14 +332,32 @@ export const useTransactionsReadyForDelivery = () => {
         `)
         .eq('branch_id', currentBranch?.id)
         .neq('status', 'Dibatalkan')
-        .neq('delivery_status', 'Delivered')
-        .neq('delivery_status', 'Completed')
         .order('order_date', { ascending: false });
+
+      // Client-side filter for case-insensitive delivery_status check
+      // Also check legacy 'status' column for old data compatibility
+      const filteredData = (data || []).filter(txn => {
+        const deliveryStatus = (txn.delivery_status || '').toLowerCase();
+        const txnStatus = (txn.status || '').toLowerCase();
+
+        // Exclude if delivery_status indicates delivered/completed (case-insensitive)
+        if (deliveryStatus === 'delivered' || deliveryStatus === 'completed' || deliveryStatus === 'selesai') {
+          return false;
+        }
+
+        // Also exclude if legacy status indicates completed delivery
+        // 'Selesai' and 'Diantar Sebagian' with no remaining items should be excluded
+        if (txnStatus === 'selesai') {
+          return false;
+        }
+
+        return true;
+      });
 
       if (error) throw error;
 
       // Get customer details for addresses/phones
-      const customerIds = [...new Set((data || []).map(t => t.customer_id).filter(Boolean))];
+      const customerIds = [...new Set(filteredData.map(t => t.customer_id).filter(Boolean))];
       let customersMap: Record<string, { address?: string; phone?: string }> = {};
       if (customerIds.length > 0) {
         const { data: customers } = await supabase
@@ -350,7 +370,7 @@ export const useTransactionsReadyForDelivery = () => {
         }, {} as Record<string, { address?: string; phone?: string }>);
       }
 
-      return (data || []).map(txn => {
+      return filteredData.map(txn => {
         // Map deliveries (sorted by date ascending for correct delete logic using last element)
         const deliveries = (txn.deliveries || []).map(fromDbToDelivery)
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
