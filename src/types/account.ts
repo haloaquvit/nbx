@@ -1,5 +1,7 @@
 // Legacy types (for backward compatibility)
 export type AccountType = 'Aset' | 'Kewajiban' | 'Modal' | 'Pendapatan' | 'Beban';
+export type AccountCategory = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
+export type NormalBalance = 'debit' | 'credit';
 
 export interface Account {
   id: string;
@@ -18,6 +20,8 @@ export interface Account {
   isActive?: boolean; // Status aktif account
   sortOrder?: number; // Urutan tampilan dalam laporan
   branchId?: string; // Branch ID untuk multi-branch COA
+  normalBalance?: NormalBalance; // Normal balance (debit/credit)
+  category?: AccountCategory; // Account category for reporting
 
   // Employee assignment for cash accounts
   employeeId?: string; // ID karyawan yang ditugaskan untuk akun kas ini

@@ -54,7 +54,7 @@ export const TransactionItemsReport = () => {
   const [driverKasirFilter, setDriverKasirFilter] = useState<string>('all')
   const [availableDriversKasir, setAvailableDriversKasir] = useState<string[]>([])
   const [retasiKeFilter, setRetasiKeFilter] = useState<string>('all')
-  const [availableRetasiKe, setAvailableRetasiKe] = useState<{value: string, label: string}[]>([])
+  const [availableRetasiKe, setAvailableRetasiKe] = useState<{ value: string, label: string }[]>([])
   const [paymentAccountFilter, setPaymentAccountFilter] = useState<string>('all')
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'Lunas' | 'Belum Lunas'>('all')
   const [reportData, setReportData] = useState<SoldProduct[]>([])
@@ -203,8 +203,8 @@ export const TransactionItemsReport = () => {
 
               // Detect bonus from product name or transaction item
               const isBonus = item.product_name?.includes('BONUS') ||
-                              item.product_name?.includes('(BONUS)') ||
-                              Boolean(matchingTxItem?.isBonus)
+                item.product_name?.includes('(BONUS)') ||
+                Boolean(matchingTxItem?.isBonus)
 
               const price = matchingTxItem?.price || matchingTxItem?.product?.basePrice || 0
 
@@ -489,8 +489,8 @@ export const TransactionItemsReport = () => {
   const getReportTitle = () => {
     const productFilterText = productFilter === 'all' ? '' : ` (${productFilter})`
     const sourceText = sourceFilter === 'all' ? '' :
-                       sourceFilter === 'delivery' ? ' - Pengantaran' :
-                       sourceFilter === 'office_sale' ? ' - Laku Kantor' : ' - Retasi'
+      sourceFilter === 'delivery' ? ' - Pengantaran' :
+        sourceFilter === 'office_sale' ? ' - Laku Kantor' : ' - Retasi'
 
     if (filterType === 'monthly') {
       const monthName = months.find(m => m.value === selectedMonth)?.label
@@ -522,14 +522,15 @@ export const TransactionItemsReport = () => {
       `Rp ${item.price.toLocaleString()}`,
       `Rp ${item.total.toLocaleString()}`,
       item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
+      item.retasiNumber || '-',
       item.source === 'delivery' ? (item.driverName || '-') :
-      item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
+        item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
       item.paymentAccountName || '-',
       item.paymentStatus || 'Belum Lunas'
     ])
 
     autoTable(doc, {
-      head: [['Tanggal', 'No. Trx', 'Customer', 'Produk', 'Qty', 'Harga', 'Total', 'Sumber', 'Supir/Kasir', 'Akun Bayar', 'Status']],
+      head: [['Tanggal', 'No. Trx', 'Customer', 'Produk', 'Qty', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir', 'Akun Bayar', 'Status']],
       body: tableData,
       startY: 42,
       styles: { fontSize: 6.5 },
@@ -537,15 +538,16 @@ export const TransactionItemsReport = () => {
       columnStyles: {
         0: { cellWidth: 18 },
         1: { cellWidth: 18 },
-        2: { cellWidth: 28 },
-        3: { cellWidth: 38 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 35 },
         4: { cellWidth: 10 },
         5: { cellWidth: 20 },
         6: { cellWidth: 22 },
-        7: { cellWidth: 18 },
-        8: { cellWidth: 25 },
-        9: { cellWidth: 28 },
-        10: { cellWidth: 20 }
+        7: { cellWidth: 15 },
+        8: { cellWidth: 20 }, // Retasi
+        9: { cellWidth: 25 }, // Supir/Kasir
+        10: { cellWidth: 25 }, // Akun Bayar
+        11: { cellWidth: 20 }  // Status
       }
     })
 
@@ -579,8 +581,8 @@ export const TransactionItemsReport = () => {
 
     const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
     const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
-                         sourceFilter === 'office_sale' ? '-LakuKantor' :
-                         sourceFilter === 'retasi' ? '-Retasi' : ''
+      sourceFilter === 'office_sale' ? '-LakuKantor' :
+        sourceFilter === 'retasi' ? '-Retasi' : ''
     const filename = filterType === 'monthly'
       ? `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.pdf`
       : `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.pdf`
@@ -664,8 +666,8 @@ export const TransactionItemsReport = () => {
     // Generate filename
     const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
     const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
-                         sourceFilter === 'office_sale' ? '-LakuKantor' :
-                         sourceFilter === 'retasi' ? '-Retasi' : ''
+      sourceFilter === 'office_sale' ? '-LakuKantor' :
+        sourceFilter === 'retasi' ? '-Retasi' : ''
     const filename = filterType === 'monthly'
       ? `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.xlsx`
       : `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.xlsx`

@@ -75,8 +75,8 @@ export function useCashFlow() {
         const journal = line.journal_entries;
         if (!journal) return false;
         return journal.status === 'posted' &&
-               journal.is_voided === false &&
-               journal.branch_id === currentBranch?.id;
+          journal.is_voided === false &&
+          journal.branch_id === currentBranch?.id;
       });
 
       // Sort by created_at descending
@@ -103,18 +103,20 @@ export function useCashFlow() {
       // Fetch reference numbers from source tables
       const refNumberMap: Record<string, string> = {};
 
-      // Fetch transaction numbers
-      // reference_id stores transaction_number (e.g., AQV-0301-017), not UUID
+
+      // Fetch transaction IDs
+      // reference_id stores transaction ID (e.g., TRX-20240301-00017)
       if (refIdsByType['transaction']?.length) {
         const { data: transactions } = await supabase
           .from('transactions')
-          .select('id, transaction_number')
-          .in('transaction_number', refIdsByType['transaction']);
+          .select('id')
+          .in('id', refIdsByType['transaction']);
         transactions?.forEach((t: any) => {
-          // Map transaction_number to itself (since reference_id = transaction_number)
-          refNumberMap[t.transaction_number] = t.transaction_number;
+          // Map transaction id to itself (since reference_id = transaction id)
+          refNumberMap[t.id] = t.id;
         });
       }
+
 
       // Fetch expense IDs (expense table uses 'id' as the number)
       if (refIdsByType['expense']?.length) {

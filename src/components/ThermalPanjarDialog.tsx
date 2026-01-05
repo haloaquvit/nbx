@@ -46,7 +46,7 @@ export function ThermalPanjarDialog({
 
       // Company name
       doc.setFontSize(12)
-      doc.setFont(undefined, 'bold')
+      doc.setFont('helvetica', 'bold')
       doc.text(companyName, centerX, yPos, { align: 'center' })
       yPos += 5
 
@@ -61,7 +61,7 @@ export function ThermalPanjarDialog({
       yPos += 6
 
       // Receipt details
-      doc.setFont(undefined, 'normal')
+      doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       
       // No & Date
@@ -79,7 +79,7 @@ export function ThermalPanjarDialog({
       yPos += 4
       
       doc.setFontSize(12)
-      doc.setFont(undefined, 'bold')
+      doc.setFont('helvetica', 'bold')
       const amount = new Intl.NumberFormat('id-ID', { 
         style: 'currency', 
         currency: 'IDR' 
@@ -92,7 +92,7 @@ export function ThermalPanjarDialog({
       yPos += 6
 
       // Remaining amount
-      doc.setFont(undefined, 'normal')
+      doc.setFont('helvetica', 'normal')
       doc.text('Sisa Panjar:', 2, yPos)
       yPos += 4
       const remaining = new Intl.NumberFormat('id-ID', { 

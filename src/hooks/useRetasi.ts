@@ -256,16 +256,16 @@ export const useRetasi = (filters?: {
   const checkDriverAvailability = async (driverName: string): Promise<boolean> => {
     console.log('[useRetasi] === CHECKING DRIVER AVAILABILITY ===');
     console.log('[useRetasi] Driver name:', driverName);
-    
+
     try {
       const { data, error } = await supabase
         .from('retasi')
         .select('id, retasi_number, is_returned, driver_name')
         .eq('driver_name', driverName)
         .eq('is_returned', false);
-      
+
       console.log('[useRetasi] Query result:', { data, error });
-      
+
       if (error) {
         console.error('[useRetasi] Database error:', error);
         // If table doesn't exist, assume no active retasi
@@ -275,16 +275,16 @@ export const useRetasi = (filters?: {
         }
         throw new Error(`Database error: ${error.message}`);
       }
-      
+
       const activeRetasiList = data || [];
       const hasActiveRetasi = activeRetasiList.length > 0;
       const isAvailable = !hasActiveRetasi;
-      
+
       console.log('[useRetasi] Active retasi found:', activeRetasiList);
       console.log('[useRetasi] Has active retasi:', hasActiveRetasi);
       console.log('[useRetasi] Driver is available:', isAvailable);
       console.log('[useRetasi] === END CHECK ===');
-      
+
       return isAvailable; // Return true if driver is AVAILABLE (no unreturned retasi)
     } catch (err) {
       console.error('[useRetasi] Unexpected error in checkDriverAvailability:', err);
@@ -292,214 +292,145 @@ export const useRetasi = (filters?: {
     }
   };
 
-  // Create retasi - simplified
+  // Create retasi - Simplified via RPC
   const createRetasi = useMutation({
     mutationFn: async (retasiData: CreateRetasiData): Promise<Retasi> => {
-      console.log('[useRetasi] Creating retasi with data:', retasiData);
-      
+      if (!currentBranch?.id) throw new Error('Branch ID is required');
+
+      console.log('🚀 Creating Retasi via Atomic RPC...', retasiData.driver_name);
+
       const { items, ...mainData } = retasiData;
-      
-      // Check if driver already has unreturned retasi
-      if (mainData.driver_name) {
-        console.log('[useRetasi] Checking if driver has active retasi for:', mainData.driver_name);
-        
-        const { data: activeRetasiCheck, error: activeError } = await supabase
-          .from('retasi')
-          .select('retasi_number, retasi_ke, departure_date')
-          .eq('driver_name', mainData.driver_name)
-          .eq('is_returned', false);
-          
-        if (activeError) {
-          console.error('[useRetasi] Error checking active retasi:', activeError);
-          // If table doesn't exist, continue
-          if (!activeError.message.includes('does not exist')) {
-            throw new Error(`Error checking active retasi: ${activeError.message}`);
-          }
-        } else if (activeRetasiCheck && activeRetasiCheck.length > 0) {
-          const activeRetasi = activeRetasiCheck[0];
-          console.error('[useRetasi] Driver has unreturned retasi:', activeRetasi);
-          throw new Error(`Supir ${mainData.driver_name} masih memiliki retasi ${activeRetasi.retasi_number} (retasi ke-${activeRetasi.retasi_ke}) yang belum dikembalikan`);
-        }
-        
-        console.log('[useRetasi] Driver is available - no active retasi found');
-      }
-      
-      // Generate simple retasi number using OFFICE timezone from settings
-      const todayDate = getOfficeDateString(timezone); // YYYY-MM-DD format in office timezone
-      const dateStr = todayDate.replace(/-/g, '');
-      const timeStr = Date.now().toString().slice(-3);
-      const retasiNumber = `RET-${dateStr}-${timeStr}`;
 
-      // Get next retasi_ke for this driver TODAY (using office timezone)
-      
-      console.log('[useRetasi] Getting retasi_ke for driver:', mainData.driver_name, 'on date:', todayDate);
-      
-      // Count how many retasi this driver has created today (regardless of return status)
-      const { data: todayRetasi, error: countError } = await supabase
-        .from('retasi')
-        .select('retasi_ke')
-        .eq('driver_name', mainData.driver_name)
-        .eq('departure_date', todayDate)
-        .order('retasi_ke', { ascending: false });
-      
-      if (countError) {
-        console.error('[useRetasi] Error counting today retasi:', countError);
-        throw new Error(`Error checking retasi count: ${countError.message}`);
-      }
-      
-      // Next retasi_ke is the count of today's retasi + 1
-      const nextRetasiKe = (todayRetasi?.length || 0) + 1;
-      
-      console.log('[useRetasi] Today retasi for driver:', todayRetasi);
-      console.log('[useRetasi] Current count for today:', todayRetasi?.length || 0);
-      console.log('[useRetasi] Next retasi_ke will be:', nextRetasiKe);
-      
-      // Prepare insert data (use user from context, works with both Supabase and PostgREST)
-      // Pass todayDate to toDb to ensure departure_date uses office timezone
-      const insertData = {
-        ...toDb(mainData, todayDate),
-        retasi_number: retasiNumber,
-        retasi_ke: nextRetasiKe,
-        created_by: user?.id || null,
-        branch_id: currentBranch?.id || null
-      };
-
-      console.log('[useRetasi] Current branch for insert:', currentBranch?.id, currentBranch?.name);
-      console.log('[useRetasi] Inserting retasi with data:', insertData);
-      
-      // Insert main retasi record
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: retasiRaw, error: retasiError } = await supabase
-        .from('retasi')
-        .insert(insertData)
-        .select()
-        .order('id').limit(1);
-
-      const retasi = Array.isArray(retasiRaw) ? retasiRaw[0] : retasiRaw;
-      console.log('[useRetasi] Insert result:', { retasi, retasiError });
-
-      if (retasiError) {
-        console.error('[useRetasi] Error inserting retasi:', retasiError);
-        console.error('[useRetasi] Error details:', {
-          message: retasiError.message,
-          details: retasiError.details,
-          hint: retasiError.hint,
-          code: retasiError.code
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('create_retasi_atomic', {
+          p_branch_id: currentBranch.id,
+          p_driver_name: mainData.driver_name,
+          p_helper_name: mainData.helper_name,
+          p_truck_number: mainData.truck_number,
+          p_route: mainData.route,
+          p_departure_date: mainData.departure_date instanceof Date ? mainData.departure_date.toISOString().split('T')[0] : mainData.departure_date,
+          p_departure_time: mainData.departure_time,
+          p_notes: mainData.notes || '',
+          p_items: (items || []).map(item => ({
+            product_id: item.product_id,
+            product_name: item.product_name,
+            quantity: item.quantity,
+            weight: item.weight,
+            notes: item.notes
+          })),
+          p_created_by: user?.id || null
         });
-        throw new Error(`Gagal membuat retasi: ${retasiError.message}${retasiError.details ? ` (${retasiError.details})` : ''}${retasiError.hint ? ` - ${retasiError.hint}` : ''}`);
+
+      if (rpcError) {
+        console.error('❌ RPC Error:', rpcError);
+        throw new Error(`Gagal membuat retasi: ${rpcError.message}`);
       }
 
-      // Insert retasi items if provided
-      if (items && items.length > 0) {
-        const itemsToInsert = items.map(item => ({
-          retasi_id: retasi.id,
-          product_id: item.product_id,
-          product_name: item.product_name,
-          quantity: item.quantity,
-          weight: item.weight || null,
-          notes: item.notes || null,
-        }));
-
-        console.log('[useRetasi] Inserting retasi items:', itemsToInsert);
-
-        const { error: itemsError } = await supabase
-          .from('retasi_items')
-          .insert(itemsToInsert);
-
-        if (itemsError) {
-          console.error('[useRetasi] Error inserting retasi items:', itemsError);
-          // Don't throw - items table might not exist yet
-          console.warn('[useRetasi] Retasi items not saved - table may not exist');
-        }
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal membuat retasi');
       }
 
-      return fromDb(retasi);
+      console.log('✅ Retasi Created via RPC:', rpcResult.retasi_number, 'ID:', rpcResult.retasi_id);
+
+      // Fetch the created retasi to return full object
+      const { data: retasiRaw } = await supabase
+        .from('retasi')
+        .select('*')
+        .eq('id', rpcResult.retasi_id)
+        .single();
+
+      if (!retasiRaw) throw new Error('Retasi created but not found');
+      return fromDb(retasiRaw);
     },
     onSuccess: async () => {
-      // Force refetch to ensure new data appears immediately
-      // Use predicate to match all retasi queries regardless of filters
       await queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === 'retasi'
       });
-      await queryClient.refetchQueries({
-        predicate: (query) => query.queryKey[0] === 'retasi'
-      });
       queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-items'] });
-    }
-  });
-
-  // Update retasi
-  const updateRetasi = useMutation({
-    mutationFn: async ({ id, ...updateData }: UpdateRetasiData & { id: string }): Promise<Retasi> => {
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase
-        .from('retasi')
-        .update(toDb(updateData))
-        .eq('id', id)
-        .select()
-        .order('id').limit(1);
-
-      if (error) throw new Error(error.message);
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to update retasi');
-      return fromDb(data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['retasi'] });
-      queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
-      // Also invalidate active-retasi cache so driver can access POS after status change
       queryClient.invalidateQueries({ queryKey: ['active-retasi'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     }
   });
 
-  // Mark retasi as returned - update retasi and items
+  // Mark retasi as returned - atomic via RPC
   const markRetasiReturned = useMutation({
     mutationFn: async ({ retasiId, ...returnData }: ReturnItemsData & { retasiId: string }): Promise<void> => {
-      // Update main retasi record
-      const { error: retasiError } = await supabase
-        .from('retasi')
-        .update({
-          is_returned: true,
-          returned_items_count: returnData.returned_items_count || 0,
-          error_items_count: returnData.error_items_count || 0,
-          barang_laku: returnData.barang_laku || 0,
-          barang_tidak_laku: returnData.barang_tidak_laku || 0,
-          return_notes: returnData.return_notes || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', retasiId);
+      if (!currentBranch?.id) throw new Error('Branch ID is required');
 
-      if (retasiError) {
-        console.error('Error updating retasi:', retasiError);
-        throw new Error(retasiError.message);
+      console.log('🏁 Processing Retasi Return via RPC...', retasiId);
+
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('mark_retasi_returned_atomic', {
+          p_branch_id: currentBranch.id,
+          p_retasi_id: retasiId,
+          p_return_notes: returnData.return_notes || '',
+          p_item_returns: (returnData.item_returns || []).map(ir => ({
+            item_id: ir.item_id,
+            returned_qty: ir.returned_quantity,
+            sold_qty: ir.sold_quantity,
+            error_qty: ir.error_quantity,
+            unsold_qty: ir.unsold_quantity
+          }))
+        });
+
+      if (rpcError) {
+        console.error('❌ RPC Error:', rpcError);
+        throw new Error(`Gagal memproses pengembalian retasi: ${rpcError.message}`);
       }
 
-      // Update individual item returns if provided
-      // Note: Database uses returned_qty/error_qty column names
-      if (returnData.item_returns && returnData.item_returns.length > 0) {
-        for (const itemReturn of returnData.item_returns) {
-          const { error: itemError } = await supabase
-            .from('retasi_items')
-            .update({
-              returned_qty: itemReturn.returned_quantity || 0,
-              sold_qty: itemReturn.sold_quantity || 0,
-              error_qty: itemReturn.error_quantity || 0,
-              unsold_qty: itemReturn.unsold_quantity || 0,
-            })
-            .eq('id', itemReturn.item_id);
-
-          if (itemError) {
-            console.error('Error updating retasi item:', itemError);
-            // Continue with other items even if one fails
-          }
-        }
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal memproses pengembalian retasi');
       }
+
+      console.log('✅ Retasi Return Success via RPC. Sold:', rpcResult.barang_laku);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retasi'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
       queryClient.invalidateQueries({ queryKey: ['retasi-items'] });
+      queryClient.invalidateQueries({ queryKey: ['active-retasi'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+    }
+  });
+
+  // Update retasi (simple update - no stock changes)
+  const updateRetasi = useMutation({
+    mutationFn: async (data: { id: string } & Partial<CreateRetasiData>): Promise<Retasi> => {
+      const { id, items, ...updateData } = data;
+
+      // Update main retasi record
+      const dbData: Record<string, any> = {};
+      if (updateData.driver_name !== undefined) dbData.driver_name = updateData.driver_name;
+      if (updateData.helper_name !== undefined) dbData.helper_name = updateData.helper_name;
+      if (updateData.truck_number !== undefined) dbData.truck_number = updateData.truck_number;
+      if (updateData.route !== undefined) dbData.route = updateData.route;
+      if (updateData.departure_date !== undefined) {
+        dbData.departure_date = updateData.departure_date instanceof Date
+          ? updateData.departure_date.toISOString().split('T')[0]
+          : updateData.departure_date;
+      }
+      if (updateData.departure_time !== undefined) dbData.departure_time = updateData.departure_time;
+      if (updateData.notes !== undefined) dbData.notes = updateData.notes;
+
+      const { data: updated, error } = await supabase
+        .from('retasi')
+        .update(dbData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) throw new Error(error.message);
+      return fromDb(updated);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['retasi'] });
+      queryClient.invalidateQueries({ queryKey: ['retasi-stats'] });
     }
   });
 
@@ -597,9 +528,10 @@ export const useRetasiTransactions = (retasiId?: string) => {
     queryFn: async () => {
       if (!retasiId) return [];
 
+      // Column mapping: id=transaction_number, total=total_amount
       const { data, error } = await supabase
         .from('transactions')
-        .select('id, transaction_number, customer_name, customer_phone, total_amount, paid_amount, items, created_at')
+        .select('id, customer_id, customer_name, total, paid_amount, items, created_at')
         .eq('retasi_id', retasiId)
         .order('created_at', { ascending: true });
 
@@ -608,12 +540,26 @@ export const useRetasiTransactions = (retasiId?: string) => {
         return [];
       }
 
+      // Get customer details for phone numbers
+      const customerIds = [...new Set((data || []).map(t => t.customer_id).filter(Boolean))];
+      let customersMap: Record<string, { phone?: string }> = {};
+      if (customerIds.length > 0) {
+        const { data: customers } = await supabase
+          .from('customers')
+          .select('id, phone')
+          .in('id', customerIds);
+        customersMap = (customers || []).reduce((acc, c) => {
+          acc[c.id] = { phone: c.phone };
+          return acc;
+        }, {} as Record<string, { phone?: string }>);
+      }
+
       return data ? data.map(tx => ({
         id: tx.id,
-        transaction_number: tx.transaction_number,
+        transaction_number: tx.id,  // id is used as transaction number
         customer_name: tx.customer_name || 'Walk-in Customer',
-        customer_phone: tx.customer_phone,
-        total_amount: tx.total_amount || 0,
+        customer_phone: customersMap[tx.customer_id]?.phone,
+        total_amount: tx.total || 0,  // 'total' not 'total_amount'
         paid_amount: tx.paid_amount || 0,
         created_at: new Date(tx.created_at),
         items: (tx.items || []).map((item: any) => ({

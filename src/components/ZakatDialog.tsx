@@ -8,6 +8,8 @@ import { useCreateZakat, useUpdateZakat } from "@/hooks/useZakat"
 import { useAccounts } from "@/hooks/useAccounts"
 import { ZakatRecord, ZakatFormData } from "@/types/zakat"
 import { useToast } from "@/components/ui/use-toast"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 interface ZakatDialogProps {
   open: boolean
@@ -17,6 +19,7 @@ interface ZakatDialogProps {
 
 export function ZakatDialog({ open, onOpenChange, record }: ZakatDialogProps) {
   const { toast } = useToast()
+  const { timezone } = useTimezone()
   const createZakat = useCreateZakat()
   const updateZakat = useUpdateZakat()
   const { accounts = [], isLoading } = useAccounts()
@@ -31,7 +34,7 @@ export function ZakatDialog({ open, onOpenChange, record }: ZakatDialogProps) {
     amount: 0,
     nishabAmount: 0,
     percentageRate: 2.5,
-    paymentDate: new Date(),
+    paymentDate: getOfficeTime(timezone),
     paymentAccountId: "",
     paymentMethod: "transfer",
     receiptNumber: "",
@@ -77,7 +80,7 @@ export function ZakatDialog({ open, onOpenChange, record }: ZakatDialogProps) {
         amount: 0,
         nishabAmount: 0,
         percentageRate: 2.5,
-        paymentDate: new Date(),
+        paymentDate: getOfficeTime(timezone),
         paymentAccountId: "",
         paymentMethod: "transfer",
         receiptNumber: "",

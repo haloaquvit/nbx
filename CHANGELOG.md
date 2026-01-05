@@ -2,6 +2,632 @@
 
 Semua perubahan penting pada proyek AQUVIT ERP System didokumentasikan di file ini.
 
+## Table of Contents
+
+1. [🤖 PANDUAN UNTUK AI](#-panduan-untuk-ai-baca-ini-pertama) - **BACA INI DULU!**
+2. [Local Development Setup](#local-development-setup)
+3. [Server Architecture](#server-architecture-diagram)
+4. [VPS Server Information](#vps-server-information)
+5. [Version History](#v43-2026-01-04---rpc-atomic-operations-penting)
+   - [v4.3] **RPC Atomic Operations** ⚠️ PENTING!
+   - [v4.2] Accounting System Improvements
+   - [v4.1] Permission System & Notification
+   - [v4] APK Build & Bluetooth Printer
+   - [v3] Dashboard Enhancement & Retasi
+   - [Earlier versions...]
+
+---
+
+# 🤖 PANDUAN UNTUK AI (Baca Ini Pertama!)
+
+Section ini berisi informasi penting yang WAJIB dipahami AI sebelum bekerja dengan codebase ini.
+
+## Quick Start untuk AI
+
+```bash
+# 1. SSH ke VPS
+ssh -i Aquvit.pem deployer@103.197.190.54
+
+# 2. Koneksi database Nabire
+PGPASSWORD='Aquvit2024' psql -U aquavit -h 127.0.0.1 -d aquvit_new
+
+# 3. Koneksi database Manokwari
+PGPASSWORD='Aquvit2024' psql -U aquavit -h 127.0.0.1 -d mkw_db
+
+# 4. Restart PostgREST setelah ALTER TABLE
+pm2 restart postgrest-aquvit postgrest-mkw
+```
+
+## Teknologi Stack
+
+| Layer | Teknologi |
+|-------|-----------|
+| **Frontend** | React 18 + TypeScript + Vite 6 |
+| **Styling** | TailwindCSS 3.4 + Shadcn UI (Radix) |
+| **State** | TanStack React Query v5 + React Context |
+| **Forms** | React Hook Form + Zod validation |
+| **Backend** | PostgreSQL 14 + PostgREST (REST API) |
+| **Auth** | Custom JWT auth via PostgREST + auth-server |
+| **Mobile** | Capacitor 8 (Android APK) |
+| **Maps** | Leaflet + React-Leaflet |
+| **Charts** | Recharts |
+| **PDF** | jsPDF + html2canvas |
+| **Excel** | xlsx |
+
+## Struktur Folder Utama
+
+```
+src/
+├── components/          # 177 komponen React
+│   ├── ui/             # 52 Shadcn UI components (Button, Dialog, dll)
+│   ├── layout/         # Header, Sidebar, MobileLayout
+│   └── [Feature].tsx   # Komponen bisnis (PosForm, Dashboard, dll)
+│
+├── pages/              # 56 halaman (route components)
+│   ├── PosPage.tsx           # Point of Sale
+│   ├── TransactionListPage.tsx
+│   ├── CustomerPage.tsx
+│   ├── ProductPage.tsx
+│   ├── EmployeePage.tsx
+│   ├── AccountingPage.tsx    # Jurnal umum
+│   ├── ChartOfAccountsPage.tsx
+│   ├── FinancialReportsPage.tsx
+│   ├── PurchaseOrderPage.tsx
+│   ├── ProductionPage.tsx
+│   ├── DeliveryPage.tsx
+│   ├── PayrollPage.tsx
+│   └── ...
+│
+├── hooks/              # 58 custom React hooks
+│   ├── useTransactions.ts    # 80KB - CRUD transaksi penjualan
+│   ├── usePurchaseOrders.ts  # 43KB - PO & receiving
+│   ├── useProduction.ts      # 42KB - Produksi & BOM
+│   ├── useDeliveries.ts      # 69KB - Pengiriman
+│   ├── usePayroll.ts         # 39KB - Gaji & komisi
+│   ├── useAccounts.ts        # Chart of Accounts
+│   ├── useProducts.ts        # Produk
+│   ├── useCustomers.ts       # Pelanggan
+│   ├── useMaterials.ts       # Bahan baku
+│   └── ...
+│
+├── services/           # 15 business logic services
+│   ├── journalService.ts         # 132KB - Auto-generate jurnal (PENTING!)
+│   ├── stockService.ts           # 35KB - FIFO inventory
+│   ├── pricingService.ts         # 23KB - Harga dinamis
+│   ├── closingEntryService.ts    # 16KB - Jurnal penutup
+│   ├── materialStockService.ts   # Material inventory
+│   └── backupRestoreService.ts   # Backup database
+│
+├── utils/              # 24 utility functions
+│   ├── financialStatementsUtils.ts  # 92KB - Laporan keuangan (PENTING!)
+│   ├── chartOfAccountsUtils.ts
+│   ├── commissionUtils.ts
+│   ├── formatNumber.ts
+│   └── geoUtils.ts
+│
+├── types/              # 28 TypeScript type definitions
+│   ├── transaction.ts
+│   ├── product.ts
+│   ├── employee.ts
+│   ├── account.ts
+│   └── ...
+│
+├── contexts/           # 4 React contexts
+│   ├── AuthContext.tsx      # Autentikasi & session
+│   ├── BranchContext.tsx    # Multi-branch support
+│   ├── TimezoneContext.tsx  # Timezone WIT
+│   └── PerformanceContext.tsx
+│
+├── integrations/
+│   └── supabase/
+│       ├── client.ts         # Supabase/PostgREST client
+│       └── postgrestAuth.ts  # Custom auth
+│
+└── App.tsx             # Main routing (lazy-loaded pages)
+```
+
+## Database Schema (55 Tabel)
+
+### Tabel Utama
+
+| Tabel | Deskripsi | Foreign Keys |
+|-------|-----------|--------------|
+| `profiles` | **Karyawan/Users** (BUKAN `employees`!) | - |
+| `customers` | Pelanggan | - |
+| `suppliers` | Supplier | - |
+| `products` | Produk jadi | - |
+| `materials` | Bahan baku | - |
+| `transactions` | Transaksi penjualan | `customer_id`, `branch_id` |
+| `transaction_items` | Item dalam transaksi | `transaction_id`, `product_id` |
+| `deliveries` | Pengiriman | `transaction_id`, `driver_id` |
+| `purchase_orders` | Purchase Order | `supplier_id`, `branch_id` |
+| `purchase_order_items` | Item PO | `purchase_order_id` |
+| `production_batches` | Batch produksi | `product_id`, `branch_id` |
+| `production_materials` | BOM per produksi | `production_batch_id`, `material_id` |
+
+### Tabel Akuntansi
+
+| Tabel | Deskripsi |
+|-------|-----------|
+| `accounts` | Chart of Accounts (COA) - per branch! |
+| `journal_entries` | Header jurnal |
+| `journal_entry_lines` | Detail jurnal (debit/credit) |
+| `account_balances` | Saldo akun (VIEW, bukan tabel) |
+
+### Tabel HR & Payroll
+
+| Tabel | Deskripsi |
+|-------|-----------|
+| `profiles` | Data karyawan |
+| `employee_salaries` | Konfigurasi gaji |
+| `payroll_records` | Record gaji bulanan |
+| `employee_advances` | Panjar/kasbon karyawan |
+| `commission_rules` | Aturan komisi per produk |
+| `commission_entries` | Entry komisi per transaksi |
+| `attendances` | Absensi harian |
+
+### Tabel Inventory
+
+| Tabel | Deskripsi |
+|-------|-----------|
+| `inventory_batches` | Batch inventory untuk FIFO |
+| `stock_movements` | Riwayat pergerakan stok |
+| `warehouses` | Gudang per cabang |
+| `v_product_current_stock` | VIEW stok saat ini |
+
+## ⚠️ PERINGATAN PENTING
+
+### 1. Tabel Karyawan = `profiles`
+```sql
+-- BENAR:
+SELECT * FROM profiles WHERE role = 'sales';
+ALTER TABLE some_table ADD COLUMN employee_id UUID REFERENCES profiles(id);
+
+-- SALAH (tabel tidak ada!):
+SELECT * FROM employees;
+REFERENCES employees(id);
+```
+
+### 2. COA adalah Per-Branch
+Setiap cabang memiliki akun dengan ID berbeda tapi kode sama:
+```sql
+-- Akun "Kas" di Nabire dan Manokwari punya ID berbeda
+-- Tapi kode sama: 1110
+
+-- Untuk laporan keuangan, gunakan account_code, BUKAN account_id
+```
+
+### 3. Saldo Akun Dihitung dari Jurnal
+Kolom `accounts.balance` TIDAK diupdate. Saldo selalu dihitung dari:
+```sql
+SELECT
+  a.code,
+  a.initial_balance + COALESCE(SUM(
+    CASE WHEN a.type IN ('Aset', 'Beban')
+      THEN jel.debit_amount - jel.credit_amount
+      ELSE jel.credit_amount - jel.debit_amount
+    END
+  ), 0) as current_balance
+FROM accounts a
+LEFT JOIN journal_entry_lines jel ON jel.account_code = a.code
+LEFT JOIN journal_entries je ON je.id = jel.journal_entry_id
+WHERE je.status = 'posted' AND je.is_voided = false
+GROUP BY a.id;
+```
+
+### 4. Role Hierarchy
+Semua role aplikasi HARUS inherit dari `authenticated`:
+```sql
+GRANT authenticated TO owner, admin, cashier, supir, sales, supervisor, designer, operator;
+```
+
+### 5. Restart PostgREST Setelah Schema Change
+```bash
+pm2 restart postgrest-aquvit postgrest-mkw
+# atau reload schema saja:
+sudo kill -SIGUSR1 $(pgrep postgrest)
+```
+
+## Alur Bisnis Utama
+
+### 1. Alur Penjualan
+```
+Customer → POS → Transaction → [Laku Kantor?]
+                                    ↓
+                    YES: Stok langsung berkurang
+                    NO:  Tunggu Delivery → Stok berkurang
+                                    ↓
+                            Journal Entry auto-generated
+                            (Dr. Kas/Piutang, Cr. Pendapatan)
+                            (Dr. HPP, Cr. Persediaan)
+```
+
+### 2. Alur Pembelian (PO)
+```
+Supplier → PO Created → PO Approved → PO Received
+                                          ↓
+                                inventory_batch created
+                                (untuk FIFO HPP tracking)
+                                          ↓
+                                Journal Entry:
+                                Dr. Persediaan
+                                Cr. Kas/Hutang Usaha
+```
+
+### 3. Alur Produksi
+```
+BOM defined → Production Batch Created
+                    ↓
+            Material consumed (FIFO)
+                    ↓
+            Product stock increased
+                    ↓
+            Journal Entry:
+            Dr. Persediaan Barang Jadi
+            Cr. Persediaan Bahan Baku
+```
+
+### 4. Alur Payroll
+```
+Employee Salary Config → Calculate Payroll
+                              ↓
+                    + Komisi (dari commission_entries)
+                    - Potongan Panjar (FIFO dari employee_advances)
+                              ↓
+                        Payroll Record
+                              ↓
+                        Journal Entry:
+                        Dr. Beban Gaji
+                        Cr. Kas
+                        Cr. Piutang Karyawan (jika ada potongan)
+```
+
+## Kode Akun Standar (COA)
+
+| Prefix | Kategori | Contoh |
+|--------|----------|--------|
+| `1xxx` | Aset | 1110 Kas, 1210 Piutang Usaha, 1310 Persediaan |
+| `2xxx` | Kewajiban | 2110 Hutang Usaha, 2210 Hutang Bank |
+| `3xxx` | Modal | 3100 Modal Pemilik, 3200 Laba Ditahan |
+| `4xxx` | Pendapatan | 4100 Pendapatan Usaha |
+| `5xxx` | HPP | 5100 Harga Pokok Penjualan |
+| `6xxx` | Beban Operasional | 6100 Beban Gaji, 6200 Beban Sewa |
+| `7xxx` | Pendapatan Lain | 7100 Pendapatan Bunga |
+| `8xxx` | Beban Lain | 8100 Beban Bunga |
+
+## File Kunci yang Harus Dipelajari
+
+| File | Size | Mengapa Penting |
+|------|------|-----------------|
+| `src/services/journalService.ts` | 132KB | Auto-generate semua jurnal akuntansi |
+| `src/utils/financialStatementsUtils.ts` | 92KB | Kalkulasi laporan keuangan |
+| `src/hooks/useTransactions.ts` | 80KB | Core transaksi penjualan |
+| `src/hooks/useDeliveries.ts` | 69KB | Pengiriman & stok |
+| `src/hooks/usePurchaseOrders.ts` | 43KB | PO & penerimaan barang |
+| `src/hooks/useProduction.ts` | 42KB | Produksi & BOM |
+| `src/contexts/AuthContext.tsx` | 13KB | Autentikasi & session |
+
+## Environment Variables
+
+```bash
+# Development (localhost)
+VITE_SUPABASE_URL=http://localhost:3001
+VITE_SUPABASE_ANON_KEY=...
+
+# Production Nabire
+VITE_SUPABASE_URL=https://nbx.aquvit.id
+VITE_APK_SERVER=https://nbx.aquvit.id
+
+# Production Manokwari
+VITE_SUPABASE_URL=https://mkw.aquvit.id
+VITE_APK_SERVER=https://mkw.aquvit.id
+```
+
+## Build Commands
+
+```bash
+# Development
+npm run dev
+
+# Production build
+npm run build
+
+# Build untuk Nabire (APK)
+npm run build:nabire
+
+# Build untuk Manokwari (APK)
+npm run build:manokwari
+
+# Sync ke Android
+npx cap sync android
+```
+
+## Coding Patterns yang Digunakan
+
+### 1. React Query untuk Data Fetching
+```typescript
+// Semua data fetching menggunakan useQuery
+const { data, isLoading, error } = useQuery({
+  queryKey: ['transactions', branchId, filters],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('branch_id', branchId);
+    if (error) throw error;
+    return data;
+  },
+});
+
+// Mutations menggunakan useMutation
+const createMutation = useMutation({
+  mutationFn: async (newData) => { ... },
+  onSuccess: () => {
+    // PENTING: Gunakan exact: false untuk invalidate semua variant
+    queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false });
+  },
+});
+```
+
+### 2. Auto-Generate Journal Entry
+```typescript
+// journalService.ts menangani semua jurnal otomatis
+import { createJournalEntry } from '@/services/journalService';
+
+// Saat transaksi dibuat:
+await createJournalEntry({
+  referenceType: 'transaction',
+  referenceId: transaction.id,
+  branchId: transaction.branch_id,
+  date: transaction.date,
+  description: `Penjualan ke ${customerName}`,
+  lines: [
+    { accountCode: '1110', debit: total, credit: 0 },      // Kas
+    { accountCode: '4100', debit: 0, credit: total },      // Pendapatan
+    { accountCode: '5100', debit: hpp, credit: 0 },        // HPP
+    { accountCode: '1310', debit: 0, credit: hpp },        // Persediaan
+  ],
+});
+```
+
+### 3. FIFO Inventory Consumption
+```typescript
+// Consume inventory menggunakan RPC function
+const { data: fifoResult } = await supabase.rpc('consume_inventory_fifo', {
+  p_product_id: productId,
+  p_branch_id: branchId,
+  p_quantity: quantity,
+  p_transaction_id: transactionId,
+});
+// Returns: { total_hpp: number, batches_consumed: jsonb }
+```
+
+### 4. Multi-Branch Context
+```typescript
+// Selalu gunakan branchId dari context
+const { currentBranch } = useBranch();
+
+// Filter data berdasarkan branch
+.eq('branch_id', currentBranch.id)
+```
+
+### 5. Permission Check
+```typescript
+import { useGranularPermission } from '@/hooks/useGranularPermission';
+
+const { hasPermission } = useGranularPermission();
+
+// Cek permission sebelum render
+if (!hasPermission('transactions_view')) {
+  return <AccessDenied />;
+}
+```
+
+## Troubleshooting Guide
+
+### Error 403 Forbidden
+```bash
+# Penyebab: Role tidak inherit dari authenticated
+# Solusi:
+GRANT authenticated TO owner, admin, cashier, supir, sales, supervisor, designer, operator;
+pm2 restart postgrest-aquvit postgrest-mkw
+```
+
+### Error 401 Unauthorized
+```bash
+# Penyebab: Token expired atau RLS policy tidak ada
+# Cek RLS:
+SELECT * FROM pg_policies WHERE tablename = 'nama_tabel';
+
+# Tambah policy jika perlu:
+CREATE POLICY "nama_policy" ON nama_tabel
+FOR ALL TO authenticated USING (true);
+```
+
+### UI Tidak Update Setelah Mutasi
+```typescript
+// Penyebab: invalidateQueries dengan exact: true (default)
+// Solusi: Gunakan exact: false
+await queryClient.invalidateQueries({
+  queryKey: ['queryName'],
+  exact: false
+});
+await queryClient.refetchQueries({
+  queryKey: ['queryName'],
+  exact: false,
+  type: 'active'
+});
+```
+
+### PostgREST Error "Address in use"
+```bash
+# Kill orphan process
+sudo lsof -i :3000
+sudo kill -9 <PID>
+pm2 restart postgrest-aquvit
+```
+
+### Schema Changes Tidak Terlihat
+```bash
+# Reload PostgREST schema cache
+sudo kill -SIGUSR1 $(pgrep postgrest)
+# atau restart
+pm2 restart postgrest-aquvit postgrest-mkw
+```
+
+### Laporan Keuangan Menampilkan 0
+```
+Penyebab yang mungkin:
+1. Jurnal belum di-posting (status != 'posted')
+2. Jurnal sudah di-void (is_voided = true)
+3. Filter branch_id tidak cocok
+4. Periode tanggal salah
+
+Cek query di financialStatementsUtils.ts
+```
+
+## Tips untuk AI
+
+1. **Selalu baca file dulu** sebelum memodifikasi
+2. **Cek existing patterns** di file serupa sebelum menulis kode baru
+3. **Test di localhost dulu** sebelum deploy ke VPS
+4. **Backup database** sebelum ALTER TABLE di production
+5. **Restart PostgREST** setelah schema changes
+6. **Gunakan exact: false** pada invalidateQueries
+7. **Perhatikan timezone** - sistem menggunakan WIT (UTC+9)
+8. **Journal entries harus balance** - total debit = total credit
+
+## Local Development Setup
+
+### Docker Containers
+
+| Container | Image | Port | Purpose |
+|-----------|-------|------|---------|
+| `aquvit-postgres` | postgres:14 | 5433 | PostgreSQL Database |
+| `postgrest-local` | postgrest/postgrest | 3001 | PostgREST API |
+
+### Local Credentials
+
+| Item | Value |
+|------|-------|
+| Host | `localhost` |
+| Port | `5433` |
+| Database | `aquvit_test` |
+| User | `postgres` |
+| Password | `postgres` |
+
+### Local Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| PostgreSQL | 5433 | Database (Docker) |
+| PostgREST | 3001 | REST API (Docker) |
+| Auth Server | 3002 | Authentication (Node.js) |
+| Frontend (Vite) | 5174 | React Development Server |
+
+### Start Local Environment
+
+```bash
+# 1. Start PostgreSQL & PostgREST (Docker)
+docker start aquvit-postgres
+docker start postgrest-local
+
+# 2. Start Auth Server
+cd scripts/auth-server && node server.js
+
+# 3. Start Frontend
+npm run dev
+```
+
+### Test User (Local)
+
+| Email | Password | Role |
+|-------|----------|------|
+| `owner@aquvit.id` | `test123` | owner |
+
+## Server Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        VPS SERVER                                │
+│                    103.197.190.54                                │
+│                    Ubuntu 22.04.5 LTS                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌─────────────┐     ┌─────────────────────────────────────┐    │
+│  │   NGINX     │     │         PostgreSQL 14               │    │
+│  │  Port 443   │     │         Port 5432                   │    │
+│  │  (HTTPS)    │     │                                     │    │
+│  └──────┬──────┘     │  ┌─────────────┐ ┌─────────────┐   │    │
+│         │            │  │ aquvit_new  │ │   mkw_db    │   │    │
+│         │            │  │  (Nabire)   │ │ (Manokwari) │   │    │
+│         │            │  └─────────────┘ └─────────────┘   │    │
+│         │            └─────────────────────────────────────┘    │
+│         │                       ▲              ▲                 │
+│         ▼                       │              │                 │
+│  ┌──────────────────────────────┴──────────────┴───────────┐    │
+│  │                         PM2                              │    │
+│  │  ┌─────────────────┐  ┌─────────────────┐               │    │
+│  │  │ NABIRE STACK    │  │ MANOKWARI STACK │               │    │
+│  │  │ PostgREST :3000 │  │ PostgREST :3007 │               │    │
+│  │  │ Auth      :3006 │  │ Auth      :3003 │               │    │
+│  │  └─────────────────┘  └─────────────────┘               │    │
+│  └──────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Nginx Routing
+
+```
+nbx.aquvit.id
+├── /rest/*    → localhost:3000 (PostgREST Nabire)
+├── /auth/*    → localhost:3006 (Auth Server Nabire)
+└── /*         → /var/www/aquvit (Static files)
+
+mkw.aquvit.id
+├── /rest/*    → localhost:3007 (PostgREST Manokwari)
+├── /auth/*    → localhost:3003 (Auth Server Manokwari)
+└── /*         → /var/www/aquvit (Static files)
+```
+
+## Database Dump/Restore
+
+### Dump dari VPS
+
+```bash
+ssh -i Aquvit.pem deployer@103.197.190.54
+pg_dump -U aquavit -h localhost mkw_db > mkw_db_backup.sql
+```
+
+### Restore ke Local Docker
+
+```bash
+docker cp mkw_db_backup.sql aquvit-postgres:/tmp/
+docker exec aquvit-postgres psql -U postgres -c "CREATE DATABASE aquvit_test;"
+docker exec aquvit-postgres psql -U postgres -d aquvit_test -f /tmp/mkw_db_backup.sql
+```
+
+## PostgREST Roles
+
+```sql
+-- Create roles if not exist
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'anon') THEN
+    CREATE ROLE anon NOLOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
+    CREATE ROLE authenticated NOLOGIN;
+  END IF;
+END $$;
+
+-- Grant usage on schema
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+```
+
 ---
 
 ## VPS Server Information
@@ -135,6 +761,256 @@ sudo tail -f /var/log/postgresql/postgresql-14-main.log
 
 # Check Nginx logs
 sudo tail -f /var/log/nginx/error.log
+```
+
+---
+
+## [v4.3] 2026-01-04 - RPC Atomic Operations (PENTING!)
+
+### 🚨 CRITICAL UPDATE: Database RPC Functions
+
+Semua operasi database yang memerlukan **atomicity** (transaksi + jurnal + stok) WAJIB menggunakan RPC functions.
+Ini mencegah data inconsistency dan menjamin FIFO inventory tracking.
+
+### Folder Struktur RPC
+
+```
+database/rpc/
+├── 00_README.md              # Dokumentasi lengkap (BACA INI!)
+├── 01_fifo_inventory.sql     # FIFO consume/restore untuk products
+├── 02_fifo_material.sql      # FIFO consume/restore untuk materials
+├── 03_journal.sql            # Create journal atomic dengan validasi
+├── 04_production.sql         # Production + material consume + journal
+├── 05_delivery.sql           # Delivery + stock consume + HPP journal
+├── 06_payment.sql            # Receivable/Payable payment + journal
+├── 07_void.sql               # Void operations dengan restore inventory
+└── 08_purchase_order.sql     # PO receive dan delete atomic
+```
+
+### RPC Functions Reference
+
+| Function | Purpose | Key Parameters |
+|----------|---------|----------------|
+| `consume_inventory_fifo` | Kurangi stok produk (FIFO) | `p_product_id`, `p_branch_id`, `p_quantity` |
+| `restore_inventory_fifo` | Kembalikan stok produk | `p_product_id`, `p_branch_id`, `p_quantity` |
+| `consume_material_fifo` | Kurangi stok material | `p_material_id`, `p_branch_id`, `p_quantity` |
+| `restore_material_fifo` | Kembalikan stok material | `p_material_id`, `p_branch_id`, `p_quantity` |
+| `add_material_batch` | Tambah batch material baru | `p_material_id`, `p_branch_id`, `p_quantity`, `p_unit_cost` |
+| `create_journal_atomic` | Buat jurnal dengan validasi | `p_branch_id`, `p_entry_date`, `p_lines[]` |
+| `void_journal_entry` | Void jurnal entry | `p_journal_id`, `p_branch_id`, `p_reason` |
+| `process_production_atomic` | Produksi + consume material + journal | `p_product_id`, `p_branch_id`, `p_quantity` |
+| `process_spoilage_atomic` | Catat spoilage/kerusakan | `p_product_id`, `p_branch_id`, `p_quantity` |
+| `process_delivery_atomic` | Delivery + consume stok + HPP journal | `p_transaction_id`, `p_branch_id`, `p_driver_id` |
+| `process_laku_kantor_atomic` | Laku Kantor (stok langsung berkurang) | `p_transaction_id`, `p_branch_id` |
+| `receive_payment_atomic` | Terima bayar piutang + journal | `p_receivable_id`, `p_branch_id`, `p_amount` |
+| `pay_supplier_atomic` | Bayar hutang + journal | `p_payable_id`, `p_branch_id`, `p_amount` |
+| `void_transaction_atomic` | Void transaksi + restore stok | `p_transaction_id`, `p_branch_id` |
+| `void_delivery_atomic` | Void delivery + restore stok | `p_delivery_id`, `p_branch_id` |
+| `void_production_atomic` | Void produksi + restore material | `p_production_id`, `p_branch_id` |
+| `receive_po_atomic` | Terima PO + tambah batch FIFO | `p_po_id`, `p_branch_id` |
+| `delete_po_atomic` | Hapus PO + rollback stok | `p_po_id`, `p_branch_id` |
+
+### ⚠️ WAJIB: Branch Isolation
+
+**SEMUA RPC function WAJIB menerima `p_branch_id` sebagai parameter!**
+
+```typescript
+// BENAR - selalu sertakan branch_id
+const { data } = await supabase.rpc('void_delivery_atomic', {
+  p_delivery_id: deliveryId,
+  p_branch_id: currentBranch?.id,  // WAJIB!
+  p_reason: 'Pembatalan pengiriman',
+  p_user_id: user?.id
+});
+
+// SALAH - branch_id tidak boleh null
+const { data } = await supabase.rpc('void_delivery_atomic', {
+  p_delivery_id: deliveryId,
+  p_branch_id: null  // ERROR: "Branch ID is REQUIRED!"
+});
+```
+
+### 🔍 Schema Discovery (PENTING untuk AI!)
+
+Beberapa tipe data di database BERBEDA dari yang umum diharapkan:
+
+| Table | Column | Actual Type | Note |
+|-------|--------|-------------|------|
+| `transactions` | `id` | **TEXT** | Bukan UUID! Format: `TRX-YYYYMMDD-XXXX` |
+| `accounts` | `id` | **TEXT** | Bukan UUID! Format: UUID-like string |
+| `accounts_payable` | `id` | **TEXT** | Bukan UUID! |
+| `journal_entries` | `void_reason` | TEXT | Bukan `voided_reason`! |
+| `deliveries` | - | - | TIDAK punya kolom `status` |
+| `transactions` | - | - | TIDAK punya kolom `delivery_status` |
+| `production_records` | - | - | Tabel bernama `production_records`, BUKAN `production_batches` |
+| `delivery_items` | - | - | Items delivery, BUKAN `transaction_items` |
+
+### Frontend Hook dengan RPC
+
+Hooks yang sudah menggunakan RPC:
+
+```typescript
+// useDeliveries.ts - createDelivery
+const { data } = await supabase.rpc('process_delivery_atomic', {
+  p_transaction_id: transactionId,
+  p_branch_id: branchId,
+  p_driver_id: driverId,
+  p_items: deliveryItems,  // JSONB array
+  // ... other params
+});
+
+// useDeliveries.ts - deleteDelivery (void)
+const { data } = await supabase.rpc('void_delivery_atomic', {
+  p_delivery_id: deliveryId,
+  p_branch_id: branchId,
+  p_reason: 'Delivery dihapus',
+  p_user_id: userId
+});
+
+// usePurchaseOrders.ts - receivePO
+const { data } = await supabase.rpc('receive_po_atomic', {
+  p_po_id: poId,
+  p_branch_id: branchId,
+  p_received_date: new Date().toISOString().split('T')[0]
+});
+```
+
+### Deploy RPC ke Local Development
+
+```bash
+# 1. Pastikan Docker containers running
+docker start aquvit-postgres
+docker start postgrest-local
+
+# 2. Deploy semua RPC files (urutan penting!)
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/01_fifo_inventory.sql
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/02_fifo_material.sql
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/03_journal.sql
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/04_production.sql
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/05_delivery.sql
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/06_payment.sql
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/07_void.sql
+docker exec -i aquvit-postgres psql -U postgres -d aquvit_test < database/rpc/08_purchase_order.sql
+
+# 3. Restart PostgREST untuk reload schema
+docker restart postgrest-local
+```
+
+### Deploy RPC ke VPS Production
+
+```bash
+# 1. SSH ke VPS
+ssh -i Aquvit.pem deployer@103.197.190.54
+
+# 2. Koneksi ke database
+PGPASSWORD='Aquvit2024' psql -U aquavit -h 127.0.0.1 -d aquvit_new
+
+# 3. Run setiap file SQL
+\i /path/to/01_fifo_inventory.sql
+\i /path/to/02_fifo_material.sql
+# ... dst
+
+# 4. Restart PostgREST
+pm2 restart postgrest-aquvit postgrest-mkw
+```
+
+### RPC Return Format
+
+Semua RPC mengembalikan format konsisten:
+
+```typescript
+interface RPCResult {
+  success: boolean;           // true jika berhasil
+  error_message?: string;     // Pesan error (bahasa Indonesia)
+  // ... data spesifik per function
+}
+
+// Contoh handling
+const { data, error } = await supabase.rpc('void_delivery_atomic', params);
+
+if (error) {
+  // Network/PostgREST error
+  toast.error('Gagal menghubungi server');
+  return;
+}
+
+const result = Array.isArray(data) ? data[0] : data;
+if (!result?.success) {
+  // Business logic error
+  toast.error(result?.error_message || 'Operasi gagal');
+  return;
+}
+
+// Success
+toast.success(`${result.items_restored} item dikembalikan ke stok`);
+```
+
+### Kode Akun yang Digunakan RPC
+
+| Kode | Nama Akun | Digunakan di |
+|------|-----------|--------------|
+| 1110 | Kas | Payment (cash) |
+| 1120 | Bank | Payment (transfer) |
+| 1210 | Piutang Usaha | Receivable payment |
+| 1310 | Persediaan Barang Dagang | HPP, Delivery |
+| 1320 | Persediaan Bahan Baku | Production, Material |
+| 2110 | Hutang Usaha | Payable payment |
+| 5100 | HPP | Delivery (Harga Pokok) |
+| 8100 | Beban Lain-lain | Spoilage |
+
+### Files Modified
+
+- `database/rpc/*.sql` - 8 RPC files baru
+- `src/hooks/useDeliveries.ts` - Gunakan `void_delivery_atomic`
+- `src/hooks/usePurchaseOrders.ts` - Gunakan `receive_po_atomic`
+
+---
+
+## [v4.2] 2026-01-02 - Accounting System Improvements
+
+### New Features
+
+55. **COA Seeding dengan Fallback Template Standar**
+    - Branch baru otomatis mendapat COA dari template standar jika HQ tidak punya COA
+    - Template standar mencakup 50+ akun standar Indonesia
+    - File: `src/hooks/useBranches.ts`
+
+56. **Period Locking - Cegah Posting ke Periode Tertutup**
+    - Jurnal tidak dapat dibuat pada periode yang sudah ditutup (tutup buku tahunan)
+    - Validasi di `createJournalEntry()` - block posting ke periode tertutup
+    - File: `src/services/journalService.ts`
+
+57. **Optimasi Query dengan Caching Hook**
+    - Hook baru: `src/hooks/useAccountBalanceSummary.ts`
+    - Cache 2 menit untuk saldo akun
+    - Getter helpers: `getAccountBalance(idOrCode)`, `getAccountsByType(type)`
+
+58. **Journal Number Sequence yang Lebih Robust**
+    - Database migration: `database/create_journal_sequence.sql`
+    - RPC `get_next_journal_number()` dengan advisory lock
+    - Format: `JE-YYYYMMDD-XXXX`
+
+59. **HPP Bonus - Akun Terpisah untuk Barang Gratis**
+    - Tambah akun **5210 HPP Bonus** untuk mencatat cost barang gratis
+    - Jurnal: `Dr. HPP Bonus Cr. Persediaan`
+    - File: `src/utils/chartOfAccountsUtils.ts`, `src/services/journalService.ts`
+
+60. **Fix Arus Kas - Exclude Transfer Internal**
+    - Skip jurnal dimana counterpart juga akun Kas/Bank (internal transfer)
+    - File: `src/utils/financialStatementsUtils.ts`
+
+### Technical Notes
+
+**COA Balance System:**
+```
+PRINSIP DOUBLE-ENTRY ACCOUNTING:
+- Saldo akun dihitung 100% dari journal_entry_lines
+- Kolom accounts.balance TIDAK digunakan (legacy)
+- initial_balance hanya referensi untuk opening journal
+
+RUMUS PERHITUNGAN SALDO:
+- Aset/Beban: saldo = SUM(debit) - SUM(credit)
+- Kewajiban/Modal/Pendapatan: saldo = SUM(credit) - SUM(debit)
 ```
 
 ---

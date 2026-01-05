@@ -14,6 +14,8 @@ import { PurchaseOrder, PurchaseOrderItem } from "@/types/purchaseOrder"
 import { usePurchaseOrders } from "@/hooks/usePurchaseOrders"
 import { toast } from "sonner"
 import { supabase } from "@/integrations/supabase/client"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 interface ReceivePODialogProps {
   open: boolean
@@ -22,8 +24,9 @@ interface ReceivePODialogProps {
 }
 
 export function ReceivePODialog({ open, onOpenChange, purchaseOrder }: ReceivePODialogProps) {
+  const { timezone } = useTimezone()
   const [notes, setNotes] = useState("")
-  const [receivedDate, setReceivedDate] = useState<Date>(new Date())
+  const [receivedDate, setReceivedDate] = useState<Date>(getOfficeTime(timezone))
   const [paymentDate, setPaymentDate] = useState<Date | undefined>(undefined)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [poItems, setPoItems] = useState<PurchaseOrderItem[]>([])
@@ -114,7 +117,7 @@ export function ReceivePODialog({ open, onOpenChange, purchaseOrder }: ReceivePO
 
       // Reset form
       setNotes("")
-      setReceivedDate(new Date())
+      setReceivedDate(getOfficeTime(timezone))
       setPaymentDate(undefined)
 
     } catch (error) {

@@ -4,10 +4,9 @@ import { Button } from "@/components/ui/button"
 import { EmployeeAdvance } from "@/types/employeeAdvance"
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
-import { FileText, Download, Printer, Receipt } from "lucide-react"
+import { Download, Printer, Receipt } from "lucide-react"
 import { ThermalPanjarDialog } from "./ThermalPanjarDialog"
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import { terbilang } from '@/utils/terbilang'
 import { saveCompressedPDF } from '@/utils/pdfUtils'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
@@ -22,7 +21,6 @@ interface PanjarReceiptPDFProps {
 export function PanjarReceiptPDF({
   advance,
   companyName = "AQUVIT",
-  companyAddress = "Jl. Contoh No. 123, Kota ABC"
 }: PanjarReceiptPDFProps) {
   const [isThermalDialogOpen, setIsThermalDialogOpen] = useState(false)
   const { settings } = useCompanySettings()
@@ -42,12 +40,12 @@ export function PanjarReceiptPDF({
 
     // Header Company - use branch name
     doc.setFontSize(12)
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text(currentBranch?.name || settings?.name || 'AQUVIT', pageWidth/2, 10, { align: 'center' })
 
     // Title
     doc.setFontSize(11)
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('KWITANSI PANJAR KARYAWAN', pageWidth/2, 18, { align: 'center' })
 
     // Divider line
@@ -56,44 +54,44 @@ export function PanjarReceiptPDF({
 
     // Receipt details
     doc.setFontSize(10)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     
     const leftCol = margin + 5
     const rightCol = pageWidth/2 + 5
     let yPos = 30
 
     // Left column
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('No. Kwitansi:', leftCol, yPos)
-    doc.setFont(undefined, 'normal') 
+    doc.setFont('helvetica', 'normal') 
     doc.text(advance.id, leftCol + 35, yPos)
 
     yPos += 8
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('Tanggal:', leftCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     doc.text(format(advance.date, 'dd MMMM yyyy', { locale: id }), leftCol + 35, yPos)
 
     yPos += 8
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('Karyawan:', leftCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     doc.text(advance.employeeName, leftCol + 35, yPos)
 
     // Right column
     yPos = 38
     if (advance.accountName) {
-      doc.setFont(undefined, 'bold')
+      doc.setFont('helvetica', 'bold')
       doc.text('Dibayar dari:', rightCol, yPos)
-      doc.setFont(undefined, 'normal')
+      doc.setFont('helvetica', 'normal')
       doc.text(advance.accountName, rightCol + 35, yPos)
       yPos += 8
     }
 
     yPos += 8
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('Sisa Panjar:', rightCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     const remainingText = new Intl.NumberFormat('id-ID', { 
       style: 'currency', 
       currency: 'IDR' 
@@ -108,7 +106,7 @@ export function PanjarReceiptPDF({
     doc.rect(leftCol, yPos, pageWidth - (margin * 2) - 10, 25, 'S')
 
     doc.setFontSize(10)
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('JUMLAH PANJAR:', leftCol + 3, yPos + 6)
     
     doc.setFontSize(14)
@@ -122,22 +120,22 @@ export function PanjarReceiptPDF({
     
     // Add terbilang (amount in words)
     doc.setFontSize(9)
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     const terbilangText = `(Terbilang: ${terbilang(advance.amount)})`
     const terbilangLines = doc.splitTextToSize(terbilangText, pageWidth - (margin * 2) - 20)
     doc.text(terbilangLines, leftCol + 3, yPos + 15)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
 
     // Repayment history if any
     if (advance.repayments && advance.repayments.length > 0) {
       yPos = 76
       doc.setFontSize(9)
-      doc.setFont(undefined, 'bold')
+      doc.setFont('helvetica', 'bold')
       doc.text('RIWAYAT PEMBAYARAN:', leftCol, yPos)
       
       yPos += 6
       doc.setFontSize(8)
-      doc.setFont(undefined, 'normal')
+      doc.setFont('helvetica', 'normal')
       
       advance.repayments.forEach((repayment, index) => {
         const repayAmount = new Intl.NumberFormat('id-ID', { 

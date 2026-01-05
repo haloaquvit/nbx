@@ -26,6 +26,8 @@ import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
 import { Retasi } from "@/types/retasi"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 interface DriverDeliveryDialogProps {
   open: boolean
@@ -44,6 +46,7 @@ export function DriverDeliveryDialog({
 }: DriverDeliveryDialogProps) {
   const { toast } = useToast()
   const { user } = useAuth()
+  const { timezone } = useTimezone()
   const { drivers } = useDrivers()
   const { createDelivery } = useDeliveries()
 
@@ -247,7 +250,7 @@ export function DriverDeliveryDialog({
         transactionId: transaction.id,
         driverId: selectedDriver?.id,
         helperId: selectedHelper?.id || undefined,
-        deliveryDate: new Date(),
+        deliveryDate: getOfficeTime(timezone),
         items: deliveryItems,
         notes: notes.trim() || undefined,
         photo: deliveryPhoto

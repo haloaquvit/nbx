@@ -19,6 +19,7 @@ import { Truck, Package, Search, RefreshCw, Clock, CheckCircle, AlertCircle, Plu
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { useTransactionsReadyForDelivery, useDeliveryHistory, useDeliveries } from "@/hooks/useDeliveries"
+import { useTransactions } from "@/hooks/useTransactions"
 import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { DeliveryDetailModal } from "@/components/DeliveryDetailModal"
 import { DeliveryFormContent } from "@/components/DeliveryFormContent"
@@ -50,6 +51,11 @@ export default function DeliveryPage() {
   const { data: transactions, isLoading, refetch } = useTransactionsReadyForDelivery()
   const { data: deliveryHistory, isLoading: isLoadingHistory, refetch: refetchHistory } = useDeliveryHistory()
   const { deleteDelivery } = useDeliveries()
+  const { deleteTransaction } = useTransactions()
+  const [transactionToDelete, setTransactionToDelete] = useState<any>(null)
+  const [isTransactionDeleteDialogOpen, setIsTransactionDeleteDialogOpen] = useState(false)
+  const [isDeletingTransaction, setIsDeletingTransaction] = useState(false)
+
   const [searchQuery, setSearchQuery] = useState("")
   const [historySearchQuery, setHistorySearchQuery] = useState("")
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionDeliveryInfo | null>(null)
@@ -69,7 +75,7 @@ export default function DeliveryPage() {
   }
   const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false)
   const [selectedDeliveryTransaction, setSelectedDeliveryTransaction] = useState<TransactionDeliveryInfo | null>(null)
-  
+
   // New filter states for history
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
@@ -104,12 +110,12 @@ export default function DeliveryPage() {
     transaction.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     transaction.id.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
-  
+
   // Get unique drivers and helpers for filter options
   const uniqueDrivers = Array.from(new Set(
     deliveryHistory?.map(d => d.driverName).filter(Boolean) || []
   )).sort()
-  
+
   const uniqueHelpers = Array.from(new Set(
     deliveryHistory?.map(d => d.helperName).filter(Boolean) || []
   )).sort()
@@ -122,25 +128,25 @@ export default function DeliveryPage() {
       delivery.driverName?.toLowerCase().includes(historySearchQuery.toLowerCase()) ||
       delivery.helperName?.toLowerCase().includes(historySearchQuery.toLowerCase())
     )
-    
+
     // Date range filter
     const deliveryDate = new Date(delivery.deliveryDate)
     const startDateObj = startDate ? new Date(startDate + "T00:00:00") : null
     const endDateObj = endDate ? new Date(endDate + "T23:59:59") : null
-    
+
     const matchesDateRange = (!startDateObj || deliveryDate >= startDateObj) &&
-                            (!endDateObj || deliveryDate <= endDateObj)
-    
+      (!endDateObj || deliveryDate <= endDateObj)
+
     // Driver filter
-    const matchesDriver = selectedDriver === "all" || 
-                         (selectedDriver === "no-driver" && !delivery.driverName) ||
-                         delivery.driverName === selectedDriver
-    
+    const matchesDriver = selectedDriver === "all" ||
+      (selectedDriver === "no-driver" && !delivery.driverName) ||
+      delivery.driverName === selectedDriver
+
     // Helper filter  
-    const matchesHelper = selectedHelper === "all" || 
-                         (selectedHelper === "no-helper" && !delivery.helperName) ||
-                         delivery.helperName === selectedHelper
-    
+    const matchesHelper = selectedHelper === "all" ||
+      (selectedHelper === "no-helper" && !delivery.helperName) ||
+      delivery.helperName === selectedHelper
+
     return matchesSearch && matchesDateRange && matchesDriver && matchesHelper
   }) || []
 
@@ -179,9 +185,33 @@ export default function DeliveryPage() {
     }
   }
 
+  const handleDeleteTransaction = async () => {
+    if (!transactionToDelete) return
+
+    setIsDeletingTransaction(true)
+    try {
+      await deleteTransaction.mutateAsync(transactionToDelete.id)
+      toast({
+        title: "Berhasil",
+        description: `Transaksi #${transactionToDelete.id} berhasil dihapus beserta seluruh data terkait (Jurnal, Komisi, dll).`
+      })
+      setIsTransactionDeleteDialogOpen(false)
+      setTransactionToDelete(null)
+      refetch() // Refresh active transactions list
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Gagal Menghapus Transaksi",
+        description: error.message || "Terjadi kesalahan saat menghapus transaksi"
+      })
+    } finally {
+      setIsDeletingTransaction(false)
+    }
+  }
+
   const generateHistoryPDF = async () => {
     setIsGeneratingPDF(true)
-    
+
     try {
       const doc = new jsPDF({
         orientation: 'landscape',
@@ -195,13 +225,13 @@ export default function DeliveryPage() {
       // Header
       doc.setFontSize(18)
       doc.setFont(undefined, 'bold')
-      doc.text('LAPORAN HISTORY PENGANTARAN', pageWidth/2, 20, { align: 'center' })
-      
+      doc.text('LAPORAN HISTORY PENGANTARAN', pageWidth / 2, 20, { align: 'center' })
+
       // Filter info
       doc.setFontSize(10)
       doc.setFont(undefined, 'normal')
       let yPos = 35
-      
+
       let filterInfo = []
       if (startDate || endDate) {
         const dateRange = `${startDate ? format(new Date(startDate), 'dd/MM/yyyy') : 'Awal'} - ${endDate ? format(new Date(endDate), 'dd/MM/yyyy') : 'Akhir'}`
@@ -216,7 +246,7 @@ export default function DeliveryPage() {
       if (historySearchQuery) {
         filterInfo.push(`Pencarian: "${historySearchQuery}"`)
       }
-      
+
       if (filterInfo.length > 0) {
         doc.text(`Filter: ${filterInfo.join(' | ')}`, margin, yPos)
         yPos += 10
@@ -226,7 +256,7 @@ export default function DeliveryPage() {
       const totalDeliveries = filteredDeliveryHistory.length
       const totalItems = filteredDeliveryHistory.reduce((sum, d) => sum + (d.items?.reduce((itemSum: number, item: any) => itemSum + item.quantityDelivered, 0) || 0), 0)
       const totalOrderValue = filteredDeliveryHistory.reduce((sum, d) => sum + (d.transactionTotal || 0), 0)
-      
+
       doc.text(`Total Pengantaran: ${totalDeliveries}`, margin, yPos)
       yPos += 7
       doc.text(`Total Item Diantar: ${totalItems}`, margin, yPos)
@@ -352,9 +382,9 @@ export default function DeliveryPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <Button 
-            onClick={() => refetch()} 
-            variant="outline" 
+          <Button
+            onClick={() => refetch()}
+            variant="outline"
             size="sm"
           >
             <RefreshCw className="h-4 w-4 sm:mr-2" />
@@ -606,6 +636,24 @@ export default function DeliveryPage() {
                                     <Truck className="h-3 w-3 sm:mr-1" />
                                     <span className="hidden sm:inline">Antar</span>
                                   </Button>
+
+                                  {/* Delete Transaction Button (Owner/Admin Only) - NEW */}
+                                  {(user?.role === 'owner' || user?.role === 'admin') && (
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      className="text-xs px-2 py-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setTransactionToDelete(transaction)
+                                        setIsTransactionDeleteDialogOpen(true)
+                                      }}
+                                      title="Hapus Transaksi & Data Terkait"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  )}
+
                                   {/* Delete last delivery button - controlled by granular permission */}
                                   {canDelete && transaction.deliveries.length > 0 && (
                                     <Button
@@ -625,7 +673,7 @@ export default function DeliveryPage() {
                                       }}
                                       title={`Hapus pengantaran terakhir (${transaction.deliveries.length} pengantaran)`}
                                     >
-                                      <Trash2 className="h-3 w-3" />
+                                      <History className="h-3 w-3" /> {/* Changed icon to History to differ from Transaction Delete */}
                                     </Button>
                                   )}
                                 </div>
@@ -1101,7 +1149,7 @@ export default function DeliveryPage() {
                 Catat pengantaran untuk order #{selectedDeliveryTransaction.id} - {selectedDeliveryTransaction.customerName}
               </DialogDescription>
             </DialogHeader>
-            
+
             <DeliveryFormContent
               transaction={selectedDeliveryTransaction}
               onSuccess={() => {
@@ -1210,7 +1258,89 @@ export default function DeliveryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Delivery Dialog (Owner only) */}
+      {/* Delete Transaction Confirmation Dialog - Owner/Admin Only */}
+      <Dialog open={isTransactionDeleteDialogOpen} onOpenChange={setIsTransactionDeleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Hapus Transaksi (Order)
+            </DialogTitle>
+            <DialogDescription>
+              Apakah Anda yakin ingin MENGHAPUS transaksi ini beserta seluruh historynya?
+            </DialogDescription>
+          </DialogHeader>
+
+          {transactionToDelete && (
+            <div className="space-y-3 py-4">
+              <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Order ID</span>
+                  <span className="font-medium">#{transactionToDelete.id}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Customer</span>
+                  <span className="font-medium">{transactionToDelete.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Total</span>
+                  <span className="font-medium">
+                    {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transactionToDelete.total)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg border border-orange-200">
+                <p className="text-sm text-orange-800 dark:text-orange-200">
+                  <strong>⚠️ PERINGATAN KERAS:</strong>
+                </p>
+                <div className="text-sm text-orange-700 dark:text-orange-300 mt-2 space-y-1">
+                  <p>Tindakan ini akan menghapus/membatalkan:</p>
+                  <ul className="list-disc list-inside pl-1">
+                    <li>Data Transaksi Penjualan</li>
+                    <li>Semua Data Pengantaran (Delivery) terkait</li>
+                    <li>Semua Jurnal Keuangan (Penjualan, Piutang, HPP)</li>
+                    <li>Semua Komisi Supir/Helper yang terbentuk</li>
+                    <li>Mengembalikan stok barang ke gudang</li>
+                  </ul>
+                  <p className="mt-2 font-bold">Data yang sudah dihapus TIDAK BISA dipulihkan!</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsTransactionDeleteDialogOpen(false)
+                setTransactionToDelete(null)
+              }}
+              disabled={isDeletingTransaction}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteTransaction}
+              disabled={isDeletingTransaction}
+            >
+              {isDeletingTransaction ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Menghapus...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Ya, Hapus Semuanya
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {editingDelivery && (
         <EditDeliveryDialog
           delivery={editingDelivery}

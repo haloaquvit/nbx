@@ -24,6 +24,7 @@ export interface Delivery {
   helperId?: string;
   helperName?: string;
   branchId?: string;
+  transactionTotal?: number; // Total nilai order
   items: DeliveryItem[];
   createdAt: Date;
   updatedAt: Date;
@@ -43,6 +44,7 @@ export interface DeliverySummaryItem {
 export interface TransactionDeliveryInfo {
   id: string;
   customerName: string;
+  customerAddress?: string; // Alamat pelanggan
   orderDate: Date;
   items: any[]; // Transaction items
   total: number;
@@ -94,10 +96,51 @@ export interface DeliveryFormData {
   photo?: File;
 }
 
+// Input for creating a delivery (used by useDeliveries hook)
+export interface DeliveryInput {
+  transactionId: string;
+  deliveryDate: Date;
+  notes?: string;
+  driverId?: string | null;
+  helperId?: string;
+  photoUrl?: string;
+  items: {
+    productId: string;
+    productName: string;
+    quantityDelivered: number;
+    unit?: string;
+    width?: number;
+    height?: number;
+    notes?: string;
+    isBonus?: boolean;
+  }[];
+  photo?: File;
+}
+
+// Input for updating a delivery
+export interface DeliveryUpdateInput {
+  id: string;
+  deliveryDate?: Date;
+  notes?: string;
+  driverId?: string | null;
+  helperId?: string;
+  photoUrl?: string;
+  items: {
+    productId: string;
+    productName: string;
+    quantityDelivered: number;
+    unit?: string;
+    width?: number;
+    height?: number;
+    notes?: string;
+    isBonus?: boolean;
+  }[];
+}
+
 // Employee interface for dropdown options
 export interface DeliveryEmployee {
   id: string;
   name: string;
-  position: string;
-  role: 'supir' | 'helper';
+  position?: string;
+  role: 'supir' | 'helper' | 'kasir' | 'migration';
 }

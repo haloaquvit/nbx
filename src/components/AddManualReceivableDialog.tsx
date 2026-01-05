@@ -14,13 +14,15 @@ import { toast } from 'sonner';
 import { useBranch } from '@/contexts/BranchContext';
 import { useCustomers } from '@/hooks/useCustomers';
 import { generateSequentialId } from '@/utils/idGenerator';
-import { createMigrationReceivableJournal } from '@/services/journalService';
 import { formatCurrency } from '@/lib/utils';
+// journalService removed - now using RPC for all journal operations
 import { formatNumberWithCommas, parseNumberWithCommas } from '@/utils/formatNumber';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { useTimezone } from '@/contexts/TimezoneContext';
+import { getOfficeTime } from '@/utils/officeTime';
 
 interface AddManualReceivableDialogProps {
   onSuccess?: () => void;
@@ -40,6 +42,7 @@ interface ImportRow {
 export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDialogProps) {
   const { currentBranch } = useBranch();
   const { customers } = useCustomers();
+  const { timezone } = useTimezone();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('manual');
   const [isLoading, setIsLoading] = useState(false);
@@ -64,7 +67,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
     setSelectedCustomerId('');
     setSelectedCustomerName('');
     setAmount('');
-    setTransactionDate(new Date());
+    setTransactionDate(getOfficeTime(timezone));
     setDueDate(undefined);
     setNotes('');
     setImportData([]);
@@ -97,7 +100,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
       });
 
       // Insert as transaction with migration info in items metadata
-      const orderDate = transactionDate || new Date();
+      const orderDate = transactionDate || getOfficeTime(timezone);
       const migrationMeta = {
         _isMigrationMeta: true,
         source: 'migration',
@@ -120,22 +123,24 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
 
       if (error) throw error;
 
-      // Create migration journal entry
+      // Create migration journal entry via RPC
       if (currentBranch?.id) {
-        const journalResult = await createMigrationReceivableJournal({
-          receivableId: transactionId,
-          receivableDate: orderDate,
-          amount: parsedAmount,
-          customerName: selectedCustomerName,
-          description: notes || 'Piutang migrasi dari sistem lain',
-          branchId: currentBranch.id,
-        });
+        const { data: journalResultRaw, error: journalError } = await supabase
+          .rpc('create_migration_receivable_journal_rpc', {
+            p_branch_id: currentBranch.id,
+            p_receivable_id: transactionId,
+            p_receivable_date: orderDate.toISOString().split('T')[0],
+            p_amount: parsedAmount,
+            p_customer_name: selectedCustomerName,
+            p_description: notes || 'Piutang migrasi dari sistem lain',
+          });
 
-        if (journalResult.success) {
-          console.log('Jurnal piutang migrasi berhasil:', journalResult.journalId);
+        const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw;
+        if (journalError || !journalResult?.success) {
+          console.warn('Gagal membuat jurnal migrasi:', journalError?.message || journalResult?.error_message);
+          toast.warning(`Piutang tersimpan, tapi jurnal gagal: ${journalError?.message || journalResult?.error_message}`);
         } else {
-          console.warn('Gagal membuat jurnal migrasi:', journalResult.error);
-          toast.warning(`Piutang tersimpan, tapi jurnal gagal: ${journalResult.error}`);
+          console.log('✅ Jurnal piutang migrasi berhasil via RPC:', journalResult.journal_id);
         }
       }
 
@@ -232,7 +237,7 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
             branchId: currentBranch?.id || null,
           });
 
-          const orderDate = new Date();
+          const orderDate = getOfficeTime(timezone);
           let parsedDueDate: Date | null = null;
           if (row.dueDate) {
             parsedDueDate = new Date(row.dueDate);
@@ -261,15 +266,15 @@ export function AddManualReceivableDialog({ onSuccess }: AddManualReceivableDial
 
           if (error) throw error;
 
-          // Create journal
+          // Create journal via RPC
           if (currentBranch?.id) {
-            await createMigrationReceivableJournal({
-              receivableId: transactionId,
-              receivableDate: orderDate,
-              amount: row.amount,
-              customerName: row.customerName,
-              description: row.notes || 'Import piutang migrasi',
-              branchId: currentBranch.id,
+            await supabase.rpc('create_migration_receivable_journal_rpc', {
+              p_branch_id: currentBranch.id,
+              p_receivable_id: transactionId,
+              p_receivable_date: orderDate.toISOString().split('T')[0],
+              p_amount: row.amount,
+              p_customer_name: row.customerName,
+              p_description: row.notes || 'Import piutang migrasi',
             });
           }
 

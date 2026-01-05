@@ -48,6 +48,8 @@ import { useSuppliers } from "@/hooks/useSuppliers"
 import { useToast } from "@/components/ui/use-toast"
 import { PurchaseOrder, PurchaseOrderItem } from "@/types/purchaseOrder"
 import { supabase } from "@/integrations/supabase/client"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 const formSchema = z.object({
   supplierId: z.string().min(1, "Supplier harus dipilih"),
@@ -70,6 +72,7 @@ export function EditPurchaseOrderDialog({ purchaseOrder, open, onOpenChange }: E
   const { materials } = useMaterials()
   const { activeSuppliers } = useSuppliers()
   const { toast } = useToast()
+  const { timezone } = useTimezone()
 
   // State for PO items
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
@@ -83,7 +86,7 @@ export function EditPurchaseOrderDialog({ purchaseOrder, open, onOpenChange }: E
       supplierId: "",
       includePpn: false,
       expedition: "",
-      orderDate: new Date(),
+      orderDate: getOfficeTime(timezone),
       notes: "",
     },
   })
@@ -96,7 +99,7 @@ export function EditPurchaseOrderDialog({ purchaseOrder, open, onOpenChange }: E
         supplierId: purchaseOrder.supplierId || "",
         includePpn: purchaseOrder.includePpn || false,
         expedition: purchaseOrder.expedition || "",
-        orderDate: purchaseOrder.orderDate || new Date(),
+        orderDate: purchaseOrder.orderDate || getOfficeTime(timezone),
         expectedDeliveryDate: purchaseOrder.expectedDeliveryDate,
         notes: purchaseOrder.notes || "",
       })
@@ -182,12 +185,12 @@ export function EditPurchaseOrderDialog({ purchaseOrder, open, onOpenChange }: E
         supplierId: "",
         includePpn: false,
         expedition: "",
-        orderDate: new Date(),
+        orderDate: getOfficeTime(timezone),
         notes: "",
       })
       setItems([])
     }
-  }, [open, purchaseOrder, form])
+  }, [open, purchaseOrder, form, timezone])
 
   const selectedSupplier = activeSuppliers?.find(s => s.id === form.watch("supplierId"))
   const includePpn = form.watch("includePpn") || false

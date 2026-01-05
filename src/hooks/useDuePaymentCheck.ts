@@ -60,9 +60,10 @@ export function useDuePaymentCheck() {
       await DebtInstallmentService.updateOverdueStatus();
 
       // Get all pending/overdue installments for this branch
+      // Note: No FK relationship between debt_installments and accounts_payable, so query without join
       const { data: installments, error } = await supabase
         .from('debt_installments')
-        .select('*, accounts_payable:debt_id(supplier_name)')
+        .select('*')
         .eq('branch_id', currentBranch.id)
         .in('status', ['pending', 'overdue'])
         .order('due_date', { ascending: true });
@@ -187,16 +188,34 @@ export function useUpcomingInstallments(limit: number = 5) {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // Note: No FK relationship between debt_installments and accounts_payable, so query separately
+      const { data: installmentsData, error } = await supabase
         .from('debt_installments')
-        .select('*, accounts_payable:debt_id(supplier_name, description)')
+        .select('*')
         .eq('branch_id', currentBranch.id)
         .in('status', ['pending', 'overdue'])
         .order('due_date', { ascending: true })
         .limit(limit);
 
       if (error) throw error;
-      setInstallments(data || []);
+
+      // Enrich with supplier names from accounts_payable
+      if (installmentsData && installmentsData.length > 0) {
+        const debtIds = [...new Set(installmentsData.map(i => i.debt_id))];
+        const { data: payables } = await supabase
+          .from('accounts_payable')
+          .select('id, supplier_name, description')
+          .in('id', debtIds);
+
+        const payableMap = new Map(payables?.map(p => [p.id, p]) || []);
+        const enrichedData = installmentsData.map(inst => ({
+          ...inst,
+          accounts_payable: payableMap.get(inst.debt_id) || null
+        }));
+        setInstallments(enrichedData);
+      } else {
+        setInstallments([]);
+      }
     } catch (error) {
       console.error('[useUpcomingInstallments] Error:', error);
       setInstallments([]);

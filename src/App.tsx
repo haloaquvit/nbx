@@ -73,8 +73,9 @@ const WarehousePage = lazy(() => import("@/pages/WarehousePage"));
 const MobileRetasiPage = lazy(() => import("@/pages/MobileRetasiPage"));
 const MobileSoldItemsPage = lazy(() => import("@/pages/MobileSoldItemsPage"));
 const MobileCommissionPage = lazy(() => import("@/pages/MobileCommissionPage"));
-const QuotationsPage = lazy(() => import("@/pages/QuotationsPage"));
+const NotificationsPage = lazy(() => import("@/pages/NotificationsPage"));
 
+const QuotationsPage = lazy(() => import("@/pages/QuotationsPage"));
 const SERVERS = [
   {
     id: 'nabire',
@@ -123,11 +124,10 @@ function ServerSelector({ onSelect }: { onSelect: (url: string) => void }) {
           {SERVERS.map((server) => (
             <Card
               key={server.id}
-              className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${
-                selected === server.id
-                  ? 'ring-2 ring-blue-500 bg-blue-50'
-                  : 'hover:bg-gray-50'
-              }`}
+              className={`cursor-pointer transition-all duration-200 hover:shadow-lg ${selected === server.id
+                ? 'ring-2 ring-blue-500 bg-blue-50'
+                : 'hover:bg-gray-50'
+                }`}
               onClick={() => handleSelect(server)}
             >
               <CardContent className="p-4">
@@ -168,7 +168,7 @@ function isCapacitorApp(): boolean {
     if (Capacitor.isNativePlatform()) return true;
     const platform = Capacitor.getPlatform();
     if (platform === 'android' || platform === 'ios') return true;
-  } catch (e) {}
+  } catch (e) { }
 
   if (typeof window !== 'undefined') {
     const protocol = window.location.protocol;
@@ -250,95 +250,97 @@ function WebApp() {
       <AuthProvider>
         <BranchProvider>
           <TimezoneProvider>
-          <BrowserRouter future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true
-          }}>
-            {/* PIN Validation Dialog for Owner */}
-            <PinValidationDialog />
-            <Suspense fallback={<PageLoader />}>
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              
-              {/* Mobile routes - POS, Attendance, Transactions, and Customers */}
-              {shouldUseMobileLayout ? (
-                <Route element={<ProtectedRoute><MobileLayout /></ProtectedRoute>}>
-                  <Route path="/" element={<PosPage />} />
-                  <Route path="/pos" element={<PosPage />} />
-                  <Route path="/driver-pos" element={<DriverPosPage />} />
-                  <Route path="/attendance" element={<AttendancePage />} />
-                  <Route path="/transactions" element={<TransactionListPage />} />
-                  <Route path="/transactions/:id" element={<TransactionDetailPage />} />
-                  <Route path="/customers" element={<CustomerPage />} />
-                  <Route path="/customers/:id" element={<CustomerDetailPage />} />
-                  <Route path="/customer-map" element={<CustomerMapPage />} />
-                  <Route path="/production" element={<ProductionPage />} />
-                  <Route path="/warehouse" element={<WarehousePage />} />
-                  <Route path="/retasi" element={<MobileRetasiPage />} />
-                  <Route path="/sold-items" element={<MobileSoldItemsPage />} />
-                  <Route path="/my-commission" element={<MobileCommissionPage />} />
-                  <Route path="/quotations" element={<QuotationsPage />} />
-                  <Route path="/quotations/new" element={<QuotationsPage />} />
-                  <Route path="*" element={<NotFound />} />
-                </Route>
-              ) : (
-                /* Desktop routes - all features */
-                <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-                  <Route path="/" element={<DashboardPage />} />
-                  <Route path="/pos" element={<PosPage />} />
-                  <Route path="/transactions" element={<TransactionListPage />} />
-                  <Route path="/transactions/:id" element={<TransactionDetailPage />} />
-                  <Route path="/products" element={<ProductPage />} />
-                  <Route path="/products/:id" element={<ProductDetailPage />} />
-                  <Route path="/materials" element={<MaterialPage />} />
-                  <Route path="/production" element={<ProductionPage />} />
-                  <Route path="/materials/:materialId" element={<MaterialDetailPage />} />
-                  <Route path="/customers" element={<CustomerPage />} />
-                  <Route path="/customers/:id" element={<CustomerDetailPage />} />
-                  <Route path="/employees" element={<EmployeePage />} />
-                  <Route path="/payroll" element={<PayrollPage />} />
-                  <Route path="/suppliers" element={<SupplierPage />} />
-                  <Route path="/purchase-orders" element={<PurchaseOrderPage />} />
-                  <Route path="/accounts" element={<ChartOfAccountsPage />} />
-                  <Route path="/accounts/:id" element={<AccountDetailPage />} />
-                  <Route path="/receivables" element={<ReceivablesPage />} />
-                  <Route path="/accounts-payable" element={<AccountsPayablePage />} />
-                  <Route path="/expenses" element={<ExpensePage />} />
-                  <Route path="/advances" element={<EmployeeAdvancePage />} />
-                  <Route path="/settings" element={<SettingsPage />} />
-                  <Route path="/account-settings" element={<AccountSettingsPage />} />
-                  <Route path="/attendance" element={<AttendancePage />} />
-                  <Route path="/attendance/report" element={<AttendanceReportPage />} />
-                  <Route path="/stock-report" element={<StockReportPage />} />
-                  <Route path="/transaction-items-report" element={<TransactionItemsReportPage />} />
-                  <Route path="/debug/product-analytics" element={<ProductAnalyticsDebugPage />} />
-                  <Route path="/material-movements" element={<MaterialMovementReportPage />} />
-                  <Route path="/service-material-report" element={<ServiceMaterialReportPage />} />
-                  <Route path="/cash-flow" element={<CashFlowPage />} />
-                  <Route path="/roles" element={<RolesPage />} />
-                  <Route path="/retasi" element={<RetasiPage />} />
-                  <Route path="/delivery" element={<DeliveryPage />} />
-                  <Route path="/driver-pos" element={<DriverPosPage />} />
-                                    <Route path="/commission-report" element={<CommissionReportPage />} />
-                  <Route path="/financial-reports" element={<FinancialReportsPage />} />
-                  <Route path="/assets" element={<AssetsPage />} />
-                  <Route path="/maintenance" element={<MaintenancePage />} />
-                  <Route path="/zakat" element={<ZakatPage />} />
-                  <Route path="/tax" element={<TaxPage />} />
-                  <Route path="/branches" element={<BranchManagementPage />} />
-                  <Route path="/journal" element={<JournalPage />} />
-                  <Route path="/material-usage-summary" element={<MaterialUsageSummaryPage />} />
-                  <Route path="/web-management" element={<WebManagementPage />} />
-                  <Route path="/customer-map" element={<CustomerMapPage />} />
-                  <Route path="/quotations" element={<QuotationsPage />} />
-                  <Route path="/quotations/new" element={<QuotationsPage />} />
-                  <Route path="/audit-log" element={<AuditLogPage />} />
-                  <Route path="*" element={<NotFound />} />
-                </Route>
-              )}
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
+            <BrowserRouter future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true
+            }}>
+              {/* PIN Validation Dialog for Owner */}
+              <PinValidationDialog />
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/login" element={<LoginPage />} />
+
+                  {/* Mobile routes - POS, Attendance, Transactions, and Customers */}
+                  {shouldUseMobileLayout ? (
+                    <Route element={<ProtectedRoute><MobileLayout /></ProtectedRoute>}>
+                      <Route path="/" element={<PosPage />} />
+                      <Route path="/pos" element={<PosPage />} />
+                      <Route path="/driver-pos" element={<DriverPosPage />} />
+                      <Route path="/attendance" element={<AttendancePage />} />
+                      <Route path="/transactions" element={<TransactionListPage />} />
+                      <Route path="/transactions/:id" element={<TransactionDetailPage />} />
+                      <Route path="/customers" element={<CustomerPage />} />
+                      <Route path="/customers/:id" element={<CustomerDetailPage />} />
+                      <Route path="/customer-map" element={<CustomerMapPage />} />
+                      <Route path="/production" element={<ProductionPage />} />
+                      <Route path="/warehouse" element={<WarehousePage />} />
+                      <Route path="/retasi" element={<MobileRetasiPage />} />
+                      <Route path="/sold-items" element={<MobileSoldItemsPage />} />
+                      <Route path="/my-commission" element={<MobileCommissionPage />} />
+                      <Route path="/quotations" element={<QuotationsPage />} />
+                      <Route path="/quotations/new" element={<QuotationsPage />} />
+                      <Route path="/notifications" element={<NotificationsPage />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Route>
+                  ) : (
+                    /* Desktop routes - all features */
+                    <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+                      <Route path="/" element={<DashboardPage />} />
+                      <Route path="/pos" element={<PosPage />} />
+                      <Route path="/transactions" element={<TransactionListPage />} />
+                      <Route path="/transactions/:id" element={<TransactionDetailPage />} />
+                      <Route path="/products" element={<ProductPage />} />
+                      <Route path="/products/:id" element={<ProductDetailPage />} />
+                      <Route path="/materials" element={<MaterialPage />} />
+                      <Route path="/production" element={<ProductionPage />} />
+                      <Route path="/materials/:materialId" element={<MaterialDetailPage />} />
+                      <Route path="/customers" element={<CustomerPage />} />
+                      <Route path="/customers/:id" element={<CustomerDetailPage />} />
+                      <Route path="/employees" element={<EmployeePage />} />
+                      <Route path="/payroll" element={<PayrollPage />} />
+                      <Route path="/suppliers" element={<SupplierPage />} />
+                      <Route path="/purchase-orders" element={<PurchaseOrderPage />} />
+                      <Route path="/accounts" element={<ChartOfAccountsPage />} />
+                      <Route path="/accounts/:id" element={<AccountDetailPage />} />
+                      <Route path="/receivables" element={<ReceivablesPage />} />
+                      <Route path="/accounts-payable" element={<AccountsPayablePage />} />
+                      <Route path="/expenses" element={<ExpensePage />} />
+                      <Route path="/advances" element={<EmployeeAdvancePage />} />
+                      <Route path="/settings" element={<SettingsPage />} />
+                      <Route path="/account-settings" element={<AccountSettingsPage />} />
+                      <Route path="/attendance" element={<AttendancePage />} />
+                      <Route path="/attendance/report" element={<AttendanceReportPage />} />
+                      <Route path="/stock-report" element={<StockReportPage />} />
+                      <Route path="/transaction-items-report" element={<TransactionItemsReportPage />} />
+                      <Route path="/debug/product-analytics" element={<ProductAnalyticsDebugPage />} />
+                      <Route path="/material-movements" element={<MaterialMovementReportPage />} />
+                      <Route path="/service-material-report" element={<ServiceMaterialReportPage />} />
+                      <Route path="/cash-flow" element={<CashFlowPage />} />
+                      <Route path="/roles" element={<RolesPage />} />
+                      <Route path="/retasi" element={<RetasiPage />} />
+                      <Route path="/delivery" element={<DeliveryPage />} />
+                      <Route path="/driver-pos" element={<DriverPosPage />} />
+                      <Route path="/commission-report" element={<CommissionReportPage />} />
+                      <Route path="/financial-reports" element={<FinancialReportsPage />} />
+                      <Route path="/assets" element={<AssetsPage />} />
+                      <Route path="/maintenance" element={<MaintenancePage />} />
+                      <Route path="/zakat" element={<ZakatPage />} />
+                      <Route path="/tax" element={<TaxPage />} />
+                      <Route path="/branches" element={<BranchManagementPage />} />
+                      <Route path="/journal" element={<JournalPage />} />
+                      <Route path="/material-usage-summary" element={<MaterialUsageSummaryPage />} />
+                      <Route path="/web-management" element={<WebManagementPage />} />
+                      <Route path="/customer-map" element={<CustomerMapPage />} />
+                      <Route path="/quotations" element={<QuotationsPage />} />
+                      <Route path="/quotations/new" element={<QuotationsPage />} />
+                      <Route path="/notifications" element={<NotificationsPage />} />
+                      <Route path="/audit-log" element={<AuditLogPage />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Route>
+                  )}
+                </Routes>
+              </Suspense>
+            </BrowserRouter>
           </TimezoneProvider>
         </BranchProvider>
       </AuthProvider>

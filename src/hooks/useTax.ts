@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/integrations/supabase/client'
 import { useBranch } from '@/contexts/BranchContext'
-import { createTaxPaymentJournal } from '@/services/journalService'
+// journalService removed - now using RPC for all journal operations
 
 // ============================================================================
 // PAJAK ACCOUNTS:
@@ -343,22 +343,23 @@ export const useTax = () => {
         throw new Error('PPN Masukan tidak bisa lebih besar dari PPN Keluaran yang dibayar');
       }
 
-      // Create tax payment journal
-      const result = await createTaxPaymentJournal({
-        paymentDate: new Date(),
-        period,
-        ppnMasukanUsed: ppnMasukanToUse,
-        ppnKeluaranPaid: ppnKeluaranToPay,
-        netPayment,
-        paymentAccountId,
-        branchId: currentBranch.id,
-        notes: notes || `Pembayaran Pajak Periode ${period}`,
-      });
+      // Create tax payment journal via RPC
+      const { data: resultRaw, error: rpcError } = await supabase
+        .rpc('create_tax_payment_atomic', {
+          p_branch_id: currentBranch.id,
+          p_period: period,
+          p_ppn_masukan_used: ppnMasukanToUse,
+          p_ppn_keluaran_paid: ppnKeluaranToPay,
+          p_payment_account_id: paymentAccountId,
+          p_notes: notes || `Pembayaran Pajak Periode ${period}`,
+        });
 
-      if (!result.success) {
-        throw new Error(result.error || 'Gagal membuat jurnal pembayaran pajak');
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
+      if (rpcError || !result?.success) {
+        throw new Error(rpcError?.message || result?.error_message || 'Gagal membuat jurnal pembayaran pajak');
       }
 
+      console.log('✅ Tax payment via RPC:', result.journal_id);
       return result;
     },
     onSuccess: () => {

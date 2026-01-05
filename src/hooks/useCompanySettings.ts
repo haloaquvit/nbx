@@ -3,8 +3,10 @@ import { supabase } from '@/integrations/supabase/client'
 
 export interface CompanyInfo {
   name: string;
+  companyName?: string; // Alias for name
   address: string;
   phone: string;
+  email?: string; // Company email
   logo: string;
   latitude?: number | null;
   longitude?: number | null;

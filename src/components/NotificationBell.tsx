@@ -118,9 +118,8 @@ export function NotificationBell() {
             notifications.map((notification) => (
               <DropdownMenuItem
                 key={notification.id}
-                className={`flex flex-col items-start p-3 cursor-pointer ${
-                  !notification.isRead ? 'bg-blue-50' : ''
-                } border-b last:border-b-0`}
+                className={`flex flex-col items-start p-3 cursor-pointer ${!notification.isRead ? 'bg-blue-50' : ''
+                  } border-b last:border-b-0`}
                 onClick={() => handleNotificationClick(notification)}
               >
                 <div className="flex items-start w-full gap-2">
@@ -156,8 +155,8 @@ export function NotificationBell() {
                           {notification.priority === 'urgent'
                             ? 'Mendesak'
                             : notification.priority === 'high'
-                            ? 'Penting'
-                            : notification.priority}
+                              ? 'Penting'
+                              : notification.priority}
                         </Badge>
                       )}
                     </div>
@@ -173,7 +172,10 @@ export function NotificationBell() {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-center justify-center text-sm text-blue-600 cursor-pointer"
-              onClick={() => navigate('/notifications')}
+              onClick={() => {
+                handleMarkAllAsRead();
+                navigate('/notifications');
+              }}
             >
               Lihat semua notifikasi
             </DropdownMenuItem>

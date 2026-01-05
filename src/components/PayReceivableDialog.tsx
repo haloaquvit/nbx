@@ -18,13 +18,15 @@ import { useBranch } from "@/contexts/BranchContext"
 import { useQueryClient } from "@tanstack/react-query"
 import { supabase } from "@/integrations/supabase/client"
 import { Wallet } from "lucide-react"
-import { createReceivablePaymentJournal } from "@/services/journalService"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeDateString } from "@/utils/officeTime"
+// journalService removed - now using RPC for all journal operations
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
 // ============================================================================
 // Semua saldo akun HANYA dihitung dari journal_entries (tidak ada updateAccountBalance)
-// Pembayaran piutang menggunakan createReceivablePaymentJournal
+// Pembayaran piutang menggunakan RPC create_receivable_payment_journal_rpc
 // ============================================================================
 
 // Base payment schema - will be refined per transaction
@@ -51,6 +53,7 @@ interface PayReceivableDialogProps {
 export function PayReceivableDialog({ open, onOpenChange, transaction }: PayReceivableDialogProps) {
   const { toast } = useToast()
   const { user } = useAuth()
+  const { timezone } = useTimezone()
   const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
   const { accounts, getEmployeeCashAccount } = useAccounts()
@@ -112,25 +115,30 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
       }
 
       // ============================================================================
-      // AUTO-GENERATE JOURNAL FOR RECEIVABLE PAYMENT
+      // AUTO-GENERATE JOURNAL FOR RECEIVABLE PAYMENT VIA RPC
       // Dr. Kas/Bank         xxx
       //   Cr. Piutang Usaha       xxx
       // ============================================================================
       if (currentBranch?.id) {
-        const journalResult = await createReceivablePaymentJournal({
-          receivableId: transaction.id,
-          paymentDate: new Date(),
-          amount: data.amount,
-          customerName: transaction.customerName || 'Customer',
-          invoiceNumber: transaction.id,
-          branchId: currentBranch.id,
-          paymentAccountId: data.paymentAccountId, // Use selected account
-        });
+        const { data: journalResultRaw, error: journalError } = await supabase
+          .rpc('create_receivable_payment_journal_rpc', {
+            p_branch_id: currentBranch.id,
+            p_transaction_id: transaction.id,
+            p_payment_date: getOfficeDateString(timezone),
+            p_amount: data.amount,
+            p_customer_name: transaction.customerName || 'Customer',
+            p_payment_account_id: data.paymentAccountId,
+          });
 
-        if (journalResult.success) {
-          console.log('✅ Receivable payment journal auto-generated:', journalResult.journalId);
+        if (journalError) {
+          console.warn('⚠️ Failed to create receivable payment journal via RPC:', journalError.message);
         } else {
-          console.warn('⚠️ Failed to create receivable payment journal:', journalResult.error);
+          const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw;
+          if (journalResult?.success) {
+            console.log('✅ Receivable payment journal auto-generated via RPC:', journalResult.journal_id);
+          } else {
+            console.warn('⚠️ RPC returned error:', journalResult?.error_message);
+          }
         }
       }
 

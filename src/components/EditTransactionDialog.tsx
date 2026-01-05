@@ -16,6 +16,8 @@ import { useProducts } from '@/hooks/useProducts'
 import { useAccounts } from '@/hooks/useAccounts'
 import { calculatePPNWithMode, getDefaultPPNPercentage } from '@/utils/ppnCalculations'
 import { Trash2, Plus } from 'lucide-react'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeTime } from '@/utils/officeTime'
 
 interface EditTransactionDialogProps {
   open: boolean
@@ -38,9 +40,10 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
   const { customers } = useCustomers()
   const { products } = useProducts()
   const { accounts } = useAccounts()
+  const { timezone } = useTimezone()
 
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null)
-  const [orderDate, setOrderDate] = useState<Date | undefined>(new Date())
+  const [orderDate, setOrderDate] = useState<Date | undefined>(getOfficeTime(timezone))
   const [dueDate, setDueDate] = useState('')
   const [paymentAccountId, setPaymentAccountId] = useState<string>('')
   const [items, setItems] = useState<FormTransactionItem[]>([])
@@ -155,7 +158,7 @@ export function EditTransactionDialog({ open, onOpenChange, transaction }: EditT
       customerId: selectedCustomer.id,
       customerName: selectedCustomer.name,
       paymentAccountId: paymentAccountId || null,
-      orderDate: orderDate || new Date(),
+      orderDate: orderDate || getOfficeTime(timezone),
       dueDate: sisaTagihan > 0 ? new Date(dueDate) : null,
       items: transactionItems,
       subtotal: ppnCalculation.subtotal,

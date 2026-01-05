@@ -23,6 +23,8 @@ import { Badge } from "./ui/badge"
 import { useAccounts } from "@/hooks/useAccounts"
 import { Trash2 } from "lucide-react"
 import { PanjarReceiptPDF } from "./PanjarReceiptPDF"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +50,7 @@ type AdvanceFormData = z.infer<typeof advanceSchema>
 export function EmployeeAdvanceManagement() {
   const { toast } = useToast()
   const { user } = useAuth()
+  const { timezone } = useTimezone()
   const { users: employees, isLoading: loadingUsers } = useUsers({ filterByBranch: true })
   const { accounts, isLoading: loadingAccounts } = useAccounts()
   const { advances, isLoading: loadingAdvances, addAdvance, deleteAdvance, isError, error: advancesError } = useEmployeeAdvances()
@@ -63,7 +66,7 @@ export function EmployeeAdvanceManagement() {
     defaultValues: {
       employeeId: "",
       amount: 0,
-      date: new Date(),
+      date: getOfficeTime(timezone),
       notes: "",
       accountId: "",
     }
@@ -92,7 +95,7 @@ export function EmployeeAdvanceManagement() {
     addAdvance.mutate(newAdvanceData, {
       onSuccess: () => {
         toast({ title: "Sukses", description: "Panjar berhasil dicatat." })
-        reset({ date: new Date(), amount: 0, employeeId: '', notes: '', accountId: '' })
+        reset({ date: getOfficeTime(timezone), amount: 0, employeeId: '', notes: '', accountId: '' })
       },
       onError: (error) => {
         toast({ variant: "destructive", title: "Gagal", description: error.message })
@@ -184,14 +187,16 @@ export function EmployeeAdvanceManagement() {
                   <Input
                     type="date"
                     {...register("date", {
-                      setValueAs: (value: string) => {
+                      setValueAs: (value: string | Date) => {
                         // Parse date string as local date (avoid timezone shift)
                         if (!value) return new Date();
+                        if (value instanceof Date) return value;
+                        if (typeof value !== 'string') return new Date();
                         const [year, month, day] = value.split('-').map(Number);
                         return new Date(year, month - 1, day, 12, 0, 0); // noon to avoid timezone issues
                       }
                     })}
-                    defaultValue={format(new Date(), 'yyyy-MM-dd')}
+                    defaultValue={format(getOfficeTime(timezone), 'yyyy-MM-dd')}
                     disabled={!isOwnerRole}
                   />
                   {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
@@ -215,15 +220,15 @@ export function EmployeeAdvanceManagement() {
             {isViewOnly ? 'Data Panjar Saya' : 'Riwayat Panjar Karyawan'}
           </CardTitle>
           <CardDescription>
-            {isViewOnly 
-              ? 'Berikut adalah data panjar yang pernah Anda terima' 
+            {isViewOnly
+              ? 'Berikut adalah data panjar yang pernah Anda terima'
               : 'Klik nama karyawan untuk melihat detail panjar'
             }
           </CardDescription>
           {isViewOnly && (
             <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-sm text-blue-800">
-                <span className="font-medium">Info:</span> Anda hanya dapat melihat data panjar pribadi Anda. 
+                <span className="font-medium">Info:</span> Anda hanya dapat melihat data panjar pribadi Anda.
                 Untuk mengelola panjar karyawan lain, hubungi Admin/Owner/Kasir.
               </p>
             </div>
@@ -241,7 +246,7 @@ export function EmployeeAdvanceManagement() {
               {Object.entries(groupedAdvances).map(([employeeName, employeeAdvances]) => {
                 const totalDebt = getEmployeeTotalDebt(employeeAdvances);
                 const hasUnpaidAdvances = employeeAdvances.some(adv => adv.remainingAmount > 0);
-                
+
                 return (
                   <AccordionItem key={employeeName} value={employeeName}>
                     <AccordionTrigger className="hover:no-underline">
@@ -287,10 +292,10 @@ export function EmployeeAdvanceManagement() {
                               <div className="flex items-center gap-2">
                                 <PanjarReceiptPDF advance={adv} />
                                 {isAdminOrOwnerOrCashier && (
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={() => handleOpenRepayDialog(adv)} 
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleOpenRepayDialog(adv)}
                                     disabled={adv.remainingAmount <= 0}
                                   >
                                     Bayar Cicilan

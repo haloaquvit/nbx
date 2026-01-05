@@ -25,4 +25,6 @@ export interface Employee {
   address: string;
   status: EmployeeStatus;
   branchId?: string; // Branch ID untuk multi-branch support
+  avatar?: string; // URL foto profil karyawan
+  position?: string; // Jabatan/posisi karyawan
 }

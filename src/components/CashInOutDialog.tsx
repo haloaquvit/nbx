@@ -15,8 +15,10 @@ import { supabase } from "@/integrations/supabase/client"
 import { useQueryClient } from "@tanstack/react-query"
 import { useBranch } from "@/contexts/BranchContext"
 import { TrendingUp, TrendingDown } from "lucide-react"
-import { createManualCashInJournal, createManualCashOutJournal } from "@/services/journalService"
 import { useState, useEffect } from "react"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeDateString } from "@/utils/officeTime"
+// journalService removed - now using RPC for all journal operations
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -47,6 +49,7 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
   const { toast } = useToast()
   const { user } = useAuth()
   const { currentBranch } = useBranch()
+  const { timezone } = useTimezone()
   const queryClient = useQueryClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
   
@@ -101,36 +104,24 @@ export function CashInOutDialog({ open, onOpenChange, type, title, description }
       // Kas Masuk: Dr. Kas, Cr. Pendapatan Lain-lain
       // Kas Keluar: Dr. Beban Lain-lain, Cr. Kas
       // ============================================================================
-      let journalResult;
-      if (type === "in") {
-        journalResult = await createManualCashInJournal({
-          referenceId,
-          transactionDate: new Date(),
-          amount: data.amount,
-          description: data.description,
-          cashAccountId: selectedAccount.id,
-          cashAccountCode: selectedAccount.code || '',
-          cashAccountName: selectedAccount.name,
-          branchId: currentBranch.id,
+      // Create journal via RPC
+      const rpcName = type === "in" ? 'create_manual_cash_in_journal_rpc' : 'create_manual_cash_out_journal_rpc';
+      const { data: journalResultRaw, error: journalError } = await supabase
+        .rpc(rpcName, {
+          p_branch_id: currentBranch.id,
+          p_reference_id: referenceId,
+          p_transaction_date: getOfficeDateString(timezone),
+          p_amount: data.amount,
+          p_description: data.description,
+          p_cash_account_id: selectedAccount.id,
         });
-      } else {
-        journalResult = await createManualCashOutJournal({
-          referenceId,
-          transactionDate: new Date(),
-          amount: data.amount,
-          description: data.description,
-          cashAccountId: selectedAccount.id,
-          cashAccountCode: selectedAccount.code || '',
-          cashAccountName: selectedAccount.name,
-          branchId: currentBranch.id,
-        });
+
+      const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw;
+      if (journalError || !journalResult?.success) {
+        throw new Error(journalError?.message || journalResult?.error_message || 'Gagal membuat jurnal kas');
       }
 
-      if (!journalResult.success) {
-        throw new Error(journalResult.error || 'Gagal membuat jurnal kas');
-      }
-
-      console.log(`✅ Jurnal kas ${type} auto-generated:`, journalResult.journalId);
+      console.log(`✅ Jurnal kas ${type} via RPC:`, journalResult.journal_id);
 
       // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
 

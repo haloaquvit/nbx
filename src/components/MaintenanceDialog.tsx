@@ -8,6 +8,8 @@ import { useCreateMaintenance, useUpdateMaintenance } from "@/hooks/useMaintenan
 import { useAssets } from "@/hooks/useAssets"
 import { AssetMaintenance, MaintenanceFormData } from "@/types/assets"
 import { useToast } from "@/components/ui/use-toast"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 interface MaintenanceDialogProps {
   open: boolean
@@ -17,6 +19,7 @@ interface MaintenanceDialogProps {
 
 export function MaintenanceDialog({ open, onOpenChange, maintenance }: MaintenanceDialogProps) {
   const { toast } = useToast()
+  const { timezone } = useTimezone()
   const createMaintenance = useCreateMaintenance()
   const updateMaintenance = useUpdateMaintenance()
   const { data: assets = [], isLoading: assetsLoading } = useAssets()
@@ -58,10 +61,10 @@ export function MaintenanceDialog({ open, onOpenChange, maintenance }: Maintenan
         recurrenceUnit: "months",
         estimatedCost: 0,
         notifyBeforeDays: 7,
-        scheduledDate: new Date(),
+        scheduledDate: getOfficeTime(timezone),
       })
     }
-  }, [maintenance, open])
+  }, [maintenance, open, timezone])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

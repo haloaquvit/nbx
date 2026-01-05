@@ -112,7 +112,7 @@ export const useProductStockMovements = () => {
         productId,
         quantity,
         referenceId,
-        'transaction',
+        'transaction', // Using 'transaction' as generic type
         currentBranch?.id
       );
 
@@ -138,6 +138,7 @@ export const useProductStockMovements = () => {
           notes,
           user_id: user?.id,
           user_name: profile?.full_name || user?.email,
+          unit_cost: fifoResult.success && fifoResult.total_hpp ? fifoResult.total_hpp / quantity : 0
         })
         .select('*, products(name)')
         .single();
@@ -171,7 +172,7 @@ export const useProductStockMovements = () => {
 
       const previousStock = Number(stockData?.current_stock) || 0;
 
-      // Get product cost price for new batch
+      // Get product cost price just for reference
       const { data: product } = await supabase
         .from('products')
         .select('cost_price')
@@ -179,24 +180,23 @@ export const useProductStockMovements = () => {
         .single();
 
       const unitCost = Number(product?.cost_price) || 0;
+      const referenceId = `STOCK-IN-${Date.now()}`;
 
-      // Create new inventory batch
-      const { error: batchError } = await supabase
-        .from('inventory_batches')
-        .insert({
-          product_id: productId,
-          branch_id: currentBranch?.id,
-          batch_date: new Date().toISOString(),
-          initial_quantity: quantity,
-          remaining_quantity: quantity,
-          unit_cost: unitCost,
-          notes: `Stock In: ${reason} - ${notes || ''}`,
-        });
+      // Use RPC to create new inventory batch (Atomic)
+      const restoreResult = await restoreStockFIFO(
+        productId,
+        quantity,
+        referenceId,
+        'stock_in', // Custom reference type
+        currentBranch?.id,
+        unitCost
+      );
 
-      if (batchError) throw new Error(batchError.message);
+      if (!restoreResult.success) {
+        throw new Error(restoreResult.error_message || 'Gagal menambahkan stok');
+      }
 
       const newStock = previousStock + quantity;
-      const referenceId = `STOCK-IN-${Date.now()}`;
 
       // Record the movement
       const { data: movement, error } = await supabase
@@ -214,13 +214,14 @@ export const useProductStockMovements = () => {
           notes,
           user_id: user?.id,
           user_name: profile?.full_name || user?.email,
+          unit_cost: unitCost
         })
         .select('*, products(name)')
         .single();
 
       if (error) throw new Error(error.message);
 
-      console.log(`✅ Stock IN: ${quantity} units`);
+      console.log(`✅ Stock IN: ${quantity} units via RPC`);
       return fromDb(movement);
     },
     onSuccess: () => {
@@ -245,17 +246,31 @@ export const useProductStockMovements = () => {
 
       // Reverse the movement
       if (movement.type === 'OUT') {
-        // Restore stock
+        // Was OUT, so Restore stock (IN)
         const restoreResult = await restoreStockFIFO(
           movement.product_id,
           movement.quantity,
           movement.reference_id || movementId,
-          'transaction',
+          'void_movement',
           movement.branch_id
         );
 
         if (!restoreResult.success) {
           throw new Error(restoreResult.error_message || 'Gagal mengembalikan stok');
+        }
+      } else {
+        // Was IN, so Consume stock (OUT)
+        // This handles voiding a "stock in" or adjustment
+        const consumeResult = await consumeStockFIFO(
+          movement.product_id,
+          movement.quantity,
+          movement.reference_id || movementId,
+          'void_movement',
+          movement.branch_id
+        );
+
+        if (!consumeResult.success) {
+          throw new Error(consumeResult.error_message || 'Gagal membatalkan stock in');
         }
       }
 

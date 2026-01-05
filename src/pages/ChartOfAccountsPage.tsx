@@ -50,7 +50,7 @@ import {
   Wallet
 } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
-import { createInventoryOpeningBalanceJournal, createAllOpeningBalanceJournal } from "@/services/journalService"
+// journalService removed - now using RPC for all journal operations
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
@@ -649,23 +649,26 @@ export default function ChartOfAccountsPage() {
     setIsSyncing(true)
 
     try {
-      const result = await createInventoryOpeningBalanceJournal({
-        productsInventoryValue: Math.max(0, productsNeedJournal),
-        materialsInventoryValue: Math.max(0, materialsNeedJournal),
-        branchId: currentBranch.id,
-        openingDate: new Date()
-      })
-
-      if (result.success) {
-        toast({
-          title: "Sinkronisasi Berhasil",
-          description: `Jurnal saldo awal persediaan berhasil dibuat (ID: ${result.journalId?.substring(0, 8)}...)`
+      // Create inventory opening balance journal via RPC
+      const { data: resultRaw, error: rpcError } = await supabase
+        .rpc('create_inventory_opening_balance_journal_rpc', {
+          p_branch_id: currentBranch.id,
+          p_products_value: Math.max(0, productsNeedJournal),
+          p_materials_value: Math.max(0, materialsNeedJournal),
+          p_opening_date: new Date().toISOString().split('T')[0],
         })
-        setIsSyncDialogOpen(false)
-        setInventoryData(null)
-      } else {
-        throw new Error(result.error || 'Unknown error')
+
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
+      if (rpcError || !result?.success) {
+        throw new Error(rpcError?.message || result?.error_message || 'Unknown error')
       }
+
+      toast({
+        title: "Sinkronisasi Berhasil",
+        description: `Jurnal saldo awal persediaan berhasil dibuat (ID: ${result.journal_id?.substring(0, 8)}...)`
+      })
+      setIsSyncDialogOpen(false)
+      setInventoryData(null)
     } catch (error: any) {
       console.error('Error syncing inventory:', error)
       toast({
@@ -746,21 +749,24 @@ export default function ChartOfAccountsPage() {
     setIsSyncingAllOpening(true)
 
     try {
-      const result = await createAllOpeningBalanceJournal({
-        branchId: currentBranch.id,
-        openingDate: new Date()
-      })
-
-      if (result.success) {
-        toast({
-          title: "Sinkronisasi Berhasil",
-          description: `Jurnal saldo awal berhasil dibuat untuk ${result.summary?.accountsProcessed || 0} akun. Total Debit: Rp ${(result.summary?.totalDebit || 0).toLocaleString('id-ID')}`
+      // Create all opening balance journals via RPC
+      const { data: resultRaw, error: rpcError } = await supabase
+        .rpc('create_all_opening_balance_journal_rpc', {
+          p_branch_id: currentBranch.id,
+          p_opening_date: new Date().toISOString().split('T')[0],
         })
-        setIsAllOpeningDialogOpen(false)
-        setOpeningBalanceData(null)
-      } else {
-        throw new Error(result.error || 'Unknown error')
+
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw
+      if (rpcError || !result?.success) {
+        throw new Error(rpcError?.message || result?.error_message || 'Unknown error')
       }
+
+      toast({
+        title: "Sinkronisasi Berhasil",
+        description: `Jurnal saldo awal berhasil dibuat untuk ${result.accounts_processed || 0} akun. Total Debit: Rp ${(result.total_debit || 0).toLocaleString('id-ID')}`
+      })
+      setIsAllOpeningDialogOpen(false)
+      setOpeningBalanceData(null)
     } catch (error: any) {
       console.error('Error syncing opening balances:', error)
       toast({

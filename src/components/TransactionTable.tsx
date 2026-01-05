@@ -8,11 +8,13 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText, Calendar, Truck, Filter, ChevronDown, ChevronUp } from "lucide-react"
+import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText, Calendar, Truck, Filter, ChevronDown, ChevronUp, Printer } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { useNavigate } from "react-router-dom"
+import { useCompanySettings } from "@/hooks/useCompanySettings"
+import { useBranch } from "@/contexts/BranchContext"
 
 import { Badge, badgeVariants } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,12 +51,15 @@ import { Skeleton } from "./ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
 import { UserRole } from "@/types/user"
 import { EditTransactionDialog } from "./EditTransactionDialog"
+import { MigrationTransactionDialog } from "./MigrationTransactionDialog"
 import { isOwner } from '@/utils/roleUtils'
 import { useDeliveryEmployees, useDeliveryHistory } from "@/hooks/useDeliveries"
 import { useAccounts } from "@/hooks/useAccounts"
 
 
 export function TransactionTable() {
+  const { settings: companyInfo } = useCompanySettings();
+  const { currentBranch } = useBranch();
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -117,6 +122,7 @@ export function TransactionTable() {
   const [selectedTransaction, setSelectedTransaction] = React.useState<Transaction | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
   const [transactionToEdit, setTransactionToEdit] = React.useState<Transaction | null>(null);
+  const [isMigrationDialogOpen, setIsMigrationDialogOpen] = React.useState(false);
 
   // Helper function to check if payment is overdue
   const isPaymentOverdue = (transaction: Transaction): boolean => {
@@ -128,7 +134,7 @@ export function TransactionTable() {
   const getPaymentCategory = (transaction: Transaction): string => {
     const paidAmount = transaction.paidAmount || 0;
     const total = transaction.total;
-    
+
     if (paidAmount >= total) return 'lunas';
     if (paidAmount === 0) {
       if (transaction.paymentStatus === 'Kredit' && isPaymentOverdue(transaction)) {
@@ -157,7 +163,7 @@ export function TransactionTable() {
       filtered = filtered.filter(transaction => {
         if (!transaction.orderDate) return false;
         const transactionDate = new Date(transaction.orderDate);
-        
+
         if (dateRange.from && dateRange.to) {
           return isWithinInterval(transactionDate, {
             start: startOfDay(dateRange.from),
@@ -168,7 +174,7 @@ export function TransactionTable() {
         } else if (dateRange.to) {
           return transactionDate <= endOfDay(dateRange.to);
         }
-        
+
         return true;
       });
     }
@@ -234,7 +240,7 @@ export function TransactionTable() {
       const searchLower = customerSearch.toLowerCase().trim();
       filtered = filtered.filter(transaction => {
         return transaction.customerName?.toLowerCase().includes(searchLower) ||
-               transaction.id?.toLowerCase().includes(searchLower);
+          transaction.id?.toLowerCase().includes(searchLower);
       });
     }
 
@@ -283,7 +289,7 @@ export function TransactionTable() {
     });
     return Array.from(cashierSet).sort();
   }, [transactions]);
-  
+
 
 
   // confirmCancelProduction function removed - no longer needed
@@ -313,6 +319,201 @@ export function TransactionTable() {
   };
 
 
+  // Calculate delivery status helper
+  const getDeliveryStatus = (transaction: Transaction) => {
+    if (!transaction.items || transaction.items.length === 0) return { delivered: false, completed: false, remaining: 0 };
+
+    // We need real delivery data to calculate this accurately.
+    // Since we don't have full delivery history for all transactions fetched in this list context efficiently,
+    // we might need to rely on what's available. `useDeliveryHistory` gives us some data.
+    // For now, we'll check if we have delivery records in `transactionDriverMap` as a proxy for "has delivery".
+    // A robust "completed" check requires comparing total ordered vs total delivered for each item.
+    // If the transaction object has a 'status' field that indicates partial/full delivery, use that.
+
+    // Fallback: If we have drivers assigned, it's at least partially delivered.
+    const hasDrivers = transactionDriverMap.has(transaction.id);
+    return { delivered: hasDrivers, completed: false }; // We can't know for sure if it's 100% completed without detailed item tracking here.
+  };
+
+  // Cetak Dot Matrix - optimal untuk 1/2 A4 (A5: 148mm x 210mm)
+  const handleDotMatrixPrint = (transaction: Transaction) => {
+    if (!transaction) return;
+
+    // Use branch or company info
+    const info = currentBranch || companyInfo;
+
+    const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : null;
+    const paidAmount = transaction.paidAmount || 0;
+    const remaining = transaction.total - paidAmount;
+
+    const formatNumber = (num: number) => new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
+
+    // Singkat satuan
+    const shortUnit = (unit: string) => {
+      const unitMap: Record<string, string> = {
+        'Karton': 'Krt', 'karton': 'Krt',
+        'Lusin': 'Lsn', 'lusin': 'Lsn',
+        'Botol': 'Btl', 'botol': 'Btl',
+        'Pieces': 'Pcs', 'pieces': 'Pcs', 'Pcs': 'Pcs', 'pcs': 'Pcs',
+        'Kilogram': 'Kg', 'kilogram': 'Kg',
+        'Gram': 'Gr', 'gram': 'Gr',
+        'Liter': 'Ltr', 'liter': 'Ltr',
+        'Pack': 'Pck', 'pack': 'Pck',
+        'Dus': 'Dus', 'dus': 'Dus',
+        'Box': 'Box', 'box': 'Box',
+        'Unit': 'Unt', 'unit': 'Unt',
+      };
+      return unitMap[unit] || unit;
+    };
+
+    const dotMatrixContent = `
+      <table class="main-table" style="width: 100%; border-collapse: collapse;">
+        <!-- Header Row -->
+        <tr>
+          <td colspan="5" style="border-bottom: 1px solid #000; padding-bottom: 2mm;">
+            <table style="width: 100%;">
+              <tr>
+                <td style="width: 40%; vertical-align: top;">
+                  <div style="font-size: 17pt; font-weight: bold;">FAKTUR PENJUALAN</div>
+                  <div style="font-size: 13pt; font-weight: bold;">${info?.name || ''}</div>
+                  <div style="font-size: 11pt;">
+                    ${info?.address || ''}<br/>
+                    KANTOR: ${String(info?.phone || '').replace(/,/g, '')}
+                  </div>
+                </td>
+                <td style="width: 60%; vertical-align: top; font-size: 11pt;">
+                  <table style="width: 100%;">
+                    <tr><td width="80">No</td><td>: ${transaction.id}</td><td width="50">SALES</td><td>: ${transaction.cashierName?.split(' ')[0] || 'KANTOR'}</td></tr>
+                    <tr><td>Tanggal</td><td>: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : '-'}</td><td>PPN</td><td>: ${transaction.ppnEnabled ? 'Ya' : '-'}</td></tr>
+                    <tr><td>Pelanggan</td><td colspan="3">: ${transaction.customerName}</td></tr>
+                    <tr><td>Alamat</td><td colspan="3">: -</td></tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Table Header -->
+        <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
+          <th style="padding: 1mm; text-align: left; width: 5%; font-size: 11pt;">No</th>
+          <th style="padding: 1mm; text-align: left; width: 45%; font-size: 11pt;">Nama Item</th>
+          <th style="padding: 1mm; text-align: center; width: 15%; font-size: 11pt;">Jml</th>
+          <th style="padding: 1mm; text-align: right; width: 17%; font-size: 11pt;">Harga</th>
+          <th style="padding: 1mm; text-align: right; width: 18%; font-size: 11pt;">Total</th>
+        </tr>
+
+        <!-- Items -->
+        ${transaction.items.filter(item => item.product?.name || item.name).map((item, idx) => `
+          <tr>
+            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${idx + 1}</td>
+            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product?.name || item.name}</td>
+            <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(item.quantity)} ${shortUnit(item.unit || '')}</td>
+            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price)}</td>
+            <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price * item.quantity)}</td>
+          </tr>
+        `).join('')}
+
+        <!-- Spacer row to push footer to bottom -->
+        <tr style="height: 100%;">
+          <td colspan="5" style="vertical-align: bottom;"></td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td colspan="5" style="border-top: 1px solid #000; padding-top: 2mm;">
+            <table style="width: 100%;">
+              <tr>
+                <td style="width: 55%; vertical-align: top;">
+                  <div style="font-size: 11pt; margin-bottom: 1mm;">Keterangan:</div>
+                  <table style="width: 90%; margin-top: 3mm;">
+                    <tr>
+                      <td style="width: 33%; text-align: center;">
+                        <div style="font-size: 11pt;">Hormat Kami</div>
+                        <div style="height: 12mm;"></div>
+                        <div style="font-size: 11pt;">(.................)</div>
+                      </td>
+                      <td style="width: 33%; text-align: center;">
+                        <div style="font-size: 11pt;">Penerima</div>
+                        <div style="height: 12mm;"></div>
+                        <div style="font-size: 11pt;">(.................)</div>
+                      </td>
+                    </tr>
+                  </table>
+                  <div style="font-size: 10pt; margin-top: 2mm;">
+                    ${companyInfo?.bankAccount1 ? `<strong>${companyInfo.bankAccount1}</strong> A.N ${companyInfo?.bankAccountName1 || companyInfo?.name || '-'}` : ''}
+                  </div>
+                </td>
+                <td style="width: 45%; vertical-align: top; font-size: 11pt;">
+                  <table style="width: 100%;">
+                    <tr><td>Sub Total</td><td style="text-align: right;">:</td><td style="text-align: right; width: 40%;">${formatNumber(transaction.subtotal || transaction.total)}</td></tr>
+                    ${transaction.ppnEnabled && (transaction.ppnAmount || 0) > 0 ? `<tr><td>PPN (${transaction.ppnPercentage || 11}%)</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(transaction.ppnAmount || 0)}</td></tr>` : ''}
+                    <tr><td>Total Akhir</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(transaction.total)}</td></tr>
+                    ${paidAmount > 0 ? `<tr><td>Tunai</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount)}</td></tr>` : ''}
+                    ${remaining > 0 ? `<tr><td>Kredit</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(remaining)}</td></tr>` : ''}
+                    ${paidAmount > transaction.total ? `<tr><td>Kembali</td><td style="text-align: right;">:</td><td style="text-align: right;">${formatNumber(paidAmount - transaction.total)}</td></tr>` : ''}
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Warning Footer -->
+        <tr>
+          <td colspan="5" style="border-top: 1px solid #000; padding-top: 1mm; font-size: 10pt;">
+            WAJIB CEK STOK ANDA SENDIRI SEBELUM BARANG TURUN, KEHILANGAN BUKAN TANGGUNG JAWAB KAMI
+          </td>
+        </tr>
+      </table>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+            <head>
+            <title>Faktur ${transaction.id}</title>
+            <meta charset="UTF-8">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold !important; }
+                @page { size: A5 landscape; margin: 10mm 5mm 5mm 5mm; }
+                @media print {
+                html, body { height: 100%; margin: 0; padding: 0; }
+                }
+                html, body {
+                height: 100%;
+                }
+                body {
+                font-family: 'Courier New', Courier, monospace;
+                font-weight: bold;
+                font-size: 10pt;
+                line-height: 1.4;
+                padding: 3mm 0 0 0;
+                background: white;
+                color: black;
+                display: flex;
+                flex-direction: column;
+                }
+                .main-table {
+                border-collapse: collapse;
+                width: 100%;
+                height: 100%;
+                }
+                table { border-collapse: collapse; width: 100%; }
+                td, th, div, span, p { font-weight: bold !important; }
+            </style>
+            </head>
+            <body onload="window.print(); window.onafterprint = function(){ window.close(); }">
+            ${dotMatrixContent}
+            </body>
+        </html>
+        `);
+      printWindow.document.close();
+    }
+  };
+
   const columns: ColumnDef<Transaction>[] = [
     {
       accessorKey: "id",
@@ -327,6 +528,45 @@ export function TransactionTable() {
           {row.getValue("customerName")}
         </div>
       ),
+    },
+    {
+      id: "items",
+      header: "Item Pesanan",
+      cell: ({ row }) => {
+        const transaction = row.original;
+        return (
+          <div className="text-sm space-y-1">
+            {transaction.items.map((item, idx) => (
+              <div key={idx} className="flex justify-between gap-4">
+                <span className="truncate max-w-[150px] text-muted-foreground" title={item.product?.name || item.name}>
+                  {item.quantity}x {item.product?.name || item.name}
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
+      id: "drivers",
+      header: "Supir",
+      cell: ({ row }) => {
+        const driverIds = transactionDriverMap.get(row.original.id);
+        if (!driverIds || driverIds.length === 0) return <span className="text-xs text-muted-foreground">-</span>;
+
+        return (
+          <div className="flex flex-col gap-1">
+            {driverIds.map(driverId => {
+              const driver = drivers.find(d => d.id === driverId);
+              return driver ? (
+                <Badge key={driverId} variant="secondary" className="text-[10px] w-fit">
+                  {driver.name}
+                </Badge>
+              ) : null;
+            })}
+          </div>
+        );
+      },
     },
     {
       accessorKey: "cashierName",
@@ -359,31 +599,6 @@ export function TransactionTable() {
       },
     },
     {
-      id: "ppnStatus",
-      header: "Status PPN",
-      cell: ({ row }) => {
-        const transaction = row.original;
-        if (!transaction.ppnEnabled) {
-          return <Badge variant="secondary">Non PPN</Badge>;
-        }
-        const mode = transaction.ppnMode || 'exclude';
-        return (
-          <Badge variant="default">
-            PPN {mode === 'include' ? 'Include' : 'Exclude'}
-          </Badge>
-        );
-      },
-      filterFn: (row, id, value) => {
-        const transaction = row.original;
-        if (value === "ppn") {
-          return transaction.ppnEnabled === true;
-        } else if (value === "non-ppn") {
-          return transaction.ppnEnabled === false;
-        }
-        return true; // show all for 'all' or empty value
-      },
-    },
-    {
       accessorKey: "total",
       header: () => <div className="text-right">Total</div>,
       cell: ({ row }) => {
@@ -404,10 +619,10 @@ export function TransactionTable() {
         const total = transaction.total;
         const paidAmount = transaction.paidAmount || 0;
         const category = getPaymentCategory(transaction);
-        
+
         let statusText = "";
         let variant: "default" | "secondary" | "destructive" | "outline" | "success" = "default";
-        
+
         switch (category) {
           case 'lunas':
             statusText = "Tunai";
@@ -429,7 +644,7 @@ export function TransactionTable() {
             statusText = "Unknown";
             variant = "default";
         }
-        
+
         return (
           <div className="space-y-1">
             <Badge variant={variant}>{statusText}</Badge>
@@ -463,6 +678,28 @@ export function TransactionTable() {
       header: "Aksi",
       cell: ({ row }) => {
         const transaction = row.original;
+
+        // Check if fully delivered to disable Antar button
+        // Note: Without exact delivery counts here, this is a best-effort check or visual toggle.
+        // Ideally we need aggregated delivery status from backend.
+        // For now, we always enable it unless we know it's done. 
+        // User asked to disable if done. Let's assume passed "status" might help, or we keep it enabled but handle it in detail.
+        // Correction: User said "tombol antar mati ketika sudah selesai". 
+        // We really need to filter `deliveryHistory` for this transaction ID to count items.
+
+        const myDeliveries = deliveryHistory?.filter(d => d.transactionId === transaction.id) || [];
+        // Calculate totals
+        let isFullyDelivered = false;
+        if (transaction.items && transaction.items.length > 0) {
+          const totalOrdered = transaction.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+          const totalDelivered = myDeliveries.reduce((sum, d) =>
+            sum + d.items.reduce((isum, di) => isum + (di.quantityDelivered || 0), 0)
+            , 0);
+
+          // Allow some float tolerance or just exact match
+          isFullyDelivered = totalDelivered >= totalOrdered;
+        }
+
         return (
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Button
@@ -483,18 +720,41 @@ export function TransactionTable() {
             >
               <Edit className="h-4 w-4" />
             </Button>
+
             <Button
               size="sm"
               onClick={(e) => {
                 e.stopPropagation()
-                navigate(`/transactions/${transaction.id}`)
+                // Navigate with a query param to auto-open delivery dialog
+                navigate(`/transactions/${transaction.id}?action=delivery`)
               }}
-              className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
-              title="Input Pengantaran"
+              disabled={isFullyDelivered}
+              className={cn(
+                "text-xs px-2 py-1",
+                isFullyDelivered
+                  ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+                  : "bg-green-600 hover:bg-green-700 text-white"
+              )}
+              title={isFullyDelivered ? "Pengantaran Selesai" : "Input Pengantaran"}
             >
               <Truck className="h-3 w-3 sm:mr-1" />
-              <span className="hidden sm:inline">Antar</span>
+              <span className="hidden sm:inline">{isFullyDelivered ? "Selesai" : "Antar"}</span>
             </Button>
+
+            {/* Dot Matrix Print Button */}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDotMatrixPrint(transaction);
+              }}
+              title="Cetak Faktur (Dot Matrix)"
+              className="hover-glow text-gray-600 hover:text-gray-900"
+            >
+              <Printer className="h-4 w-4" />
+            </Button>
+
             {isOwner(user) && (
               <Button
                 size="sm"
@@ -537,14 +797,14 @@ export function TransactionTable() {
       'Pelanggan': t.customerName,
       'Tgl Order': t.orderDate ? format(new Date(t.orderDate), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
       'Kasir': t.cashierName,
-      'Produk': t.items.filter(item => item.product?.name).map(item => item.product.name).join(", "),
+      'Item Pesanan': t.items.map(i => `${i.product?.name || i.name} (${i.quantity})`).join(", "),
       'Subtotal (DPP)': t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total,
       'PPN': t.ppnEnabled ? (t.ppnAmount || 0) : 0,
       'Total': t.total,
       'Dibayar': t.paidAmount || 0,
       'Sisa': t.total - (t.paidAmount || 0),
       'Status Pembayaran': (t.paidAmount || 0) === 0 ? 'Kredit' :
-                          (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
+        (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
       'Status PPN': t.ppnEnabled ? (t.ppnMode === 'include' ? 'PPN Include' : 'PPN Exclude') : 'Non PPN'
     }));
 
@@ -554,7 +814,7 @@ export function TransactionTable() {
       'Pelanggan': '',
       'Tgl Order': '',
       'Kasir': '',
-      'Produk': `TOTAL (${exportTransactions.length} transaksi)`,
+      'Item Pesanan': `TOTAL (${exportTransactions.length} transaksi)`,
       'Subtotal (DPP)': subtotalSum,
       'PPN': ppnSum,
       'Total': totalSum,
@@ -609,43 +869,38 @@ export function TransactionTable() {
 
     // Data table with PPN column
     autoTable(doc, {
-      head: [['No. Order', 'Pelanggan', 'Tgl Order', 'DPP', 'PPN', 'Total', 'Dibayar', 'Sisa', 'Status', 'PPN']],
+      head: [['No. Order', 'Pelanggan', 'Tgl Order', 'Item Pesanan', 'Total', 'Dibayar', 'Sisa', 'Status']],
       body: [
         ...exportTransactions.map(t => {
-          const subtotal = t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total;
-          const ppn = t.ppnEnabled ? (t.ppnAmount || 0) : 0;
           return [
             t.id,
             t.customerName,
             t.orderDate ? format(new Date(t.orderDate), "dd/MM/yy", { locale: id }) : 'N/A',
-            formatCurrency(subtotal),
-            ppn > 0 ? formatCurrency(ppn) : '-',
+            t.items.map(i => `${i.product?.name || i.name} (${i.quantity})`).join(", "),
             formatCurrency(t.total),
             formatCurrency(t.paidAmount || 0),
             formatCurrency(t.total - (t.paidAmount || 0)),
             (t.paidAmount || 0) === 0 ? 'Kredit' :
-            (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit',
-            t.ppnEnabled ? (t.ppnMode === 'include' ? 'Inc' : 'Exc') : '-'
+              (t.paidAmount || 0) >= t.total ? 'Tunai' : 'Kredit'
           ];
         }),
         // Summary row
         [
           '',
           '',
-          `TOTAL (${exportTransactions.length})`,
-          formatCurrency(subtotalSum),
-          formatCurrency(ppnSum),
+          'TOTAL',
+          `(${exportTransactions.length} transaksi)`,
           formatCurrency(totalSum),
           formatCurrency(paidSum),
           formatCurrency(remainingSum),
-          '',
           ''
         ]
       ],
-      startY: 35,
+      startY: 40,
       styles: {
         fontSize: 7,
-        cellPadding: 1.5
+        cellPadding: 1.5,
+        overflow: 'linebreak'
       },
       headStyles: {
         fillColor: [41, 128, 185],
@@ -654,16 +909,14 @@ export function TransactionTable() {
         fontStyle: 'bold'
       },
       columnStyles: {
-        0: { cellWidth: 30 },
+        0: { cellWidth: 25 },
         1: { cellWidth: 35 },
         2: { cellWidth: 20 },
-        3: { cellWidth: 25, halign: 'right' },
-        4: { cellWidth: 22, halign: 'right' },
+        3: { cellWidth: 80 }, // Wider for items
+        4: { cellWidth: 25, halign: 'right' },
         5: { cellWidth: 25, halign: 'right' },
         6: { cellWidth: 25, halign: 'right' },
-        7: { cellWidth: 25, halign: 'right' },
-        8: { cellWidth: 18, halign: 'center' },
-        9: { cellWidth: 15, halign: 'center' }
+        7: { cellWidth: 20, halign: 'center' }
       },
       didParseCell: function (data: any) {
         // Highlight summary row
@@ -674,17 +927,14 @@ export function TransactionTable() {
         }
       }
     });
-    
+
     // Add filter info to filename
     let filename = `data-transaksi-${exportTransactions.length}-records`;
     if (dateRange.from && dateRange.to) {
       filename += `-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`;
     }
-    if (ppnFilter !== 'all') {
-      filename += `-${ppnFilter}`;
-    }
     filename += '.pdf';
-    
+
     doc.save(filename);
   };
 
@@ -694,7 +944,7 @@ export function TransactionTable() {
     const totalAmount = filteredTransactions.reduce((sum, t) => sum + t.total, 0);
     const paidAmount = filteredTransactions.reduce((sum, t) => sum + (t.paidAmount || 0), 0);
     const remainingAmount = totalAmount - paidAmount;
-    
+
     return {
       count: filteredTransactions.length,
       totalAmount,
@@ -754,185 +1004,185 @@ export function TransactionTable() {
           </Button>
         )}
       </div>
-      
+
       {/* Filter Controls */}
       {showFilters && (
         <div className="flex flex-col gap-4 p-4 border rounded-lg mb-4 bg-background">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium">Filter Transaksi</h3>
           </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {/* Date Range Filter */}
-          <div className="space-y-2 md:col-span-2 lg:col-span-1">
-            <label className="text-sm font-medium">Rentang Tanggal</label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !dateRange.from && !dateRange.to && "text-muted-foreground"
-                  )}
-                >
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {dateRange.from ? (
-                    dateRange.to ? (
-                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Date Range Filter */}
+            <div className="space-y-2 md:col-span-2 lg:col-span-1">
+              <label className="text-sm font-medium">Rentang Tanggal</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !dateRange.from && !dateRange.to && "text-muted-foreground"
+                    )}
+                  >
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {dateRange.from ? (
+                      dateRange.to ? (
+                        `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
+                      ) : (
+                        `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
+                      )
                     ) : (
-                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
-                    )
-                  ) : (
-                    "Pilih Rentang Tanggal"
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <CalendarComponent
-                  initialFocus
-                  mode="range"
-                  defaultMonth={dateRange.from}
-                  selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
-                  onSelect={(range) => {
-                    if (range) {
-                      setDateRange({ from: range.from, to: range.to });
-                    } else {
-                      setDateRange({ from: undefined, to: undefined });
-                    }
-                  }}
-                  numberOfMonths={2}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
+                      "Pilih Rentang Tanggal"
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange.from}
+                    selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
+                    onSelect={(range) => {
+                      if (range) {
+                        setDateRange({ from: range.from, to: range.to });
+                      } else {
+                        setDateRange({ from: undefined, to: undefined });
+                      }
+                    }}
+                    numberOfMonths={2}
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
 
-          {/* Payment Status Filter */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Status Pembayaran</label>
-            <Select value={paymentFilter} onValueChange={(value: 'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang') => setPaymentFilter(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih Status Pembayaran" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="lunas">Tunai</SelectItem>
-                <SelectItem value="belum-lunas">Kredit</SelectItem>
-                <SelectItem value="piutang">Kredit (Dibayar Sebagian)</SelectItem>
-                <SelectItem value="jatuh-tempo">Jatuh Tempo</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* PPN Status Filter */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Status PPN</label>
-            <Select value={ppnFilter} onValueChange={(value: 'all' | 'ppn' | 'non-ppn') => setPpnFilter(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih Status PPN" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Status</SelectItem>
-                <SelectItem value="ppn">PPN</SelectItem>
-                <SelectItem value="non-ppn">Non PPN</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Driver Filter */}
-          {drivers.length > 0 && (
+            {/* Payment Status Filter */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Supir (Driver)</label>
-              <Select value={driverFilter} onValueChange={(value: string) => setDriverFilter(value)}>
+              <label className="text-sm font-medium">Status Pembayaran</label>
+              <Select value={paymentFilter} onValueChange={(value: 'all' | 'lunas' | 'belum-lunas' | 'jatuh-tempo' | 'piutang') => setPaymentFilter(value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Pilih Supir" />
+                  <SelectValue placeholder="Pilih Status Pembayaran" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Supir</SelectItem>
-                  {drivers.map(driver => (
-                    <SelectItem key={driver.id} value={driver.id}>
-                      {driver.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="lunas">Tunai</SelectItem>
+                  <SelectItem value="belum-lunas">Kredit</SelectItem>
+                  <SelectItem value="piutang">Kredit (Dibayar Sebagian)</SelectItem>
+                  <SelectItem value="jatuh-tempo">Jatuh Tempo</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          {/* Payment Account Filter */}
-          {paymentAccounts.length > 0 && (
+            {/* PPN Status Filter */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Akun Pembayaran</label>
-              <Select value={paymentAccountFilter} onValueChange={(value: string) => setPaymentAccountFilter(value)}>
+              <label className="text-sm font-medium">Status PPN</label>
+              <Select value={ppnFilter} onValueChange={(value: 'all' | 'ppn' | 'non-ppn') => setPpnFilter(value)}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Pilih Akun Pembayaran" />
+                  <SelectValue placeholder="Pilih Status PPN" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Semua Akun</SelectItem>
-                  {paymentAccounts.map(account => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.code ? `${account.code} - ${account.name}` : account.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="ppn">PPN</SelectItem>
+                  <SelectItem value="non-ppn">Non PPN</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          {/* Customer Type Filter */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Tipe Pelanggan</label>
-            <Select value={customerTypeFilter} onValueChange={(value: 'all' | 'Rumahan' | 'Kios/Toko') => setCustomerTypeFilter(value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih Tipe Pelanggan" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Tipe</SelectItem>
-                <SelectItem value="Rumahan">Rumahan</SelectItem>
-                <SelectItem value="Kios/Toko">Kios/Toko</SelectItem>
-              </SelectContent>
-            </Select>
+            {/* Driver Filter */}
+            {drivers.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Supir (Driver)</label>
+                <Select value={driverFilter} onValueChange={(value: string) => setDriverFilter(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Supir" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Supir</SelectItem>
+                    {drivers.map(driver => (
+                      <SelectItem key={driver.id} value={driver.id}>
+                        {driver.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Payment Account Filter */}
+            {paymentAccounts.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Akun Pembayaran</label>
+                <Select value={paymentAccountFilter} onValueChange={(value: string) => setPaymentAccountFilter(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Akun Pembayaran" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Akun</SelectItem>
+                    {paymentAccounts.map(account => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.code ? `${account.code} - ${account.name}` : account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Customer Type Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tipe Pelanggan</label>
+              <Select value={customerTypeFilter} onValueChange={(value: 'all' | 'Rumahan' | 'Kios/Toko') => setCustomerTypeFilter(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih Tipe Pelanggan" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Tipe</SelectItem>
+                  <SelectItem value="Rumahan">Rumahan</SelectItem>
+                  <SelectItem value="Kios/Toko">Kios/Toko</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Retasi Filter */}
+            {uniqueRetasiNumbers.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Retasi (Driver)</label>
+                <Select value={retasiFilter} onValueChange={(value: string) => setRetasiFilter(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Retasi" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Retasi</SelectItem>
+                    {uniqueRetasiNumbers.map(retasiNum => (
+                      <SelectItem key={retasiNum} value={retasiNum}>
+                        {retasiNum}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Cashier Filter */}
+            {uniqueCashiers.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kasir</label>
+                <Select value={cashierFilter} onValueChange={(value: string) => setCashierFilter(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pilih Kasir" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Kasir</SelectItem>
+                    {uniqueCashiers.map(cashier => (
+                      <SelectItem key={cashier} value={cashier}>
+                        {cashier}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
-
-          {/* Retasi Filter */}
-          {uniqueRetasiNumbers.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Retasi (Driver)</label>
-              <Select value={retasiFilter} onValueChange={(value: string) => setRetasiFilter(value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih Retasi" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Retasi</SelectItem>
-                  {uniqueRetasiNumbers.map(retasiNum => (
-                    <SelectItem key={retasiNum} value={retasiNum}>
-                      {retasiNum}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* Cashier Filter */}
-          {uniqueCashiers.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Kasir</label>
-              <Select value={cashierFilter} onValueChange={(value: string) => setCashierFilter(value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih Kasir" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Semua Kasir</SelectItem>
-                  {uniqueCashiers.map(cashier => (
-                    <SelectItem key={cashier} value={cashier}>
-                      {cashier}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-        </div>
         </div>
       )}
 
@@ -973,7 +1223,7 @@ export function TransactionTable() {
           </div>
         </div>
       </div>
-      
+
       {/* Info & Actions - Different for mobile/desktop */}
       {isMobile ? (
         <div className="text-sm text-muted-foreground py-2">
@@ -993,6 +1243,12 @@ export function TransactionTable() {
               <FileDown className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Ekspor </span>PDF
             </Button>
+            {isOwner(user?.role) && (
+              <Button variant="outline" onClick={() => setIsMigrationDialogOpen(true)} className="text-xs sm:text-sm hover-glow bg-amber-50 border-amber-200 hover:bg-amber-100">
+                <FileText className="mr-2 h-3 w-3 sm:h-4 sm:w-4 text-amber-600" />
+                <span className="hidden sm:inline">Import </span>Migrasi
+              </Button>
+            )}
             <Button asChild>
               <Link to="/pos" className="text-xs sm:text-sm">
                 <PlusCircle className="mr-2 h-3 w-3 sm:h-4 sm:w-4" />
@@ -1058,30 +1314,30 @@ export function TransactionTable() {
         <div className="rounded-md border overflow-hidden">
           <div className="overflow-x-auto">
             <Table className="min-w-[800px]">
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => (<TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>))}</TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (<TableRow key={i}><TableCell colSpan={columns.length}><Skeleton className="h-8 w-full" /></TableCell></TableRow>))
-              ) : table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    onClick={() => navigate(`/transactions/${row.original.id}`)}
-                    className="cursor-pointer table-row-hover"
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : (
-                <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No results.</TableCell></TableRow>
-              )}
-            </TableBody>
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                  <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => (<TableHead key={header.id}>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</TableHead>))}</TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (<TableRow key={i}><TableCell colSpan={columns.length}><Skeleton className="h-8 w-full" /></TableCell></TableRow>))
+                ) : table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      onClick={() => navigate(`/transactions/${row.original.id}`)}
+                      className="cursor-pointer table-row-hover"
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No results.</TableCell></TableRow>
+                )}
+              </TableBody>
             </Table>
           </div>
         </div>
@@ -1124,6 +1380,12 @@ export function TransactionTable() {
           transaction={transactionToEdit}
         />
       )}
+
+      {/* Migration Dialog - Owner Only */}
+      <MigrationTransactionDialog
+        open={isMigrationDialogOpen}
+        onOpenChange={setIsMigrationDialogOpen}
+      />
     </div>
   )
 }

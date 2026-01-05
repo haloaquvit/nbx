@@ -22,6 +22,8 @@ import { supabase } from '@/integrations/supabase/client'
 import { useToast } from '@/components/ui/use-toast'
 import { format } from 'date-fns'
 import { id as localeId } from 'date-fns/locale/id'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeTime } from '@/utils/officeTime'
 
 interface SalesVisitDialogProps {
   open: boolean
@@ -49,6 +51,7 @@ export function SalesVisitDialog({
   const { user } = useAuth()
   const { currentBranch } = useBranch()
   const { toast } = useToast()
+  const { timezone } = useTimezone()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     purpose: '',
@@ -86,7 +89,7 @@ export function SalesVisitDialog({
           customer_id: customer.id,
           visited_by: user.id,
           visited_by_name: user.name,
-          visit_date: new Date().toISOString(),
+          visit_date: getOfficeTime(timezone).toISOString(),
           purpose: formData.purpose,
           notes: formData.notes || null,
           follow_up_date: formData.followUpDate || null,
@@ -155,7 +158,7 @@ export function SalesVisitDialog({
             <p className="text-xs text-muted-foreground">{customer?.address}</p>
             <p className="text-xs text-muted-foreground">
               <Calendar className="h-3 w-3 inline mr-1" />
-              {format(new Date(), "eeee, d MMMM yyyy - HH:mm", { locale: localeId })}
+              {format(getOfficeTime(timezone), "eeee, d MMMM yyyy - HH:mm", { locale: localeId })}
             </p>
           </div>
 

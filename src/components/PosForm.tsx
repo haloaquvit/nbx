@@ -41,6 +41,8 @@ import { useProductPricing, usePriceCalculation } from '@/hooks/usePricing'
 import { PricingService } from '@/services/pricingService'
 import { Link } from 'react-router-dom'
 import { quotationService, Quotation } from '@/services/quotationService'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeTime, getOfficeDateString } from '@/utils/officeTime'
 
 interface FormTransactionItem {
   id: number;
@@ -62,6 +64,7 @@ export const PosForm = () => {
   const [searchParams] = useSearchParams()
   const { user: currentUser } = useAuth()
   const { hasGranularPermission } = useGranularPermission()
+  const { timezone } = useTimezone()
   const queryClient = useQueryClient()
   const { products, isLoading: isLoadingProducts } = useProducts()
   const { materials } = useMaterials()
@@ -79,9 +82,9 @@ export const PosForm = () => {
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
   const [selectedSales, setSelectedSales] = useState<string>('none')
-  const [orderDate, setOrderDate] = useState<Date | undefined>(new Date())
+  const [orderDate, setOrderDate] = useState<Date | undefined>(() => getOfficeTime(timezone))
   const [dueDate, setDueDate] = useState(() => {
-    const date = new Date();
+    const date = getOfficeTime(timezone);
     date.setDate(date.getDate() + 14);
     return date.toISOString().split('T')[0];
   });
@@ -512,7 +515,7 @@ export const PosForm = () => {
       setIsOfficeSale(false);
       
       // Reset due date
-      const newDueDate = new Date();
+      const newDueDate = getOfficeTime(timezone);
       newDueDate.setDate(newDueDate.getDate() + 14);
       setDueDate(newDueDate.toISOString().split('T')[0]);
       
@@ -572,7 +575,7 @@ export const PosForm = () => {
       designerId: null,
       operatorId: null,
       paymentAccountId: paymentAccountId || null,
-      orderDate: orderDate || new Date(),
+      orderDate: orderDate || getOfficeTime(timezone),
       finishDate: null,
       dueDate: sisaTagihan > 0 ? new Date(dueDate) : null,
       items: transactionItems,
@@ -993,7 +996,21 @@ export const PosForm = () => {
             <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Tgl Order</label>
-                <DateTimePicker date={orderDate} setDate={setOrderDate} disabled={retasiBlocked} />
+                {currentUser?.role === 'owner' ? (
+                  <DateTimePicker date={orderDate} setDate={setOrderDate} disabled={retasiBlocked} />
+                ) : (
+                  <div className="flex items-center h-10 px-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm text-gray-700 dark:text-gray-300">
+                    {orderDate ? new Intl.DateTimeFormat('id-ID', {
+                      timeZone: timezone,
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    }).format(orderDate) : '-'}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1417,7 +1434,7 @@ export const PosForm = () => {
                       value={dueDate}
                       onChange={(e) => setDueDate(e.target.value)}
                       className="mt-1 text-sm"
-                      min={new Date().toISOString().split('T')[0]}
+                      min={getOfficeDateString(timezone)}
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Tenggat waktu pembayaran kredit</p>
 
@@ -1428,7 +1445,7 @@ export const PosForm = () => {
                         size="sm"
                         className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
                         onClick={() => {
-                          const date = new Date();
+                          const date = getOfficeTime(timezone);
                           date.setDate(date.getDate() + 3);
                           setDueDate(date.toISOString().split('T')[0]);
                         }}
@@ -1441,7 +1458,7 @@ export const PosForm = () => {
                         size="sm"
                         className="text-xs bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
                         onClick={() => {
-                          const date = new Date();
+                          const date = getOfficeTime(timezone);
                           date.setDate(date.getDate() + 7);
                           setDueDate(date.toISOString().split('T')[0]);
                         }}
@@ -1454,7 +1471,7 @@ export const PosForm = () => {
                         size="sm"
                         className="text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
                         onClick={() => {
-                          const date = new Date();
+                          const date = getOfficeTime(timezone);
                           date.setDate(date.getDate() + 14);
                           setDueDate(date.toISOString().split('T')[0]);
                         }}
@@ -1467,7 +1484,7 @@ export const PosForm = () => {
                         size="sm"
                         className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
                         onClick={() => {
-                          const date = new Date();
+                          const date = getOfficeTime(timezone);
                           date.setDate(date.getDate() + 21);
                           setDueDate(date.toISOString().split('T')[0]);
                         }}

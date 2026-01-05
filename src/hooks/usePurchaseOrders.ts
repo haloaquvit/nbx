@@ -1,58 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { PurchaseOrder, PurchaseOrderStatus } from '@/types/purchaseOrder'
 import { supabase } from '@/integrations/supabase/client'
-import { useExpenses } from './useExpenses'
-import { useMaterials } from './useMaterials'
-import { useProducts } from './useProducts'
-import { useMaterialMovements } from './useMaterialMovements'
-import { useAccountsPayable } from './useAccountsPayable'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
-import { findAccountByLookup, AccountLookupType } from '@/services/accountLookupService'
-import { Account } from '@/types/account'
-import { createMaterialPurchaseJournal, createProductPurchaseJournal, voidJournalsByReference } from '@/services/journalService'
-
-// Helper to map DB account to App account format
-const fromDbToAppAccount = (dbAccount: any): Account => ({
-  id: dbAccount.id,
-  name: dbAccount.name,
-  type: dbAccount.type,
-  balance: Number(dbAccount.balance) || 0,
-  initialBalance: Number(dbAccount.initial_balance) || 0,
-  isPaymentAccount: dbAccount.is_payment_account,
-  createdAt: new Date(dbAccount.created_at),
-  code: dbAccount.code || undefined,
-  parentId: dbAccount.parent_id || undefined,
-  level: dbAccount.level || 1,
-  normalBalance: dbAccount.normal_balance || 'DEBIT',
-  isHeader: dbAccount.is_header || false,
-  isActive: dbAccount.is_active !== false,
-  sortOrder: dbAccount.sort_order || 0,
-  branchId: dbAccount.branch_id || undefined,
-});
-
-// Helper to get account by lookup type (using name/type based matching)
-const getAccountByLookup = async (lookupType: AccountLookupType): Promise<{ id: string; name: string; code?: string; balance: number } | null> => {
-  const { data, error } = await supabase
-    .from('accounts')
-    .select('*')
-    .order('code');
-
-  if (error || !data) {
-    console.warn(`Failed to fetch accounts for ${lookupType} lookup:`, error?.message);
-    return null;
-  }
-
-  const accounts = data.map(fromDbToAppAccount);
-  const account = findAccountByLookup(accounts, lookupType);
-
-  if (!account) {
-    console.warn(`Account not found for lookup type: ${lookupType}`);
-    return null;
-  }
-
-  return { id: account.id, name: account.name, code: account.code, balance: account.balance || 0 };
-};
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeDateString } from '@/utils/officeTime'
+import { useAccountsPayable } from './useAccountsPayable'
 
 const fromDb = (dbPo: any): PurchaseOrder => ({
   id: dbPo.id,
@@ -87,163 +40,73 @@ const fromDb = (dbPo: any): PurchaseOrder => ({
   approvedBy: dbPo.approved_by,
 });
 
-const toDb = (appPo: Partial<PurchaseOrder>) => ({
-  id: appPo.id,
-  po_number: appPo.poNumber || null,
-  material_id: appPo.materialId,
-  material_name: appPo.materialName,
-  quantity: appPo.quantity,
-  unit: appPo.unit,
-  unit_price: appPo.unitPrice || null,
-  requested_by: appPo.requestedBy,
-  status: appPo.status,
-  notes: appPo.notes || null,
-  total_cost: appPo.totalCost || null,
-  subtotal: appPo.subtotal || null,
-  include_ppn: appPo.includePpn || false,
-  ppn_mode: appPo.ppnMode || 'exclude',
-  ppn_amount: appPo.ppnAmount || 0,
-  payment_account_id: appPo.paymentAccountId || null,
-  order_date: appPo.orderDate || null,
-  received_date: appPo.receivedDate || null,
-  payment_date: appPo.paymentDate || null,
-  supplier_name: appPo.supplierName || null,
-  supplier_contact: appPo.supplierContact || null,
-  supplier_id: appPo.supplierId || null,
-  quoted_price: appPo.quotedPrice || null,
-  expedition: appPo.expedition || null,
-  expected_delivery_date: appPo.expectedDeliveryDate || null,
-  branch_id: appPo.branchId || null,
-  approved_by: appPo.approvedBy || null,
-  approved_at: appPo.approvedAt || null,
-});
-
 export const usePurchaseOrders = () => {
   const queryClient = useQueryClient();
-  const { addExpense } = useExpenses();
-  const { addStock } = useMaterials();
-  const { updateStock: updateProductStock } = useProducts();
-  const { createMaterialMovement } = useMaterialMovements();
-  const { createAccountsPayable, payAccountsPayable } = useAccountsPayable();
   const { user } = useAuth();
-  const { currentBranch, canAccessAllBranches } = useBranch();
+  const { currentBranch } = useBranch();
+  const { timezone } = useTimezone();
+  const { payAccountsPayable } = useAccountsPayable();
 
   const { data: purchaseOrders, isLoading } = useQuery<PurchaseOrder[]>({
     queryKey: ['purchaseOrders', currentBranch?.id],
     queryFn: async () => {
-      let query = supabase
+      if (!currentBranch?.id) return [];
+      const { data, error } = await supabase
         .from('purchase_orders')
         .select('*')
+        .eq('branch_id', currentBranch.id)
         .order('created_at', { ascending: false });
 
-      // Apply branch filter (only if not head office viewing all branches)
-      if (currentBranch?.id) {
-        query = query.eq('branch_id', currentBranch.id);
-      }
-
-      const { data, error } = await query;
       if (error) throw new Error(error.message);
       return data ? data.map(fromDb) : [];
     },
     enabled: !!currentBranch,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes cache
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
   });
 
   const addPurchaseOrder = useMutation({
     mutationFn: async (newPoData: any): Promise<PurchaseOrder> => {
-      console.log('[addPurchaseOrder] Input data:', newPoData);
+      if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
 
-      const poId = `PO-${Date.now()}`;
+      const poHeader = {
+        requested_by: newPoData.requestedBy,
+        supplier_id: newPoData.supplierId,
+        supplier_name: newPoData.supplierName,
+        total_cost: newPoData.totalCost,
+        subtotal: newPoData.subtotal,
+        include_ppn: newPoData.includePpn,
+        ppn_mode: newPoData.ppnMode,
+        ppn_amount: newPoData.ppnAmount,
+        expedition: newPoData.expedition,
+        order_date: newPoData.orderDate,
+        expected_delivery_date: newPoData.expectedDeliveryDate,
+        notes: newPoData.notes,
+      };
 
-      // If multi-item PO (has items array)
-      if (newPoData.items && newPoData.items.length > 0) {
-        // Insert PO header
-        const poHeader = {
-          id: poId,
-          status: 'Pending',
-          requested_by: newPoData.requestedBy,
-          supplier_id: newPoData.supplierId,
-          supplier_name: newPoData.supplierName,
-          total_cost: newPoData.totalCost,
-          subtotal: newPoData.subtotal || null,
-          include_ppn: newPoData.includePpn || false,
-          ppn_mode: newPoData.ppnMode || 'exclude',
-          ppn_amount: newPoData.ppnAmount || 0,
-          expedition: newPoData.expedition || null,
-          order_date: newPoData.orderDate || new Date(),
-          expected_delivery_date: newPoData.expectedDeliveryDate || null,
-          notes: newPoData.notes || null,
-          branch_id: currentBranch?.id || null,
-          created_at: new Date(),
-        };
+      const poItems = (newPoData.items || []).map((item: any) => ({
+        material_id: item.materialId,
+        product_id: item.productId,
+        material_name: item.materialName,
+        product_name: item.productName,
+        item_type: item.itemType,
+        quantity: item.quantity,
+        unit_price: item.unitPrice,
+        unit: item.unit,
+        subtotal: item.subtotal,
+        notes: item.notes,
+      }));
 
-        console.log('[addPurchaseOrder] Inserting PO header:', poHeader);
+      const { data, error } = await supabase.rpc('create_purchase_order_atomic', {
+        p_po_header: poHeader,
+        p_po_items: poItems,
+        p_branch_id: currentBranch.id,
+      });
 
-        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-        const { data: poDataRaw, error: poError } = await supabase
-          .from('purchase_orders')
-          .insert(poHeader)
-          .select()
-          .order('id').limit(1);
+      if (error) throw error;
+      const res = Array.isArray(data) ? data[0] : data;
+      if (!res?.success) throw new Error(res?.error_message || 'Gagal membuat PO');
 
-        if (poError) {
-          console.error('[addPurchaseOrder] PO header insert error:', poError);
-          throw new Error(poError.message);
-        }
-        const poData = Array.isArray(poDataRaw) ? poDataRaw[0] : poDataRaw;
-        if (!poData) throw new Error('Failed to create purchase order');
-
-        // Insert PO items
-        const poItems = newPoData.items.map((item: any) => ({
-          purchase_order_id: poId,
-          material_id: item.materialId || null,
-          product_id: item.productId || null,
-          item_type: item.itemType || (item.materialId ? 'material' : 'product'),
-          quantity: item.quantity,
-          unit_price: item.unitPrice,
-          notes: item.notes || null,
-        }));
-
-        console.log('[addPurchaseOrder] Inserting PO items:', poItems);
-
-        const { error: itemsError } = await supabase
-          .from('purchase_order_items')
-          .insert(poItems);
-
-        if (itemsError) {
-          console.error('[addPurchaseOrder] PO items insert error:', itemsError);
-          throw new Error(itemsError.message);
-        }
-
-        console.log('[addPurchaseOrder] Multi-item PO created successfully');
-        return fromDb(poData);
-      } else {
-        // Legacy single-item PO
-        const dbData = toDb({
-          ...newPoData,
-          id: poId,
-          status: 'Pending',
-          createdAt: new Date(),
-        });
-
-        console.log('[addPurchaseOrder] DB data to insert (legacy):', dbData);
-
-        // Use .order().limit(1) - PostgREST requires explicit order when using limit
-        const { data: dataRaw, error } = await supabase.from('purchase_orders').insert(dbData).select().order('id').limit(1);
-
-        if (error) {
-          console.error('[addPurchaseOrder] Database error:', error);
-          throw new Error(error.message);
-        }
-
-        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-        if (!data) throw new Error('Failed to create purchase order');
-        console.log('[addPurchaseOrder] Success:', data);
-        return fromDb(data);
-      }
+      const { data: poData } = await supabase.from('purchase_orders').select('*').eq('id', res.po_id).single();
+      return fromDb(poData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
@@ -252,166 +115,27 @@ export const usePurchaseOrders = () => {
 
   const updatePoStatus = useMutation({
     mutationFn: async ({ poId, status, updateData }: { poId: string, status: PurchaseOrderStatus, updateData?: any }): Promise<PurchaseOrder> => {
-      const dbUpdateData = { status, ...updateData };
+      if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
 
-      // Use .order().limit(1) - PostgREST requires explicit order when using limit
-      const { data: dataRaw, error } = await supabase.from('purchase_orders').update(dbUpdateData).eq('id', poId).select().order('id').limit(1);
-      if (error) throw new Error(error.message);
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to update purchase order status');
-
-      // Create accounts payable when PO is approved
-      if (status === 'Approved' && data.total_cost && data.supplier_name) {
-        let dueDate: Date | undefined;
-
-        // Calculate due date based on supplier's payment terms
-        if (data.supplier_id) {
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: supplierDataRaw } = await supabase
-            .from('suppliers')
-            .select('payment_terms')
-            .eq('id', data.supplier_id)
-            .order('id').limit(1);
-          const supplierData = Array.isArray(supplierDataRaw) ? supplierDataRaw[0] : supplierDataRaw;
-
-          if (supplierData?.payment_terms) {
-            const paymentTerms = supplierData.payment_terms;
-            const today = new Date();
-
-            // Parse payment terms (e.g., "Net 30", "Net 60", "Cash")
-            if (paymentTerms.toLowerCase().includes('net')) {
-              const days = parseInt(paymentTerms.match(/\d+/)?.[0] || '30');
-              dueDate = new Date(today);
-              dueDate.setDate(today.getDate() + days);
-            } else if (paymentTerms.toLowerCase() === 'cash') {
-              // For cash, due date is same day
-              dueDate = today;
-            }
-          }
-        }
-
-        await createAccountsPayable.mutateAsync({
-          purchaseOrderId: data.id,
-          supplierName: data.supplier_name,
-          amount: data.total_cost,
-          dueDate: dueDate,
-          description: `Purchase Order ${data.id} - ${data.material_name}`,
-          status: 'Outstanding',
-          paidAmount: 0, // Always start with 0
+      if (status === 'Approved') {
+        if (!user) throw new Error('User tidak terautentikasi');
+        const { data, error } = await supabase.rpc('approve_purchase_order_atomic', {
+          p_po_id: poId,
+          p_branch_id: currentBranch.id,
+          p_user_id: user.id,
+          p_user_name: user.name || user.email || 'Unknown'
         });
 
-        // ============================================================================
-        // JURNAL PEMBELIAN (Saat PO di-approve oleh Owner/Admin)
-        //
-        // Untuk Bahan Baku:
-        // Dr. Persediaan Bahan Baku (1320)  xxx
-        //   Cr. Hutang Usaha (2110)              xxx
-        //
-        // Untuk Produk Jadi:
-        // Dr. Persediaan Barang Dagang (1310)  xxx
-        //   Cr. Hutang Usaha (2110)                 xxx
-        // ============================================================================
-        try {
-          // Fetch PO items to get material and product details
-          const { data: poItems } = await supabase
-            .from('purchase_order_items')
-            .select('*, materials:material_id(name), products:product_id(name)')
-            .eq('purchase_order_id', data.id);
-
-          // Separate materials and products
-          const materialItems = poItems?.filter((item: any) => item.material_id && !item.product_id) || [];
-          const productItems = poItems?.filter((item: any) => item.product_id && !item.material_id) || [];
-
-          // Calculate subtotals
-          const subtotalAll = poItems?.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0) || 0;
-          const materialSubtotal = materialItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
-          const productSubtotal = productItems.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
-
-          // Calculate PPN proportions if include_ppn is true
-          let materialTotal = materialSubtotal;
-          let productTotal = productSubtotal;
-          let materialPpn = 0;
-          let productPpn = 0;
-
-          if (data.include_ppn && data.ppn_amount > 0 && subtotalAll > 0) {
-            // Distribute PPN proportionally
-            if (materialSubtotal > 0) {
-              const materialPpnRatio = materialSubtotal / subtotalAll;
-              materialPpn = Math.round(data.ppn_amount * materialPpnRatio);
-              materialTotal = materialSubtotal + materialPpn;
-            }
-            if (productSubtotal > 0) {
-              const productPpnRatio = productSubtotal / subtotalAll;
-              productPpn = Math.round(data.ppn_amount * productPpnRatio);
-              productTotal = productSubtotal + productPpn;
-            }
-          }
-
-          // Build details strings
-          const materialDetails = materialItems.length > 0
-            ? materialItems.map((item: any) => `${item.materials?.name || 'Unknown'} x${item.quantity}`).join(', ')
-            : data.material_name || '';
-
-          const productDetails = productItems
-            .map((item: any) => `${item.products?.name || 'Unknown'} x${item.quantity}`)
-            .join(', ');
-
-          // Create journal for MATERIALS (-> Persediaan Bahan Baku 1320)
-          // Jika ada PPN, PPN Masukan dicatat ke Piutang Pajak (1230)
-          if (materialTotal > 0 && materialDetails && currentBranch?.id) {
-            const journalResult = await createMaterialPurchaseJournal({
-              poId: data.id,
-              poRef: data.id,
-              approvalDate: new Date(),
-              amount: materialTotal,
-              subtotal: materialSubtotal,
-              ppnAmount: materialPpn,
-              materialDetails,
-              supplierName: data.supplier_name,
-              branchId: currentBranch.id,
-            });
-
-            if (journalResult.success) {
-              console.log('✅ Jurnal pembelian bahan baku auto-generated:', journalResult.journalId);
-              if (materialPpn > 0) {
-                console.log('   ✅ PPN Masukan (Piutang Pajak) dicatat: Rp', materialPpn.toLocaleString('id-ID'));
-              }
-            } else {
-              console.warn('⚠️ Gagal membuat jurnal pembelian bahan:', journalResult.error);
-            }
-          }
-
-          // Create journal for PRODUCTS (-> Persediaan Barang Dagang 1310)
-          // Jika ada PPN, PPN Masukan dicatat ke Piutang Pajak (1230)
-          if (productTotal > 0 && productDetails && currentBranch?.id) {
-            const journalResult = await createProductPurchaseJournal({
-              poId: data.id,
-              poRef: data.id,
-              approvalDate: new Date(),
-              amount: productTotal,
-              subtotal: productSubtotal,
-              ppnAmount: productPpn,
-              productDetails,
-              supplierName: data.supplier_name,
-              branchId: currentBranch.id,
-            });
-
-            if (journalResult.success) {
-              console.log('✅ Jurnal pembelian produk jadi auto-generated:', journalResult.journalId);
-              if (productPpn > 0) {
-                console.log('   ✅ PPN Masukan (Piutang Pajak) dicatat: Rp', productPpn.toLocaleString('id-ID'));
-              }
-            } else {
-              console.warn('⚠️ Gagal membuat jurnal pembelian produk:', journalResult.error);
-            }
-          }
-        } catch (journalError) {
-          console.error('Error creating purchase journal:', journalError);
-          // Don't fail PO approval if journal fails
-        }
+        if (error) throw error;
+        const res = Array.isArray(data) ? data[0] : data;
+        if (!res?.success) throw new Error(res?.error_message || 'Gagal menyetujui PO');
+      } else {
+        const { error } = await supabase.from('purchase_orders').update({ status, ...updateData }).eq('id', poId);
+        if (error) throw error;
       }
 
-      return fromDb(data);
+      const { data: poData } = await supabase.from('purchase_orders').select('*').eq('id', poId).single();
+      return fromDb(poData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
@@ -423,600 +147,93 @@ export const usePurchaseOrders = () => {
 
   const payPurchaseOrder = useMutation({
     mutationFn: async ({ poId, totalCost, paymentAccountId }: { poId: string, totalCost: number, paymentAccountId: string }) => {
-      const paymentDate = new Date();
-      
-      // Update PO status to Dibayar
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: updatedPoRaw, error } = await supabase.from('purchase_orders').update({
-        status: 'Dibayar',
-        total_cost: totalCost,
-        payment_account_id: paymentAccountId,
-        payment_date: paymentDate,
-      }).eq('id', poId).select().order('id').limit(1);
-
-      if (error) throw error;
-      const updatedPo = Array.isArray(updatedPoRaw) ? updatedPoRaw[0] : updatedPoRaw;
-      if (!updatedPo) throw new Error('Failed to update payment status');
-
-      // Find corresponding accounts payable and pay it
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: payableDataRaw, error: payableError } = await supabase
+      // Find corresponding accounts payable
+      const { data: payableData } = await supabase
         .from('accounts_payable')
         .select('*')
         .eq('purchase_order_id', poId)
         .eq('status', 'Outstanding')
-        .order('id').limit(1);
-
-      const payableData = Array.isArray(payableDataRaw) ? payableDataRaw[0] : payableDataRaw;
-      if (payableError && payableError.code !== 'PGRST116') { // PGRST116 = no rows returned
-        console.warn('No accounts payable found for PO:', poId);
-      }
+        .maybeSingle();
 
       if (payableData) {
-        // Get liability account (Hutang Usaha) using lookup service
-        const liabilityAccount = await getAccountByLookup('HUTANG_USAHA');
-
-        // Pay the accounts payable (this will update liability account)
-        await payAccountsPayable.mutateAsync({
+        return await payAccountsPayable.mutateAsync({
           payableId: payableData.id,
           amount: totalCost,
           paymentAccountId,
-          liabilityAccountId: liabilityAccount?.id || '',
+          liabilityAccountId: '', // This is handled inside payAccountsPayable RPC now
           notes: `Payment for PO #${poId}`,
         });
       } else {
-        // Fallback: create expense record directly if no accounts payable exists
-        await addExpense.mutateAsync({
-          description: `Pembayaran PO #${updatedPo.id} - ${updatedPo.material_name}`,
-          amount: totalCost,
-          accountId: paymentAccountId,
-          accountName: '', // Will be filled by useExpenses hook
-          date: paymentDate,
-          category: 'Pembelian Bahan',
-        });
+        // Fallback for POs without AP (should not happen in new flow)
+        const { error } = await supabase.from('purchase_orders')
+          .update({ status: 'Dibayar', payment_date: getOfficeDateString(timezone), payment_account_id: paymentAccountId })
+          .eq('id', poId);
+        if (error) throw error;
       }
-
-      // cash_history SUDAH DIHAPUS - Cash flow sekarang dibaca dari journal_entries
-
-      return fromDb(updatedPo);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['accountsPayable'] });
-      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
-      queryClient.invalidateQueries({ queryKey: ['cashBalance'] });
     }
   });
 
   const receivePurchaseOrder = useMutation({
     mutationFn: async (po: PurchaseOrder) => {
-      // Get current user from context (works with both Supabase and PostgREST auth)
-      if (!user) throw new Error('User not authenticated');
-      const currentUser = { id: user.id };
+      if (!currentBranch?.id || !user) throw new Error('Konteks tidak lengkap');
 
-      // Fetch PO items from database
-      const { data: poItemsData, error: itemsError } = await supabase
-        .from('purchase_order_items')
-        .select('*, materials:material_id(name, type), products:product_id(name, current_stock)')
-        .eq('purchase_order_id', po.id);
-
-      if (itemsError) throw itemsError;
-
-      interface ItemToProcess {
-        itemType: 'material' | 'product';
-        materialId?: string;
-        productId?: string;
-        quantity: number;
-        unitPrice: number;
-        itemName: string;
-        materialType?: string;
-      }
-
-      let itemsToProcess: ItemToProcess[] = [];
-
-      // Check if we have items in database or fall back to legacy
-      if (poItemsData && poItemsData.length > 0) {
-        // Multi-item PO
-        itemsToProcess = poItemsData.map((item: any) => ({
-          itemType: item.item_type || (item.material_id ? 'material' : 'product'),
-          materialId: item.material_id,
-          productId: item.product_id,
-          quantity: item.quantity,
-          unitPrice: item.unit_price || 0,
-          itemName: item.item_type === 'product'
-            ? (item.products?.name || 'Unknown Product')
-            : (item.materials?.name || 'Unknown Material'),
-          materialType: item.materials?.type || 'Stock',
-        }));
-      } else if (po.materialId) {
-        // Legacy single-item PO (material only)
-        // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-        const { data: materialRaw } = await supabase
-          .from('materials')
-          .select('name, type')
-          .eq('id', po.materialId)
-          .order('id').limit(1);
-        const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
-
-        itemsToProcess = [{
-          itemType: 'material',
-          materialId: po.materialId,
-          quantity: po.quantity || 0,
-          unitPrice: po.unitPrice || 0,
-          itemName: material?.name || po.materialName || 'Unknown',
-          materialType: material?.type || 'Stock',
-        }];
-      } else {
-        throw new Error('No items found in this PO');
-      }
-
-      // Process each item: create movements and update stock
-      for (const item of itemsToProcess) {
-        if (item.itemType === 'material' && item.materialId) {
-          // Process MATERIAL
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: materialRaw2 } = await supabase
-            .from('materials')
-            .select('stock')
-            .eq('id', item.materialId)
-            .order('id').limit(1);
-          const material = Array.isArray(materialRaw2) ? materialRaw2[0] : materialRaw2;
-
-          const previousStock = Number(material?.stock) || 0;
-          const newStock = previousStock + item.quantity;
-
-          // Determine movement type based on material type
-          const movementType = item.materialType === 'Stock' ? 'IN' : 'OUT';
-          const reason = item.materialType === 'Stock' ? 'PURCHASE' : 'PRODUCTION_CONSUMPTION';
-          const notes = item.materialType === 'Stock'
-            ? `Purchase order ${po.id} - Stock received`
-            : `Purchase order ${po.id} - Usage/consumption tracked`;
-
-          // Create material movement
-          console.log('Creating material movement:', {
-            materialId: item.materialId,
-            materialName: item.itemName,
-            type: movementType,
-            reason: reason,
-            quantity: item.quantity,
-            previousStock,
-            newStock,
-            referenceId: po.id,
-            referenceType: 'purchase_order',
-          });
-
-          await createMaterialMovement.mutateAsync({
-            materialId: item.materialId,
-            materialName: item.itemName,
-            type: movementType,
-            reason: reason,
-            quantity: item.quantity,
-            previousStock,
-            newStock,
-            referenceId: po.id,
-            referenceType: 'purchase_order',
-            notes: notes,
-            userId: currentUser.id,
-            userName: po.requestedBy,
-            branchId: currentBranch?.id || null,
-          });
-
-          // Update material stock
-          await addStock.mutateAsync({ materialId: item.materialId, quantity: item.quantity });
-
-          // Create inventory batch for material FIFO tracking
-          // Ini penting untuk kalkulasi HPP produksi dengan harga beli yang bervariasi
-          const { error: materialBatchError } = await supabase
-            .from('inventory_batches')
-            .insert({
-              material_id: item.materialId,
-              branch_id: currentBranch?.id || null,
-              purchase_order_id: po.id,
-              supplier_id: po.supplierId || null,
-              initial_quantity: item.quantity,
-              remaining_quantity: item.quantity,
-              unit_cost: item.unitPrice, // Harga beli dari PO (bisa berbeda per supplier)
-              notes: `PO ${po.id} - ${item.itemName}`,
-            });
-
-          if (materialBatchError) {
-            console.error('Failed to create material inventory batch:', materialBatchError);
-            // Continue anyway, batch is for tracking HPP not critical
-          } else {
-            console.log(`✅ Material batch created for FIFO: ${item.itemName} @ Rp${item.unitPrice}/unit`);
-          }
-
-        } else if (item.itemType === 'product' && item.productId) {
-          // Process PRODUCT (Jual Langsung)
-          // products.current_stock is DEPRECATED - stock derived from inventory_batches
-          // Only create inventory_batches, stock will be calculated via v_product_current_stock VIEW
-
-          console.log('Creating inventory batch for product:', {
-            productId: item.productId,
-            productName: item.itemName,
-            quantity: item.quantity,
-          });
-
-          // Create inventory batch for FIFO tracking - this IS the stock
-          const { error: batchError } = await supabase
-            .from('inventory_batches')
-            .insert({
-              product_id: item.productId,
-              branch_id: currentBranch?.id || null,
-              purchase_order_id: po.id,
-              supplier_id: po.supplierId || null,
-              initial_quantity: item.quantity,
-              remaining_quantity: item.quantity,
-              unit_cost: item.unitPrice, // Harga beli dari PO
-              notes: `PO ${po.id} - ${item.itemName}`,
-            });
-
-          if (batchError) {
-            console.error('Failed to create inventory batch:', batchError);
-            // Continue anyway, batch is for tracking HPP not critical
-          } else {
-            console.log('Inventory batch created for FIFO tracking');
-          }
-        }
-      }
-
-      // Update PO status to Diterima with received_date
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase
-        .from('purchase_orders')
-        .update({
-          status: 'Diterima',
-          received_date: po.receivedDate || new Date()
-        })
-        .eq('id', po.id)
-        .select()
-        .order('id').limit(1);
+      const { data, error } = await supabase.rpc('receive_po_atomic', {
+        p_po_id: po.id,
+        p_branch_id: currentBranch.id,
+        p_received_date: po.receivedDate ? po.receivedDate.toISOString().split('T')[0] : getOfficeDateString(timezone),
+        p_user_id: user.id,
+        p_user_name: po.requestedBy || user.name || 'Unknown'
+      });
 
       if (error) throw error;
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to update receive status');
+      const res = Array.isArray(data) ? data[0] : data;
+      if (!res?.success) throw new Error(res?.error_message || 'Gagal menerima PO');
 
-      return fromDb(data);
+      const { data: updatedPo } = await supabase.from('purchase_orders').select('*').eq('id', po.id).single();
+      return fromDb(updatedPo);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
       queryClient.invalidateQueries({ queryKey: ['materials'] });
-      queryClient.invalidateQueries({ queryKey: ['products'] }); // Also refresh products
-      queryClient.invalidateQueries({ queryKey: ['receiveGoods'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['materialMovements'] });
     }
   });
 
-  // ============================================================================
-  // CHECK IF PO CAN BE DELETED
-  // Returns validation result with details of what will be affected
-  // ============================================================================
-  const checkCanDeletePO = async (poId: string): Promise<{
-    canDelete: boolean;
-    reason?: string;
-    warnings: string[];
-    details: {
-      hasInventoryBatchesUsed: boolean;
-      inventoryBatchesCount: number;
-      usedBatchesCount: number;
-      journalsCount: number;
-      accountsPayableCount: number;
-      materialMovementsCount: number;
-      poStatus: string;
-    };
-  }> => {
-    const warnings: string[] = [];
-    let hasInventoryBatchesUsed = false;
-    let usedBatchesCount = 0;
-
-    // 1. Get PO data
-    const { data: poDataRaw } = await supabase
-      .from('purchase_orders')
-      .select('id, status, supplier_name, total_cost')
-      .eq('id', poId)
-      .order('id').limit(1);
-    const poData = Array.isArray(poDataRaw) ? poDataRaw[0] : poDataRaw;
-
-    if (!poData) {
-      return {
-        canDelete: false,
-        reason: 'Purchase Order tidak ditemukan',
-        warnings: [],
-        details: {
-          hasInventoryBatchesUsed: false,
-          inventoryBatchesCount: 0,
-          usedBatchesCount: 0,
-          journalsCount: 0,
-          accountsPayableCount: 0,
-          materialMovementsCount: 0,
-          poStatus: 'unknown',
-        },
-      };
-    }
-
-    // 2. Check inventory batches - CRITICAL: If batches are used, cannot delete
-    const { data: batches } = await supabase
-      .from('inventory_batches')
-      .select('id, initial_quantity, remaining_quantity, material_id, product_id')
-      .eq('purchase_order_id', poId);
-
-    const inventoryBatchesCount = batches?.length || 0;
-
-    if (batches && batches.length > 0) {
-      for (const batch of batches) {
-        // If remaining_quantity < initial_quantity, batch has been used
-        if (batch.remaining_quantity < batch.initial_quantity) {
-          hasInventoryBatchesUsed = true;
-          usedBatchesCount++;
-        }
-      }
-    }
-
-    if (hasInventoryBatchesUsed) {
-      return {
-        canDelete: false,
-        reason: `Tidak dapat menghapus PO karena ${usedBatchesCount} batch inventory sudah terpakai (FIFO). Stok dari PO ini sudah digunakan dalam produksi atau penjualan.`,
-        warnings: [],
-        details: {
-          hasInventoryBatchesUsed: true,
-          inventoryBatchesCount,
-          usedBatchesCount,
-          journalsCount: 0,
-          accountsPayableCount: 0,
-          materialMovementsCount: 0,
-          poStatus: poData.status,
-        },
-      };
-    }
-
-    // 3. Check journals
-    const { data: journals } = await supabase
-      .from('journal_entries')
-      .select('id')
-      .eq('reference_id', poId)
-      .eq('is_voided', false);
-    const journalsCount = journals?.length || 0;
-    if (journalsCount > 0) {
-      warnings.push(`${journalsCount} jurnal akan di-void`);
-    }
-
-    // 4. Check accounts payable
-    const { data: payables } = await supabase
-      .from('accounts_payable')
-      .select('id, paid_amount, amount')
-      .eq('purchase_order_id', poId);
-    const accountsPayableCount = payables?.length || 0;
-
-    // Check if any payable has been partially/fully paid
-    if (payables && payables.length > 0) {
-      for (const payable of payables) {
-        if (payable.paid_amount > 0) {
-          return {
-            canDelete: false,
-            reason: `Tidak dapat menghapus PO karena hutang sudah ada pembayaran sebesar Rp ${payable.paid_amount.toLocaleString('id-ID')}`,
-            warnings: [],
-            details: {
-              hasInventoryBatchesUsed: false,
-              inventoryBatchesCount,
-              usedBatchesCount: 0,
-              journalsCount,
-              accountsPayableCount,
-              materialMovementsCount: 0,
-              poStatus: poData.status,
-            },
-          };
-        }
-      }
-      warnings.push(`${accountsPayableCount} hutang akan dihapus`);
-    }
-
-    // 5. Check material movements
-    const { data: movements } = await supabase
-      .from('material_stock_movements')
-      .select('id')
-      .eq('reference_id', poId)
-      .eq('reference_type', 'purchase_order');
-    const materialMovementsCount = movements?.length || 0;
-    if (materialMovementsCount > 0) {
-      warnings.push(`${materialMovementsCount} pergerakan bahan akan dihapus`);
-    }
-
-    // 6. Add warning about stock rollback
-    if (inventoryBatchesCount > 0) {
-      warnings.push(`${inventoryBatchesCount} batch inventory akan dihapus dan stok akan dikurangi`);
-    }
-
-    return {
-      canDelete: true,
-      warnings,
-      details: {
-        hasInventoryBatchesUsed: false,
-        inventoryBatchesCount,
-        usedBatchesCount: 0,
-        journalsCount,
-        accountsPayableCount,
-        materialMovementsCount,
-        poStatus: poData.status,
-      },
-    };
-  };
-
   const deletePurchaseOrder = useMutation({
     mutationFn: async ({ poId, skipValidation = false }: { poId: string; skipValidation?: boolean }) => {
-      console.log('[deletePurchaseOrder] Starting deletion for PO:', poId);
+      if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
 
-      // ============================================================================
-      // STEP 0: VALIDATION - Check if PO can be deleted
-      // ============================================================================
-      if (!skipValidation) {
-        const validation = await checkCanDeletePO(poId);
-        if (!validation.canDelete) {
-          throw new Error(validation.reason || 'PO tidak dapat dihapus');
-        }
-      }
+      const { data, error } = await supabase.rpc('delete_po_atomic', {
+        p_po_id: poId,
+        p_branch_id: currentBranch.id,
+        p_skip_validation: skipValidation
+      });
 
-      // ============================================================================
-      // STEP 1: VOID ALL RELATED JOURNALS (don't delete, keep audit trail)
-      // ============================================================================
-      console.log('[deletePurchaseOrder] Step 1: Voiding related journals...');
-
-      // Void adjustment journals (pembelian bahan/produk)
-      const voidResult = await voidJournalsByReference('adjustment', poId, `PO ${poId} dihapus`);
-      if (voidResult.voidedJournalIds && voidResult.voidedJournalIds.length > 0) {
-        console.log(`✅ Voided ${voidResult.voidedJournalIds.length} adjustment journals`);
-      }
-
-      // Also void any payable-related journals
-      const { data: payables } = await supabase
-        .from('accounts_payable')
-        .select('id')
-        .eq('purchase_order_id', poId);
-
-      if (payables) {
-        for (const payable of payables) {
-          const payableVoidResult = await voidJournalsByReference('payable', payable.id, `PO ${poId} dihapus`);
-          if (payableVoidResult.voidedJournalIds && payableVoidResult.voidedJournalIds.length > 0) {
-            console.log(`✅ Voided ${payableVoidResult.voidedJournalIds.length} payable journals for ${payable.id}`);
-          }
-        }
-      }
-
-      // ============================================================================
-      // STEP 2: GET INVENTORY BATCHES AND ROLLBACK STOCK
-      // ============================================================================
-      console.log('[deletePurchaseOrder] Step 2: Rolling back inventory...');
-
-      const { data: batches } = await supabase
-        .from('inventory_batches')
-        .select('id, material_id, product_id, remaining_quantity')
-        .eq('purchase_order_id', poId);
-
-      if (batches && batches.length > 0) {
-        for (const batch of batches) {
-          // Rollback material stock (materials.stock is still used for backward compatibility)
-          if (batch.material_id) {
-            const { data: materialRaw } = await supabase
-              .from('materials')
-              .select('stock')
-              .eq('id', batch.material_id)
-              .order('id').limit(1);
-            const material = Array.isArray(materialRaw) ? materialRaw[0] : materialRaw;
-
-            if (material) {
-              const newStock = Math.max(0, (Number(material.stock) || 0) - batch.remaining_quantity);
-              await supabase
-                .from('materials')
-                .update({ stock: newStock })
-                .eq('id', batch.material_id);
-              console.log(`✅ Rolled back material stock: -${batch.remaining_quantity}`);
-            }
-          }
-
-          // products.current_stock is DEPRECATED - stock derived from inventory_batches
-          // Deleting the batch below will automatically reduce stock via VIEW
-          if (batch.product_id) {
-            console.log(`📦 Product stock will be reduced via batch deletion: -${batch.remaining_quantity}`);
-          }
-        }
-
-        // Delete inventory batches - this automatically updates stock via v_product_current_stock VIEW
-        const { error: batchDeleteError } = await supabase
-          .from('inventory_batches')
-          .delete()
-          .eq('purchase_order_id', poId);
-
-        if (batchDeleteError) {
-          console.warn('Failed to delete inventory batches:', batchDeleteError.message);
-        } else {
-          console.log(`✅ Deleted ${batches.length} inventory batches`);
-        }
-      }
-
-      // ============================================================================
-      // STEP 3: DELETE MATERIAL MOVEMENTS
-      // ============================================================================
-      console.log('[deletePurchaseOrder] Step 3: Deleting material movements...');
-
-      const { error: movementError } = await supabase
-        .from('material_stock_movements')
-        .delete()
-        .eq('reference_id', poId)
-        .eq('reference_type', 'purchase_order');
-
-      if (movementError) {
-        console.warn('Failed to delete material movements:', movementError.message);
-      } else {
-        console.log('✅ Deleted material movements');
-      }
-
-      // ============================================================================
-      // STEP 4: DELETE ACCOUNTS PAYABLE
-      // ============================================================================
-      console.log('[deletePurchaseOrder] Step 4: Deleting accounts payable...');
-
-      const { error: apError } = await supabase
-        .from('accounts_payable')
-        .delete()
-        .eq('purchase_order_id', poId);
-
-      if (apError) {
-        console.warn('Failed to delete accounts payable:', apError.message);
-      } else {
-        console.log('✅ Deleted accounts payable');
-      }
-
-      // ============================================================================
-      // STEP 5: DELETE PO ITEMS
-      // ============================================================================
-      console.log('[deletePurchaseOrder] Step 5: Deleting PO items...');
-
-      const { error: itemsError } = await supabase
-        .from('purchase_order_items')
-        .delete()
-        .eq('purchase_order_id', poId);
-
-      if (itemsError) {
-        console.warn('Failed to delete PO items:', itemsError.message);
-      } else {
-        console.log('✅ Deleted PO items');
-      }
-
-      // ============================================================================
-      // STEP 6: DELETE PURCHASE ORDER
-      // ============================================================================
-      console.log('[deletePurchaseOrder] Step 6: Deleting purchase order...');
-
-      const { error } = await supabase
-        .from('purchase_orders')
-        .delete()
-        .eq('id', poId);
-
-      if (error) throw new Error(error.message);
-
-      console.log('✅ Purchase Order deleted successfully:', poId);
+      if (error) throw error;
+      const res = Array.isArray(data) ? data[0] : data;
+      if (!res?.success) throw new Error(res?.error_message || 'Gagal menghapus PO');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] });
-      queryClient.invalidateQueries({ queryKey: ['accountsPayable'] });
-      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
       queryClient.invalidateQueries({ queryKey: ['materials'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      queryClient.invalidateQueries({ queryKey: ['materialMovements'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    },
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accountsPayable'] });
+    }
   });
 
   return {
     purchaseOrders,
     isLoading,
     addPurchaseOrder,
-    createPurchaseOrder: addPurchaseOrder, // Alias for create dialog
     updatePoStatus,
     payPurchaseOrder,
     receivePurchaseOrder,
     deletePurchaseOrder,
-    checkCanDeletePO, // Validation function for UI confirmation
   }
 }

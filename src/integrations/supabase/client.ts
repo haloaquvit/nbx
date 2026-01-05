@@ -77,10 +77,10 @@ function getPostgRESTToken(): string | null {
 // Valid anon JWT for PostgREST (expires in 100 years)
 // Production JWT (signed with production JWT secret)
 const PROD_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3NjYzMzM3MjgsImV4cCI6NDkyMjA5MzcyOH0.3N0XiX6YWpWpli3TuKsVx1eV0IoqXsb9_z8CER_1bR8';
-// Local JWT (signed with local JWT secret from database.md)
-const LOCAL_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3Njc0MDYzMDksImV4cCI6NDkyMTAwNjMwOX0.Nd9t21dis6DlfT5NQmHDwlidKJMm8xFxzbmG9Bb3Pok';
+// Local JWT (signed with docker-compose JWT secret: reallyreallyreallyreallyverysafeandsecurejwtsecret)
+const LOCAL_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3Njc1MzE0ODUsImV4cCI6NDkyMTEzMTQ4NX0.5fqX3eXr6VhW2vGWUUlHQxPO_ATFsJxyX6zJXqMduxs';
 
-// Use local JWT for localhost, production JWT otherwise
+// Use local JWT for localhost, production JWT for VPS
 function getAnonJWT(): string {
   if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
     return LOCAL_ANON_JWT;
@@ -113,7 +113,7 @@ function isCapacitorApp(): boolean {
     }
     // Method 4: Check if running from localhost with capacitor user agent
     if (window.location.hostname === 'localhost' &&
-        navigator.userAgent.toLowerCase().includes('android')) {
+      navigator.userAgent.toLowerCase().includes('android')) {
       return true;
     }
   }
@@ -183,17 +183,25 @@ function getBaseUrl(): string {
   // IMPORTANT: Change this to match server you want to test against
   // 'https://nbx.aquvit.id' for Nabire
   // 'https://mkw.aquvit.id' for Manokwari
-  // 'http://localhost:8090' for local database (via proxy)
-  return 'http://localhost:8090';
+  // 'http://localhost:3001' for local database (via Docker PostgREST)
+  // 'http://localhost:3003' for VPS aquvit_dev (via SSH tunnel)
+  return 'http://localhost:3003';
 }
 
 function getTenantConfig(): TenantConfig {
   const baseUrl = getBaseUrl();
 
+  // For localhost, auth server runs on separate port (3002)
+  // For production, auth is on same server as PostgREST
+  let authUrl = `${baseUrl}/auth`;
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    authUrl = 'http://localhost:3002/auth';
+  }
+
   return {
     supabaseUrl: baseUrl,
     supabaseAnonKey: getAnonJWT(), // Valid JWT for anon role (local or production)
-    authUrl: `${baseUrl}/auth`,
+    authUrl: authUrl,
     isPostgREST: true,
   };
 }

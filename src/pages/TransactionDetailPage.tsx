@@ -1,5 +1,5 @@
 "use client"
-import { useParams, Link, useNavigate } from "react-router-dom"
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -14,7 +14,7 @@ import { id } from "date-fns/locale/id"
 import { DeliveryManagement } from "@/components/DeliveryManagement"
 import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
 import { Delivery } from "@/types/delivery"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -29,7 +29,18 @@ export default function TransactionDetailPage() {
   const { toast } = useToast()
   const { settings: companyInfo } = useCompanySettings()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [showDeliveryForm, setShowDeliveryForm] = useState(false)
+
+  // Auto-open delivery form if action=delivery
+  const action = searchParams.get('action');
+
+  // Use effect to handle auto-opening
+  useEffect(() => {
+    if (action === 'delivery') {
+      setShowDeliveryForm(true);
+    }
+  }, [action]);
   const [completionDialogOpen, setCompletionDialogOpen] = useState(false)
   const [completedDelivery, setCompletedDelivery] = useState<Delivery | null>(null)
   const [completedTransaction, setCompletedTransaction] = useState<any>(null)
@@ -133,8 +144,8 @@ export default function TransactionDetailPage() {
 
     // Currency formatting function
     const formatCurrency = (amount: number): string => {
-      return new Intl.NumberFormat("id-ID", { 
-        style: "currency", 
+      return new Intl.NumberFormat("id-ID", {
+        style: "currency",
         currency: "IDR",
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
@@ -149,23 +160,23 @@ export default function TransactionDetailPage() {
         doc.addImage(companyInfo.logo, 'PNG', margin, 12, logoWidth, logoHeight, undefined, 'FAST');
       } catch (e) { console.error(e); }
     }
-    
+
     // Company info
     doc.setFontSize(18).setFont("helvetica", "bold").text(companyInfo?.name || '', margin, 32);
     doc.setFontSize(10).setFont("helvetica", "normal").text(companyInfo?.address || '', margin, 38).text(companyInfo?.phone || '', margin, 43);
     doc.setDrawColor(200).line(margin, 48, pageWidth - margin, 48);
-    
+
     // Faktur Penjualan header
     doc.setFontSize(18).setFont("helvetica", "bold").setTextColor(150).text("FAKTUR PENJUALAN", pageWidth - margin, 32, { align: 'right' });
     const orderDate = transaction.orderDate ? new Date(transaction.orderDate) : new Date();
     doc.setFontSize(11).setTextColor(0).text(`No: ${transaction.id}`, pageWidth - margin, 38, { align: 'right' }).text(`Tanggal: ${format(orderDate, "d MMMM yyyy", { locale: id })}`, pageWidth - margin, 43, { align: 'right' });
-    
+
     // Customer info
     let y = 55;
     doc.setFontSize(10).setTextColor(100).text("DITAGIHKAN KEPADA:", margin, y);
     doc.setFontSize(12).setFont("helvetica", "bold").setTextColor(0).text(transaction.customerName, margin, y + 6);
     y += 16;
-    
+
     // Items table
     const tableData = transaction.items.filter(item => item.product?.name).map(item => [item.product.name, item.quantity, formatCurrency(item.price), formatCurrency(item.price * item.quantity)]);
     autoTable(doc, {
@@ -178,26 +189,26 @@ export default function TransactionDetailPage() {
       columnStyles: { 0: { cellWidth: 80 }, 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
       didDrawPage: (data) => { doc.setFontSize(8).setTextColor(150).text(`Halaman ${data.pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' }); }
     });
-    
+
     // Summary
     const finalY = (doc as any).lastAutoTable.finalY;
     let summaryY = finalY + 10;
     doc.setFontSize(10).setFont("helvetica", "normal").text("Subtotal:", 140, summaryY);
     doc.text(formatCurrency(transaction.subtotal), pageWidth - margin, summaryY, { align: 'right' });
     summaryY += 5;
-    
+
     if (transaction.ppnEnabled) {
       doc.text(`PPN (${transaction.ppnPercentage}%):`, 140, summaryY);
       doc.text(formatCurrency(transaction.ppnAmount), pageWidth - margin, summaryY, { align: 'right' });
       summaryY += 5;
     }
-    
+
     doc.setDrawColor(200).line(140, summaryY, pageWidth - margin, summaryY);
     summaryY += 7;
     doc.setFontSize(12).setFont("helvetica", "bold").text("TOTAL:", 140, summaryY);
     doc.text(formatCurrency(transaction.total), pageWidth - margin, summaryY, { align: 'right' });
     summaryY += 10;
-    
+
     // Payment Information
     doc.setDrawColor(200).line(140, summaryY, pageWidth - margin, summaryY);
     summaryY += 7;
@@ -207,13 +218,13 @@ export default function TransactionDetailPage() {
     doc.text("Jumlah Dibayar:", 140, summaryY);
     doc.text(formatCurrency(transaction.paidAmount || 0), pageWidth - margin, summaryY, { align: 'right' });
     summaryY += 5;
-    
+
     if (transaction.total > (transaction.paidAmount || 0)) {
       doc.text("Sisa Tagihan:", 140, summaryY);
       doc.text(formatCurrency(transaction.total - (transaction.paidAmount || 0)), pageWidth - margin, summaryY, { align: 'right' });
       summaryY += 5;
     }
-    
+
     // Signature
     let signatureY = summaryY + 15;
     doc.setFontSize(12).setFont("helvetica", "normal");
@@ -230,7 +241,7 @@ export default function TransactionDetailPage() {
   // Cetak Thermal - langsung print tanpa dialog
   const handleThermalPrint = () => {
     if (!transaction) return;
-    
+
     // Buat preview content thermal receipt
     const receiptContent = `
       <div class="font-mono w-full max-w-sm mx-auto">
@@ -785,13 +796,13 @@ export default function TransactionDetailPage() {
 
     const encodedText = encodeURIComponent(receiptText);
     const rawbtUrl = `rawbt:${encodedText}`;
-    
+
     try {
       window.location.href = rawbtUrl;
     } catch (error) {
       console.error('Failed to open RawBT protocol:', error);
     }
-    
+
     setTimeout(() => {
       navigate('/transactions');
     }, 500);
@@ -816,13 +827,13 @@ export default function TransactionDetailPage() {
             </p>
           </div>
         </div>
-        
+
         {/* Action Buttons - Hidden on mobile, shown on desktop */}
         <div className="hidden md:flex gap-2">
           {/* Show delivery button if transaction has delivery info and not office sale */}
           {deliveryInfo && !transaction?.isOfficeSale && (
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
               onClick={() => setShowDeliveryForm(true)}
             >
@@ -1028,7 +1039,7 @@ export default function TransactionDetailPage() {
                   </Card>
                 ))}
               </div>
-              
+
               {/* Desktop View - Table */}
               <div className="hidden md:block">
                 <Table>
@@ -1080,7 +1091,7 @@ export default function TransactionDetailPage() {
               </div>
 
               <Separator className="my-4" />
-              
+
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>Subtotal:</span>
@@ -1092,7 +1103,7 @@ export default function TransactionDetailPage() {
                     }).format(transaction.subtotal)}
                   </span>
                 </div>
-                
+
                 {transaction.ppnEnabled && (
                   <div className="flex justify-between">
                     <span>PPN ({transaction.ppnPercentage}%):</span>
@@ -1105,7 +1116,7 @@ export default function TransactionDetailPage() {
                     </span>
                   </div>
                 )}
-                
+
                 <div className="flex justify-between font-semibold text-lg">
                   <span>Total:</span>
                   <span>
@@ -1139,7 +1150,7 @@ export default function TransactionDetailPage() {
                     }).format(transaction.total)}
                   </span>
                 </div>
-                
+
                 <div className="flex justify-between">
                   <span className="text-sm">Sudah Dibayar:</span>
                   <span className="text-sm font-medium text-green-600">
@@ -1150,14 +1161,13 @@ export default function TransactionDetailPage() {
                     }).format(transaction.paidAmount || 0)}
                   </span>
                 </div>
-                
+
                 <Separator />
-                
+
                 <div className="flex justify-between">
                   <span className="font-medium">Sisa Tagihan:</span>
-                  <span className={`font-bold ${
-                    (transaction.total - (transaction.paidAmount || 0)) > 0 ? 'text-red-600' : 'text-green-600'
-                  }`}>
+                  <span className={`font-bold ${(transaction.total - (transaction.paidAmount || 0)) > 0 ? 'text-red-600' : 'text-green-600'
+                    }`}>
                     {new Intl.NumberFormat("id-ID", {
                       style: "currency",
                       currency: "IDR",
@@ -1219,8 +1229,8 @@ export default function TransactionDetailPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Input Pengantaran</CardTitle>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setShowDeliveryForm(false)}
                 >
@@ -1229,8 +1239,9 @@ export default function TransactionDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <DeliveryManagement 
+              <DeliveryManagement
                 transaction={deliveryInfo}
+                defaultOpen={action === 'delivery'}
                 onClose={() => {
                   setShowDeliveryForm(false)
                   // Refresh data when delivery is updated

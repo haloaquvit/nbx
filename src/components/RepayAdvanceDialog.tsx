@@ -10,6 +10,8 @@ import { useToast } from "./ui/use-toast"
 import { EmployeeAdvance } from "@/types/employeeAdvance"
 import { useEmployeeAdvances } from "@/hooks/useEmployeeAdvances"
 import { useAuth } from "@/hooks/useAuth"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 const repaymentSchema = z.object({
   amount: z.coerce.number().min(1, "Jumlah pembayaran harus lebih dari 0."),
@@ -25,6 +27,7 @@ interface RepayAdvanceDialogProps {
 
 export function RepayAdvanceDialog({ open, onOpenChange, advance }: RepayAdvanceDialogProps) {
   const { toast } = useToast()
+  const { timezone } = useTimezone()
   const { user } = useAuth()
   const { addRepayment } = useEmployeeAdvances()
   const { register, handleSubmit, reset, formState: { errors } } = useForm<RepaymentFormData>({
@@ -42,7 +45,7 @@ export function RepayAdvanceDialog({ open, onOpenChange, advance }: RepayAdvance
       advanceId: advance.id,
       repaymentData: {
         amount: data.amount,
-        date: new Date(),
+        date: getOfficeTime(timezone),
         recordedBy: user.name,
       }
     }, {

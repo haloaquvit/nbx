@@ -181,35 +181,29 @@ export const LowStockNotificationService = {
         .select('id')
         .eq('user_id', userId)
         .eq('type', 'low_stock')
-        .eq('is_read', false)
+        // removed is_read check to ensure only 1 notification per day regardless of status
         .gte('created_at', today.toISOString())
         .limit(1);
 
       if (existingNotif && existingNotif.length > 0) {
-        // Update existing notification
-        await supabase
-          .from('notifications')
-          .update({
-            title: `Peringatan Stok Rendah (${items.length} item)`,
-            message,
-            priority,
-            reference_id: branchId || null,
-          })
-          .eq('id', existingNotif[0].id);
-      } else {
-        // Create new notification - let database auto-generate UUID
-        await supabase
-          .from('notifications')
-          .insert({
-            title: `Peringatan Stok Rendah (${items.length} item)`,
-            message,
-            type: 'low_stock',
-            reference_type: 'stock_report',
-            reference_url: '/stock-report',
-            priority,
-            user_id: userId,
-            reference_id: branchId || null,
-          });
+        console.log(`[LowStockNotificationService] Notification for user ${userId} already sent today.`);
+        continue;
+      }
+
+      // Create new notification via RPC
+      const { error: rpcError } = await supabase.rpc('upsert_notification_atomic', {
+        p_user_id: userId,
+        p_type: 'low_stock',
+        p_title: `Peringatan Stok Rendah (${items.length} item)`,
+        p_message: message,
+        p_priority: priority,
+        p_reference_id: branchId || null,
+        p_reference_type: 'stock_report',
+        p_reference_url: '/stock-report',
+      });
+
+      if (rpcError) {
+        console.error('[LowStockNotificationService] RPC Error (create):', rpcError);
       }
     }
 

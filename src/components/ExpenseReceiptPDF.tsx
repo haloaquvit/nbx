@@ -4,10 +4,9 @@ import { Button } from "@/components/ui/button"
 import { Expense } from "@/types/expense"
 import { format } from 'date-fns'
 import { id } from 'date-fns/locale'
-import { FileText, Download, Printer, Receipt } from "lucide-react"
+import { Download, Printer, Receipt } from "lucide-react"
 import { ThermalReceiptDialog } from "./ThermalReceiptDialog"
 import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import { terbilang } from '@/utils/terbilang'
 import { saveCompressedPDF } from '@/utils/pdfUtils'
 import { useCompanySettings } from '@/hooks/useCompanySettings'
@@ -22,7 +21,6 @@ interface ExpenseReceiptPDFProps {
 export function ExpenseReceiptPDF({
   expense,
   companyName = "AQUVIT",
-  companyAddress = "Jl. Contoh No. 123, Kota ABC"
 }: ExpenseReceiptPDFProps) {
   const [isThermalDialogOpen, setIsThermalDialogOpen] = useState(false)
   const { settings } = useCompanySettings()
@@ -38,7 +36,6 @@ export function ExpenseReceiptPDF({
 
     // A4 dimensions
     const a4Width = 210
-    const a4Height = 297
 
     // Content area: full width with small margin, 1/3 of A4 height (~99mm)
     const margin = 10
@@ -56,7 +53,7 @@ export function ExpenseReceiptPDF({
 
     // Header Company - use branch name
     doc.setFontSize(14)
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text(currentBranch?.name || settings?.name || 'AQUVIT', startX + contentWidth / 2, startY + 8, { align: 'center' })
 
     // Title
@@ -69,7 +66,7 @@ export function ExpenseReceiptPDF({
 
     // Receipt details - two columns
     doc.setFontSize(9)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
 
     const leftCol = startX + 8
     const rightCol = startX + contentWidth / 2 + 5
@@ -77,27 +74,27 @@ export function ExpenseReceiptPDF({
     let yPos = startY + 25
 
     // Row 1: No. Kwitansi | Tanggal
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('No. Kwitansi:', leftCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     doc.text(expense.id, leftCol + labelWidth, yPos)
 
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('Tanggal:', rightCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     doc.text(format(expense.date, 'dd MMMM yyyy', { locale: id }), rightCol + labelWidth, yPos)
 
     // Row 2: Akun Beban | Akun Sumber
     yPos += 6
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('Akun Beban:', leftCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     const categoryText = expense.expenseAccountName || expense.category
     doc.text(categoryText.length > 30 ? categoryText.substring(0, 30) + '...' : categoryText, leftCol + labelWidth, yPos)
 
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('Akun Sumber:', rightCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     doc.text(expense.accountName || '-', rightCol + labelWidth, yPos)
 
     // Amount box
@@ -110,7 +107,7 @@ export function ExpenseReceiptPDF({
     doc.rect(leftCol, yPos, boxWidth, boxHeight, 'S')
 
     doc.setFontSize(9)
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('JUMLAH:', leftCol + 3, yPos + 5)
 
     doc.setFontSize(13)
@@ -124,21 +121,21 @@ export function ExpenseReceiptPDF({
 
     // Terbilang
     doc.setFontSize(8)
-    doc.setFont(undefined, 'italic')
+    doc.setFont('helvetica', 'italic')
     const terbilangText = `Terbilang: ${terbilang(expense.amount)}`
     const terbilangLines = doc.splitTextToSize(terbilangText, boxWidth - 6)
     doc.text(terbilangLines[0] || '', leftCol + 3, yPos + 13)
     if (terbilangLines[1]) {
       doc.text(terbilangLines[1], leftCol + 3, yPos + 17)
     }
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
 
     // Description
     yPos += boxHeight + 4
     doc.setFontSize(8)
-    doc.setFont(undefined, 'bold')
+    doc.setFont('helvetica', 'bold')
     doc.text('Deskripsi:', leftCol, yPos)
-    doc.setFont(undefined, 'normal')
+    doc.setFont('helvetica', 'normal')
     const descriptionLines = doc.splitTextToSize(expense.description || '-', boxWidth - 20)
     doc.text(descriptionLines[0] || '-', leftCol + 20, yPos)
 

@@ -16,10 +16,12 @@ import { supabase } from "@/integrations/supabase/client"
 import { useQueryClient } from "@tanstack/react-query"
 import { useBranch } from "@/contexts/BranchContext"
 import { CreditCard, Wallet, AlertCircle } from "lucide-react"
-import { createMaterialPaymentJournal } from "@/services/journalService"
 import { Material } from "@/types/material"
+// journalService removed - now using RPC for all journal operations
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeDateString, getOfficeTime } from "@/utils/officeTime"
 
 const paymentSchema = z.object({
   accountId: z.string().min(1, "Pilih akun kas terlebih dahulu"),
@@ -49,6 +51,7 @@ export function PayMaterialBillDialog({
   const { accounts, getEmployeeCashAccount } = useAccounts()
   const { toast } = useToast()
   const { user } = useAuth()
+  const { timezone } = useTimezone()
   const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -116,27 +119,27 @@ export function PayMaterialBillDialog({
       const referenceId = `MATPAY-${material.id.slice(0, 8)}-${Date.now()}`
       const description = `Pembayaran tagihan ${material.name}${periodLabel ? ` (${periodLabel})` : ''}`
 
-      // Create journal entry for material payment
+      // Create journal entry for material payment via RPC
       // Dr. Beban Bahan Baku / Beban Operasional
       // Cr. Kas
-      const journalResult = await createMaterialPaymentJournal({
-        referenceId,
-        transactionDate: new Date(),
-        amount: data.amount,
-        materialId: material.id,
-        materialName: material.name,
-        description: data.notes || description,
-        cashAccountId: selectedAccount.id,
-        cashAccountCode: selectedAccount.code || '',
-        cashAccountName: selectedAccount.name,
-        branchId: currentBranch.id,
-      })
+      const { data: journalResultRaw, error: journalError } = await supabase
+        .rpc('create_material_payment_journal_rpc', {
+          p_branch_id: currentBranch.id,
+          p_reference_id: referenceId,
+          p_transaction_date: getOfficeDateString(timezone),
+          p_amount: data.amount,
+          p_material_id: material.id,
+          p_material_name: material.name,
+          p_description: data.notes || description,
+          p_cash_account_id: selectedAccount.id,
+        })
 
-      if (!journalResult.success) {
-        throw new Error(journalResult.error || 'Gagal membuat jurnal pembayaran')
+      const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw
+      if (journalError || !journalResult?.success) {
+        throw new Error(journalError?.message || journalResult?.error_message || 'Gagal membuat jurnal pembayaran')
       }
 
-      console.log(`✅ Jurnal pembayaran bahan ${material.name} auto-generated:`, journalResult.journalId)
+      console.log(`✅ Jurnal pembayaran bahan ${material.name} via RPC:`, journalResult.journal_id)
 
       // Record payment in material_payments table
       const { error: paymentError } = await supabase
@@ -144,10 +147,10 @@ export function PayMaterialBillDialog({
         .insert({
           material_id: material.id,
           amount: data.amount,
-          payment_date: new Date().toISOString(),
+          payment_date: getOfficeTime(timezone).toISOString(),
           cash_account_id: selectedAccount.id,
           notes: data.notes || description,
-          journal_entry_id: journalResult.journalId,
+          journal_entry_id: journalResult.journal_id,
           created_by: user.id,
           created_by_name: user.name || user.email || 'Unknown',
           branch_id: currentBranch.id,

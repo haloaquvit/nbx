@@ -290,17 +290,17 @@ class QuotationService {
     // Get quotation details for notification
     const quotation = await this.getQuotationById(quotationId);
     if (quotation) {
-      // Get transaction number
+      // Get transaction number (id is used as transaction number)
       const { data: transaction } = await supabase
         .from('transactions')
-        .select('transaction_number')
+        .select('id')
         .eq('id', transactionId)
         .single();
 
       if (transaction) {
         telegramService.notifyQuotationConverted({
           quotationNo: quotation.quotation_number,
-          transactionNo: transaction.transaction_number,
+          transactionNo: transaction.id,  // id is used as transaction number
           customerName: quotation.customer_name,
           total: quotation.total,
           convertedBy: quotation.created_by_name || 'Unknown',

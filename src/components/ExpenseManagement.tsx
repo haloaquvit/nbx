@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -23,6 +23,8 @@ import { Trash2, Check, ChevronsUpDown } from "lucide-react"
 import { ExpenseReceiptPDF } from "./ExpenseReceiptPDF"
 import { Badge } from "./ui/badge"
 import { cn } from "@/lib/utils"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +36,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
+import { formatNumber, parseFormattedNumber } from "@/utils/formatNumber"
 
 const expenseSchema = z.object({
   description: z.string().min(3, "Deskripsi minimal 3 karakter."),
@@ -50,16 +53,47 @@ export function ExpenseManagement() {
   const { accounts, isLoading: isLoadingAccounts } = useAccounts()
   const { toast } = useToast()
   const { user } = useAuth()
+  const { timezone } = useTimezone()
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema),
     defaultValues: {
       description: "",
       amount: 0,
       accountId: "",
-      date: new Date(),
+      date: getOfficeTime(timezone),
       expenseAccountId: "",
     }
   })
+
+  // Watch amount for external changes (like reset)
+  const watchAmount = watch("amount")
+  const [displayAmount, setDisplayAmount] = useState("")
+
+  // Sync display amount with form amount (e.g. after submit/reset)
+  useEffect(() => {
+    const currentParsed = displayAmount ? parseFormattedNumber(displayAmount) : 0;
+    if (watchAmount !== currentParsed) {
+      setDisplayAmount(watchAmount ? formatNumber(watchAmount) : "");
+    }
+  }, [watchAmount]) // Removed displayAmount dependency to avoid loop, we just read current value
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    // Remove non-digits
+    const cleanValue = value.replace(/[^0-9]/g, '')
+
+    if (cleanValue === '') {
+      setDisplayAmount('')
+      setValue('amount', 0)
+      return
+    }
+
+    const num = parseInt(cleanValue, 10)
+    if (!isNaN(num)) {
+      setDisplayAmount(formatNumber(num))
+      setValue('amount', num)
+    }
+  }
 
   const watchDate = watch("date")
   const watchExpenseAccountId = watch("expenseAccountId")
@@ -94,7 +128,8 @@ export function ExpenseManagement() {
           title: "Sukses",
           description: `Pengeluaran berhasil dicatat ke ${expenseAccount.name}`
         })
-        reset({ date: new Date(), description: "", amount: 0, accountId: "", expenseAccountId: "" })
+        reset({ date: getOfficeTime(timezone), description: "", amount: 0, accountId: "", expenseAccountId: "" })
+        setDisplayAmount("") // Ensure display cleared
       },
       onError: (error) => {
         toast({ variant: "destructive", title: "Gagal", description: error.message })
@@ -130,7 +165,13 @@ export function ExpenseManagement() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="amount">Jumlah (Rp)</Label>
-                <Input id="amount" type="number" {...register("amount")} />
+                <Input
+                  id="amount"
+                  value={displayAmount}
+                  onChange={handleAmountChange}
+                  placeholder="0"
+                  autoComplete="off"
+                />
                 {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
               </div>
               <div className="space-y-2">
@@ -186,24 +227,24 @@ export function ExpenseManagement() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="date">Tanggal</Label>
-                <DateTimePicker date={watchDate} setDate={(d) => setValue("date", d || new Date())} />
+                <DateTimePicker date={watchDate} setDate={(d) => setValue("date", d || getOfficeTime(timezone))} />
                 {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                    <Label htmlFor="accountId">Dibayar Dari Akun</Label>
-                    <Select onValueChange={(value) => setValue("accountId", value)}>
-                        <SelectTrigger><SelectValue placeholder="Pilih akun..." /></SelectTrigger>
-                        <SelectContent>
-                            {isLoadingAccounts ? <SelectItem value="loading" disabled>Memuat...</SelectItem> :
-                            accounts?.filter(a => a.isPaymentAccount).map(acc => (
-                                <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                    {errors.accountId && <p className="text-sm text-destructive">{errors.accountId.message}</p>}
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="accountId">Dibayar Dari Akun</Label>
+                <Select onValueChange={(value) => setValue("accountId", value)}>
+                  <SelectTrigger><SelectValue placeholder="Pilih akun..." /></SelectTrigger>
+                  <SelectContent>
+                    {isLoadingAccounts ? <SelectItem value="loading" disabled>Memuat...</SelectItem> :
+                      accounts?.filter(a => a.isPaymentAccount).map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {errors.accountId && <p className="text-sm text-destructive">{errors.accountId.message}</p>}
+              </div>
             </div>
             <Button type="submit" disabled={addExpense.isPending}>
               {addExpense.isPending ? "Menyimpan..." : "Simpan Pengeluaran"}

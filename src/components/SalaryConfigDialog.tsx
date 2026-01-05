@@ -14,6 +14,8 @@ import { EmployeeSalary, SalaryConfigFormData, PayrollType, CommissionType } fro
 import { Employee } from '@/types/employee'
 import { useEmployeeSalaries } from '@/hooks/usePayroll'
 import { useToast } from '@/hooks/use-toast'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeTime } from '@/utils/officeTime'
 
 interface SalaryConfigDialogProps {
   isOpen: boolean
@@ -81,6 +83,7 @@ const getRoleSuggestion = (role: string) => {
 
 export function SalaryConfigDialog({ isOpen, onOpenChange, employee, existingConfig }: SalaryConfigDialogProps) {
   const { toast } = useToast()
+  const { timezone } = useTimezone()
   const { createSalaryConfig, updateSalaryConfig } = useEmployeeSalaries()
 
   const [formData, setFormData] = useState<SalaryConfigFormData>({
@@ -89,7 +92,7 @@ export function SalaryConfigDialog({ isOpen, onOpenChange, employee, existingCon
     commissionRate: 0,
     payrollType: 'monthly',
     commissionType: 'none',
-    effectiveFrom: new Date(),
+    effectiveFrom: getOfficeTime(timezone),
     notes: '',
   })
 
@@ -119,12 +122,12 @@ export function SalaryConfigDialog({ isOpen, onOpenChange, employee, existingCon
           commissionRate: 0, // Always 0 since we use existing commission system
           payrollType: suggestion.payrollType,
           commissionType: 'none' as CommissionType, // Always none since we use existing commission system
-          effectiveFrom: new Date(),
+          effectiveFrom: getOfficeTime(timezone),
           notes: `Konfigurasi gaji untuk ${employee.name} (${employee.role})`,
         })
       }
     }
-  }, [isOpen, employee, existingConfig])
+  }, [isOpen, employee, existingConfig, timezone])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

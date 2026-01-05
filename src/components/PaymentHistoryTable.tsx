@@ -93,7 +93,7 @@ export function PaymentHistoryTable() {
       
       // Draw header
       doc.setFontSize(9)
-      doc.setFont(undefined, 'bold')
+      doc.setFont('helvetica', 'bold')
       doc.text('Tanggal', 14, currentY)
       doc.text('Keterangan', 50, currentY)
       doc.text('Akun', 120, currentY)
@@ -104,7 +104,7 @@ export function PaymentHistoryTable() {
       doc.line(14, currentY - 2, 280, currentY - 2)
       
       // Draw data rows
-      doc.setFont(undefined, 'normal')
+      doc.setFont('helvetica', 'normal')
       doc.setFontSize(8)
       
       tableData.forEach((row, index) => {

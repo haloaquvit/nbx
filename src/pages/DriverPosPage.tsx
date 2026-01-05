@@ -23,6 +23,8 @@ import { DriverPrintDialog } from "@/components/DriverPrintDialog"
 import { AddCustomerDialog } from "@/components/AddCustomerDialog"
 import { PricingService } from "@/services/pricingService"
 import { Product } from "@/types/product"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 interface CartItem extends TransactionItem {
   isBonus?: boolean
@@ -34,6 +36,7 @@ interface CartItem extends TransactionItem {
 export default function DriverPosPage() {
   const { toast } = useToast()
   const { user } = useAuth()
+  const { timezone } = useTimezone()
   const { customers } = useCustomers()
   const { products } = useProducts()
   const { accounts, getEmployeeCashAccount } = useAccounts()
@@ -86,7 +89,7 @@ export default function DriverPosPage() {
     }
   }, [items])
   const [dueDate, setDueDate] = useState(() => {
-    const date = new Date();
+    const date = getOfficeTime(timezone);
     date.setDate(date.getDate() + 30);
     return date.toISOString().split('T')[0];
   })
@@ -370,7 +373,7 @@ export default function DriverPosPage() {
         paymentAccountId: paymentAccount || null,
         retasiId: activeRetasi?.id || null,
         retasiNumber: activeRetasi?.retasi_number || null,
-        orderDate: new Date(),
+        orderDate: getOfficeTime(timezone),
         items,
         subtotal: total,
         ppnEnabled: false,
@@ -394,7 +397,7 @@ export default function DriverPosPage() {
       setItems([])
       setPaymentAccount("")
       setPaidAmount(0)
-      const newDueDate = new Date();
+      const newDueDate = getOfficeTime(timezone);
       newDueDate.setDate(newDueDate.getDate() + 30);
       setDueDate(newDueDate.toISOString().split('T')[0])
 
@@ -771,7 +774,7 @@ export default function DriverPosPage() {
                 {/* Quick select buttons */}
                 <div className="grid grid-cols-4 gap-2 mb-3">
                   {[7, 14, 21, 30].map((days) => {
-                    const targetDate = new Date()
+                    const targetDate = getOfficeTime(timezone)
                     targetDate.setDate(targetDate.getDate() + days)
                     const targetDateStr = targetDate.toISOString().split('T')[0]
                     const isActive = dueDate === targetDateStr

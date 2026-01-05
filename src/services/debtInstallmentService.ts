@@ -1,6 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { DebtInstallment, GenerateInstallmentInput } from '@/types/accountsPayable';
-import { createPayablePaymentJournal } from './journalService';
+// journalService removed - now using RPC for all journal operations
 
 /**
  * Service untuk mengelola jadwal angsuran hutang
@@ -165,83 +165,40 @@ export const DebtInstallmentService = {
   },
 
   /**
-   * Bayar angsuran - auto generate jurnal dan update status
+   * Bayar angsuran - menggunakan RPC atomic untuk menghindari race condition
+   * RPC menangani: update installment + update accounts_payable + create journal
+   * dalam 1 transaksi database (otomatis rollback jika gagal)
    */
   async payInstallment(params: {
     installmentId: string;
     paymentAccountId: string;
-    liabilityAccountId: string;
+    liabilityAccountId?: string; // DEPRECATED: Not used by RPC - hutang account is auto-detected
     branchId: string;
     notes?: string;
   }): Promise<{ success: boolean; error?: string }> {
     try {
-      // Get installment data
-      const { data: installmentData, error: fetchError } = await supabase
-        .from('debt_installments')
-        .select('*, accounts_payable:debt_id(id, supplier_name, description)')
-        .eq('id', params.installmentId)
-        .single();
+      // Use atomic RPC - handles everything in single DB transaction
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('pay_debt_installment_atomic', {
+          p_installment_id: params.installmentId,
+          p_branch_id: params.branchId,
+          p_payment_account_id: params.paymentAccountId,
+          p_notes: params.notes || null,
+        });
 
-      if (fetchError || !installmentData) {
-        throw new Error('Angsuran tidak ditemukan');
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+
+      if (rpcError || !rpcResult?.success) {
+        console.error('[DebtInstallmentService] RPC Error:', rpcError?.message || rpcResult?.error_message);
+        throw new Error(rpcError?.message || rpcResult?.error_message || 'Gagal membayar angsuran');
       }
 
-      const installment = fromDb(installmentData);
-      const debt = (installmentData as any).accounts_payable;
-
-      // Update installment status
-      const paymentDate = new Date();
-      const { error: updateError } = await supabase
-        .from('debt_installments')
-        .update({
-          status: 'paid',
-          paid_at: paymentDate.toISOString(),
-          paid_amount: installment.totalAmount,
-          payment_account_id: params.paymentAccountId,
-          notes: params.notes,
-        })
-        .eq('id', params.installmentId);
-
-      if (updateError) throw updateError;
-
-      // Update accounts_payable paid_amount
-      const { data: currentDebt } = await supabase
-        .from('accounts_payable')
-        .select('paid_amount, amount')
-        .eq('id', installment.debtId)
-        .single();
-
-      if (currentDebt) {
-        const newPaidAmount = (currentDebt.paid_amount || 0) + installment.totalAmount;
-        const newStatus = newPaidAmount >= currentDebt.amount ? 'Paid' : 'Partial';
-
-        await supabase
-          .from('accounts_payable')
-          .update({
-            paid_amount: newPaidAmount,
-            status: newStatus,
-            paid_at: newStatus === 'Paid' ? paymentDate.toISOString() : null,
-          })
-          .eq('id', installment.debtId);
-      }
-
-      // Create journal entry for payment
-      const journalResult = await createPayablePaymentJournal({
-        payableId: installment.debtId,
-        paymentDate,
-        amount: installment.totalAmount,
-        supplierName: debt?.supplier_name || 'Kreditor',
-        invoiceNumber: `Angsuran #${installment.installmentNumber}`,
-        branchId: params.branchId,
-        paymentAccountId: params.paymentAccountId,
-        liabilityAccountId: params.liabilityAccountId,
+      console.log('[DebtInstallmentService] Payment processed via atomic RPC:', {
+        installmentId: rpcResult.installment_id,
+        debtId: rpcResult.debt_id,
+        journalId: rpcResult.journal_id,
+        remainingDebt: rpcResult.remaining_debt
       });
-
-      if (!journalResult.success) {
-        console.warn('[DebtInstallmentService] Journal creation warning:', journalResult.error);
-      }
-
-      console.log(`[DebtInstallmentService] Installment #${installment.installmentNumber} paid successfully`);
 
       return { success: true };
     } catch (error: any) {
@@ -289,19 +246,25 @@ export const DebtInstallmentService = {
 
   /**
    * Update status angsuran yang sudah jatuh tempo menjadi overdue
+   * Uses RPC to avoid 401 Unauthorized errors
    */
   async updateOverdueStatus(): Promise<void> {
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const { data: resultRaw, error } = await supabase
+        .rpc('update_overdue_installments_atomic');
 
-      await supabase
-        .from('debt_installments')
-        .update({ status: 'overdue' })
-        .eq('status', 'pending')
-        .lt('due_date', today.toISOString());
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
 
-      console.log('[DebtInstallmentService] Updated overdue installments');
+      if (error) {
+        console.error('[DebtInstallmentService] RPC Error:', error);
+        return;
+      }
+
+      if (result?.success) {
+        console.log(`[DebtInstallmentService] Updated ${result.updated_count} overdue installments`);
+      } else {
+        console.error('[DebtInstallmentService] RPC failed:', result?.error_message);
+      }
     } catch (error) {
       console.error('[DebtInstallmentService] Error updating overdue status:', error);
     }

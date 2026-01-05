@@ -3,12 +3,15 @@ import { supabase } from '@/integrations/supabase/client'
 import { Attendance } from '@/types/attendance'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeTime } from '@/utils/officeTime'
 import { startOfDay, endOfDay } from 'date-fns'
 
 export const useAttendance = () => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { currentBranch } = useBranch()
+  const { timezone } = useTimezone()
 
   const getTodayAttendance = useQuery<Attendance | null>({
     queryKey: ['todayAttendance', user?.id],
@@ -41,7 +44,7 @@ export const useAttendance = () => {
         .from('attendance')
         .insert({
           user_id: user.id,
-          check_in_time: new Date().toISOString(),
+          check_in_time: getOfficeTime(timezone).toISOString(),
           status: 'Hadir',
           location_check_in: location,
           branch_id: currentBranch?.id || null,
@@ -63,7 +66,7 @@ export const useAttendance = () => {
       const { data: dataRaw, error } = await supabase
         .from('attendance')
         .update({
-          check_out_time: new Date().toISOString(),
+          check_out_time: getOfficeTime(timezone).toISOString(),
           status: 'Pulang',
           location_check_out: location,
         })

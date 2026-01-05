@@ -48,10 +48,10 @@ export function MaterialMovementReport() {
   // Enhanced material movements with transaction linking
   const enrichedMovements = useMemo(() => {
     if (!stockMovements || !dateRange?.from || !dateRange?.to) return []
-    
+
     const from = startOfDay(dateRange.from)
     const to = endOfDay(dateRange.to)
-    
+
     // Filter by date range
     const filteredMovements = stockMovements.filter(movement => {
       const movementDate = new Date(movement.createdAt)
@@ -62,7 +62,7 @@ export function MaterialMovementReport() {
     return filteredMovements.map(movement => {
       let transactionData = null
       let transactionId = '-'
-      
+
       // Try to find related transaction
       if (movement.referenceType === 'transaction' && movement.referenceId) {
         const transaction = transactions?.find(t => t.id === movement.referenceId)
@@ -85,19 +85,19 @@ export function MaterialMovementReport() {
   // Generate actual material movements from transactions (only for production status)
   const transactionBasedMovements = useMemo(() => {
     if (!transactions || !dateRange?.from || !dateRange?.to) return []
-    
+
     const from = startOfDay(dateRange.from)
     const to = endOfDay(dateRange.to)
-    
+
     const movements: any[] = []
-    
+
     // Process transactions in date range that are in production or completed
     transactions.forEach(transaction => {
       const transactionDate = new Date(transaction.orderDate)
       if (transactionDate >= from && transactionDate <= to) {
         // Only show material movements for transactions that actually went into production
         if (transaction.status === 'Proses Produksi' || transaction.status === 'Pesanan Selesai') {
-          
+
           // For each item in transaction, calculate material usage
           transaction.items.forEach(item => {
             if (item.product.materials && item.product.materials.length > 0) {
@@ -105,7 +105,7 @@ export function MaterialMovementReport() {
                 const totalMaterialUsed = productMaterial.quantity * item.quantity
                 const material = materials?.find(m => m.id === productMaterial.materialId)
                 const materialName = material?.name || `Material untuk ${item.product.name}`
-                
+
                 movements.push({
                   id: `${transaction.id}-${item.product.id}-${productMaterial.materialId}`,
                   materialId: productMaterial.materialId,
@@ -128,7 +128,7 @@ export function MaterialMovementReport() {
         }
       }
     })
-    
+
     return movements.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }, [transactions, materials, dateRange])
 
@@ -140,11 +140,12 @@ export function MaterialMovementReport() {
     enrichedMovements.forEach(movement => {
       // Include material-related movements: purchases, adjustments, production errors, and production consumption
       if (movement.referenceType !== 'transaction' &&
-          movement.referenceType !== 'delivery' &&
-          (movement.reason === 'PURCHASE' ||
-           movement.reason === 'ADJUSTMENT' ||
-           movement.reason === 'PRODUCTION_CONSUMPTION' ||
-           movement.reason === 'PRODUCTION_ERROR')) {
+        movement.referenceType !== 'delivery' &&
+        (movement.reason === 'PURCHASE' ||
+          movement.reason === 'ADJUSTMENT' ||
+          movement.reason === 'PRODUCTION' ||
+          movement.reason === 'PRODUCTION_CONSUMPTION' ||
+          movement.reason === 'PRODUCTION_ERROR')) {
         combined.push(movement)
       }
       // IMPORTANT: Include ALL production reference type (production errors AND production consumption)
@@ -193,9 +194,9 @@ export function MaterialMovementReport() {
           if (movement.reason === 'ADJUSTMENT') adjustmentQty += qty
         } else {
           totalOut += qty
-          if (movement.reason === 'PRODUCTION_CONSUMPTION') productionQty += qty
-          if (movement.reason === 'PRODUCTION_ERROR') errorQty += qty
-          if (movement.reason === 'ADJUSTMENT') adjustmentQty += qty
+          if (movement.reason === 'PRODUCTION_CONSUMPTION' || movement.reason === 'PRODUCTION') productionQty += qty
+          if (movement.reason === 'PRODUCTION_ERROR' || (movement.reason === 'ADJUSTMENT' && movement.referenceType === 'spoilage')) errorQty += qty
+          if (movement.reason === 'ADJUSTMENT' && movement.referenceType !== 'spoilage') adjustmentQty += qty
         }
       })
 
@@ -391,8 +392,8 @@ export function MaterialMovementReport() {
       movement.materialName,
       movement.type === 'IN' ? 'Masuk' : 'Keluar',
       movement.reason === 'PURCHASE' ? 'Pembelian' :
-        movement.reason === 'PRODUCTION_CONSUMPTION' ? 'Produksi' :
-          movement.reason === 'PRODUCTION_ERROR' ? 'Rusak' :
+        (movement.reason === 'PRODUCTION_CONSUMPTION' || movement.reason === 'PRODUCTION') ? 'Produksi' :
+          (movement.reason === 'PRODUCTION_ERROR' || (movement.reason === 'ADJUSTMENT' && movement.referenceType === 'spoilage')) ? 'Barang Rusak' :
             movement.reason === 'ADJUSTMENT' ? 'Penyesuaian' : movement.reason,
       movement.type === 'IN' ? `+${movement.quantity}` : `-${movement.quantity}`,
       movement.userName || 'System',
@@ -641,8 +642,8 @@ export function MaterialMovementReport() {
                         </TableCell>
                         <TableCell>
                           {movement.reason === 'PURCHASE' ? 'Pembelian' :
-                            movement.reason === 'PRODUCTION_CONSUMPTION' ? 'Produksi' :
-                              movement.reason === 'PRODUCTION_ERROR' ? 'Barang Rusak' :
+                            (movement.reason === 'PRODUCTION_CONSUMPTION' || movement.reason === 'PRODUCTION') ? 'Produksi' :
+                              (movement.reason === 'PRODUCTION_ERROR' || (movement.reason === 'ADJUSTMENT' && movement.referenceType === 'spoilage')) ? 'Barang Rusak' :
                                 movement.reason === 'ADJUSTMENT' ? 'Penyesuaian' :
                                   movement.reason}
                         </TableCell>

@@ -4,7 +4,9 @@ import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
 import { generateSequentialId } from '@/utils/idGenerator'
-import { createPayablePaymentJournal, createDebtJournal } from '@/services/journalService'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeDateString } from '@/utils/officeTime'
+// journalService removed - now using RPC for all journal operations
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -51,6 +53,7 @@ export const useAccountsPayable = () => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { currentBranch } = useBranch()
+  const { timezone } = useTimezone()
 
   const { data: accountsPayable, isLoading } = useQuery<AccountsPayable[]>({
     queryKey: ['accountsPayable', currentBranch?.id],
@@ -79,63 +82,48 @@ export const useAccountsPayable = () => {
     retryDelay: 1000,
   })
 
+  // Create Payable - Using Atomic RPC
   const createAccountsPayable = useMutation({
-    mutationFn: async (newPayable: Omit<AccountsPayable, 'id' | 'createdAt'>): Promise<AccountsPayable> => {
-      // Generate ID with sequential number using utility function
-      const payableId = await generateSequentialId({
-        branchName: currentBranch?.name,
-        tableName: 'accounts_payable',
-        pageCode: 'HT-AP',
-        branchId: currentBranch?.id || null,
-      })
+    mutationFn: async (newPayable: Omit<AccountsPayable, 'id' | 'createdAt'> & { skipJournal?: boolean }): Promise<AccountsPayable> => {
+      if (!currentBranch?.id) {
+        throw new Error('Branch tidak dipilih. Silakan pilih branch terlebih dahulu.')
+      }
 
-      const dbData = toDb({
-        ...newPayable,
-        id: payableId,
-        createdAt: new Date(),
-        paidAmount: newPayable.paidAmount ?? 0, // Ensure paidAmount is always set to 0 if not provided
-        branchId: currentBranch?.id,
-      })
+      // skipJournal = true when called from PO approve flow (journal created separately)
+      const skipJournal = newPayable.skipJournal ?? false;
 
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase
+      // Signature: create_accounts_payable_atomic(p_branch_id, p_supplier_name, p_amount, p_due_date, p_description, p_creditor_type, p_purchase_order_id, p_skip_journal)
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('create_accounts_payable_atomic', {
+          p_branch_id: currentBranch.id,
+          p_supplier_name: newPayable.supplierName,
+          p_amount: newPayable.amount,
+          p_due_date: newPayable.dueDate ? newPayable.dueDate.toISOString().split('T')[0] : null,
+          p_description: newPayable.description || null,
+          p_creditor_type: newPayable.creditorType || 'supplier',
+          p_purchase_order_id: newPayable.purchaseOrderId || null,
+          p_skip_journal: skipJournal
+        })
+
+      if (rpcError) throw new Error(rpcError.message)
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw
+
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal membuat hutang')
+      }
+
+      console.log('✅ Accounts payable created via RPC:', rpcResult.payable_id)
+
+      // Fetch created record
+      const { data: createdRaw, error: fetchError } = await supabase
         .from('accounts_payable')
-        .insert(dbData)
-        .select()
+        .select('*')
+        .eq('id', rpcResult.payable_id)
         .order('id').limit(1)
 
-      if (error) throw new Error(error.message)
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw
-      if (!data) throw new Error('Failed to create accounts payable')
-
-      // ============================================================================
-      // AUTO-GENERATE JOURNAL ENTRY FOR HUTANG BARU
-      // ============================================================================
-      // Jurnal otomatis untuk pencatatan hutang baru:
-      // Dr. Kas/Bank (jika ada penerimaan dana)    xxx
-      //   Cr. Hutang Usaha/Hutang Bank                  xxx
-      // ============================================================================
-      if (currentBranch?.id && newPayable.amount > 0) {
-        try {
-          const journalResult = await createDebtJournal({
-            debtId: payableId,
-            debtDate: new Date(),
-            amount: newPayable.amount,
-            creditorName: newPayable.supplierName || 'Unknown',
-            creditorType: (newPayable.creditorType as 'supplier' | 'bank' | 'credit_card' | 'other') || 'other',
-            description: newPayable.description || 'Hutang Baru',
-            branchId: currentBranch.id,
-          });
-
-          if (journalResult.success) {
-            console.log('✅ Jurnal hutang baru auto-generated:', journalResult.journalId);
-          } else {
-            console.warn('⚠️ Gagal membuat jurnal hutang otomatis:', journalResult.error);
-          }
-        } catch (journalError) {
-          console.error('Error creating debt journal:', journalError);
-        }
-      }
+      const data = Array.isArray(createdRaw) ? createdRaw[0] : createdRaw
+      if (!data) throw new Error('Failed to fetch created accounts payable')
 
       return fromDb(data)
     },
@@ -145,149 +133,116 @@ export const useAccountsPayable = () => {
     },
   })
 
+  // ============================================================================
+  // PAY ACCOUNTS PAYABLE - Using Atomic RPC (pay_supplier_atomic)
+  // This handles: update payable + create journal in one atomic transaction
+  // Falls back to legacy method if RPC not deployed
+  // ============================================================================
   const payAccountsPayable = useMutation({
     mutationFn: async ({
       payableId,
       amount,
       paymentAccountId,
-      liabilityAccountId,
-      notes
+      liabilityAccountId, // DEPRECATED: Not used by RPC - hutang account is auto-detected (2110)
+      notes,
+      paymentMethod = 'cash'
     }: {
       payableId: string
       amount: number
       paymentAccountId: string
-      liabilityAccountId: string
+      liabilityAccountId?: string // Made optional - not used by RPC
       notes?: string
+      paymentMethod?: 'cash' | 'transfer'
     }) => {
-      const paymentDate = new Date()
+      // WAJIB: branch_id untuk isolasi data
+      if (!currentBranch?.id) {
+        throw new Error('Branch tidak dipilih. Silakan pilih branch terlebih dahulu.')
+      }
 
-      // Get current payable data
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: currentPayableRaw, error: fetchError } = await supabase
+      const paymentDateStr = getOfficeDateString(timezone)
+
+      // Try atomic RPC first - pay_supplier_atomic
+      // Signature: pay_supplier_atomic(p_payable_id, p_branch_id, p_amount, p_payment_method, p_payment_date, p_notes)
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('pay_supplier_atomic', {
+          p_payable_id: payableId,
+          p_branch_id: currentBranch.id,
+          p_amount: amount,
+          p_payment_method: paymentMethod,
+          p_payment_date: paymentDateStr, // DATE format from office timezone
+          p_notes: notes || null
+        })
+
+      // Strict RPC Check
+      if (rpcError) throw new Error(rpcError.message)
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw
+
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Payment failed')
+      }
+
+      console.log(`✅ Payable payment via RPC:`, {
+        paymentId: rpcResult.payment_id,
+        remainingAmount: rpcResult.remaining_amount,
+        journalId: rpcResult.journal_id
+      })
+
+      // Fetch updated payable to return
+      const { data: updatedPayableRaw } = await supabase
         .from('accounts_payable')
         .select('*')
         .eq('id', payableId)
         .order('id').limit(1)
 
-      if (fetchError) throw fetchError
-      const currentPayable = Array.isArray(currentPayableRaw) ? currentPayableRaw[0] : currentPayableRaw
-      if (!currentPayable) throw new Error('Payable not found')
-
-      const currentPaidAmount = currentPayable.paid_amount || 0
-      const newPaidAmount = currentPaidAmount + amount
-      const isFullyPaid = newPaidAmount >= currentPayable.amount
-
-      // Update accounts payable
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: updatedPayableRaw, error: updateError } = await supabase
-        .from('accounts_payable')
-        .update({
-          paid_amount: newPaidAmount,
-          status: isFullyPaid ? 'Paid' : 'Partial',
-          paid_at: isFullyPaid ? paymentDate : currentPayable.paid_at,
-          payment_account_id: paymentAccountId,
-          notes: notes || currentPayable.notes
-        })
-        .eq('id', payableId)
-        .select()
-        .order('id').limit(1)
-
-      if (updateError) throw updateError
       const updatedPayable = Array.isArray(updatedPayableRaw) ? updatedPayableRaw[0] : updatedPayableRaw
-      if (!updatedPayable) throw new Error('Failed to update payable')
+      if (!updatedPayable) throw new Error('Failed to fetch updated payable')
 
-      // Get payment account info
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: paymentAccountRaw } = await supabase
-        .from('accounts')
-        .select('id, name, code')
-        .eq('id', paymentAccountId)
-        .order('id').limit(1)
-      const paymentAccount = Array.isArray(paymentAccountRaw) ? paymentAccountRaw[0] : paymentAccountRaw
-
-      // Get liability account info
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: liabilityAccountRaw } = await supabase
-        .from('accounts')
-        .select('id, name, code')
-        .eq('id', liabilityAccountId)
-        .order('id').limit(1)
-      const liabilityAccount = Array.isArray(liabilityAccountRaw) ? liabilityAccountRaw[0] : liabilityAccountRaw
-
-      console.log('Payment account:', paymentAccount)
-      console.log('Liability account:', liabilityAccount)
-
-      // ============================================================================
-      // BALANCE UPDATE LANGSUNG DIHAPUS
-      // Semua saldo sekarang dihitung dari journal_entries
-      // Pembayaran hutang di-jurnal via createPayablePaymentJournal
-      // ============================================================================
-
-      // ============================================================================
-      // AUTO-GENERATE JOURNAL ENTRY FOR PEMBAYARAN HUTANG
-      // ============================================================================
-      // Jurnal otomatis untuk pembayaran hutang:
-      // Dr. Hutang Usaha        xxx
-      //   Cr. Kas/Bank               xxx
-      // ============================================================================
-      if (currentBranch?.id) {
-        try {
-          const journalResult = await createPayablePaymentJournal({
-            payableId: payableId,
-            paymentDate: paymentDate,
-            amount: amount,
-            supplierName: currentPayable.supplier_name || 'Supplier',
-            invoiceNumber: currentPayable.purchase_order_id || undefined,
-            branchId: currentBranch.id,
-            paymentAccountId: paymentAccountId,
-            liabilityAccountId: liabilityAccountId,
-          });
-
-          if (journalResult.success) {
-            console.log('✅ Jurnal pembayaran hutang auto-generated:', journalResult.journalId);
-          } else {
-            console.warn('⚠️ Gagal membuat jurnal pembayaran hutang otomatis:', journalResult.error);
-          }
-        } catch (journalError) {
-          console.error('Error creating payable payment journal:', journalError);
-        }
-      }
-
-      // NOTE: cash_history INSERT DIHAPUS - semua cash flow sekarang dibaca dari journal_entries
-
-      const isPurchaseOrderPayment = !!currentPayable.purchase_order_id
-
-      // Update PO status to Selesai if this is a PO payment and fully paid
-      if (isPurchaseOrderPayment && isFullyPaid) {
+      // Update PO status if fully paid
+      if (updatedPayable.status === 'paid' && updatedPayable.purchase_order_id) {
         await supabase
           .from('purchase_orders')
           .update({ status: 'Selesai' })
-          .eq('id', currentPayable.purchase_order_id)
+          .eq('id', updatedPayable.purchase_order_id)
       }
 
       return fromDb(updatedPayable)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accountsPayable'] })
-      queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['cashFlow'] })
+      queryClient.invalidateQueries({ queryKey: ['accountsPayable'], exact: false })
+      queryClient.invalidateQueries({ queryKey: ['accounts'], exact: false })
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'], exact: false })
       queryClient.invalidateQueries({ queryKey: ['cashBalance'] })
       queryClient.invalidateQueries({ queryKey: ['purchaseOrders'] }) // Refresh PO status after payment
       queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
     }
   })
 
+  // Legacy Fallback function removed
+
   const deleteAccountsPayable = useMutation({
     mutationFn: async (payableId: string) => {
-      const { error } = await supabase
-        .from('accounts_payable')
-        .delete()
-        .eq('id', payableId)
-      
-      if (error) throw new Error(error.message)
+      if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
+
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('delete_accounts_payable_atomic', {
+          p_payable_id: payableId,
+          p_branch_id: currentBranch.id
+        });
+
+      if (rpcError) throw new Error(rpcError.message);
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal menghapus hutang');
+      }
+
+      console.log('✅ Accounts Payable deleted via RPC, journals voided:', rpcResult.journals_voided);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['accountsPayable'] })
+      queryClient.invalidateQueries({ queryKey: ['accountsPayable'], exact: false })
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] })
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] }) // Might affect cash flow if payments were involved (blocked) but good to sync
     },
   })
 

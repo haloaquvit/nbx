@@ -12,13 +12,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useBranch } from '@/contexts/BranchContext';
 import { generateSequentialId } from '@/utils/idGenerator';
-import { createDebtJournal, createMigrationDebtJournal } from '@/services/journalService';
 import { useAuthContext } from '@/contexts/AuthContext';
+// journalService removed - now using RPC for all journal operations
 import { isOwner } from '@/utils/roleUtils';
 import { formatCurrency } from '@/lib/utils';
 import { formatNumberWithCommas, parseNumberWithCommas } from '@/utils/formatNumber';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import { useTimezone } from '@/contexts/TimezoneContext';
+import { getOfficeTime, getOfficeDateString } from '@/utils/officeTime';
 
 interface AddDebtDialogProps {
   onSuccess?: () => void;
@@ -38,6 +40,7 @@ interface ImportRow {
 export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
   const { currentBranch } = useBranch();
   const { user } = useAuthContext();
+  const { timezone } = useTimezone();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('manual');
   const [isLoading, setIsLoading] = useState(false);
@@ -128,40 +131,51 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
 
       if (error) throw error;
 
-      // Create appropriate journal entry
+      // Create appropriate journal entry via RPC
       if (currentBranch?.id) {
         try {
-          let journalResult;
+          const debtDate = getOfficeDateString(timezone);
 
           if (isMigration) {
             // Migration journal: Dr. Saldo Awal, Cr. Hutang (no cash involved)
-            journalResult = await createMigrationDebtJournal({
-              debtId: id,
-              debtDate: new Date(),
-              amount,
-              creditorName: formData.creditorName,
-              creditorType: formData.creditorType,
-              description: formData.description,
-              branchId: currentBranch.id,
-            });
+            const { data: journalResultRaw, error: journalError } = await supabase
+              .rpc('create_migration_debt_journal_rpc', {
+                p_branch_id: currentBranch.id,
+                p_debt_id: id,
+                p_debt_date: debtDate,
+                p_amount: amount,
+                p_creditor_name: formData.creditorName,
+                p_creditor_type: formData.creditorType,
+                p_description: formData.description,
+              });
+
+            const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw;
+            if (journalError || !journalResult?.success) {
+              console.warn('Gagal membuat jurnal hutang migrasi:', journalError?.message || journalResult?.error_message);
+              toast.warning(`Hutang tersimpan, tapi jurnal gagal: ${journalError?.message || journalResult?.error_message}`);
+            } else {
+              console.log('✅ Jurnal hutang migrasi berhasil via RPC:', journalResult.journal_id);
+            }
           } else {
             // Normal journal: Dr. Kas, Cr. Hutang (receiving cash)
-            journalResult = await createDebtJournal({
-              debtId: id,
-              debtDate: new Date(),
-              amount,
-              creditorName: formData.creditorName,
-              creditorType: formData.creditorType,
-              description: formData.description,
-              branchId: currentBranch.id,
-            });
-          }
+            const { data: journalResultRaw, error: journalError } = await supabase
+              .rpc('create_debt_journal_rpc', {
+                p_branch_id: currentBranch.id,
+                p_debt_id: id,
+                p_debt_date: debtDate,
+                p_amount: amount,
+                p_creditor_name: formData.creditorName,
+                p_creditor_type: formData.creditorType,
+                p_description: formData.description,
+              });
 
-          if (journalResult.success) {
-            console.log('Jurnal hutang berhasil:', journalResult.journalId);
-          } else {
-            console.warn('Gagal membuat jurnal hutang:', journalResult.error);
-            toast.warning(`Hutang tersimpan, tapi jurnal gagal: ${journalResult.error}`);
+            const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw;
+            if (journalError || !journalResult?.success) {
+              console.warn('Gagal membuat jurnal hutang:', journalError?.message || journalResult?.error_message);
+              toast.warning(`Hutang tersimpan, tapi jurnal gagal: ${journalError?.message || journalResult?.error_message}`);
+            } else {
+              console.log('✅ Jurnal hutang berhasil via RPC:', journalResult.journal_id);
+            }
           }
         } catch (journalError) {
           console.error('Error creating debt journal:', journalError);
@@ -292,16 +306,16 @@ export function AddDebtDialog({ onSuccess }: AddDebtDialogProps) {
 
           if (error) throw error;
 
-          // Create migration journal
+          // Create migration journal via RPC
           if (currentBranch?.id) {
-            await createMigrationDebtJournal({
-              debtId: id,
-              debtDate: new Date(),
-              amount: row.amount,
-              creditorName: row.creditorName,
-              creditorType: row.creditorType,
-              description: row.description || 'Import hutang migrasi',
-              branchId: currentBranch.id,
+            await supabase.rpc('create_migration_debt_journal_rpc', {
+              p_branch_id: currentBranch.id,
+              p_debt_id: id,
+              p_debt_date: getOfficeDateString(timezone),
+              p_amount: row.amount,
+              p_creditor_name: row.creditorName,
+              p_creditor_type: row.creditorType,
+              p_description: row.description || 'Import hutang migrasi',
             });
           }
 

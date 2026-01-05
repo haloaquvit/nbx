@@ -55,7 +55,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         width: printRef.current.offsetWidth,
         height: printRef.current.offsetHeight
       })
-      
+
       await createCompressedPDF(
         printRef.current,
         `Surat-Jalan-${delivery.transactionId}-${delivery.deliveryNumber}.pdf`,
@@ -139,24 +139,24 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
 
         <!-- Items -->
         ${delivery.items.map((item, index) => {
-          const deliverySummaryItem = transaction?.deliverySummary?.find(ds => ds.productId === item.productId)
-          const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
-          const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
-          const cumulativeDeliveredAtThisPoint = transaction?.deliveries
-            ? transaction.deliveries
-                .filter(d => {
-                  const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
-                  return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
-                })
-                .reduce((sum, d) => {
-                  const productItem = d.items.find(di => di.productId === item.productId)
-                  return sum + (productItem?.quantityDelivered || 0)
-                }, 0)
-            : item.quantityDelivered
-          const remainingAtThisPoint = transaction?.deliverySummary
-            ? orderedQuantity - cumulativeDeliveredAtThisPoint
-            : 0
-          return `
+      const deliverySummaryItem = transaction?.deliverySummary?.find(ds => ds.productId === item.productId)
+      const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
+      const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
+      const cumulativeDeliveredAtThisPoint = transaction?.deliveries
+        ? transaction.deliveries
+          .filter(d => {
+            const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
+            return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
+          })
+          .reduce((sum, d) => {
+            const productItem = d.items.find(di => di.productId === item.productId)
+            return sum + (productItem?.quantityDelivered || 0)
+          }, 0)
+        : item.quantityDelivered
+      const remainingAtThisPoint = transaction?.deliverySummary
+        ? orderedQuantity - cumulativeDeliveredAtThisPoint
+        : 0
+      return `
             <tr>
               <td style="padding: 0.5mm 1mm; font-size: 11pt;">${index + 1}</td>
               <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.productName}</td>
@@ -165,7 +165,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(remainingAtThisPoint)} ${shortUnit(item.unit)}</td>
             </tr>
           `
-        }).join('')}
+    }).join('')}
 
         <!-- Spacer row to push footer to bottom -->
         <tr style="height: 100%;">
@@ -291,13 +291,13 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         </div>
       ) : (
         <Button
-          onClick={handleButtonClick}
-          size="sm"
+          onClick={handleDotMatrixPrint}
+          size="icon"
           variant="outline"
-          className="gap-2"
+          className="rounded-full shadow-sm hover:shadow-md transition-shadow h-8 w-8"
+          title="Cetak Surat Jalan (Dot Matrix)"
         >
-          <FileDown className="h-4 w-4" />
-          PDF
+          <Printer className="h-4 w-4" />
         </Button>
       )}
 
@@ -344,9 +344,9 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
           <div className="flex justify-between items-start mb-8 pb-6 border-b-2 border-gray-200">
             <div>
               {settings?.logo && (
-                <img 
-                  src={settings.logo} 
-                  alt="Company Logo" 
+                <img
+                  src={settings.logo}
+                  alt="Company Logo"
                   className="h-16 w-auto mb-4"
                 />
               )}
@@ -419,28 +419,28 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                   // Get the delivery summary item for baseline data
                   const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
                   const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
-                  
+
                   // Calculate cumulative delivered quantity up to and including this delivery
                   // by finding all deliveries for this product up to this delivery's creation date
                   const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
                   const cumulativeDeliveredAtThisPoint = transaction.deliveries
                     ? transaction.deliveries
-                        .filter(d => {
-                          const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
-                          return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
-                        })
-                        .reduce((sum, d) => {
-                          const productItem = d.items.find(di => di.productId === item.productId)
-                          return sum + (productItem?.quantityDelivered || 0)
-                        }, 0)
+                      .filter(d => {
+                        const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
+                        return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
+                      })
+                      .reduce((sum, d) => {
+                        const productItem = d.items.find(di => di.productId === item.productId)
+                        return sum + (productItem?.quantityDelivered || 0)
+                      }, 0)
                     : item.quantityDelivered // Fallback to current delivery quantity if no deliveries array
-                  
+
                   // Calculate remaining quantity at this point in time
                   // For history view without complete transaction data, show 0 remaining
-                  const remainingAtThisPoint = transaction.deliverySummary 
+                  const remainingAtThisPoint = transaction.deliverySummary
                     ? orderedQuantity - cumulativeDeliveredAtThisPoint
                     : 0
-                  
+
                   return (
                     <tr key={item.id} className="border-b border-gray-200">
                       <td className="border border-gray-300 px-4 py-3 text-center">{index + 1}</td>
@@ -538,9 +538,9 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               </div>
             </div>
           </div>
-          
+
           <div className="border-b border-dashed border-black mb-2"></div>
-          
+
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-dashed border-black">
@@ -558,28 +558,28 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                 // Get the delivery summary item for baseline data
                 const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
                 const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
-                
+
                 // Calculate cumulative delivered quantity up to and including this delivery
                 // by finding all deliveries for this product up to this delivery's creation date
                 const deliveryCreatedAt2 = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
                 const cumulativeDeliveredAtThisPoint = transaction.deliveries
                   ? transaction.deliveries
-                      .filter(d => {
-                        const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
-                        return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt2) && dCreatedAt <= deliveryCreatedAt2
-                      })
-                      .reduce((sum, d) => {
-                        const productItem = d.items.find(di => di.productId === item.productId)
-                        return sum + (productItem?.quantityDelivered || 0)
-                      }, 0)
+                    .filter(d => {
+                      const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
+                      return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt2) && dCreatedAt <= deliveryCreatedAt2
+                    })
+                    .reduce((sum, d) => {
+                      const productItem = d.items.find(di => di.productId === item.productId)
+                      return sum + (productItem?.quantityDelivered || 0)
+                    }, 0)
                   : item.quantityDelivered // Fallback to current delivery quantity if no deliveries array
-                
+
                 // Calculate remaining quantity at this point in time
                 // For history view without complete transaction data, show 0 remaining
-                const remainingAtThisPoint = transaction.deliverySummary 
+                const remainingAtThisPoint = transaction.deliverySummary
                   ? orderedQuantity - cumulativeDeliveredAtThisPoint
                   : 0
-                
+
                 return (
                   <tr key={item.id}>
                     <td className="pt-1 align-top">{index + 1}</td>
@@ -604,11 +604,11 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               ))}
             </tbody>
           </table>
-          
+
           <div className="mt-2 pt-1 border-t border-dashed border-black text-xs">
             <div><strong>Catatan:</strong> {delivery.notes || 'Barang sudah diterima dalam kondisi baik'}</div>
           </div>
-          
+
           <div className="flex justify-between mt-3 text-xs">
             <div className="text-center">
               <div className="mb-2">Yang Mengirim</div>
@@ -627,7 +627,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
               </div>
             </div>
           </div>
-          
+
           <div className="text-center mt-3 text-xs border-t border-dashed border-black pt-1">
             Dicetak: {format(new Date(), "dd/MM/yy HH:mm", { locale: id })}
           </div>

@@ -83,15 +83,6 @@ export function EditDeliveryDialog({ delivery, open, onOpenChange }: EditDeliver
   }
 
   const handleSubmit = async () => {
-    if (!driverId) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Supir wajib dipilih"
-      })
-      return
-    }
-
     // Validate at least one item has quantity > 0
     const hasValidItems = items.some(item => item.quantityDelivered > 0)
     if (!hasValidItems) {
@@ -106,9 +97,9 @@ export function EditDeliveryDialog({ delivery, open, onOpenChange }: EditDeliver
     setIsSubmitting(true)
     try {
       await updateDelivery.mutateAsync({
-        deliveryId: delivery.id,
-        driverId,
-        helperId: helperId || undefined,
+        id: delivery.id, // Fixed: deliveryId -> id
+        driverId: (!driverId || driverId === "no-driver") ? null : driverId, // Handle null
+        helperId: (!helperId || helperId === "no-helper") ? undefined : helperId,
         notes,
         items: items.map(item => ({
           id: item.id,
@@ -152,11 +143,12 @@ export function EditDeliveryDialog({ delivery, open, onOpenChange }: EditDeliver
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="driverId">Supir *</Label>
-              <Select value={driverId} onValueChange={setDriverId}>
+              <Select value={driverId || "no-driver"} onValueChange={setDriverId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih Supir" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="no-driver">Tanpa Supir</SelectItem>
                   {employees?.filter(emp => emp.role?.toLowerCase() === 'supir').map((driver) => (
                     <SelectItem key={driver.id} value={driver.id}>
                       {driver.name} - {driver.position}

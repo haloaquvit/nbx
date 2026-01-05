@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client'
 import { useAuth } from './useAuth'
 import { useBranch } from '@/contexts/BranchContext'
 import { useAccounts } from '@/hooks/useAccounts'
-import { createExpenseJournal } from '@/services/journalService'
+// Journal now handled by RPC create_expense_atomic
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -177,64 +177,67 @@ export const useExpenses = () => {
 
   const addExpense = useMutation({
     mutationFn: async (newExpenseData: Omit<Expense, 'id' | 'createdAt'>): Promise<Expense> => {
-      const dbData = fromAppToDb(newExpenseData);
+      // ============================================================================
+      // USE RPC: create_expense_atomic
+      // Handles: expense record + journal (Dr. Beban, Cr. Kas) in single transaction
+      // ============================================================================
+      if (currentBranch?.id) {
+        const { data: rpcResultRaw, error: rpcError } = await supabase
+          .rpc('create_expense_atomic', {
+            p_expense: {
+              description: newExpenseData.description,
+              amount: newExpenseData.amount,
+              category: newExpenseData.category || 'Beban Umum',
+              date: newExpenseData.date instanceof Date ? newExpenseData.date.toISOString().split('T')[0] : newExpenseData.date,
+              account_id: newExpenseData.accountId,
+              expense_account_id: newExpenseData.expenseAccountId,
+              expense_account_name: newExpenseData.expenseAccountName,
+            },
+            p_branch_id: currentBranch.id,
+          });
 
-      // Debug log to see what's being sent
+        if (rpcError) {
+          console.error('RPC create_expense_atomic error:', rpcError);
+          throw new Error(rpcError.message);
+        }
+
+        const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+        if (!rpcResult?.success) {
+          throw new Error(rpcResult?.error_message || 'Gagal membuat pengeluaran');
+        }
+
+        console.log('✅ Expense created via RPC:', rpcResult.expense_id, 'Journal:', rpcResult.journal_id);
+
+        // Fetch the created expense
+        const { data: createdExpenseRaw } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('id', rpcResult.expense_id)
+          .order('id').limit(1);
+
+        const createdExpense = Array.isArray(createdExpenseRaw) ? createdExpenseRaw[0] : createdExpenseRaw;
+        if (!createdExpense) throw new Error('Expense created but not found');
+
+        return fromDbToApp(createdExpense);
+      }
+
+      // Fallback: Legacy method if no branch
+      const dbData = fromAppToDb(newExpenseData);
       const insertData = {
         ...dbData,
         id: `exp-${Date.now()}`,
         branch_id: currentBranch?.id || null,
       };
-      console.log('Inserting expense:', insertData);
 
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
       const { data: dataRaw, error } = await supabase
         .from('expenses')
         .insert(insertData)
         .select()
         .order('id').limit(1);
-      if (error) {
-        console.error('Expense insert error:', error);
-        throw new Error(error.message);
-      }
+
+      if (error) throw new Error(error.message);
       const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
       if (!data) throw new Error('Failed to create expense');
-
-      // ============================================================================
-      // BALANCE UPDATE DIHAPUS - Sekarang dihitung dari journal_entries
-      // Double-entry accounting dilakukan melalui createExpenseJournal di bawah
-      // cash_history TIDAK LAGI DIGUNAKAN
-      // ============================================================================
-
-      // ============================================================================
-      // AUTO-GENERATE JOURNAL ENTRY
-      // ============================================================================
-      // Buat jurnal otomatis untuk pengeluaran ini
-      // Dr. Beban (expense account)   xxx
-      //   Cr. Kas/Bank                     xxx
-      // ============================================================================
-      if (currentBranch?.id) {
-        try {
-          const journalResult = await createExpenseJournal({
-            expenseId: data.id,
-            expenseDate: newExpenseData.date,
-            amount: newExpenseData.amount,
-            categoryName: newExpenseData.category || 'Beban Umum',
-            description: newExpenseData.description,
-            branchId: currentBranch.id,
-            expenseAccountId: newExpenseData.expenseAccountId, // Akun beban spesifik
-            cashAccountId: newExpenseData.accountId, // Akun sumber dana (Kas Kecil, Kas Operasional, Bank, dll)
-          });
-
-          if (journalResult.success) {
-            console.log('✅ Jurnal pengeluaran auto-generated:', journalResult.journalId);
-          } else {
-            console.warn('⚠️ Gagal membuat jurnal otomatis:', journalResult.error);
-          }
-        } catch (journalError) {
-          console.error('Error creating expense journal:', journalError);
-        }
-      }
 
       return fromDbToApp(data);
     },
@@ -248,40 +251,50 @@ export const useExpenses = () => {
 
   const deleteExpense = useMutation({
     mutationFn: async (expenseId: string): Promise<Expense> => {
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: deletedExpenseRaw, error: deleteError } = await supabase
+      // Get expense data first for return value
+      const { data: expenseRaw } = await supabase
         .from('expenses')
-        .delete()
+        .select('*')
         .eq('id', expenseId)
-        .select()
         .order('id').limit(1);
 
-      if (deleteError) throw new Error(deleteError.message);
-      const deletedExpense = Array.isArray(deletedExpenseRaw) ? deletedExpenseRaw[0] : deletedExpenseRaw;
-      if (!deletedExpense) throw new Error("Pengeluaran tidak ditemukan");
+      const expense = Array.isArray(expenseRaw) ? expenseRaw[0] : expenseRaw;
+      if (!expense) throw new Error("Pengeluaran tidak ditemukan");
 
-      const appExpense = fromDbToApp(deletedExpense);
+      const appExpense = fromDbToApp(expense);
 
       // ============================================================================
-      // ROLLBACK: Void jurnal terkait expense ini
-      // Balance akan otomatis ter-rollback karena dihitung dari journal_entries
+      // USE RPC: delete_expense_atomic
+      // Handles: void journal + delete expense in single transaction
       // ============================================================================
-      try {
-        const { error: voidError } = await supabase
-          .from('journal_entries')
-          .update({ status: 'voided' })
-          .eq('reference_id', expenseId)
-          .eq('reference_type', 'expense');
+      if (currentBranch?.id) {
+        const { data: rpcResultRaw, error: rpcError } = await supabase
+          .rpc('delete_expense_atomic', {
+            p_expense_id: expenseId,
+            p_branch_id: currentBranch.id,
+          });
 
-        if (voidError) {
-          console.error('Failed to void expense journal:', voidError.message);
-        } else {
-          console.log('✅ Expense journal voided:', expenseId);
+        if (rpcError) {
+          console.error('RPC delete_expense_atomic error:', rpcError);
+          throw new Error(rpcError.message);
         }
-      } catch (err) {
-        console.error('Error voiding expense journal:', err);
+
+        const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+        if (!rpcResult?.success) {
+          throw new Error(rpcResult?.error_message || 'Gagal menghapus pengeluaran');
+        }
+
+        console.log('✅ Expense deleted via RPC, journals voided:', rpcResult.journals_voided);
+        return appExpense;
       }
 
+      // Fallback: Legacy method
+      const { error: deleteError } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', expenseId);
+
+      if (deleteError) throw new Error(deleteError.message);
       return appExpense;
     },
     onSuccess: () => {
@@ -293,21 +306,54 @@ export const useExpenses = () => {
   });
 
   // ============================================================================
-  // UPDATE EXPENSE - Edit langsung dengan update jurnal
+  // UPDATE EXPENSE - Using RPC update_expense_atomic
   // ============================================================================
   const updateExpense = useMutation({
     mutationFn: async (updatedExpense: Partial<Expense> & { id: string }): Promise<Expense> => {
-      // Get old expense data for comparison
-      const { data: oldExpenseRaw } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('id', updatedExpense.id)
-        .order('id').limit(1);
+      // ============================================================================
+      // USE RPC: update_expense_atomic
+      // Handles: update expense + update journal if amount/account changed
+      // ============================================================================
+      if (currentBranch?.id) {
+        const { data: rpcResultRaw, error: rpcError } = await supabase
+          .rpc('update_expense_atomic', {
+            p_expense_id: updatedExpense.id,
+            p_expense: {
+              description: updatedExpense.description,
+              amount: updatedExpense.amount,
+              category: updatedExpense.category,
+              date: updatedExpense.date instanceof Date ? updatedExpense.date.toISOString().split('T')[0] : updatedExpense.date,
+              account_id: updatedExpense.accountId,
+            },
+            p_branch_id: currentBranch.id,
+          });
 
-      const oldExpense = Array.isArray(oldExpenseRaw) ? oldExpenseRaw[0] : oldExpenseRaw;
-      if (!oldExpense) throw new Error('Pengeluaran tidak ditemukan');
+        if (rpcError) {
+          console.error('RPC update_expense_atomic error:', rpcError);
+          throw new Error(rpcError.message);
+        }
 
-      // Update expense record
+        const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+        if (!rpcResult?.success) {
+          throw new Error(rpcResult?.error_message || 'Gagal update pengeluaran');
+        }
+
+        console.log('✅ Expense updated via RPC, journal updated:', rpcResult.journal_updated);
+
+        // Fetch updated expense
+        const { data: savedExpenseRaw } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('id', updatedExpense.id)
+          .order('id').limit(1);
+
+        const savedExpense = Array.isArray(savedExpenseRaw) ? savedExpenseRaw[0] : savedExpenseRaw;
+        if (!savedExpense) throw new Error('Expense updated but not found');
+
+        return fromDbToApp(savedExpense);
+      }
+
+      // Fallback: Legacy method
       const updateData: any = {};
       if (updatedExpense.description !== undefined) updateData.description = updatedExpense.description;
       if (updatedExpense.amount !== undefined) updateData.amount = updatedExpense.amount;
@@ -325,84 +371,6 @@ export const useExpenses = () => {
       if (updateError) throw new Error(updateError.message);
       const savedExpense = Array.isArray(savedExpenseRaw) ? savedExpenseRaw[0] : savedExpenseRaw;
       if (!savedExpense) throw new Error('Gagal update pengeluaran');
-
-      // Check if amount or account changed - need to update journal
-      const amountChanged = updatedExpense.amount !== undefined && updatedExpense.amount !== oldExpense.amount;
-      const accountChanged = updatedExpense.accountId !== undefined && updatedExpense.accountId !== oldExpense.account_id;
-
-      if (amountChanged || accountChanged) {
-        try {
-          // Find existing journal entry
-          const { data: existingJournalRaw } = await supabase
-            .from('journal_entries')
-            .select('id, entry_number')
-            .eq('reference_id', updatedExpense.id)
-            .eq('reference_type', 'expense')
-            .eq('status', 'posted')
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          const existingJournal = Array.isArray(existingJournalRaw) ? existingJournalRaw[0] : existingJournalRaw;
-
-          if (existingJournal) {
-            console.log('📝 Updating expense journal:', existingJournal.entry_number);
-
-            // Get new amount and account
-            const newAmount = updatedExpense.amount || oldExpense.amount;
-            const newCashAccountId = updatedExpense.accountId || oldExpense.account_id;
-
-            // Get expense account based on category
-            const branchId = currentBranch?.id;
-            const category = updatedExpense.category || oldExpense.category;
-
-            // Find expense account by category (simplified - using default beban umum)
-            const { data: expenseAccountRaw } = await supabase
-              .from('accounts')
-              .select('id')
-              .eq('branch_id', branchId)
-              .like('code', '6%') // Expense accounts start with 6
-              .limit(1);
-            const expenseAccountId = expenseAccountRaw?.[0]?.id;
-
-            if (expenseAccountId && newCashAccountId) {
-              // Delete existing journal lines
-              await supabase.from('journal_entry_lines').delete().eq('journal_entry_id', existingJournal.id);
-
-              // Insert new journal lines: Dr. Beban, Cr. Kas
-              const newLines = [
-                {
-                  journal_entry_id: existingJournal.id,
-                  account_id: expenseAccountId,
-                  debit_amount: newAmount,
-                  credit_amount: 0,
-                  description: savedExpense.description || 'Beban pengeluaran (edit)',
-                  line_number: 1
-                },
-                {
-                  journal_entry_id: existingJournal.id,
-                  account_id: newCashAccountId,
-                  debit_amount: 0,
-                  credit_amount: newAmount,
-                  description: 'Pengeluaran kas (edit)',
-                  line_number: 2
-                }
-              ];
-
-              await supabase.from('journal_entry_lines').insert(newLines);
-
-              // Update journal description
-              await supabase
-                .from('journal_entries')
-                .update({ description: `Pengeluaran - ${savedExpense.description || category}` })
-                .eq('id', existingJournal.id);
-
-              console.log('✅ Expense journal updated, new amount:', newAmount);
-            }
-          }
-        } catch (journalError) {
-          console.error('Error updating expense journal:', journalError);
-        }
-      }
 
       return fromDbToApp(savedExpense);
     },

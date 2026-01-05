@@ -15,6 +15,8 @@ import { compressImage, isImageFile } from "@/utils/imageCompression"
 import { useAuthContext } from "@/contexts/AuthContext"
 import { canDeliverWithoutDriver } from "@/utils/roleUtils"
 import { Capacitor } from "@capacitor/core"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 interface DeliveryFormContentProps {
   transaction: TransactionDeliveryInfo;
@@ -43,6 +45,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
   const { createDelivery } = useDeliveries()
   const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()
   const { user } = useAuthContext()
+  const { timezone } = useTimezone()
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Check if driver is optional (web view + allowed role)
@@ -51,7 +54,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
   
   const [formData, setFormData] = useState<DeliveryFormData>(() => ({
     transactionId: transaction.id,
-    deliveryDate: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    deliveryDate: format(getOfficeTime(timezone), "yyyy-MM-dd'T'HH:mm"),
     notes: "",
     driverId: "",
     helperId: "",
@@ -259,7 +262,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
         transactionId: formData.transactionId,
         deliveryDate: new Date(formData.deliveryDate), // Use user's selected delivery date and time
         notes: formData.notes,
-        driverId: formData.driverId,
+        driverId: formData.driverId || undefined,  // Empty string -> undefined for optional UUID
         helperId: formData.helperId || undefined,
         items: deliveryItems,
         photo: formData.photo,
@@ -283,7 +286,33 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
 
       // Call the completion dialog callback if provided
       if (onDeliveryCreated && result) {
-        onDeliveryCreated(result as Delivery, transaction)
+        // Construct a proper Delivery object from RPC result + form data
+        const deliveryForDialog: Delivery = {
+          id: (result as any).delivery_id,
+          transactionId: formData.transactionId,
+          deliveryNumber: (result as any).delivery_number,
+          deliveryDate: new Date(formData.deliveryDate),
+          driverId: formData.driverId || undefined,
+          driverName: employees?.find(e => e.id === formData.driverId)?.name,
+          helperId: formData.helperId || undefined,
+          helperName: employees?.find(e => e.id === formData.helperId)?.name,
+          notes: formData.notes || undefined,
+          items: deliveryItems.map((item, idx) => ({
+            id: `${(result as any).delivery_id}-${idx}`,
+            deliveryId: (result as any).delivery_id,
+            productId: item.productId,
+            productName: item.productName,
+            quantityDelivered: item.quantityDelivered,
+            unit: item.unit || '',
+            width: item.width,
+            height: item.height,
+            notes: item.notes,
+            createdAt: new Date()
+          })),
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+        onDeliveryCreated(deliveryForDialog, transaction)
       }
 
       onSuccess?.()

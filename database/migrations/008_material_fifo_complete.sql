@@ -175,7 +175,7 @@ BEGIN
       consumed_at,
       reference_id,
       reference_type,
-      unit_cost_at_consumption
+      unit_cost
     ) VALUES (
       v_batch.id,
       v_deduct_qty,

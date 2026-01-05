@@ -407,6 +407,7 @@ export default function RetasiPage() {
                   <TableHead className="text-center">Bawa</TableHead>
                   <TableHead className="text-center">Kembali</TableHead>
                   <TableHead className="text-center">Terjual</TableHead>
+                  <TableHead className="text-center">Selisih</TableHead>
                   <TableHead>Aksi</TableHead>
                 </TableRow>
               </TableHeader>
@@ -414,20 +415,25 @@ export default function RetasiPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={9}>
+                      <TableCell colSpan={10}>
                         <Skeleton className="h-6 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : filteredRetasi.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                    <TableCell colSpan={10} className="text-center text-muted-foreground">
                       Tidak ada data
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredRetasi.flatMap((retasi) => {
                     const items = (retasi as any).items || [];
+                    const selisih = (retasi.total_items || 0) -
+                      (retasi.returned_items_count || 0) -
+                      (retasi.barang_laku || 0) -
+                      (retasi.barang_tidak_laku || 0) -
+                      (retasi.error_items_count || 0);
 
                     if (items.length === 0) {
                       // Retasi tanpa detail item (data lama)
@@ -459,6 +465,9 @@ export default function RetasiPage() {
                           <TableCell className="text-center">{retasi.total_items}</TableCell>
                           <TableCell className="text-center">{retasi.returned_items_count || 0}</TableCell>
                           <TableCell className="text-center">{retasi.barang_laku || 0}</TableCell>
+                          <TableCell className={`text-center font-bold ${selisih !== 0 ? 'text-red-500' : 'text-green-500'}`}>
+                            {selisih}
+                          </TableCell>
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <div className="flex gap-1">
                               <Button variant="outline" size="sm" title="Lihat Detail"
@@ -472,77 +481,89 @@ export default function RetasiPage() {
                     }
 
                     // Render setiap item sebagai baris terpisah
-                    return items.map((item: any, idx: number) => (
-                      <TableRow
-                        key={`${retasi.id}-${item.id}`}
-                        className={`hover:bg-slate-50/80 cursor-pointer ${idx === 0 ? 'border-t-2 border-slate-200' : ''}`}
-                        onClick={() => {
-                          setDetailRetasi(retasi);
-                          setDetailDialogOpen(true);
-                        }}
-                      >
-                        <TableCell>
-                          {idx === 0 ? (
-                            <>
-                              {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
-                              {retasi.departure_time && (
-                                <div className="text-xs text-muted-foreground">{retasi.departure_time}</div>
-                              )}
-                            </>
-                          ) : ''}
-                        </TableCell>
-                        <TableCell>
-                          {idx === 0 ? (
-                            retasi.is_returned ? (
-                              <Badge variant="default" className="bg-emerald-100 text-emerald-700">Kembali</Badge>
-                            ) : (
-                              <Badge variant="default" className="bg-amber-100 text-amber-700">Berangkat</Badge>
-                            )
-                          ) : ''}
-                        </TableCell>
-                        <TableCell>{idx === 0 ? `Retasi ${retasi.retasi_ke}` : ''}</TableCell>
-                        <TableCell>{idx === 0 ? (retasi.driver_name || '-') : ''}</TableCell>
-                        <TableCell className="font-medium">{item.product_name}</TableCell>
-                        <TableCell className="text-center">{item.quantity || 0}</TableCell>
-                        <TableCell className="text-center">{item.returned_quantity || 0}</TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="outline" className="bg-green-50 text-green-700">
-                            {item.sold_quantity || 0}
-                          </Badge>
-                        </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          {idx === 0 && (
-                            <div className="flex gap-1">
-                              {!retasi.is_returned && canEditRetasi() && (
-                                <Button variant="outline" size="sm" title="Tandai Kembali"
-                                  onClick={(e) => { e.stopPropagation(); handleReturnRetasi(retasi); }}
-                                  className="text-green-600 hover:text-green-700">
-                                  <ArrowLeft className="h-4 w-4" />
+                    return items.map((item: any, idx: number) => {
+                      // Calculate item level discrepancy if possible, mostly implicit here
+                      // Item discrepancy = Qty - Returned - Sold - (Damaged? usually not passed here)
+                      // For now, only show Retasi level discrepancy on the first row
+                      return (
+                        <TableRow
+                          key={`${retasi.id}-${item.id}`}
+                          className={`hover:bg-slate-50/80 cursor-pointer ${idx === 0 ? 'border-t-2 border-slate-200' : ''}`}
+                          onClick={() => {
+                            setDetailRetasi(retasi);
+                            setDetailDialogOpen(true);
+                          }}
+                        >
+                          <TableCell>
+                            {idx === 0 ? (
+                              <>
+                                {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
+                                {retasi.departure_time && (
+                                  <div className="text-xs text-muted-foreground">{retasi.departure_time}</div>
+                                )}
+                              </>
+                            ) : ''}
+                          </TableCell>
+                          <TableCell>
+                            {idx === 0 ? (
+                              retasi.is_returned ? (
+                                <Badge variant="default" className="bg-emerald-100 text-emerald-700">Kembali</Badge>
+                              ) : (
+                                <Badge variant="default" className="bg-amber-100 text-amber-700">Berangkat</Badge>
+                              )
+                            ) : ''}
+                          </TableCell>
+                          <TableCell>{idx === 0 ? `Retasi ${retasi.retasi_ke}` : ''}</TableCell>
+                          <TableCell>{idx === 0 ? (retasi.driver_name || '-') : ''}</TableCell>
+                          <TableCell className="font-medium">{item.product_name}</TableCell>
+                          <TableCell className="text-center">{item.quantity || 0}</TableCell>
+                          <TableCell className="text-center">{item.returned_quantity || 0}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline" className="bg-green-50 text-green-700">
+                              {item.sold_quantity || 0}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {idx === 0 ? (
+                              <span className={`font-bold ${selisih !== 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                {selisih}
+                              </span>
+                            ) : ''}
+                          </TableCell>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            {idx === 0 && (
+                              <div className="flex gap-1">
+                                {!retasi.is_returned && canEditRetasi() && (
+                                  <Button variant="outline" size="sm" title="Tandai Kembali"
+                                    onClick={(e) => { e.stopPropagation(); handleReturnRetasi(retasi); }}
+                                    className="text-green-600 hover:text-green-700">
+                                    <ArrowLeft className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {canEditRetasi() && (
+                                  <Button variant="outline" size="sm" title="Edit"
+                                    onClick={() => handleEditRetasi(retasi)}
+                                    className="text-blue-600 hover:text-blue-700">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                <Button variant="outline" size="sm" title="Detail"
+                                  onClick={() => { setDetailRetasi(retasi); setDetailDialogOpen(true); }}>
+                                  <Eye className="h-4 w-4" />
                                 </Button>
-                              )}
-                              {canEditRetasi() && (
-                                <Button variant="outline" size="sm" title="Edit"
-                                  onClick={() => handleEditRetasi(retasi)}
-                                  className="text-blue-600 hover:text-blue-700">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              )}
-                              <Button variant="outline" size="sm" title="Detail"
-                                onClick={() => { setDetailRetasi(retasi); setDetailDialogOpen(true); }}>
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              {canDeleteRetasi() && (
-                                <Button variant="outline" size="sm" title="Hapus"
-                                  onClick={() => handleDeleteRetasi(retasi)}
-                                  className="text-red-600 hover:text-red-700">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ));
+                                {canDeleteRetasi() && (
+                                  <Button variant="outline" size="sm" title="Hapus"
+                                    onClick={() => handleDeleteRetasi(retasi)}
+                                    className="text-red-600 hover:text-red-700">
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    });
                   })
                 )}
               </TableBody>
@@ -670,7 +691,7 @@ export default function RetasiPage() {
 
 function AddRetasiDialog({
   drivers,
-  onSaved = () => {},
+  onSaved = () => { },
 }: {
   drivers: { id: string; name: string }[]
   onSaved?: () => void
@@ -1543,13 +1564,12 @@ function EditRetasiDialog({
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Status:</span>
-              <span className={`font-medium ${
-                unmarkAsReturned ? 'text-orange-600' :
-                (retasi?.is_returned || markAsReturned) ? 'text-green-600' : 'text-amber-600'
-              }`}>
+              <span className={`font-medium ${unmarkAsReturned ? 'text-orange-600' :
+                  (retasi?.is_returned || markAsReturned) ? 'text-green-600' : 'text-amber-600'
+                }`}>
                 {unmarkAsReturned ? 'Akan Diubah ke Berangkat' :
-                 retasi?.is_returned ? 'Armada Kembali' :
-                 markAsReturned ? 'Akan Ditandai Kembali' : 'Armada Berangkat'}
+                  retasi?.is_returned ? 'Armada Kembali' :
+                    markAsReturned ? 'Akan Ditandai Kembali' : 'Armada Berangkat'}
               </span>
             </div>
           </div>
@@ -1564,12 +1584,12 @@ function EditRetasiDialog({
             disabled={isLoading || (markAsReturned && selisih < 0)}
             className={
               unmarkAsReturned ? 'bg-orange-600 hover:bg-orange-700' :
-              markAsReturned ? 'bg-green-600 hover:bg-green-700' : ''
+                markAsReturned ? 'bg-green-600 hover:bg-green-700' : ''
             }
           >
             {isLoading ? "Menyimpan..." :
-             unmarkAsReturned ? "Ubah ke Berangkat" :
-             markAsReturned ? "Simpan & Tandai Kembali" : "Simpan Perubahan"}
+              unmarkAsReturned ? "Ubah ke Berangkat" :
+                markAsReturned ? "Simpan & Tandai Kembali" : "Simpan Perubahan"}
           </Button>
         </div>
       </DialogContent>

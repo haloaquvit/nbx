@@ -4,7 +4,8 @@ import { Product } from '@/types/product'
 import { supabase } from '@/integrations/supabase/client'
 import { logError, logDebug } from '@/utils/debugUtils'
 import { useBranch } from '@/contexts/BranchContext'
-import { createProductStockAdjustmentJournal } from '@/services/journalService'
+import { restoreStockFIFO } from '@/services/stockService'
+// journalService removed - now using RPC for all journal operations
 
 // Calculate BOM cost for a product (HPP dari materials)
 export const calculateBOMCost = async (productId: string): Promise<number> => {
@@ -115,28 +116,23 @@ export const useProducts = () => {
       const dbData = toDb(product);
       logDebug('Product Upsert', { originalProduct: product, dbData });
 
-      if (product.id) {
-        logDebug('Product Update', { id: product.id, updateData: dbData });
+      const isUpdate = !!product.id;
+      let existing: any = null;
+
+      if (isUpdate) {
+        // Validate product.id is actually set
+        if (!product.id) {
+          throw new Error('Product ID is required for update operation');
+        }
 
         const { data: currentProduct } = await supabase
           .from('products')
-          .select('current_stock, initial_stock, cost_price')
+          .select('current_stock, initial_stock, cost_price, name')
           .eq('id', product.id)
-          .order('id')
-          .limit(1);
+          .single();
+        existing = currentProduct;
 
-        const existing = Array.isArray(currentProduct) ? currentProduct[0] : currentProduct;
-        const oldInitialStock = Number(existing?.initial_stock) || 0;
-        const oldCurrentStock = Number(existing?.current_stock) || 0;
-
-        // ============================================================================
-        // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
-        // Stock hanya di-track via inventory_batches (source of truth untuk FIFO HPP)
-        // Perubahan initial_stock akan update inventory_batches di bawah
-        // ============================================================================
-        console.log('[Product Update] Stock managed via inventory_batches, not current_stock');
-
-        // Remove current_stock from update to prevent confusion
+        // products.current_stock is DEPRECATED
         delete dbData.current_stock;
 
         const { data: dataRaw, error } = await supabase
@@ -144,172 +140,91 @@ export const useProducts = () => {
           .update(dbData)
           .eq('id', product.id)
           .select()
-          .order('id')
-          .limit(1);
+          .single();
 
-        if (error) {
-          logError('Product Update', error);
-          throw new Error(`Update failed: ${error.message}${error.details ? ` - ${error.details}` : ''}${error.hint ? ` (${error.hint})` : ''}`);
+        if (error) throw error;
+        if (!dataRaw) {
+          throw new Error('Failed to get product data from update operation');
         }
-
-        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-        if (!data) throw new Error('Failed to update product');
-        logDebug('Product Update Success', data);
-
-        // Create/update inventory batch for FIFO HPP calculation
-        const newInitialStock = dbData.initial_stock !== undefined ? dbData.initial_stock : oldInitialStock;
-        const newCostPrice = dbData.cost_price || existing?.cost_price || 0;
-
-        // AUTO-JOURNAL: Create adjustment journal when initial_stock changes
-        if (dbData.initial_stock !== undefined && existing && currentBranch?.id) {
-          const stockDiff = Number(dbData.initial_stock) - oldInitialStock;
-          if (stockDiff !== 0) {
-            // Use costPrice or 0 - journal will be created even if costPrice = 0 (with warning)
-            const effectiveCostPrice = newCostPrice || 0;
-            if (effectiveCostPrice === 0) {
-              console.warn('⚠️ Creating stock journal with HPP = 0. Jurnal tetap dibuat tapi nilai = 0.');
-            }
-            const journalResult = await createProductStockAdjustmentJournal({
-              productId: product.id!,
-              productName: product.name || data.name || 'Unknown Product',
-              oldStock: oldInitialStock,
-              newStock: Number(dbData.initial_stock),
-              costPrice: effectiveCostPrice,
-              branchId: currentBranch.id,
-            });
-            if (journalResult.success) {
-              logDebug('Auto-generated stock adjustment journal', { journalId: journalResult.journalId });
-            } else {
-              console.warn('Failed to create stock adjustment journal:', journalResult.error);
-            }
-          }
-        }
-
-        // Update batch "Stok Awal" - initial_stock adalah nilai awal yang ditambahkan ke total
-        // Rumus: Stock = Initial Stock + PO + Produksi - Keluar - Penjualan
-        if (dbData.initial_stock !== undefined) {
-          // Cari batch "Stok Awal" yang ada
-          const { data: existingBatch } = await supabase
-            .from('inventory_batches')
-            .select('id, initial_quantity, remaining_quantity')
-            .eq('product_id', product.id)
-            .eq('notes', 'Stok Awal')
-            .order('batch_date')
-            .limit(1);
-
-          const batch = Array.isArray(existingBatch) ? existingBatch[0] : existingBatch;
-
-          if (batch) {
-            // Update batch yang ada: sesuaikan remaining berdasarkan perubahan initial
-            const oldInitial = Number(batch.initial_quantity) || 0;
-            const qtyDiff = newInitialStock - oldInitial;
-            const newRemaining = (batch.remaining_quantity || 0) + qtyDiff;
-
-            await supabase.from('inventory_batches').update({
-              initial_quantity: newInitialStock,
-              remaining_quantity: newRemaining,
-              unit_cost: newCostPrice,
-              updated_at: new Date().toISOString()
-            }).eq('id', batch.id);
-
-            logDebug('Updated Stok Awal batch', {
-              batchId: batch.id,
-              oldInitial,
-              newInitialStock,
-              qtyDiff,
-              oldRemaining: batch.remaining_quantity,
-              newRemaining
-            });
-          } else if (newInitialStock > 0) {
-            // Buat batch baru jika belum ada
-            await supabase.from('inventory_batches').insert({
-              product_id: product.id,
-              branch_id: currentBranch?.id || null,
-              initial_quantity: newInitialStock,
-              remaining_quantity: newInitialStock,
-              unit_cost: newCostPrice,
-              notes: 'Stok Awal'
-            });
-            logDebug('Created Stok Awal batch', { productId: product.id, initialStock: newInitialStock, costPrice: newCostPrice });
-          }
-        }
-
-        return fromDb(data);
       } else {
-        // ============================================================================
-        // products.current_stock is DEPRECATED - stok dihitung dari v_product_current_stock
-        // Stock hanya di-track via inventory_batches (dibuat di bawah setelah insert)
-        // ============================================================================
+        // Generate UUID for new product on client side
+        const newProductId = crypto.randomUUID();
+
         const insertData = {
           ...dbData,
+          id: newProductId,
           branch_id: currentBranch?.id || null,
         };
-        delete insertData.current_stock; // Don't set current_stock, use inventory_batches
+        delete insertData.current_stock;
+
         logDebug('Product Insert', { insertData });
 
         const { data: dataRaw, error } = await supabase
           .from('products')
           .insert(insertData)
           .select()
-          .order('id')
-          .limit(1);
+          .single();
+
+        logDebug('Product Insert Result', { dataRaw, error });
 
         if (error) {
-          logError('Product Insert', error);
-          throw new Error(`Insert failed: ${error.message}${error.details ? ` - ${error.details}` : ''}${error.hint ? ` (${error.hint})` : ''}`);
+          logError('Product Insert Error', { error, insertData });
+          throw error;
         }
 
-        const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-        if (!data) throw new Error('Failed to insert product');
-        logDebug('Product Insert Success', data);
+        // Use the generated ID
+        product.id = newProductId;
+        dbData.id = newProductId;
 
-        // Create inventory batch for new product
-        const initialStock = dbData.initial_stock || 0;
-        const costPrice = dbData.cost_price || 0;
-
-        if (initialStock > 0 && costPrice > 0) {
-          await supabase.from('inventory_batches').insert({
-            product_id: data.id,
-            branch_id: currentBranch?.id || null,
-            initial_quantity: initialStock,
-            remaining_quantity: initialStock,
-            unit_cost: costPrice,
-            notes: 'Stok Awal'
-          });
-          logDebug('Created inventory batch for new product HPP', { productId: data.id, initialStock, costPrice });
-
-          // BUG FIX #1: Create journal for initial stock (same as UPDATE does)
-          // Dr. Persediaan Barang Dagang (1310)  xxx
-          //   Cr. Modal Pemilik (3100)               xxx
-          if (currentBranch?.id) {
-            const journalResult = await createProductStockAdjustmentJournal({
-              productId: data.id,
-              productName: product.name || data.name || 'Unknown Product',
-              oldStock: 0,
-              newStock: initialStock,
-              costPrice: costPrice,
-              branchId: currentBranch.id,
-            });
-            if (journalResult.success) {
-              logDebug('Auto-generated initial stock journal for new product', { journalId: journalResult.journalId });
-            } else {
-              console.warn('Failed to create initial stock journal:', journalResult.error);
-            }
-          }
+        // Validate we got data back (optional, since we already have the ID)
+        if (!dataRaw) {
+          logDebug('Product Insert Warning', 'No data returned but insert succeeded with ID: ' + newProductId);
         }
-
-        return fromDb(data);
       }
+
+      // Ensure product.id is set
+      if (!product.id) {
+        throw new Error('Product ID is missing after insert/update');
+      }
+
+      // Fetch the updated/inserted product
+      const { data: finalProductRaw } = await supabase.from('products').select('*').eq('id', product.id).single();
+      const finalProduct = fromDb(finalProductRaw);
+
+      // ============================================================================
+      // SYNC INITIAL STOCK via RPC
+      // ============================================================================
+      const initialStock = dbData.initial_stock !== undefined ? Number(dbData.initial_stock) : (existing ? Number(existing.initial_stock) : 0);
+      const costPrice = dbData.cost_price || (existing ? Number(existing.cost_price) : 0) || 0;
+
+      if (initialStock > 0 || (existing && initialStock !== Number(existing.initial_stock))) {
+        if (!currentBranch?.id) throw new Error('Branch required for stock sync');
+
+        const { data: rpcResultRaw, error: rpcError } = await supabase.rpc('sync_product_initial_stock_atomic', {
+          p_product_id: product.id!,
+          p_branch_id: currentBranch.id,
+          p_new_initial_stock: initialStock,
+          p_unit_cost: costPrice
+        });
+
+        if (rpcError) throw rpcError;
+        const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+        if (!rpcResult?.success) throw new Error(rpcResult?.error_message || 'Failed to sync initial stock');
+        // Note: Journal entry is handled by the RPC function sync_product_initial_stock_atomic
+      }
+
+      return finalProduct;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
-    }
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
   });
 
   // ============================================================================
   // DEPRECATED: updateStock - products.current_stock tidak lagi digunakan
-  // Stock dihitung dari v_product_current_stock (sum inventory_batches.remaining_quantity)
-  // Gunakan inventory_batches untuk track stock secara FIFO
+  // Stock dihitung dari v_product_current_stock
   // ============================================================================
   const updateStock = useMutation({
     mutationFn: async ({ productId, newStock }: { productId: string, newStock: number }): Promise<Product> => {

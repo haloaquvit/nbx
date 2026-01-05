@@ -40,7 +40,7 @@ export default function AccountsPayablePage() {
   const [detailDialog, setDetailDialog] = useState({ open: false, payable: null as AccountsPayable | null })
   const [editDialog, setEditDialog] = useState({ open: false, payable: null as AccountsPayable | null })
 
-  const { accountsPayable, isLoading, payAccountsPayable } = useAccountsPayable()
+  const { accountsPayable, isLoading, payAccountsPayable, deleteAccountsPayable } = useAccountsPayable()
   const { accounts } = useAccounts()
   const { toast } = useToast()
   const { settings } = useCompanySettings()
@@ -129,136 +129,15 @@ export default function AccountsPayablePage() {
 
     setIsDeleting(true)
     try {
-      const debtId = deleteDialog.payable.id
-      let voidedJournals = 0
-      const affectedAccountIds = new Set<string>()
-
-      // 1. Void all related journal entries (pencatatan hutang + pembayaran)
-      // Also get the journal lines to know which accounts to recalculate
-      const { data: relatedJournals, error: journalFetchError } = await supabase
-        .from('journal_entries')
-        .select(`
-          id,
-          entry_number,
-          journal_entry_lines (account_id)
-        `)
-        .eq('reference_id', debtId)
-        .eq('is_voided', false)
-
-      if (journalFetchError) {
-        console.warn('Error fetching related journals:', journalFetchError)
-      }
-
-      if (relatedJournals && relatedJournals.length > 0) {
-        // Collect all affected account IDs
-        for (const journal of relatedJournals) {
-          if (journal.journal_entry_lines) {
-            for (const line of journal.journal_entry_lines as any[]) {
-              if (line.account_id) {
-                affectedAccountIds.add(line.account_id)
-              }
-            }
-          }
-        }
-
-        // Void each journal entry
-        for (const journal of relatedJournals) {
-          const { error: voidError } = await supabase
-            .from('journal_entries')
-            .update({
-              is_voided: true,
-              voided_at: new Date().toISOString(),
-              voided_reason: `Hutang dihapus - ${deleteDialog.payable.supplierName || 'Unknown'}`
-            })
-            .eq('id', journal.id)
-
-          if (!voidError) {
-            voidedJournals++
-          }
-        }
-      }
-
-      // 2. Recalculate balance for all affected accounts
-      if (affectedAccountIds.size > 0 && currentBranch?.id) {
-        console.log('Recalculating balance for accounts:', Array.from(affectedAccountIds))
-
-        for (const accountId of affectedAccountIds) {
-          // Get account type first
-          const { data: accountData } = await supabase
-            .from('accounts')
-            .select('id, type, initial_balance')
-            .eq('id', accountId)
-            .single()
-
-          if (accountData) {
-            // Calculate balance from non-voided journal entries
-            const { data: journalLines } = await supabase
-              .from('journal_entry_lines')
-              .select(`
-                debit_amount,
-                credit_amount,
-                journal_entries!inner (is_voided, status, branch_id)
-              `)
-              .eq('account_id', accountId)
-
-            let totalDebit = 0
-            let totalCredit = 0
-
-            for (const line of journalLines || []) {
-              const journal = line.journal_entries as any
-              if (journal &&
-                  journal.branch_id === currentBranch.id &&
-                  journal.status === 'posted' &&
-                  journal.is_voided === false) {
-                totalDebit += Number(line.debit_amount) || 0
-                totalCredit += Number(line.credit_amount) || 0
-              }
-            }
-
-            // Calculate balance based on account type
-            const isDebitNormal = ['Aset', 'Beban'].includes(accountData.type)
-            const calculatedBalance = isDebitNormal
-              ? (totalDebit - totalCredit)
-              : (totalCredit - totalDebit)
-
-            // Update account balance
-            await supabase
-              .from('accounts')
-              .update({ balance: calculatedBalance })
-              .eq('id', accountId)
-
-            console.log(`Updated account ${accountId}: ${calculatedBalance}`)
-          }
-        }
-      }
-
-      // 3. Delete related debt installments
-      const { error: installmentError } = await supabase
-        .from('debt_installments')
-        .delete()
-        .eq('debt_id', debtId)
-
-      if (installmentError) {
-        console.warn('Error deleting installments:', installmentError)
-      }
-
-      // 4. Delete the debt record
-      const { error: deleteError } = await supabase
-        .from('accounts_payable')
-        .delete()
-        .eq('id', debtId)
-
-      if (deleteError) throw deleteError
+      // Use atomic RPC via hook - handles journal voiding and balance recalculation
+      await deleteAccountsPayable.mutateAsync(deleteDialog.payable.id)
 
       toast({
         title: "Sukses",
-        description: voidedJournals > 0
-          ? `Hutang berhasil dihapus. ${voidedJournals} jurnal terkait di-void dan saldo akun diperbarui.`
-          : "Hutang berhasil dihapus"
+        description: "Hutang berhasil dihapus dan jurnal terkait di-void"
       })
 
       setDeleteDialog({ open: false, payable: null })
-      window.location.reload()
     } catch (error: any) {
       console.error('Error deleting debt:', error)
       toast({

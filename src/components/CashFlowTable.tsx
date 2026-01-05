@@ -100,12 +100,12 @@ const getTypeVariant = (item: CashHistory) => {
         return 'outline';
     }
   }
-  
+
   // Handle old format with 'transaction_type' field
   if (item.transaction_type) {
     return item.transaction_type === 'income' ? 'success' : 'destructive';
   }
-  
+
   return 'outline';
 }
 
@@ -137,14 +137,14 @@ const getTypeLabel = (item: CashHistory) => {
 
     // Check if it's a payroll payment (either direct type or description contains payroll indicators)
     if (item.type === 'kas_keluar_manual' &&
-        (item.description?.includes('Pembayaran gaji') ||
-         item.description?.includes('Payroll Payment') ||
-         item.reference_name?.includes('Payroll'))) {
+      (item.description?.includes('Pembayaran gaji') ||
+        item.description?.includes('Payroll Payment') ||
+        item.reference_name?.includes('Payroll'))) {
       return 'Pembayaran Gaji';
     }
     return labels[item.type as keyof typeof labels] || item.type;
   }
-  
+
   // Handle old format - detect from source_type and transaction_type
   if (item.source_type) {
     switch (item.source_type) {
@@ -168,11 +168,11 @@ const getTypeLabel = (item: CashHistory) => {
         return item.source_type;
     }
   }
-  
+
   if (item.transaction_type) {
     return item.transaction_type === 'income' ? 'Kas Masuk' : 'Kas Keluar';
   }
-  
+
   return 'Tidak Diketahui';
 }
 
@@ -408,7 +408,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         .from('journal_entries')
         .update({
           is_voided: true,
-          void_reason: 'Dibatalkan dari Buku Kas',
+          voided_reason: 'Dibatalkan dari Buku Kas',
           voided_at: new Date().toISOString(),
         })
         .eq('id', journalLine.journal_entry_id);
@@ -640,16 +640,16 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       'Saldo Awal': item.previousBalance || 0,
       'Saldo Akhir': item.afterBalance || 0
     }));
-    
+
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Arus Kas");
-    
+
     // Add date range to filename if filtered
-    const filename = dateRange.from && dateRange.to 
+    const filename = dateRange.from && dateRange.to
       ? `arus-kas-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}.xlsx`
       : "arus-kas.xlsx";
-    
+
     XLSX.writeFile(workbook, filename);
   };
 
@@ -684,14 +684,14 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
       .reduce((sum, item) => sum + item.amount, 0);
 
     const netFlow = totalIncome - totalExpense;
-    
+
     // Add title and date range if filtered
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
     doc.text('LAPORAN ARUS KAS', 105, 20, { align: 'center' });
-    
+
     let currentY = 35;
-    
+
     if (dateRange.from && dateRange.to) {
       doc.setFontSize(12);
       doc.setFont('helvetica', 'normal');
@@ -709,10 +709,10 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     doc.setFontSize(10);
     doc.text(`Total Kas Masuk: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalIncome)}`, 20, currentY);
     currentY += 6;
-    
+
     doc.text(`Total Kas Keluar: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(totalExpense)}`, 20, currentY);
     currentY += 6;
-    
+
     doc.setFont('helvetica', 'bold');
     if (netFlow >= 0) {
       doc.setTextColor(0, 128, 0); // Green for positive
@@ -722,7 +722,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     doc.text(`Arus Kas Bersih: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(netFlow)}`, 20, currentY);
     doc.setTextColor(0, 0, 0); // Reset to black
     currentY += 15;
-    
+
     // Table with compact layout
     autoTable(doc, {
       startY: currentY,
@@ -733,8 +733,8 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         const amountStr = isIncome
           ? `+${formatCompactCurrency(item.amount)}`
           : isExpense
-          ? `-${formatCompactCurrency(item.amount)}`
-          : '-';
+            ? `-${formatCompactCurrency(item.amount)}`
+            : '-';
         const refNumber = item.reference_number || item.reference_name || item.reference_id || '-';
 
         return [
@@ -766,7 +766,7 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
         6: { cellWidth: 28, halign: 'right' }  // Saldo
       }
     });
-    
+
     // Add total row at the end - aligned with table columns
     const finalY = (doc as any).lastAutoTable.finalY + 5;
 
@@ -795,12 +795,12 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.text(`Dicetak pada: ${format(new Date(), 'dd MMM yyyy HH:mm')}`, 148.5, 200, { align: 'center' });
-    
+
     // Add date range to filename if filtered
-    const filename = dateRange.from && dateRange.to 
+    const filename = dateRange.from && dateRange.to
       ? `arus-kas-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}.pdf`
       : "arus-kas.pdf";
-    
+
     doc.save(filename);
   };
 
@@ -891,201 +891,201 @@ export function CashFlowTable({ data, isLoading }: CashFlowTableProps) {
           <div className="flex items-center gap-2">
             <Popover>
               <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className={cn(
-                        "w-[280px] justify-start text-left font-normal",
-                        !dateRange.from && !dateRange.to && "text-muted-foreground"
-                      )}
-                    >
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {dateRange.from ? (
-                        dateRange.to ? (
-                          `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
-                        ) : (
-                          `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
-                        )
-                      ) : (
-                        "Pilih Rentang Tanggal"
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      initialFocus
-                      mode="range"
-                      defaultMonth={dateRange.from}
-                      selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
-                      onSelect={(range) => {
-                        if (range) {
-                          setDateRange({ from: range.from, to: range.to });
-                        } else {
-                          setDateRange({ from: undefined, to: undefined });
-                        }
-                      }}
-                      numberOfMonths={2}
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {/* Account Filter */}
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-muted-foreground" />
-                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Filter Akun" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Akun</SelectItem>
-                    {uniqueAccountsInData.map(account => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Clear Filters */}
-              {(dateRange.from || dateRange.to || selectedAccountId !== 'all') && (
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearAllFilters}
-                  className="h-8 px-2"
+                  variant="outline"
+                  className={cn(
+                    "w-[280px] justify-start text-left font-normal",
+                    !dateRange.from && !dateRange.to && "text-muted-foreground"
+                  )}
                 >
-                  <X className="h-4 w-4 mr-1" />
-                  Reset Filter
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {dateRange.from ? (
+                    dateRange.to ? (
+                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ${format(dateRange.to, "d MMM yyyy", { locale: id })}`
+                    ) : (
+                      `${format(dateRange.from, "d MMM yyyy", { locale: id })} - ...`
+                    )
+                  ) : (
+                    "Pilih Rentang Tanggal"
+                  )}
                 </Button>
-              )}
-
-              {/* Filter Info */}
-              <div className="flex items-center gap-2">
-                {selectedAccountId !== 'all' && (
-                  <Badge variant="secondary" className="flex items-center gap-1">
-                    {uniqueAccountsInData.find(a => a.id === selectedAccountId)?.name}
-                    <X
-                      className="h-3 w-3 cursor-pointer hover:text-destructive"
-                      onClick={clearAccountFilter}
-                    />
-                  </Badge>
-                )}
-                <div className="text-sm text-muted-foreground">
-                  Menampilkan {displayData.length} dari {data?.length || 0} transaksi
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={handleExportExcel}>
-                <FileDown className="mr-2 h-4 w-4" /> Ekspor Excel
-              </Button>
-              <Button variant="outline" onClick={handleExportPdf}>
-                <FileDown className="mr-2 h-4 w-4" /> Ekspor PDF
-              </Button>
-              <Button variant="outline" className="text-blue-600 border-blue-600 hover:bg-blue-50" onClick={() => setIsTransferDialogOpen(true)}>
-                <MoreHorizontal className="mr-2 h-4 w-4" /> Transfer Antar Kas
-              </Button>
-            </div>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarComponent
+                  initialFocus
+                  mode="range"
+                  defaultMonth={dateRange.from}
+                  selected={dateRange.from && dateRange.to ? { from: dateRange.from, to: dateRange.to } : dateRange.from ? { from: dateRange.from, to: undefined } : undefined}
+                  onSelect={(range) => {
+                    if (range) {
+                      setDateRange({ from: range.from, to: range.to });
+                    } else {
+                      setDateRange({ from: undefined, to: undefined });
+                    }
+                  }}
+                  numberOfMonths={2}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
 
-          {/* Table */}
-          <div className="rounded-md border">
-            <Table className="text-base">
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id} className="text-base font-semibold h-12">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext()
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
+          {/* Account Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Filter Akun" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Akun</SelectItem>
+                {uniqueAccountsInData.map(account => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
                 ))}
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={columns.length}>
-                        <Skeleton className="h-8 w-full" />
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : table.getRowModel().rows?.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleRowClick(row.original)}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id} className="py-2">
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={columns.length} className="h-24 text-center text-base">
-                      Tidak ada data arus kas.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+              </SelectContent>
+            </Select>
           </div>
-          
-          {/* Pagination */}
-          <div className="flex items-center justify-between">
+
+          {/* Clear Filters */}
+          {(dateRange.from || dateRange.to || selectedAccountId !== 'all') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAllFilters}
+              className="h-8 px-2"
+            >
+              <X className="h-4 w-4 mr-1" />
+              Reset Filter
+            </Button>
+          )}
+
+          {/* Filter Info */}
+          <div className="flex items-center gap-2">
+            {selectedAccountId !== 'all' && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                {uniqueAccountsInData.find(a => a.id === selectedAccountId)?.name}
+                <X
+                  className="h-3 w-3 cursor-pointer hover:text-destructive"
+                  onClick={clearAccountFilter}
+                />
+              </Badge>
+            )}
             <div className="text-sm text-muted-foreground">
-              Halaman {table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}
-              {' '}(Menampilkan {table.getRowModel().rows.length} dari {displayData.length} baris)
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-              >
-                First
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-              >
-                Next
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-              >
-                Last
-              </Button>
+              Menampilkan {displayData.length} dari {data?.length || 0} transaksi
             </div>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleExportExcel}>
+            <FileDown className="mr-2 h-4 w-4" /> Ekspor Excel
+          </Button>
+          <Button variant="outline" onClick={handleExportPdf}>
+            <FileDown className="mr-2 h-4 w-4" /> Ekspor PDF
+          </Button>
+          <Button variant="outline" className="text-blue-600 border-blue-600 hover:bg-blue-50" onClick={() => setIsTransferDialogOpen(true)}>
+            <MoreHorizontal className="mr-2 h-4 w-4" /> Transfer Antar Kas
+          </Button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-md border">
+        <Table className="text-base">
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => (
+                  <TableHead key={header.id} className="text-base font-semibold h-12">
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext()
+                      )}
+                  </TableHead>
+                ))}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell colSpan={columns.length}>
+                    <Skeleton className="h-8 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : table.getRowModel().rows?.length ? (
+              table.getRowModel().rows.map((row) => (
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => handleRowClick(row.original)}
+                >
+                  {row.getVisibleCells().map((cell) => (
+                    <TableCell key={cell.id} className="py-2">
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24 text-center text-base">
+                  Tidak ada data arus kas.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          Halaman {table.getState().pagination.pageIndex + 1} dari {table.getPageCount()}
+          {' '}(Menampilkan {table.getRowModel().rows.length} dari {displayData.length} baris)
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.setPageIndex(0)}
+            disabled={!table.getCanPreviousPage()}
+          >
+            First
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.previousPage()}
+            disabled={!table.getCanPreviousPage()}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.nextPage()}
+            disabled={!table.getCanNextPage()}
+          >
+            Next
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+            disabled={!table.getCanNextPage()}
+          >
+            Last
+          </Button>
+        </div>
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

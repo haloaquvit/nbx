@@ -50,6 +50,8 @@ import { useSuppliers } from "@/hooks/useSuppliers"
 import { useAuth } from "@/hooks/useAuth"
 import { useToast } from "@/components/ui/use-toast"
 import { PurchaseOrderItem } from "@/types/purchaseOrder"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 // Combined item for dropdown (material or product)
 interface PurchasableItem {
@@ -87,10 +89,11 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
   const setOpen = externalOnOpenChange || setInternalOpen
   const { materials, isLoading: isLoadingMaterials } = useMaterials()
   const { products, isLoading: isLoadingProducts } = useProducts()
-  const { createPurchaseOrder } = usePurchaseOrders()
+  const { addPurchaseOrder } = usePurchaseOrders()
   const { activeSuppliers } = useSuppliers()
   const { user } = useAuth()
   const { toast } = useToast()
+  const { timezone } = useTimezone()
 
   // Combine materials and "Jual Langsung" products into one list
   const purchasableItems = React.useMemo<PurchasableItem[]>(() => {
@@ -133,7 +136,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
       includePpn: false,
       ppnMode: "exclude",
       expedition: "",
-      orderDate: new Date(),
+      orderDate: getOfficeTime(timezone),
       notes: "",
     },
   })
@@ -156,7 +159,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
         includePpn: false,
         ppnMode: "exclude",
         expedition: "",
-        orderDate: new Date(),
+        orderDate: getOfficeTime(timezone),
         notes: "",
       })
       setItems([])
@@ -343,7 +346,7 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
     }
 
     try {
-      await createPurchaseOrder.mutateAsync(poData)
+      await addPurchaseOrder.mutateAsync(poData)
       toast({
         title: "Sukses",
         description: "Purchase Order berhasil dibuat"
@@ -714,9 +717,9 @@ export function CreatePurchaseOrderDialog({ materialId, children, open: external
             </Button>
             <Button
               type="submit"
-              disabled={createPurchaseOrder.isPending || items.length === 0}
+              disabled={addPurchaseOrder.isPending || items.length === 0}
             >
-              {createPurchaseOrder.isPending ? "Membuat..." : "Buat PO"}
+              {addPurchaseOrder.isPending ? "Membuat..." : "Buat PO"}
             </Button>
           </DialogFooter>
         </form>

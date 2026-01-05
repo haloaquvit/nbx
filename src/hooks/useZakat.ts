@@ -142,112 +142,135 @@ export function useZakatSummary() {
   });
 }
 
-// Create zakat record
-export function useCreateZakat() {
+import { useAuth } from './useAuth';
+import { useBranch } from '@/contexts/BranchContext';
+
+// Helper to map camelCase (App) to snake_case (DB) for JSONB RPC data
+const mapToDb = (formData: Partial<ZakatFormData>) => {
+  const mapping: any = {
+    type: formData.type,
+    category: formData.category,
+    title: formData.title,
+    description: formData.description,
+    recipient: formData.recipient,
+    recipient_type: formData.recipientType,
+    amount: formData.amount,
+    nishab_amount: formData.nishabAmount,
+    percentage_rate: formData.percentageRate,
+    payment_account_id: formData.paymentAccountId,
+    payment_method: formData.paymentMethod,
+    receipt_number: formData.receiptNumber,
+    calculation_basis: formData.calculationBasis,
+    calculation_notes: formData.calculationNotes,
+    is_anonymous: formData.isAnonymous,
+    notes: formData.notes,
+    attachment_url: formData.attachmentUrl,
+    hijri_year: formData.hijriYear,
+    hijri_month: formData.hijriMonth,
+  };
+
+  if (formData.paymentDate) {
+    mapping.payment_date = formData.paymentDate.toISOString().split('T')[0];
+  }
+
+  // Remove undefined keys
+  Object.keys(mapping).forEach(key => mapping[key] === undefined && delete mapping[key]);
+  return mapping;
+};
+
+// Create or Update zakat record - Atomic via RPC
+export function useUpsertZakat() {
   const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
+  const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async (formData: ZakatFormData) => {
-      const id = `ZAKAT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    mutationFn: async ({ id, formData }: { id?: string; formData: ZakatFormData | Partial<ZakatFormData> }) => {
+      if (!currentBranch?.id) throw new Error('Branch ID is required');
 
-      const { error } = await supabase
-        .from('zakat_records')
-        .insert({
-          id,
-          type: formData.type,
-          category: formData.category,
-          title: formData.title,
-          description: formData.description,
-          recipient: formData.recipient,
-          recipient_type: formData.recipientType,
-          amount: formData.amount,
-          nishab_amount: formData.nishabAmount,
-          percentage_rate: formData.percentageRate,
-          payment_date: formData.paymentDate.toISOString().split('T')[0],
-          payment_account_id: formData.paymentAccountId,
-          payment_method: formData.paymentMethod,
-          status: 'paid', // Default to paid
-          receipt_number: formData.receiptNumber,
-          calculation_basis: formData.calculationBasis,
-          calculation_notes: formData.calculationNotes,
-          is_anonymous: formData.isAnonymous,
-          notes: formData.notes,
-          attachment_url: formData.attachmentUrl,
-          hijri_year: formData.hijriYear,
-          hijri_month: formData.hijriMonth,
+      console.log('🕌 Upserting Zakat via Atomic RPC...', formData.title);
+
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('upsert_zakat_record_atomic', {
+          p_branch_id: currentBranch.id,
+          p_zakat_id: id || null,
+          p_data: mapToDb(formData),
+          p_user_id: user?.id || null
         });
 
-      if (error) throw error;
-      return id;
+      if (rpcError) {
+        console.error('❌ RPC Error:', rpcError);
+        throw new Error(`Gagal menyimpan zakat: ${rpcError.message}`);
+      }
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal menyimpan zakat');
+      }
+
+      console.log('✅ Zakat Upserted via RPC:', rpcResult.zakat_id, 'Journal:', rpcResult.journal_id);
+      return rpcResult.zakat_id;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['zakat'] });
-      queryClient.invalidateQueries({ queryKey: ['journal-entries'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 }
 
-// Update zakat record
-export function useUpdateZakat() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, formData }: { id: string; formData: Partial<ZakatFormData> }) => {
-      const updateData: any = {};
-
-      if (formData.type) updateData.type = formData.type;
-      if (formData.category) updateData.category = formData.category;
-      if (formData.title) updateData.title = formData.title;
-      if (formData.description !== undefined) updateData.description = formData.description;
-      if (formData.recipient !== undefined) updateData.recipient = formData.recipient;
-      if (formData.recipientType !== undefined) updateData.recipient_type = formData.recipientType;
-      if (formData.amount !== undefined) updateData.amount = formData.amount;
-      if (formData.nishabAmount !== undefined) updateData.nishab_amount = formData.nishabAmount;
-      if (formData.percentageRate !== undefined) updateData.percentage_rate = formData.percentageRate;
-      if (formData.paymentDate) updateData.payment_date = formData.paymentDate.toISOString().split('T')[0];
-      if (formData.paymentAccountId !== undefined) updateData.payment_account_id = formData.paymentAccountId;
-      if (formData.paymentMethod !== undefined) updateData.payment_method = formData.paymentMethod;
-      if (formData.receiptNumber !== undefined) updateData.receipt_number = formData.receiptNumber;
-      if (formData.calculationBasis !== undefined) updateData.calculation_basis = formData.calculationBasis;
-      if (formData.calculationNotes !== undefined) updateData.calculation_notes = formData.calculationNotes;
-      if (formData.isAnonymous !== undefined) updateData.is_anonymous = formData.isAnonymous;
-      if (formData.notes !== undefined) updateData.notes = formData.notes;
-      if (formData.attachmentUrl !== undefined) updateData.attachment_url = formData.attachmentUrl;
-      if (formData.hijriYear !== undefined) updateData.hijri_year = formData.hijriYear;
-      if (formData.hijriMonth !== undefined) updateData.hijri_month = formData.hijriMonth;
-
-      const { error } = await supabase
-        .from('zakat_records')
-        .update(updateData)
-        .eq('id', id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['zakat'] });
-    },
-  });
+// Keep compatible exports but redirect to the new upsert logic
+export function useCreateZakat() {
+  const upsert = useUpsertZakat();
+  return {
+    ...upsert,
+    mutate: (formData: ZakatFormData) => upsert.mutate({ formData }),
+    mutateAsync: (formData: ZakatFormData) => upsert.mutateAsync({ formData }),
+  };
 }
 
-// Delete zakat record
+export function useUpdateZakat() {
+  const upsert = useUpsertZakat();
+  return upsert;
+}
+
+// Delete zakat record - Atomic via RPC
 export function useDeleteZakat() {
   const queryClient = useQueryClient();
+  const { currentBranch } = useBranch();
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('zakat_records')
-        .delete()
-        .eq('id', id);
+      if (!currentBranch?.id) throw new Error('Branch ID is required');
 
-      if (error) throw error;
+      console.log('🗑️ Deleting Zakat via RPC...', id);
+
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('delete_zakat_record_atomic', {
+          p_branch_id: currentBranch.id,
+          p_zakat_id: id
+        });
+
+      if (rpcError) {
+        console.error('❌ RPC Error:', rpcError);
+        throw new Error(`Gagal menghapus zakat: ${rpcError.message}`);
+      }
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal menghapus zakat');
+      }
+
+      console.log('✅ Zakat Deleted via RPC');
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['zakat'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 }
+
 
 // Get current nishab values
 export function useNishabValues() {

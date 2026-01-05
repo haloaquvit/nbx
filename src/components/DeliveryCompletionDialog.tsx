@@ -38,14 +38,14 @@ interface DeliveryCompletionDialogProps {
   transaction: TransactionDeliveryInfo | null
 }
 
-export function DeliveryCompletionDialog({ 
-  open, 
-  onOpenChange, 
-  delivery, 
-  transaction 
+export function DeliveryCompletionDialog({
+  open,
+  onOpenChange,
+  delivery,
+  transaction
 }: DeliveryCompletionDialogProps) {
-  
-  if (!delivery || !transaction) return null
+
+  if (!delivery || !transaction || !delivery.items) return null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -75,7 +75,7 @@ export function DeliveryCompletionDialog({
                     Selesai
                   </Badge>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -112,8 +112,8 @@ export function DeliveryCompletionDialog({
                 </div>
                 <div className="space-y-2">
                   {delivery.items.map((item, index) => (
-                    <div 
-                      key={item.id} 
+                    <div
+                      key={item.id}
                       className="flex justify-between items-center p-2 bg-green-50 rounded-md"
                     >
                       <div>
@@ -158,8 +158,8 @@ export function DeliveryCompletionDialog({
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="flex-1">
-              <DeliveryNotePDF 
-                delivery={delivery} 
+              <DeliveryNotePDF
+                delivery={delivery}
                 transactionInfo={transaction}
               >
                 <Button className="w-full bg-blue-600 hover:bg-blue-700">
@@ -168,7 +168,7 @@ export function DeliveryCompletionDialog({
                 </Button>
               </DeliveryNotePDF>
             </div>
-            
+
             {delivery.photoUrl && (
               <Button
                 variant="outline"

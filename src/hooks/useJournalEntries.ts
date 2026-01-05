@@ -48,41 +48,6 @@ const fromDbToApp = (db: DbJournalEntry, lines: DbJournalEntryLine[] = []): Jour
   }))
 });
 
-// Generate journal number
-const generateJournalNumber = async (): Promise<string> => {
-  const currentYear = new Date().getFullYear();
-  const prefix = `JE-${currentYear}-`;
-
-  const { data, error } = await supabase
-    .from('journal_entries')
-    .select('entry_number')
-    .like('entry_number', `${prefix}%`)
-    .order('entry_number', { ascending: false })
-    .limit(1);
-
-  if (error) {
-    console.error('Error generating journal number:', error);
-    return `${prefix}000001`;
-  }
-
-  if (data && data.length > 0) {
-    const lastNumber = data[0].entry_number;
-    const match = lastNumber.match(/JE-\d{4}-(\d+)/);
-    if (match) {
-      const parsed = parseInt(match[1], 10);
-      // Validasi NaN untuk mencegah error "0NaN"
-      if (!isNaN(parsed) && parsed > 0) {
-        const nextNum = parsed + 1;
-        return `${prefix}${nextNum.toString().padStart(6, '0')}`;
-      } else {
-        console.warn(`[useJournalEntries] Invalid entry_number format: ${lastNumber}`);
-      }
-    }
-  }
-
-  return `${prefix}000001`;
-};
-
 export const useJournalEntries = () => {
   const { currentBranch } = useBranch();
   const { user } = useAuth();
@@ -132,34 +97,7 @@ export const useJournalEntries = () => {
     refetchOnWindowFocus: false,
   });
 
-  // Fetch single journal entry
-  const fetchJournalEntry = async (id: string): Promise<JournalEntry | null> => {
-    // Guard: pastikan id tidak undefined
-    if (!id) {
-      console.warn('[useJournalEntries] fetchJournalEntry called with undefined id');
-      return null;
-    }
-
-    // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-    const { data: entryRaw, error } = await supabase
-      .from('journal_entries')
-      .select('*')
-      .eq('id', id)
-      .order('id').limit(1);
-
-    const entry = Array.isArray(entryRaw) ? entryRaw[0] : entryRaw;
-    if (error || !entry) return null;
-
-    const { data: lines } = await supabase
-      .from('journal_entry_lines')
-      .select('*')
-      .eq('journal_entry_id', id)
-      .order('line_number');
-
-    return fromDbToApp(entry as DbJournalEntry, (lines || []) as DbJournalEntryLine[]);
-  };
-
-  // Create journal entry
+  // Create journal entry - STRICTLY RPC
   const createMutation = useMutation({
     mutationFn: async (formData: JournalEntryFormData) => {
       // Validate balance
@@ -174,52 +112,46 @@ export const useJournalEntries = () => {
         throw new Error('Minimal harus ada 2 baris jurnal');
       }
 
-      // Generate entry number
-      const entryNumber = await generateJournalNumber();
+      if (!currentBranch?.id) {
+        throw new Error('Branch tidak dipilih. Silakan pilih branch terlebih dahulu.');
+      }
 
-      // Insert header
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: entryRaw, error: headerError } = await supabase
-        .from('journal_entries')
-        .insert({
-          entry_number: entryNumber,
-          entry_date: formData.entryDate.toISOString().split('T')[0],
-          description: formData.description,
-          reference_type: formData.referenceType || 'manual',
-          reference_id: formData.referenceId,
-          status: 'draft',
-          total_debit: totalDebit,
-          total_credit: totalCredit,
-          created_by: user?.id,
-          created_by_name: user?.name || user?.email,
-          branch_id: currentBranch?.id
-        })
-        .select()
-        .order('id').limit(1);
+      // ============================================================================
+      // USE RPC: create_journal_atomic
+      // Creates journal entry with all lines in single atomic transaction
+      // ============================================================================
 
-      if (headerError) throw headerError;
-      const entry = Array.isArray(entryRaw) ? entryRaw[0] : entryRaw;
-      if (!entry) throw new Error('Failed to create journal entry');
-
-      // Insert lines
-      const linesToInsert = formData.lines.map((line, index) => ({
-        journal_entry_id: entry.id,
-        line_number: index + 1,
+      // Convert lines to RPC format
+      const rpcLines = formData.lines.map(line => ({
         account_id: line.accountId,
-        account_code: line.accountCode,
-        account_name: line.accountName,
         debit_amount: line.debitAmount || 0,
         credit_amount: line.creditAmount || 0,
-        description: line.description
+        description: line.description || '',
       }));
 
-      const { error: linesError } = await supabase
-        .from('journal_entry_lines')
-        .insert(linesToInsert);
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('create_journal_atomic', {
+          p_branch_id: currentBranch.id,
+          p_entry_date: formData.entryDate.toISOString().split('T')[0],
+          p_description: formData.description,
+          p_reference_type: formData.referenceType || 'manual',
+          p_reference_id: formData.referenceId || null,
+          p_lines: rpcLines,
+          p_auto_post: false, // Manual journals start as draft
+        });
 
-      if (linesError) throw linesError;
+      if (rpcError) {
+        console.error('RPC create_journal_atomic error:', rpcError);
+        throw new Error(rpcError.message);
+      }
 
-      return entry;
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal membuat jurnal');
+      }
+
+      console.log('✅ Journal created via RPC:', rpcResult.journal_id, 'Entry:', rpcResult.entry_number);
+      return { id: rpcResult.journal_id, entry_number: rpcResult.entry_number };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
@@ -237,32 +169,30 @@ export const useJournalEntries = () => {
     },
   });
 
-  // Post journal entry (change status to posted)
+  // Post journal entry (change status to posted) - RPC Atomik
   const postMutation = useMutation({
     mutationFn: async (id: string) => {
-      // Guard: pastikan id tidak undefined
-      if (!id) {
-        throw new Error('Journal entry ID is required for posting');
+      if (!id) throw new Error('Journal entry ID is required');
+      if (!currentBranch?.id) throw new Error('Branch required');
+
+      console.log('[postJournalEntry] Calling RPC:', id);
+
+      const { data: rpcResultRaw, error } = await supabase.rpc('post_journal_atomic', {
+        p_journal_id: id,
+        p_branch_id: currentBranch.id
+      });
+
+      if (error) {
+        console.error('[postJournalEntry] RPC error:', error);
+        throw new Error(error.message);
       }
 
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase
-        .from('journal_entries')
-        .update({
-          status: 'posted',
-          approved_by: user?.id,
-          approved_by_name: user?.name || user?.email,
-          approved_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .eq('status', 'draft')
-        .select()
-        .order('id').limit(1);
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.message || 'Failed to post journal entry');
+      }
 
-      if (error) throw error;
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to post journal entry');
-      return data;
+      return rpcResult;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
@@ -281,109 +211,41 @@ export const useJournalEntries = () => {
     },
   });
 
-  // Void journal entry
+  // Void journal entry - STRICTLY RPC
   const voidMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      // Guard: pastikan id tidak undefined
-      if (!id) {
-        throw new Error('Journal entry ID is required for voiding');
+      // Guard
+      if (!id) throw new Error('Journal entry ID is required for voiding');
+      if (!currentBranch?.id) throw new Error('Branch context is missing');
+
+      // Call RPC void_journal_entry
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('void_journal_entry', {
+          p_journal_id: id,
+          p_branch_id: currentBranch.id,
+          p_reason: reason
+        });
+
+      if (rpcError) {
+        console.error('RPC void_journal_entry error:', rpcError);
+        throw new Error(rpcError.message);
       }
 
-      // 1. Get journal entry lines to know which accounts to recalculate
-      const { data: journalLines } = await supabase
-        .from('journal_entry_lines')
-        .select('account_id')
-        .eq('journal_entry_id', id);
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
 
-      const affectedAccountIds = new Set<string>();
-      for (const line of journalLines || []) {
-        if (line.account_id) {
-          affectedAccountIds.add(line.account_id);
-        }
+      if (rpcResult && rpcResult.success === false) {
+        throw new Error(rpcResult.error_message || 'Gagal membatalkan jurnal');
       }
 
-      // 2. Void the journal entry
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase
-        .from('journal_entries')
-        .update({
-          is_voided: true,
-          voided_by: user?.id,
-          voided_by_name: user?.name || user?.email,
-          voided_at: new Date().toISOString(),
-          void_reason: reason
-        })
-        .eq('id', id)
-        .select('*, branch_id')
-        .order('id').limit(1);
-
-      if (error) throw error;
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to void journal entry');
-
-      // 3. Recalculate balance for all affected accounts
-      const branchId = data.branch_id;
-      if (affectedAccountIds.size > 0 && branchId) {
-        console.log('Recalculating balance for accounts after void:', Array.from(affectedAccountIds));
-
-        for (const accountId of affectedAccountIds) {
-          // Get account type first
-          const { data: accountData } = await supabase
-            .from('accounts')
-            .select('id, type, initial_balance')
-            .eq('id', accountId)
-            .single();
-
-          if (accountData) {
-            // Calculate balance from non-voided journal entries
-            const { data: accJournalLines } = await supabase
-              .from('journal_entry_lines')
-              .select(`
-                debit_amount,
-                credit_amount,
-                journal_entries!inner (is_voided, status, branch_id)
-              `)
-              .eq('account_id', accountId);
-
-            let totalDebit = 0;
-            let totalCredit = 0;
-
-            for (const line of accJournalLines || []) {
-              const journal = line.journal_entries as any;
-              if (journal &&
-                  journal.branch_id === branchId &&
-                  journal.status === 'posted' &&
-                  journal.is_voided === false) {
-                totalDebit += Number(line.debit_amount) || 0;
-                totalCredit += Number(line.credit_amount) || 0;
-              }
-            }
-
-            // Calculate balance based on account type
-            const isDebitNormal = ['Aset', 'Beban'].includes(accountData.type);
-            const calculatedBalance = isDebitNormal
-              ? (totalDebit - totalCredit)
-              : (totalCredit - totalDebit);
-
-            // Update account balance
-            await supabase
-              .from('accounts')
-              .update({ balance: calculatedBalance })
-              .eq('id', accountId);
-
-            console.log(`Updated account ${accountId}: ${calculatedBalance}`);
-          }
-        }
-      }
-
-      return data;
+      console.log('✅ Journal voided via RPC');
+      return rpcResult;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       toast({
         title: 'Berhasil',
-        description: 'Jurnal berhasil dibatalkan (void) dan saldo akun diperbarui',
+        description: 'Jurnal berhasil dibatalkan (void)',
       });
     },
     onError: (error: Error) => {
@@ -492,7 +354,6 @@ export const useJournalEntries = () => {
     isLoading,
     error,
     refetch,
-    fetchJournalEntry,
     createJournalEntry: createMutation.mutate,
     isCreating: createMutation.isPending,
     postJournalEntry: postMutation.mutate,

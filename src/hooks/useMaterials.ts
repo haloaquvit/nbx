@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { Material } from '@/types/material'
 import { supabase } from '@/integrations/supabase/client'
 import { useBranch } from '@/contexts/BranchContext'
-import { createMaterialStockAdjustmentJournal } from '@/services/journalService'
+// journalService removed - now using RPC for all journal operations
 
 const fromDbToApp = (dbMaterial: any): Material => ({
   id: dbMaterial.id,
@@ -65,14 +65,18 @@ export const useMaterials = () => {
   });
 
   const addStock = useMutation({
-    mutationFn: async ({ materialId, quantity }: { materialId: string, quantity: number }): Promise<Material> => {
-      console.log('[addStock] Calling RPC with:', { materialId, quantity });
+    mutationFn: async ({ materialId, quantity }: { materialId: string, quantity: number }): Promise<void> => {
+      if (!currentBranch?.id) throw new Error('Branch required');
 
-      // Simplified: just add stock using the RPC function
-      // Type handling will be implemented when database migration is complete
-      const { data, error } = await supabase.rpc('add_material_stock', {
-        material_id: materialId,
-        quantity_to_add: quantity
+      console.log('[addStock] Calling add_material_batch RPC:', { materialId, quantity });
+
+      const { data: rpcResultRaw, error } = await supabase.rpc('add_material_batch', {
+        p_material_id: materialId,
+        p_branch_id: currentBranch.id,
+        p_quantity: quantity,
+        p_unit_cost: 0, // Manual adjustment cost 0
+        p_reference_id: 'manual_adjustment',
+        p_notes: 'Manual stock adjustment (add)'
       });
 
       if (error) {
@@ -80,28 +84,15 @@ export const useMaterials = () => {
         throw new Error(error.message);
       }
 
-      console.log('[addStock] RPC call successful, response:', data);
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) throw new Error(rpcResult?.error_message || 'Failed to add material stock');
 
-      // Fetch the updated material to verify the update
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: updatedMaterialRaw, error: fetchError } = await supabase
-        .from('materials')
-        .select('*')
-        .eq('id', materialId)
-        .order('id').limit(1);
-
-      const updatedMaterial = Array.isArray(updatedMaterialRaw) ? updatedMaterialRaw[0] : updatedMaterialRaw;
-      if (fetchError) {
-        console.error('[addStock] Error fetching updated material:', fetchError);
-      } else if (updatedMaterial) {
-        console.log('[addStock] Updated material stock:', updatedMaterial.stock);
-      }
-
-      return {} as Material;
+      console.log('[addStock] Stock added successfully');
     },
     onSuccess: () => {
-      console.log('[addStock] Success! Invalidating materials query...');
       queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 
@@ -112,99 +103,71 @@ export const useMaterials = () => {
         branch_id: currentBranch?.id || null,
       };
 
-      // Get existing material data to check stock changes
-      let oldStock = 0;
-      let oldPricePerUnit = 0;
-      if (material.id) {
-        const { data: existingRaw } = await supabase
+      const isUpdate = !!material.id;
+      let existing: any = null;
+
+      if (isUpdate) {
+        const { data: currentRaw } = await supabase
           .from('materials')
           .select('stock, price_per_unit, name')
-          .eq('id', material.id)
-          .order('id').limit(1);
-        const existing = Array.isArray(existingRaw) ? existingRaw[0] : existingRaw;
-        if (existing) {
-          oldStock = Number(existing.stock) || 0;
-          oldPricePerUnit = Number(existing.price_per_unit) || 0;
-        }
+          .eq('id', material.id!)
+          .single();
+        existing = currentRaw;
+
+        const { error } = await supabase
+          .from('materials')
+          .update(dbData)
+          .eq('id', material.id!);
+        if (error) throw error;
+      } else {
+        const { data: dataRaw, error } = await supabase
+          .from('materials')
+          .insert(dbData)
+          .select();
+        if (error) throw error;
+        // Handle PostgREST array response
+        const insertedData = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
+        if (!insertedData?.id) throw new Error('Failed to create material - no ID returned');
+        material.id = insertedData.id;
       }
 
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase
-        .from('materials')
-        .upsert(dbData)
-        .select()
-        .order('id').limit(1);
-      if (error) throw new Error(error.message);
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to upsert material');
+      // Fetch final state
+      const { data: finalRaw } = await supabase.from('materials').select('*').eq('id', material.id!);
+      // Handle PostgREST array response
+      const finalData = Array.isArray(finalRaw) ? finalRaw[0] : finalRaw;
+      if (!finalData) throw new Error('Failed to fetch created material');
+      const finalMaterial = fromDbToApp(finalData);
 
-      // AUTO-JOURNAL: Create adjustment journal when stock changes
-      const newStock = Number(data.stock) || 0;
-      const pricePerUnit = Number(data.price_per_unit) || oldPricePerUnit;
-      const stockDiff = newStock - oldStock;
+      // ============================================================================
+      // SYNC INITIAL STOCK via RPC
+      // ============================================================================
+      // Note: materials.stock in this app seems to be used as "initial/current stock" in some flows
+      const newStock = Number(finalMaterial.stock) || 0;
+      const oldStock = existing ? Number(existing.stock) : 0;
+      const pricePerUnit = Number(finalMaterial.pricePerUnit) || 0;
 
-      if (material.id && stockDiff !== 0 && currentBranch?.id) {
-        // Use pricePerUnit or 0 - journal will be created even if pricePerUnit = 0 (with warning)
-        const effectivePricePerUnit = pricePerUnit || 0;
-        if (effectivePricePerUnit === 0) {
-          console.warn('⚠️ Creating material stock journal with Harga/Unit = 0. Jurnal tetap dibuat tapi nilai = 0.');
-        }
-        const journalResult = await createMaterialStockAdjustmentJournal({
-          materialId: material.id,
-          materialName: data.name || material.name || 'Unknown Material',
-          oldStock,
-          newStock,
-          pricePerUnit: effectivePricePerUnit,
-          branchId: currentBranch.id,
+      if (newStock > 0 || (existing && newStock !== oldStock)) {
+        if (!currentBranch?.id) throw new Error('Branch required');
+
+        const { data: rpcResultRaw, error: rpcError } = await supabase.rpc('sync_material_initial_stock_atomic', {
+          p_material_id: finalMaterial.id,
+          p_branch_id: currentBranch.id,
+          p_new_initial_stock: newStock,
+          p_unit_cost: pricePerUnit
         });
-        if (journalResult.success) {
-          console.log('✅ Auto-generated material stock adjustment journal:', journalResult.journalId);
-        } else {
-          console.warn('⚠️ Failed to create material stock adjustment journal:', journalResult.error);
-        }
+
+        if (rpcError) throw rpcError;
+        const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+        if (!rpcResult?.success) throw new Error(rpcResult?.error_message || 'Failed to sync material stock');
+        // Note: Journal creation is handled by the RPC function
       }
 
-      // SYNC BATCH: Update inventory_batches (with material_id) when stock changes
-      // Note: Materials use inventory_batches table with material_id column, NOT separate table
-      if (material.id && newStock > 0 && pricePerUnit > 0) {
-        const { data: existingBatch } = await supabase
-          .from('inventory_batches')
-          .select('id, initial_quantity, remaining_quantity')
-          .eq('material_id', material.id)
-          .eq('notes', 'Stok Awal')
-          .order('batch_date')
-          .limit(1);
-
-        const batch = Array.isArray(existingBatch) ? existingBatch[0] : existingBatch;
-
-        if (batch) {
-          // Update existing "Stok Awal" batch - sync remaining_quantity with stock diff
-          const newRemaining = Math.max(0, (batch.remaining_quantity || 0) + stockDiff);
-          await supabase.from('inventory_batches').update({
-            initial_quantity: newStock,
-            remaining_quantity: newRemaining,
-            unit_cost: pricePerUnit,
-            updated_at: new Date().toISOString()
-          }).eq('id', batch.id);
-          console.log(`📦 Material batch synced: ${batch.id.substring(0, 8)} (remaining: ${batch.remaining_quantity} → ${newRemaining})`);
-        } else {
-          // Create new "Stok Awal" batch for material
-          await supabase.from('inventory_batches').insert({
-            material_id: material.id,
-            branch_id: currentBranch?.id || null,
-            initial_quantity: newStock,
-            remaining_quantity: newStock,
-            unit_cost: pricePerUnit,
-            notes: 'Stok Awal'
-          });
-          console.log(`📦 Material batch created for ${material.name || data.name}`);
-        }
-      }
-
-      return fromDbToApp(data);
+      return finalMaterial;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['materials'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
   });
 

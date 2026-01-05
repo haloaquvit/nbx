@@ -40,6 +40,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from '@/lib/utils';
 import { useAccounts } from '@/hooks/useAccounts';
 import { JournalEntryFormData, JournalEntryLineFormData } from '@/types/journal';
+import { useTimezone } from '@/contexts/TimezoneContext';
+import { getOfficeTime } from '@/utils/officeTime';
 
 interface JournalEntryFormProps {
   onSubmit: (data: JournalEntryFormData) => void;
@@ -57,7 +59,8 @@ const formatCurrency = (amount: number) => {
 
 export function JournalEntryForm({ onSubmit, isLoading, onCancel }: JournalEntryFormProps) {
   const { accounts } = useAccounts();
-  const [entryDate, setEntryDate] = useState<Date>(new Date());
+  const { timezone } = useTimezone();
+  const [entryDate, setEntryDate] = useState<Date>(getOfficeTime(timezone));
 
   // Filter only non-header accounts for selection
   const selectableAccounts = (accounts || []).filter(acc => !acc.isHeader && acc.isActive);

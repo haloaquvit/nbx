@@ -17,7 +17,7 @@ interface UseClosingEntryReturn {
   fetchPreview: (year: number, branchId: string) => Promise<void>;
   fetchClosedYears: (branchId: string) => Promise<void>;
   checkYearClosed: (year: number, branchId: string) => Promise<boolean>;
-  executeClosing: (year: number, branchId: string, userId: string) => Promise<boolean>;
+  executeClosing: (year: number, branchId: string) => Promise<boolean>;
   voidClosing: (year: number, branchId: string) => Promise<boolean>;
   clearPreview: () => void;
 }
@@ -60,12 +60,11 @@ export function useClosingEntry(): UseClosingEntryReturn {
 
   const executeClosing = useCallback(async (
     year: number,
-    branchId: string,
-    userId: string
+    branchId: string
   ): Promise<boolean> => {
     setLoading(true);
     try {
-      const result = await executeClosingEntry(year, branchId, userId);
+      const result = await executeClosingEntry(year, branchId);
 
       if (result.success) {
         toast({

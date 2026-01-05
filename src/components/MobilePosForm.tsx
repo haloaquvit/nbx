@@ -31,6 +31,8 @@ import { User } from '@/types/user'
 import { useCustomers } from '@/hooks/useCustomers'
 import { useSalesEmployees } from '@/hooks/useSalesCommission'
 import { PricingService } from '@/services/pricingService'
+import { useTimezone } from '@/contexts/TimezoneContext'
+import { getOfficeTime } from '@/utils/officeTime'
 
 interface FormTransactionItem {
   id: number;
@@ -49,6 +51,7 @@ export const MobilePosForm = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { user: currentUser } = useAuth()
+  const { timezone } = useTimezone()
   const { products, isLoading: isLoadingProducts } = useProducts()
   const { users } = useUsers();
   const { accounts } = useAccounts();
@@ -58,7 +61,7 @@ export const MobilePosForm = () => {
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [selectedSales, setSelectedSales] = useState<string>('none')
-  const [orderDate, setOrderDate] = useState<Date | undefined>(new Date())
+  const [orderDate, setOrderDate] = useState<Date | undefined>(() => getOfficeTime(timezone))
   const [finishDate, setFinishDate] = useState<Date | undefined>()
   const [designerId, setDesignerId] = useState<string>('')
   const [operatorId, setOperatorId] = useState<string>('')
@@ -595,7 +598,7 @@ export const MobilePosForm = () => {
       designerId: designerId || null,
       operatorId: operatorId || null,
       paymentAccountId: finalPaymentAccountId || null,
-      orderDate: orderDate || new Date(),
+      orderDate: orderDate || getOfficeTime(timezone),
       finishDate: finishDate || null,
       items: transactionItems,
       total: totalTagihan,

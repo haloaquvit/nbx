@@ -9,6 +9,8 @@ import { useAccounts } from "@/hooks/useAccounts"
 import { useBranch } from "@/contexts/BranchContext"
 import { Asset, AssetFormData } from "@/types/assets"
 import { useToast } from "@/components/ui/use-toast"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeTime } from "@/utils/officeTime"
 
 interface AssetDialogProps {
   open: boolean
@@ -18,6 +20,7 @@ interface AssetDialogProps {
 
 export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
   const { toast } = useToast()
+  const { timezone } = useTimezone()
   const createAsset = useCreateAsset()
   const updateAsset = useUpdateAsset()
   const { accounts = [], isLoading } = useAccounts()
@@ -37,7 +40,7 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
     assetCode: generateAssetCode(),
     category: "equipment",
     description: "",
-    purchaseDate: new Date(),
+    purchaseDate: getOfficeTime(timezone),
     purchasePrice: 0,
     supplierName: "",
     brand: "",
@@ -82,7 +85,7 @@ export function AssetDialog({ open, onOpenChange, asset }: AssetDialogProps) {
         assetCode: generateAssetCode(),
         category: "equipment",
         description: "",
-        purchaseDate: new Date(),
+        purchaseDate: getOfficeTime(timezone),
         purchasePrice: 0,
         supplierName: "",
         brand: "",

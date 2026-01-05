@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useBranch } from '@/contexts/BranchContext';
 import { findAccountByLookup } from '@/services/accountLookupService';
 import { Account } from '@/types/account';
-import { createAdvanceJournal } from '@/services/journalService';
+// journalService import removed - now using RPC for all journal operations
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -139,66 +139,44 @@ export const useEmployeeAdvances = () => {
 
   const addAdvance = useMutation({
     mutationFn: async (newData: Omit<EmployeeAdvance, 'id' | 'createdAt' | 'remainingAmount' | 'repayments'>): Promise<EmployeeAdvance> => {
-      const advanceToInsert = {
-        ...newData,
-        remainingAmount: newData.amount,
-      };
-      const dbData = fromAppToDb(advanceToInsert);
+      if (!currentBranch?.id) throw new Error('Branch ID is required');
 
-      // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-      const { data: dataRaw, error } = await supabase
-        .from('employee_advances')
-        .insert({
-          ...dbData,
-          id: `adv-${Date.now()}`,
-          branch_id: currentBranch?.id || null, // Add branch_id for branch categorization
-        })
-        .select()
-        .order('id').limit(1);
+      console.log('🚀 Creating Employee Advance via Atomic RPC...', newData.employeeName);
 
-      if (error) throw new Error(error.message);
-      const data = Array.isArray(dataRaw) ? dataRaw[0] : dataRaw;
-      if (!data) throw new Error('Failed to create employee advance');
-
-      // Get Piutang Karyawan account using lookup service
-      const piutangAccount = await getPiutangKaryawanAccount();
-
-      // ============================================================================
-      // cash_history SUDAH DIHAPUS - Cash flow sekarang dibaca dari journal_entries
-      // ============================================================================
-
-      // ============================================================================
-      // AUTO-GENERATE JOURNAL ENTRY FOR PANJAR
-      // ============================================================================
-      // Jurnal otomatis untuk pemberian panjar:
-      // Dr. Panjar Karyawan   xxx
-      //   Cr. Kas/Bank             xxx
-      // ============================================================================
-      if (currentBranch?.id) {
-        try {
-          const journalResult = await createAdvanceJournal({
-            advanceId: data.id,
-            advanceDate: newData.date, // Already a Date object from form
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('create_employee_advance_atomic', {
+          p_branch_id: currentBranch.id,
+          p_advance: {
+            employee_id: newData.employeeId,
+            employee_name: newData.employeeName,
             amount: newData.amount,
-            employeeName: newData.employeeName,
-            type: 'given',
-            description: newData.notes,
-            branchId: currentBranch.id,
-            paymentAccountId: newData.accountId,
-            paymentAccountName: newData.accountName,
-          });
-
-          if (journalResult.success) {
-            console.log('✅ Jurnal panjar auto-generated:', journalResult.journalId);
-          } else {
-            console.warn('⚠️ Gagal membuat jurnal panjar otomatis:', journalResult.error);
+            advance_date: newData.date instanceof Date ? newData.date.toISOString().split('T')[0] : newData.date,
+            reason: newData.notes || '',
+            payment_account_id: newData.accountId
           }
-        } catch (journalError) {
-          console.error('Error creating advance journal:', journalError);
-        }
+        });
+
+      if (rpcError) {
+        console.error('❌ RPC Error:', rpcError);
+        throw new Error(`Gagal menyimpan panjar: ${rpcError.message}`);
       }
 
-      return fromDbToApp({ ...data, advance_repayments: [] });
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal menyimpan panjar (Unknown RPC Error)');
+      }
+
+      console.log('✅ Advance Created via RPC:', rpcResult.advance_id, 'Journal:', rpcResult.journal_id);
+
+      // Return constructed object for optimistic UI (optional)
+      return {
+        id: rpcResult.advance_id,
+        ...newData,
+        createdAt: new Date(),
+        remainingAmount: newData.amount,
+        repayments: []
+      } as EmployeeAdvance;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
@@ -209,126 +187,87 @@ export const useEmployeeAdvances = () => {
   });
 
   const addRepayment = useMutation({
-    mutationFn: async ({ advanceId, repaymentData, accountId, accountName }: { 
-      advanceId: string, 
+    mutationFn: async ({ advanceId, repaymentData, accountId }: {
+      advanceId: string,
       repaymentData: Omit<AdvanceRepayment, 'id'>,
       accountId?: string,
       accountName?: string
     }): Promise<void> => {
-      const newRepayment = {
-        id: `rep-${Date.now()}`,
-        advance_id: advanceId,
-        amount: repaymentData.amount,
-        date: repaymentData.date,
-        recorded_by: repaymentData.recordedBy,
-      };
-      const { error: insertError } = await supabase.from('advance_repayments').insert(newRepayment);
-      if (insertError) throw insertError;
+      if (!currentBranch?.id) throw new Error('Branch ID is required');
+      if (!accountId) throw new Error('Payment account is required');
 
-      // Call RPC to update remaining amount
-      const { error: rpcError } = await supabase.rpc('update_remaining_amount', {
-        p_advance_id: advanceId
+      console.log('💸 Processing Advance Repayment via RPC...', advanceId);
+
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('repay_employee_advance_atomic', {
+          p_branch_id: currentBranch.id,
+          p_advance_id: advanceId,
+          p_amount: repaymentData.amount,
+          p_date: repaymentData.date instanceof Date ? repaymentData.date.toISOString().split('T')[0] : repaymentData.date,
+          p_payment_account_id: accountId,
+          p_recorded_by: 'User'
+        });
+
+      if (rpcError) {
+      console.error('❌ RPC Error:', rpcError);
+      throw new Error(`Gagal memproses pelunasan: ${rpcError.message}`);
+    }
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+    if(!rpcResult?.success) {
+      throw new Error(rpcResult?.error_message || 'Gagal memproses pelunasan');
+    }
+
+      console.log('✅ Repayment Success via RPC:', rpcResult.repayment_id, 'Journal:', rpcResult.journal_id);
+  },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+    }
+  });
+
+const deleteAdvance = useMutation({
+  mutationFn: async (advanceToDelete: EmployeeAdvance): Promise<void> => {
+    if (!currentBranch?.id) throw new Error('Branch ID is required');
+
+    console.log('🗑️ Voiding Advance via RPC...', advanceToDelete.id);
+
+    const { data: rpcResultRaw, error: rpcError } = await supabase
+      .rpc('void_employee_advance_atomic', {
+        p_branch_id: currentBranch.id,
+        p_advance_id: advanceToDelete.id,
+        p_reason: 'Dihapus oleh user'
       });
-      if (rpcError) throw new Error(rpcError.message);
 
-      // ============================================================================
-      // cash_history SUDAH DIHAPUS - Cash flow sekarang dibaca dari journal_entries
-      // ============================================================================
-
-      // ============================================================================
-      // AUTO-GENERATE JOURNAL ENTRY FOR PELUNASAN PANJAR
-      // ============================================================================
-      // Jurnal otomatis untuk pengembalian panjar:
-      // Dr. Kas/Bank          xxx
-      //   Cr. Panjar Karyawan      xxx
-      // ============================================================================
-      if (currentBranch?.id) {
-        try {
-          // Get advance details for the description
-          // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
-          const { data: advanceRaw2 } = await supabase
-            .from('employee_advances')
-            .select('employee_name')
-            .eq('id', advanceId)
-            .order('id').limit(1);
-          const advance = Array.isArray(advanceRaw2) ? advanceRaw2[0] : advanceRaw2;
-
-          const journalResult = await createAdvanceJournal({
-            advanceId: newRepayment.id,
-            advanceDate: new Date(repaymentData.date),
-            amount: repaymentData.amount,
-            employeeName: advance?.employee_name || 'Karyawan',
-            type: 'returned',
-            description: `Pelunasan panjar ${advanceId}`,
-            branchId: currentBranch.id,
-          });
-
-          if (journalResult.success) {
-            console.log('✅ Jurnal pelunasan panjar auto-generated:', journalResult.journalId);
-          } else {
-            console.warn('⚠️ Gagal membuat jurnal pelunasan otomatis:', journalResult.error);
-          }
-        } catch (journalError) {
-          console.error('Error creating repayment journal:', journalError);
-        }
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
-      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+    if (rpcError) {
+      console.error('❌ RPC Error:', rpcError);
+      throw new Error(`Gagal menghapus panjar: ${rpcError.message}`);
     }
-  });
 
-  const deleteAdvance = useMutation({
-    mutationFn: async (advanceToDelete: EmployeeAdvance): Promise<void> => {
-      // ============================================================================
-      // VOID JURNAL PANJAR
-      // Balance otomatis ter-rollback karena dihitung dari journal_entries
-      // ============================================================================
-      try {
-        const { error: voidError } = await supabase
-          .from('journal_entries')
-          .update({ status: 'voided' })
-          .eq('reference_id', advanceToDelete.id)
-          .eq('reference_type', 'advance');
-
-        if (voidError) {
-          console.error('Failed to void advance journal:', voidError.message);
-        } else {
-          console.log('✅ Advance journal voided:', advanceToDelete.id);
-        }
-      } catch (err) {
-        console.error('Error voiding advance journal:', err);
-      }
-
-      // cash_history SUDAH DIHAPUS - tidak perlu delete lagi
-
-      // Delete associated repayments first
-      await supabase.from('advance_repayments').delete().eq('advance_id', advanceToDelete.id);
-
-      // Then delete the advance itself
-      const { error } = await supabase.from('employee_advances').delete().eq('id', advanceToDelete.id);
-      if (error) throw new Error(error.message);
-
-      console.log(`✅ Advance ${advanceToDelete.id} deleted`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
-      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+    const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+    if (!rpcResult?.success) {
+      throw new Error(rpcResult?.error_message || 'Gagal menghapus panjar');
     }
-  });
 
-  return {
-    advances,
-    isLoading,
-    isError,
-    error,
-    addAdvance,
-    addRepayment,
-    deleteAdvance,
+    console.log('✅ Advance Deleted & Journals Voided:', rpcResult.journals_voided);
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
+    queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+    queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
   }
+});
+
+return {
+  advances,
+  isLoading,
+  isError,
+  error,
+  addAdvance,
+  addRepayment,
+  deleteAdvance,
+}
 }

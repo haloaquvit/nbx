@@ -23,7 +23,7 @@ export default function ProductionPage() {
   const { user } = useAuth()
   const { products, isLoading: isLoadingProducts } = useProducts()
   const { materials, isLoading: isLoadingMaterials } = useMaterials()
-  const { productions, isLoading, getBOM, processProduction, processError, deleteProduction } = useProduction()
+  const { productions, isLoading, fetchProductions, getBOM, processProduction, processError, deleteProduction } = useProduction()
   const { toast } = useToast()
   
   const [selectedProductId, setSelectedProductId] = useState<string>("")
@@ -51,6 +51,11 @@ export default function ProductionPage() {
     finishedGoods.find(p => p.id === selectedProductId), 
     [finishedGoods, selectedProductId]
   )
+
+  // Fetch production history on mount
+  useEffect(() => {
+    fetchProductions()
+  }, [fetchProductions])
 
   // Load BOM when product changes
   useEffect(() => {

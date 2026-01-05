@@ -15,9 +15,11 @@ import { supabase } from "@/integrations/supabase/client"
 import { useQueryClient } from "@tanstack/react-query"
 import { useBranch } from "@/contexts/BranchContext"
 import { ArrowRightLeft } from "lucide-react"
-import { createTransferJournal } from "@/services/journalService"
 import { useState, useEffect } from "react"
+// journalService removed - now using RPC for all journal operations
 import { formatNumber } from "@/utils/formatNumber"
+import { useTimezone } from "@/contexts/TimezoneContext"
+import { getOfficeDateString } from "@/utils/officeTime"
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -48,6 +50,7 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
   const { accounts } = useAccounts()
   const { toast } = useToast()
   const { user } = useAuth()
+  const { timezone } = useTimezone()
   const { currentBranch } = useBranch()
   const queryClient = useQueryClient()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -131,25 +134,24 @@ export function TransferAccountDialog({ open, onOpenChange }: TransferAccountDia
       // Dr. Akun Tujuan     xxx
       //   Cr. Akun Asal          xxx
       // ============================================================================
-      const journalResult = await createTransferJournal({
-        transferId: transferRef,
-        transferDate: new Date(),
-        amount: data.amount,
-        fromAccountId: fromAccount.id,
-        fromAccountCode: fromAccount.code || '',
-        fromAccountName: fromAccount.name,
-        toAccountId: toAccount.id,
-        toAccountCode: toAccount.code || '',
-        toAccountName: toAccount.name,
-        description: data.description,
-        branchId: currentBranch.id,
-      });
+      // Create journal via RPC
+      const { data: journalResultRaw, error: journalError } = await supabase
+        .rpc('create_transfer_journal_rpc', {
+          p_branch_id: currentBranch.id,
+          p_transfer_id: transferRef,
+          p_transfer_date: getOfficeDateString(timezone),
+          p_amount: data.amount,
+          p_from_account_id: fromAccount.id,
+          p_to_account_id: toAccount.id,
+          p_description: data.description,
+        });
 
-      if (!journalResult.success) {
-        throw new Error(journalResult.error || 'Gagal membuat jurnal transfer');
+      const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw;
+      if (journalError || !journalResult?.success) {
+        throw new Error(journalError?.message || journalResult?.error_message || 'Gagal membuat jurnal transfer');
       }
 
-      console.log('✅ Jurnal transfer auto-generated:', journalResult.journalId);
+      console.log('✅ Jurnal transfer via RPC:', journalResult.journal_id);
 
       // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
 

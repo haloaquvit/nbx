@@ -101,15 +101,21 @@ async function calculateAccountBalancesFromJournal(
   // Filter journal lines on client side
   const asOfDateStr = asOfDate ? asOfDate.toISOString().split('T')[0] : null;
 
+  // IMPORTANT: Filter by account_id belonging to the branch, NOT by journal's branch_id!
+  // This is because a journal entry can reference accounts from different branches.
+  // Example: A stock adjustment journal in Branch A might credit Modal Disetor from Branch B.
+  // If we filter by journal.branch_id, we would miss transactions affecting accounts in other branches.
+  // The correct approach: only process lines where account_id is in our accountBalanceMap (i.e., belongs to this branch).
   const filteredJournalLines = (journalLines || []).filter((line: any) => {
     const journal = line.journal_entries;
     if (!journal) return false;
 
-    const matchesBranch = journal.branch_id === branchId;
+    // Check if account belongs to this branch (it's in our map)
+    const accountBelongsToBranch = accountBalanceMap.has(line.account_id);
     const matchesStatus = journal.status === 'posted' && journal.is_voided === false;
     const matchesDate = !asOfDateStr || journal.entry_date <= asOfDateStr;
 
-    return matchesBranch && matchesStatus && matchesDate;
+    return accountBelongsToBranch && matchesStatus && matchesDate;
   });
 
   // Calculate balance per account

@@ -77,7 +77,7 @@ export interface DbJournalEntry {
   voided_by?: string;
   voided_by_name?: string;
   voided_at?: string;
-  void_reason?: string;
+  voided_reason?: string;
   branch_id?: string;
 }
 
