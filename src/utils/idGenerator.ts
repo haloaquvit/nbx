@@ -98,26 +98,40 @@ export async function generateTransactionId(
   const prefix = type === 'supir' ? 'AQVPOSSUP' : 'AQV';
 
   try {
-    // Count ALL transactions with the same prefix (tidak reset harian - terus bertambah selamanya)
+    // Get the MAX id number from existing transactions with same prefix and date
+    // This is more reliable than COUNT (handles deleted records, race conditions better)
     let query = supabase
       .from('transactions')
-      .select('id', { count: 'exact', head: true })
-      .like('id', `${prefix}-%`);
+      .select('id')
+      .like('id', `${prefix}-${dateCode}-%`)
+      .order('id', { ascending: false })
+      .limit(1);
 
     if (branchId) {
       query = query.eq('branch_id', branchId);
     }
 
-    const { count, error } = await query;
+    const { data, error } = await query;
 
     if (error) {
-      console.error('Error getting transaction count:', error);
-      // Fallback to timestamp if count fails
+      console.error('Error getting max transaction ID:', error);
+      // Fallback to timestamp if query fails
       const timestamp = Date.now().toString().slice(-6);
       return `${prefix}-${dateCode}-${timestamp}`;
     }
 
-    const sequentialNumber = String((count || 0) + 1).padStart(3, '0');
+    let nextNumber = 1;
+    if (data && data.length > 0) {
+      // Extract number from last ID (e.g., "AQV-0501-038" -> 38)
+      const lastId = data[0].id;
+      const parts = lastId.split('-');
+      const lastNumber = parseInt(parts[parts.length - 1], 10);
+      if (!isNaN(lastNumber)) {
+        nextNumber = lastNumber + 1;
+      }
+    }
+
+    const sequentialNumber = String(nextNumber).padStart(3, '0');
     return `${prefix}-${dateCode}-${sequentialNumber}`;
   } catch (err) {
     console.error('Error generating transaction ID:', err);
