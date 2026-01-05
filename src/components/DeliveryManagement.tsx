@@ -99,6 +99,36 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
     photo: undefined,
   })
 
+  // FIX: Update form items when transaction.deliverySummary changes (e.g., when data loads from API)
+  useEffect(() => {
+    console.log('📦 DeliveryManagement - transaction.deliverySummary changed:', {
+      transactionId: transaction.id,
+      deliverySummaryLength: transaction.deliverySummary?.length,
+      deliverySummary: transaction.deliverySummary
+    })
+
+    if (transaction.deliverySummary && transaction.deliverySummary.length > 0) {
+      setFormData(prev => ({
+        ...prev,
+        transactionId: transaction.id,
+        items: transaction.deliverySummary.map((item, index) => ({
+          itemId: `${item.productId}-${index}`,
+          productId: item.productId,
+          productName: item.productName || 'Unknown Product',
+          isBonus: (item.productName || '').includes("BONUS") || (item.productName || '').includes("(BONUS)"),
+          orderedQuantity: item.orderedQuantity,
+          deliveredQuantity: item.deliveredQuantity,
+          remainingQuantity: item.remainingQuantity,
+          quantityToDeliver: 0,
+          unit: item.unit,
+          width: item.width,
+          height: item.height,
+          notes: "",
+        }))
+      }))
+    }
+  }, [transaction.id, transaction.deliverySummary])
+
   const handleItemQuantityChange = (itemId: string, quantityToDeliver: number) => {
     setFormData(prev => ({
       ...prev,
