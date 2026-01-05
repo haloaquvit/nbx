@@ -68,11 +68,10 @@ export default function ProductPage() {
       key: "type",
       header: "Jenis",
       render: (row: any) => (
-        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs ${
-          row.type === 'Produksi'
+        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs ${row.type === 'Produksi'
             ? 'bg-emerald-100 text-emerald-700'
             : 'bg-blue-100 text-blue-700'
-        }`}>
+          }`}>
           {row.type}
         </span>
       ),
@@ -95,10 +94,10 @@ export default function ProductPage() {
         <span className={row.costPrice > 0 ? 'text-gray-700' : 'text-orange-500'}>
           {row.costPrice > 0
             ? new Intl.NumberFormat("id-ID", {
-                style: "currency",
-                currency: "IDR",
-                maximumFractionDigits: 0
-              }).format(row.costPrice)
+              style: "currency",
+              currency: "IDR",
+              maximumFractionDigits: 0
+            }).format(row.costPrice)
             : row.type === 'Produksi' ? 'Dari BOM' : 'Rp 0'
           }
         </span>
@@ -115,11 +114,10 @@ export default function ProductPage() {
     },
     {
       key: "currentStock",
-      header: "Stok",
+      header: "Stok (FIFO)",
       render: (row: any) => (
-        <span className={`font-medium ${
-          row.currentStock <= row.minStock ? 'text-red-600' : 'text-green-600'
-        }`}>
+        <span className={`font-medium ${row.currentStock <= row.minStock ? 'text-red-600' : 'text-green-600'
+          }`}>
           {row.currentStock || 0}
         </span>
       ),
@@ -128,33 +126,33 @@ export default function ProductPage() {
 
   const columns = useMemo(() => {
     let cols = [...baseColumns]
-    
+
     if (canManage) {
       cols.push({
         key: "bom",
         header: "BOM",
         render: (row: any) => row.type === 'Produksi' ? (
-          <BOMManagement 
-            productId={row.id} 
+          <BOMManagement
+            productId={row.id}
             productName={row.name}
           />
         ) : (
           <span className="text-gray-400 text-xs">-</span>
         ),
       })
-      
+
       cols.push({
         key: "edit",
         header: "Edit",
         render: (row: any) => (
-          <EditProductButton 
-            product={row} 
-            onSaved={() => window.location.reload()} 
+          <EditProductButton
+            product={row}
+            onSaved={() => window.location.reload()}
           />
         ),
       })
     }
-    
+
     if (canDelete) {
       cols.push({
         key: "delete",
@@ -260,7 +258,7 @@ export default function ProductPage() {
         specifications: [],
         materials: [],
       })
-      
+
       setOpen(false)
       setForm({
         name: "",
@@ -345,14 +343,14 @@ export default function ProductPage() {
                       className="text-sm mt-1"
                     />
                   </div>
-                  
+
 
                   <div>
                     <Label htmlFor="type" className="text-sm">
                       Jenis Produk
                     </Label>
-                    <Select 
-                      value={form.type} 
+                    <Select
+                      value={form.type}
                       onValueChange={(value: ProductType) => setForm({ ...form, type: value })}
                     >
                       <SelectTrigger>
@@ -478,8 +476,8 @@ export default function ProductPage() {
                     />
                   </div>
 
-                  <Button 
-                    onClick={handleAdd} 
+                  <Button
+                    onClick={handleAdd}
                     className="w-full mt-2"
                     disabled={upsertProduct.isPending}
                   >
@@ -494,7 +492,7 @@ export default function ProductPage() {
           </Button>
         </div>
       </div>
-      
+
       <DataTable data={products || []} columns={columns as any} />
 
       {!canManage && (
@@ -579,7 +577,7 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
     minOrder: product.minOrder,
     description: product.description || "",
   })
-  
+
   const { upsertProduct } = useProducts()
   const { toast } = useToast()
 
@@ -598,10 +596,10 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
         id: product.id,
         ...form,
       })
-      
+
       setOpen(false)
       onSaved()
-      
+
       toast({
         title: "Success",
         description: "Produk berhasil diperbarui"
@@ -642,14 +640,14 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
               className="text-sm mt-1"
             />
           </div>
-          
+
 
           <div>
             <Label htmlFor="edit-type" className="text-sm">
               Jenis Produk
             </Label>
-            <Select 
-              value={form.type} 
+            <Select
+              value={form.type}
               onValueChange={(value: ProductType) => setForm({ ...form, type: value })}
             >
               <SelectTrigger>
@@ -777,8 +775,8 @@ function EditProductButton({ product, onSaved }: { product: any; onSaved: () => 
           </div>
 
           <div className="flex justify-end mt-2">
-            <Button 
-              onClick={handleSave} 
+            <Button
+              onClick={handleSave}
               className="w-full sm:w-auto"
               disabled={upsertProduct.isPending}
             >

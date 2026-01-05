@@ -86,13 +86,12 @@ export const useProducts = () => {
       // Fetch actual stock from v_product_current_stock VIEW for the fetched products
       let stockQuery = supabase.from('v_product_current_stock').select('product_id, current_stock');
 
-      if (data && data.length > 0) {
-        const productIds = data.map(p => p.id);
-        stockQuery = stockQuery.in('product_id', productIds);
-      } else {
-        // No products, no stock to fetch
-        return [];
+      if (currentBranch?.id) {
+        // Fetch stock for current branch AND global products (branch_id is null)
+        stockQuery = stockQuery.or(`branch_id.eq.${currentBranch.id},branch_id.is.null`);
       }
+
+      // If no currentBranch (Head Office/All), fetch all stock (no filter needed)
 
       const { data: stockData } = await stockQuery;
 
@@ -106,7 +105,9 @@ export const useProducts = () => {
       return data ? data.map(p => {
         const product = fromDb(p);
         // Override current_stock with value from VIEW (source of truth)
-        product.currentStock = stockMap.get(p.id) ?? product.currentStock;
+        // If not found in view (e.g. new product or global product issue), default to 0
+        // DO NOT fallback to product.currentStock as it is deprecated and misleading
+        product.currentStock = stockMap.get(p.id) ?? 0;
         return product;
       }) : [];
     },
