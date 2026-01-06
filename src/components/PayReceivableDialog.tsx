@@ -60,13 +60,13 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
 
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const remainingAmount = transaction ? transaction.total - (transaction.paidAmount || 0) : 0
-  
+
   const { register, handleSubmit, reset, setValue, formState: { errors }, watch, trigger } = useForm<PaymentFormData>({
     resolver: zodResolver(getPaymentSchema(remainingAmount)),
   })
-  
+
   const watchedAmount = watch("amount")
-  
+
   // Re-trigger validation when remaining amount changes
   React.useEffect(() => {
     if (watchedAmount) {
@@ -99,50 +99,35 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         throw new Error("Akun pembayaran tidak ditemukan");
       }
 
-      // Use the database function for proper payment tracking
-      const { error: paymentError } = await supabase.rpc('pay_receivable_with_history', {
+      // ============================================================================
+      // Use COMPLETE RPC that handles:
+      // 1. Update transaction (paid_amount, payment_status)
+      // 2. Insert payment_history
+      // 3. Create journal entry (Dr. Kas, Cr. Piutang)
+      // ============================================================================
+      const { data: resultRaw, error: rpcError } = await supabase.rpc('pay_receivable_complete_rpc', {
         p_transaction_id: transaction.id,
         p_amount: data.amount,
-        p_account_id: data.paymentAccountId,
-        p_account_name: selectedAccount.name,
+        p_payment_account_id: data.paymentAccountId,
         p_notes: data.notes || null,
-        p_recorded_by: user.id,
+        p_branch_id: currentBranch?.id,
         p_recorded_by_name: user.name || user.email || 'Unknown User'
       });
 
-      if (paymentError) {
-        throw new Error(paymentError.message);
+      if (rpcError) {
+        console.error('❌ Payment RPC Error:', rpcError);
+        throw new Error(`Gagal memproses pembayaran: ${rpcError.message}`);
       }
 
-      // ============================================================================
-      // AUTO-GENERATE JOURNAL FOR RECEIVABLE PAYMENT VIA RPC
-      // Dr. Kas/Bank         xxx
-      //   Cr. Piutang Usaha       xxx
-      // ============================================================================
-      if (currentBranch?.id) {
-        const { data: journalResultRaw, error: journalError } = await supabase
-          .rpc('create_receivable_payment_journal_rpc', {
-            p_branch_id: currentBranch.id,
-            p_transaction_id: transaction.id,
-            p_payment_date: getOfficeDateString(timezone),
-            p_amount: data.amount,
-            p_customer_name: transaction.customerName || 'Customer',
-            p_payment_account_id: data.paymentAccountId,
-          });
-
-        if (journalError) {
-          console.warn('⚠️ Failed to create receivable payment journal via RPC:', journalError.message);
-        } else {
-          const journalResult = Array.isArray(journalResultRaw) ? journalResultRaw[0] : journalResultRaw;
-          if (journalResult?.success) {
-            console.log('✅ Receivable payment journal auto-generated via RPC:', journalResult.journal_id);
-          } else {
-            console.warn('⚠️ RPC returned error:', journalResult?.error_message);
-          }
-        }
+      const result = Array.isArray(resultRaw) ? resultRaw[0] : resultRaw;
+      if (!result?.success) {
+        throw new Error(result?.error_message || 'Payment failed');
       }
 
-      // cash_history SUDAH DIHAPUS - monitoring sekarang dari journal_entries
+      console.log('✅ Payment Success:', {
+        payment_id: result.payment_id,
+        journal_id: result.journal_id
+      });
 
       // Invalidate all transaction-related queries to ensure fresh data
       await Promise.all([
@@ -155,24 +140,24 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
         queryClient.invalidateQueries({ queryKey: ['accounts'] }),
         queryClient.invalidateQueries({ queryKey: ['journalEntries'] }),
       ]);
-      
+
       // Force immediate refetch to update UI without waiting for background refetch
-      await queryClient.refetchQueries({ 
+      await queryClient.refetchQueries({
         queryKey: ['transactions'],
         type: 'active' // Only refetch currently mounted queries
       });
 
-      toast({ 
-        title: "Sukses", 
-        description: `Pembayaran piutang sebesar ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(data.amount)} berhasil dicatat ke ${selectedAccount?.name}.` 
+      toast({
+        title: "Sukses",
+        description: `Pembayaran piutang sebesar ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(data.amount)} berhasil dicatat ke ${selectedAccount?.name}.`
       });
-      
+
       reset();
       onOpenChange(false);
     } catch (error) {
-      toast({ 
-        variant: "destructive", 
-        title: "Gagal", 
+      toast({
+        variant: "destructive",
+        title: "Gagal",
         description: error instanceof Error ? error.message : "Terjadi kesalahan saat memproses pembayaran"
       });
     } finally {
@@ -194,9 +179,9 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
             <div>
               <div className="flex items-center justify-between">
                 <Label htmlFor="amount">Jumlah Pembayaran</Label>
-                <Button 
-                  type="button" 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   size="sm"
                   onClick={() => {
                     setValue("amount", remainingAmount);
@@ -207,14 +192,14 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
                   Bayar Penuh
                 </Button>
               </div>
-              <Input 
-                id="amount" 
-                type="number" 
+              <Input
+                id="amount"
+                type="number"
                 step="0.01"
                 min="1"
                 max={remainingAmount}
                 placeholder={`Maksimal: ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(remainingAmount)}`}
-                {...register("amount")} 
+                {...register("amount")}
               />
               {errors.amount && <p className="text-sm text-destructive mt-1">{errors.amount.message}</p>}
               {watchedAmount && watchedAmount > remainingAmount && (
@@ -247,10 +232,10 @@ export function PayReceivableDialog({ open, onOpenChange, transaction }: PayRece
             </div>
             <div>
               <Label htmlFor="notes">Catatan (Opsional)</Label>
-              <Textarea 
-                id="notes" 
+              <Textarea
+                id="notes"
                 placeholder="Catatan tambahan untuk pembayaran ini..."
-                {...register("notes")} 
+                {...register("notes")}
                 rows={2}
               />
               {errors.notes && <p className="text-sm text-destructive mt-1">{errors.notes.message}</p>}
