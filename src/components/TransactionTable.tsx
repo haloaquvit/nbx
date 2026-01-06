@@ -432,10 +432,10 @@ export function TransactionTable() {
         </tr>
 
         <!-- Items -->
-        ${transaction.items.filter(item => item.product?.name || item.name).map((item, idx) => `
+        ${transaction.items.filter(item => item.product?.name).map((item, idx) => `
           <tr>
             <td style="padding: 0.5mm 1mm; font-size: 11pt;">${idx + 1}</td>
-            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product?.name || item.name}</td>
+            <td style="padding: 0.5mm 1mm; font-size: 11pt;">${item.product?.name}</td>
             <td style="padding: 0.5mm 1mm; text-align: center; font-size: 11pt;">${formatNumber(item.quantity)} ${shortUnit(item.unit || '')}</td>
             <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price)}</td>
             <td style="padding: 0.5mm 1mm; text-align: right; font-size: 11pt;">${formatNumber(item.price * item.quantity)}</td>
@@ -566,8 +566,8 @@ export function TransactionTable() {
           <div className="text-sm space-y-1">
             {transaction.items.map((item, idx) => (
               <div key={idx} className="flex justify-between gap-4">
-                <span className="truncate max-w-[150px] text-muted-foreground" title={item.product?.name || item.name}>
-                  {item.quantity}x {item.product?.name || item.name}
+                <span className="truncate max-w-[150px] text-muted-foreground" title={item.product?.name}>
+                  {item.quantity}x {item.product?.name}
                 </span>
               </div>
             ))}
@@ -829,7 +829,7 @@ export function TransactionTable() {
       'Pelanggan': t.customerName,
       'Tgl Order': t.orderDate ? format(new Date(t.orderDate), "d MMM yyyy, HH:mm", { locale: id }) : 'N/A',
       'Kasir': t.cashierName,
-      'Item Pesanan': t.items.map(i => `${i.product?.name || i.name} (${i.quantity})`).join(", "),
+      'Item Pesanan': t.items.map(i => `${i.product?.name} (${i.quantity})`).join(", "),
       'Subtotal (DPP)': t.ppnEnabled ? (t.subtotal || t.total - (t.ppnAmount || 0)) : t.total,
       'PPN': t.ppnEnabled ? (t.ppnAmount || 0) : 0,
       'Total': t.total,
@@ -908,7 +908,7 @@ export function TransactionTable() {
             t.id,
             t.customerName,
             t.orderDate ? format(new Date(t.orderDate), "dd/MM/yy", { locale: id }) : 'N/A',
-            t.items.map(i => `${i.product?.name || i.name} (${i.quantity})`).join(", "),
+            t.items.map(i => `${i.product?.name} (${i.quantity})`).join(", "),
             formatCurrency(t.total),
             formatCurrency(t.paidAmount || 0),
             formatCurrency(t.total - (t.paidAmount || 0)),
