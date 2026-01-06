@@ -41,7 +41,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { useDeliveries } from "@/hooks/useDeliveries"
 import { useAuth } from "@/hooks/useAuth"
 import { Link } from "react-router-dom"
-import { compressImage, isImageFile } from "@/utils/imageCompression"
+
 import { useTimezone } from "@/contexts/TimezoneContext"
 import { getOfficeTime } from "@/utils/officeTime"
 
@@ -205,6 +205,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
               </DeliveryNotePDF>
             )}
           </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

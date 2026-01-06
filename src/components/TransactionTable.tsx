@@ -8,7 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { MoreHorizontal, PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText, Calendar, Truck, Filter, ChevronDown, ChevronUp, Printer } from "lucide-react"
+import { PlusCircle, FileDown, Trash2, Search, X, Edit, Eye, FileText, Calendar, Truck, Filter, ChevronDown, ChevronUp, Printer } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -47,7 +47,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Link } from "react-router-dom"
-import { Transaction, TransactionStatus } from "@/types/transaction"
+import { Transaction } from "@/types/transaction"
 import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
@@ -56,11 +56,10 @@ import { cn } from "@/lib/utils"
 import { useTransactions } from "@/hooks/useTransactions"
 import { Skeleton } from "./ui/skeleton"
 import { useAuth } from "@/hooks/useAuth"
-import { UserRole } from "@/types/user"
 import { EditTransactionDialog } from "./EditTransactionDialog"
 import { MigrationTransactionDialog } from "./MigrationTransactionDialog"
 import { isOwner } from '@/utils/roleUtils'
-import { useDeliveryEmployees, useDeliveryHistory, useDeliveries } from "@/hooks/useDeliveries"
+import { useDeliveryEmployees, useDeliveryHistory } from "@/hooks/useDeliveries"
 import { useAccounts } from "@/hooks/useAccounts"
 import { DeliveryFormContent } from "@/components/DeliveryFormContent"
 import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
@@ -347,21 +346,7 @@ export function TransactionTable() {
   };
 
 
-  // Calculate delivery status helper
-  const getDeliveryStatus = (transaction: Transaction) => {
-    if (!transaction.items || transaction.items.length === 0) return { delivered: false, completed: false, remaining: 0 };
 
-    // We need real delivery data to calculate this accurately.
-    // Since we don't have full delivery history for all transactions fetched in this list context efficiently,
-    // we might need to rely on what's available. `useDeliveryHistory` gives us some data.
-    // For now, we'll check if we have delivery records in `transactionDriverMap` as a proxy for "has delivery".
-    // A robust "completed" check requires comparing total ordered vs total delivered for each item.
-    // If the transaction object has a 'status' field that indicates partial/full delivery, use that.
-
-    // Fallback: If we have drivers assigned, it's at least partially delivered.
-    const hasDrivers = transactionDriverMap.has(transaction.id);
-    return { delivered: hasDrivers, completed: false }; // We can't know for sure if it's 100% completed without detailed item tracking here.
-  };
 
   // Cetak Dot Matrix - optimal untuk 1/2 A4 (A5: 148mm x 210mm)
   const handleDotMatrixPrint = (transaction: Transaction) => {
