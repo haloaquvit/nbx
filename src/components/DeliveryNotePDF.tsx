@@ -140,9 +140,19 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
 
         <!-- Items -->
         ${delivery.items.map((item, index) => {
-      const deliverySummaryItem = transaction?.deliverySummary?.find(ds => ds.productId === item.productId)
-      const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
+      // Flexible matching: try productId first, then match by product name
+      const itemProductId = item.productId || item.product_id
+      const itemProductName = item.productName || item.product_name || ''
+
+      const deliverySummaryItem = transaction?.deliverySummary?.find(ds =>
+        ds.productId === itemProductId ||
+        ds.productName?.toLowerCase() === itemProductName.toLowerCase()
+      )
+
+      const orderedQuantity = deliverySummaryItem?.orderedQuantity || item.quantityDelivered
       const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
+
+      // Calculate cumulative delivered up to this delivery point
       const cumulativeDeliveredAtThisPoint = transaction?.deliveries
         ? transaction.deliveries
           .filter(d => {
@@ -150,13 +160,16 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
             return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
           })
           .reduce((sum, d) => {
-            const productItem = d.items.find(di => di.productId === item.productId)
+            // Flexible matching for delivery items too
+            const productItem = d.items.find(di =>
+              di.productId === itemProductId ||
+              di.productName?.toLowerCase() === itemProductName.toLowerCase()
+            )
             return sum + (productItem?.quantityDelivered || 0)
           }, 0)
         : item.quantityDelivered
-      const remainingAtThisPoint = transaction?.deliverySummary
-        ? orderedQuantity - cumulativeDeliveredAtThisPoint
-        : 0
+
+      const remainingAtThisPoint = orderedQuantity - cumulativeDeliveredAtThisPoint
       return `
             <tr>
               <td style="padding: 0.5mm 1mm; font-size: 11pt;">${index + 1}</td>
