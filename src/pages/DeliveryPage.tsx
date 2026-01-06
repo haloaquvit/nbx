@@ -193,11 +193,12 @@ export default function DeliveryPage() {
       await deleteTransaction.mutateAsync(transactionToDelete.id)
       toast({
         title: "Berhasil",
-        description: `Transaksi #${transactionToDelete.id} berhasil dihapus beserta seluruh data terkait (Jurnal, Komisi, dll).`
+        description: `Transaksi #${transactionToDelete.id} berhasil dihapus beserta seluruh data terkait (Jurnal, Komisi, History Pengiriman).`
       })
       setIsTransactionDeleteDialogOpen(false)
       setTransactionToDelete(null)
       refetch() // Refresh active transactions list
+      refetchHistory() // Refresh delivery history list - BUG FIX: history juga perlu di-refresh
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -276,16 +277,17 @@ export default function DeliveryPage() {
         delivery.items?.length?.toString() || '0',
         delivery.items?.reduce((sum: number, item: any) => sum + item.quantityDelivered, 0)?.toString() || '0',
         new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(delivery.transactionTotal || 0),
+        delivery.cashierName || '-',
         delivery.photoUrl ? 'Ya' : 'Tidak'
       ])
 
       // Calculate table width and center it
-      const totalTableWidth = 12 + 18 + 22 + 35 + 30 + 25 + 25 + 15 + 15 + 35 + 15 // Sum of all cellWidths
+      const totalTableWidth = 12 + 18 + 22 + 35 + 25 + 20 + 20 + 10 + 12 + 30 + 20 + 10 // Adjusted widths to fit Kasir
       const tableStartX = (pageWidth - totalTableWidth) / 2 // Center the table
 
       // Table
       autoTable(doc, {
-        head: [['No', 'ID#', 'Order ID', 'Pelanggan', 'Tanggal Antar', 'Driver', 'Helper', 'Jenis', 'Total', 'Nilai Order', 'Foto']],
+        head: [['No', 'ID#', 'Order ID', 'Pelanggan', 'Tanggal Antar', 'Driver', 'Helper', 'Jenis', 'Total', 'Nilai Order', 'Kasir', 'Foto']],
         body: tableData,
         startY: yPos,
         margin: { left: tableStartX, right: tableStartX },
@@ -307,13 +309,14 @@ export default function DeliveryPage() {
           1: { halign: 'center', cellWidth: 18 },    // ID#
           2: { halign: 'center', cellWidth: 22 },    // Order ID
           3: { halign: 'left', cellWidth: 35 },      // Pelanggan
-          4: { halign: 'center', cellWidth: 30 },    // Tanggal
-          5: { halign: 'left', cellWidth: 25 },      // Driver
-          6: { halign: 'left', cellWidth: 25 },      // Helper
-          7: { halign: 'center', cellWidth: 15 },    // Jenis
-          8: { halign: 'center', cellWidth: 15 },    // Total
-          9: { halign: 'right', cellWidth: 35 },     // Nilai Order
-          10: { halign: 'center', cellWidth: 15 }    // Foto
+          4: { halign: 'center', cellWidth: 25 },    // Tanggal
+          5: { halign: 'left', cellWidth: 20 },      // Driver
+          6: { halign: 'left', cellWidth: 20 },      // Helper
+          7: { halign: 'center', cellWidth: 10 },    // Jenis
+          8: { halign: 'center', cellWidth: 12 },    // Total
+          9: { halign: 'right', cellWidth: 30 },     // Nilai Order
+          10: { halign: 'left', cellWidth: 20 },     // Kasir
+          11: { halign: 'center', cellWidth: 10 }    // Foto
         },
         didDrawPage: (data) => {
           // Footer with print info
@@ -963,6 +966,7 @@ export default function DeliveryPage() {
                             <TableHead className="min-w-[100px]">Helper</TableHead>
                             <TableHead className="min-w-[100px]">Total Item</TableHead>
                             <TableHead className="min-w-[120px]">Total Order</TableHead>
+                            <TableHead className="min-w-[100px]">Kasir</TableHead>
                             <TableHead className="w-[80px]">Foto</TableHead>
                             <TableHead className="min-w-[100px]">Status</TableHead>
                             <TableHead className="w-[100px]">Aksi</TableHead>
@@ -1022,6 +1026,11 @@ export default function DeliveryPage() {
                                     currency: "IDR",
                                     minimumFractionDigits: 0
                                   }).format(delivery.transactionTotal)}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  {delivery.cashierName || <span className="text-muted-foreground">-</span>}
                                 </div>
                               </TableCell>
                               <TableCell>
