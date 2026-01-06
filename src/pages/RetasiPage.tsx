@@ -835,10 +835,14 @@ function AddRetasiDialog({
     const helper = helperId ? drivers.find(d => d.id === helperId) : null;
 
     try {
+      // Use office timezone for departure date to ensure correct date
+      const officeDateStr = getOfficeDateString(timezone);
+      const officeDate = new Date(officeDateStr + 'T00:00:00');
+
       await createRetasi.mutateAsync({
         driver_name: driver.name,
         helper_name: helper?.name || undefined,
-        departure_date: new Date(),
+        departure_date: officeDate,
         total_items: totalBawa,
         notes: notes || undefined,
         items: retasiItems,
@@ -1565,7 +1569,7 @@ function EditRetasiDialog({
             <div className="flex justify-between">
               <span className="text-slate-500">Status:</span>
               <span className={`font-medium ${unmarkAsReturned ? 'text-orange-600' :
-                  (retasi?.is_returned || markAsReturned) ? 'text-green-600' : 'text-amber-600'
+                (retasi?.is_returned || markAsReturned) ? 'text-green-600' : 'text-amber-600'
                 }`}>
                 {unmarkAsReturned ? 'Akan Diubah ke Berangkat' :
                   retasi?.is_returned ? 'Armada Kembali' :
