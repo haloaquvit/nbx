@@ -1035,7 +1035,11 @@ export const PosForm = () => {
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex-1 min-w-0">
                                     <span className={`font-medium text-sm ${isOutOfStock ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
+                                      {product.name}
                                     </span>
+                                    <div className={`text-xs ${isOutOfStock ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}>
+                                      Stok: {product.currentStock ?? 0} {product.unit || 'pcs'}
+                                    </div>
                                   </div>
                                   <div className="shrink-0 flex items-center gap-3">
                                     <div className="text-sm font-semibold text-green-600 dark:text-green-400">
