@@ -70,59 +70,172 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
     }
 
     const pdfContent = `
-      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto;">
-        <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px;">
+      <div style="font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto;">
+        <!-- Header -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb;">
           <div>
-            <h1 style="margin: 0; font-size: 24px;">${currentBranch?.name || settings?.name || 'AQUVIT'}</h1>
-            <p style="margin: 5px 0; font-size: 12px;">${currentBranch?.address || settings?.address || ''}</p>
-            <p style="margin: 5px 0; font-size: 12px;">Telp: ${currentBranch?.phone || settings?.phone || '-'}</p>
+            ${settings?.logo ? `<img src="${settings.logo}" alt="Company Logo" style="height: 64px; width: auto; margin-bottom: 16px;" />` : ''}
+            <div>
+              <h1 style="font-size: 24px; font-weight: bold; color: #111827; margin: 0 0 8px 0;">
+                ${currentBranch?.name || settings?.name || 'PT. AQUAVIT'}
+              </h1>
+              <p style="font-size: 14px; color: #4b5563; margin: 0;">
+                ${currentBranch?.address || settings?.address || 'Alamat Perusahaan'}
+              </p>
+              <p style="font-size: 14px; color: #4b5563; margin: 0;">
+                Telp: ${currentBranch?.phone || settings?.phone || '-'}
+              </p>
+            </div>
           </div>
           <div style="text-align: right;">
-            <h2 style="margin: 0; font-size: 28px; color: #999;">SURAT JALAN</h2>
-            <p style="margin: 5px 0;"><strong>No:</strong> ${delivery.transactionId}-${delivery.deliveryNumber}</p>
-            <p style="margin: 5px 0;"><strong>Tanggal:</strong> ${safeFormatDate(orderDate, "d MMMM yyyy")}</p>
+            <h2 style="font-size: 30px; font-weight: bold; color: #d1d5db; margin: 0 0 16px 0;">SURAT JALAN</h2>
+            <div style="font-size: 14px; color: #4b5563;">
+              <p style="margin: 4px 0;"><strong style="color: #1f2937;">No:</strong> ${delivery.transactionId}-${delivery.deliveryNumber}</p>
+              <p style="margin: 4px 0;"><strong style="color: #1f2937;">Tanggal:</strong> ${safeFormatDate(orderDate, "d MMMM yyyy")}</p>
+              <p style="margin: 4px 0;"><strong style="color: #1f2937;">Jam:</strong> ${safeFormatDate(orderDate, "HH:mm")} WIB</p>
+            </div>
           </div>
         </div>
 
-        <div style="display: flex; gap: 40px; margin-bottom: 20px;">
-          <div style="flex: 1;">
-            <p><strong>Dikirim Kepada:</strong></p>
-            <p style="font-size: 18px; font-weight: bold;">${transaction?.customerName}</p>
-            ${transaction?.customerAddress ? `<p>${transaction.customerAddress}</p>` : ''}
+        <!-- Customer & Delivery Info -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 32px;">
+          <div>
+            <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 12px 0;">Dikirim Kepada:</h3>
+            <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px;">
+              <p style="font-size: 18px; font-weight: bold; color: #111827; margin: 0;">${transaction?.customerName}</p>
+              <p style="font-size: 14px; color: #4b5563; margin: 4px 0 0 0;">Customer</p>
+            </div>
+            ${transaction?.customerAddress ? `<p style="margin-top: 8px; font-size: 14px; color: #4b5563;">${transaction.customerAddress}</p>` : ''}
+          </div>
+          <div style="font-size: 14px;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 8px;">
+              <span style="color: #4b5563;">Driver:</span>
+              <span style="font-weight: 500; color: #111827;">${delivery.driverName || '-'}</span>
+            </div>
+            ${delivery.helperName ? `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 8px;">
+              <span style="color: #4b5563;">Helper:</span>
+              <span style="font-weight: 500; color: #111827;">${delivery.helperName}</span>
+            </div>` : ''}
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #4b5563;">Status:</span>
+              <span style="font-weight: 500; color: #16a34a;">Siap Dikirim</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <div style="margin-bottom: 32px;">
+          <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 16px 0;">Daftar Barang</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead style="background-color: #f3f4f6;">
+              <tr>
+                <th style="padding: 12px 16px; text-align: center; color: #4b5563; font-weight: 600; border: 1px solid #e5e7eb; width: 60px;">No</th>
+                <th style="padding: 12px 16px; text-align: left; color: #4b5563; font-weight: 600; border: 1px solid #e5e7eb;">Nama Barang</th>
+                <th style="padding: 12px 16px; text-align: center; color: #4b5563; font-weight: 600; border: 1px solid #e5e7eb; width: 100px;">Antar</th>
+                <th style="padding: 12px 16px; text-align: center; color: #4b5563; font-weight: 600; border: 1px solid #e5e7eb; width: 100px;">Satuan</th>
+                <th style="padding: 12px 16px; text-align: center; color: #4b5563; font-weight: 600; border: 1px solid #e5e7eb; width: 120px;">Total Antar</th>
+                <th style="padding: 12px 16px; text-align: center; color: #4b5563; font-weight: 600; border: 1px solid #e5e7eb; width: 100px;">Sisa</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${delivery.items.map((item, index) => {
+      // Calculation Logic from before
+      const itemProductId = item.productId || item.product_id
+      const itemProductName = item.productName || item.product_name || ''
+
+      const deliverySummaryItem = transaction?.deliverySummary?.find(ds =>
+        ds.productId === itemProductId ||
+        ds.productName?.toLowerCase() === itemProductName.toLowerCase()
+      )
+
+      const orderedQuantity = deliverySummaryItem?.orderedQuantity || item.quantityDelivered
+      const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
+
+      const cumulativeDeliveredAtThisPoint = transaction?.deliveries
+        ? transaction.deliveries
+          .filter(d => {
+            const dCreatedAt = d.createdAt ? new Date(d.createdAt).getTime() : 0
+            return !isNaN(dCreatedAt) && !isNaN(deliveryCreatedAt) && dCreatedAt <= deliveryCreatedAt
+          })
+          .reduce((sum, d) => {
+            const productItem = d.items.find(di =>
+              di.productId === itemProductId ||
+              di.productName?.toLowerCase() === itemProductName.toLowerCase()
+            )
+            return sum + (productItem?.quantityDelivered || 0)
+          }, 0)
+        : item.quantityDelivered
+
+      const remainingAtThisPoint = orderedQuantity - cumulativeDeliveredAtThisPoint
+
+      // Coloring for remaining
+      const remainingColor = remainingAtThisPoint > 0 ? '#ea580c' : remainingAtThisPoint < 0 ? '#dc2626' : '#16a34a';
+
+      return `
+                <tr>
+                  <td style="padding: 12px 16px; text-align: center; border: 1px solid #e5e7eb; color: #6b7280;">${index + 1}</td>
+                  <td style="padding: 12px 16px; border: 1px solid #e5e7eb; font-weight: 500; color: #111827;">${item.productName}</td>
+                  <td style="padding: 12px 16px; text-align: center; border: 1px solid #e5e7eb; font-weight: 600; color: #111827;">${formatNumber(item.quantityDelivered)}</td>
+                  <td style="padding: 12px 16px; text-align: center; border: 1px solid #e5e7eb; color: #6b7280;">${item.unit}</td>
+                  <td style="padding: 12px 16px; text-align: center; border: 1px solid #e5e7eb; font-weight: 600; color: #2563eb;">${formatNumber(cumulativeDeliveredAtThisPoint)}</td>
+                  <td style="padding: 12px 16px; text-align: center; border: 1px solid #e5e7eb; font-weight: 600; color: ${remainingColor};">${formatNumber(remainingAtThisPoint)}</td>
+                </tr>
+                `
+    }).join('')}
+              <!-- Empty rows to maintain height if needed -->
+              ${Array.from({ length: Math.max(0, 5 - delivery.items.length) }).map(() => `
+                <tr style="height: 45px;">
+                  <td style="border: 1px solid #e5e7eb;"></td>
+                  <td style="border: 1px solid #e5e7eb;"></td>
+                  <td style="border: 1px solid #e5e7eb;"></td>
+                  <td style="border: 1px solid #e5e7eb;"></td>
+                  <td style="border: 1px solid #e5e7eb;"></td>
+                  <td style="border: 1px solid #e5e7eb;"></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Notes -->
+        <div style="margin-bottom: 48px;">
+          <h3 style="font-size: 16px; font-weight: 600; color: #111827; margin: 0 0 8px 0;">Catatan:</h3>
+          <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; min-height: 60px;">
+            <p style="font-size: 14px; color: #4b5563; margin: 0;">${delivery.notes || 'Barang sudah diterima dalam kondisi baik dan sesuai pesanan.'}</p>
+          </div>
+        </div>
+
+        <!-- Signatures -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 32px; margin-bottom: 48px; text-align: center;">
+          <div>
+            <p style="font-size: 14px; color: #4b5563; margin-bottom: 64px;">Supir</p>
+            <p style="font-size: 14px; font-weight: 600; color: #111827; border-top: 1px solid #d1d5db; padding-top: 8px; display: inline-block; min-width: 120px;">
+              ${delivery.driverName || '..................'}
+            </p>
           </div>
           <div>
-            <p><strong>Driver:</strong> ${delivery.driverName || '-'}</p>
-            <p><strong>Helper:</strong> ${delivery.helperName || '-'}</p>
+            <p style="font-size: 14px; color: #4b5563; margin-bottom: 64px;">Kepala Gudang</p>
+            <p style="font-size: 14px; font-weight: 600; color: #111827; border-top: 1px solid #d1d5db; padding-top: 8px; display: inline-block; min-width: 120px;">
+              ..................
+            </p>
+          </div>
+          <div>
+            <p style="font-size: 14px; color: #4b5563; margin-bottom: 64px;">Penerima</p>
+            <p style="font-size: 14px; font-weight: 600; color: #111827; border-top: 1px solid #d1d5db; padding-top: 8px; display: inline-block; min-width: 120px;">
+              ..................
+            </p>
           </div>
         </div>
-
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-          <thead>
-            <tr style="background: #f0f0f0;">
-              <th style="border: 1px solid #333; padding: 8px; text-align: left;">No</th>
-              <th style="border: 1px solid #333; padding: 8px; text-align: left;">Nama Barang</th>
-              <th style="border: 1px solid #333; padding: 8px; text-align: center;">Antar</th>
-              <th style="border: 1px solid #333; padding: 8px; text-align: center;">Satuan</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${delivery.items.map((item, index) => `
-              <tr>
-                <td style="border: 1px solid #333; padding: 8px;">${index + 1}</td>
-                <td style="border: 1px solid #333; padding: 8px;">${item.productName}</td>
-                <td style="border: 1px solid #333; padding: 8px; text-align: center;">${formatNumber(item.quantityDelivered)}</td>
-                <td style="border: 1px solid #333; padding: 8px; text-align: center;">${shortUnit(item.unit)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-
-        ${delivery.notes ? `<p><strong>Catatan:</strong> ${delivery.notes}</p>` : ''}
-
-        <div style="display: flex; justify-content: space-around; margin-top: 50px; text-align: center;">
-          <div><p>Supir</p><div style="height: 60px;"></div><p>(${delivery.driverName || '..............'})</p></div>
-          <div><p>Kepala Gudang</p><div style="height: 60px;"></div><p>(..............)</p></div>
-          <div><p>Pelanggan</p><div style="height: 60px;"></div><p>(..............)</p></div>
+        
+        <!-- Safety Warning Footer -->
+        <div style="margin-top: 40px; padding: 16px; background-color: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
+          <h4 style="font-size: 14px; font-weight: 600; color: #92400e; margin: 0 0 8px 0;">Ketentuan Penting:</h4>
+          <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #b45309;">
+            <li style="margin-bottom: 4px;">Barang yang sudah diterima dan ditandatangani tidak dapat dikembalikan</li>
+            <li style="margin-bottom: 4px;">Harap periksa kondisi dan jumlah barang sebelum menandatangani surat jalan</li>
+            <li>Simpan surat jalan ini sebagai bukti pengiriman barang</li>
+          </ul>
         </div>
       </div>
     `
