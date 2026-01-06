@@ -366,32 +366,52 @@ export const useTransactionsReadyForDelivery = () => {
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
         // Calculate delivery summary
-        const deliverySummary = (Array.isArray(txn.items) ? txn.items : []).map((item: any) => {
-          const productId = item.product_id || item.productId || item.product?.id;
-          const isBonus = item.is_bonus || item.isBonus || false;
+        const deliverySummary = (Array.isArray(txn.items) ? txn.items : [])
+          .map((item: any) => {
+            const productId = item.product_id || item.productId || item.product?.id;
+            const productName = item.product_name || item.productName || item.product?.name || '';
+            const orderedQty = Number(item.quantity || item.orderedQuantity || 0);
 
-          // Calculate total delivered for this item across all deliveries
-          // IMPORTANT: Match by BOTH productId AND isBonus to separate parent and bonus items
-          const totalDelivered = deliveries.reduce((sum, d) => {
-            const dItem = d.items.find(di =>
-              di.productId === productId &&
-              (di.isBonus || false) === isBonus  // Match bonus status
-            );
-            return sum + (dItem ? dItem.quantityDelivered : 0);
-          }, 0);
+            // Skip invalid items that would cause "Unknown Product" or "NaN"
+            if (!productName || productName === 'Unknown Product') return null;
+            if (orderedQty <= 0 && !productName.toLowerCase().includes('bonus')) return null;
 
-          return {
-            productId: productId,
-            productName: item.product_name || item.productName || item.product?.name || 'Unknown Product',
-            orderedQuantity: item.quantity,
-            deliveredQuantity: totalDelivered,
-            remainingQuantity: item.quantity - totalDelivered,
-            unit: item.unit,
-            isBonus: isBonus,
-            width: item.width,
-            height: item.height,
-          };
-        });
+            // Better bonus detection
+            const isBonus = item.is_bonus || item.isBonus ||
+              productName.toLowerCase().includes('bonus') ||
+              productName.toLowerCase().includes('free');
+
+            // Calculate total delivered for this specific item
+            // STricter matching: must match ID AND basic name type (bonus vs non-bonus)
+            const totalDelivered = deliveries.reduce((sum, d) => {
+              // Find matching delivery items (could be multiple in one delivery)
+              const matchedItems = d.items.filter(di => {
+                const isIdMatch = di.productId === productId;
+                const diName = (di.productName || '').toLowerCase();
+                const targetIsBonus = isBonus;
+                const diIsBonus = di.isBonus || diName.includes('bonus') || diName.includes('free');
+
+                // Must match Product ID AND Bonus Status
+                return isIdMatch && (diIsBonus === targetIsBonus);
+              });
+
+              const subtotal = matchedItems.reduce((s, di) => s + (Number(di.quantityDelivered) || 0), 0);
+              return sum + subtotal;
+            }, 0);
+
+            return {
+              productId: productId,
+              productName: productName,
+              orderedQuantity: orderedQty,
+              deliveredQuantity: totalDelivered,
+              remainingQuantity: orderedQty - totalDelivered,
+              unit: item.unit || 'karton',
+              isBonus: isBonus,
+              width: item.width,
+              height: item.height,
+            };
+          })
+          .filter((item): item is NonNullable<typeof item> => item !== null); // Remove skipped items
 
         return {
           id: txn.id,

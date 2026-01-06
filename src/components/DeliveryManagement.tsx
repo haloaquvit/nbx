@@ -242,6 +242,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
         productId: item.productId,
         productName: item.productName,
         quantityDelivered: item.quantityToDeliver,
+        isBonus: item.isBonus, // Added this field
         unit: item.unit,
         width: item.width,
         height: item.height,
@@ -603,32 +604,34 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transaction.deliverySummary.map((item, index) => (
-                  <TableRow key={`summary-${item.productId}-${index}`}>
-                    <TableCell>
-                      <div>
-                        <Link
-                          to={`/products/${item.productId}`}
-                          className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                {transaction.deliverySummary
+                  .filter(item => item.productName && item.productName !== 'Unknown Product')
+                  .map((item, index) => (
+                    <TableRow key={`summary-${item.productId}-${index}`}>
+                      <TableCell>
+                        <div>
+                          <Link
+                            to={`/products/${item.productId}`}
+                            className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                          >
+                            {item.productName}
+                          </Link>
+                        </div>
+                      </TableCell>
+                      <TableCell>{item.orderedQuantity} {item.unit}</TableCell>
+                      <TableCell>{item.deliveredQuantity} {item.unit}</TableCell>
+                      <TableCell>{item.remainingQuantity} {item.unit}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={getStatusVariant(item.deliveredQuantity, item.orderedQuantity)}
+                          className="flex items-center gap-1 w-fit"
                         >
-                          {item.productName}
-                        </Link>
-                      </div>
-                    </TableCell>
-                    <TableCell>{item.orderedQuantity} {item.unit}</TableCell>
-                    <TableCell>{item.deliveredQuantity} {item.unit}</TableCell>
-                    <TableCell>{item.remainingQuantity} {item.unit}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={getStatusVariant(item.deliveredQuantity, item.orderedQuantity)}
-                        className="flex items-center gap-1 w-fit"
-                      >
-                        {getStatusIcon(item.deliveredQuantity, item.orderedQuantity)}
-                        {getStatusText(item.deliveredQuantity, item.orderedQuantity)}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          {getStatusIcon(item.deliveredQuantity, item.orderedQuantity)}
+                          {getStatusText(item.deliveredQuantity, item.orderedQuantity)}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </div>
