@@ -162,83 +162,65 @@ export const TransactionItemsReport = () => {
         if (deliveryError) {
           console.error('Error fetching deliveries:', deliveryError)
         } else if (deliveryData) {
-          // Collect all delivery dates to find matching retasi records
-          const deliveryDates = [...new Set(
-            deliveryData.map((d: any) => {
-              const date = new Date(d.delivery_date)
-              return date.toISOString().split('T')[0] // YYYY-MM-DD format
-            })
-          )]
-
-          // Fetch ALL retasi records for the delivery date range to match by driver + date
-          let allRetasiMap: Record<string, any[]> = {} // Key: driver_name, Value: array of retasi
-          if (deliveryDates.length > 0) {
+          // Fetch ALL retasi records for the branch (no date filter for more reliable matching)
+          let allRetasiList: any[] = []
+          if (currentBranch?.id) {
             const { data: allRetasi } = await supabase
               .from('retasi')
               .select('id, retasi_number, retasi_ke, driver_name, departure_date')
-              .gte('departure_date', deliveryDates[deliveryDates.length - 1]) // earliest
-              .lte('departure_date', deliveryDates[0]) // latest
+              .eq('branch_id', currentBranch.id)
+              .order('departure_date', { ascending: false })
 
             if (allRetasi) {
-              allRetasi.forEach(r => {
-                const key = r.driver_name?.toLowerCase().trim() || ''
-                if (!allRetasiMap[key]) allRetasiMap[key] = []
-                allRetasiMap[key].push(r)
-              })
-            }
-          }
-
-          // Also collect retasi_ids from transactions for direct lookup
-          const deliveryRetasiIds = [...new Set(
-            deliveryData
-              .map((d: any) => d.transaction?.retasi_id)
-              .filter(Boolean)
-          )]
-
-          let deliveryRetasiMap: Record<string, any> = {}
-          if (deliveryRetasiIds.length > 0) {
-            const { data: deliveryRetasiDetails } = await supabase
-              .from('retasi')
-              .select('id, retasi_number, retasi_ke, driver_name')
-              .in('id', deliveryRetasiIds)
-
-            if (deliveryRetasiDetails) {
-              deliveryRetasiDetails.forEach(r => {
-                deliveryRetasiMap[r.id] = r
-              })
+              allRetasiList = allRetasi
+              console.log('[Report] Fetched retasi:', allRetasi.length, 'sample:', allRetasi.slice(0, 2))
             }
           }
 
           deliveryData.forEach((delivery: any) => {
             const deliveryDate = new Date(delivery.delivery_date)
-            const deliveryDateStr = deliveryDate.toISOString().split('T')[0]
+            // Get local date string (not UTC) to match DB departure_date format
+            const year = deliveryDate.getFullYear()
+            const month = String(deliveryDate.getMonth() + 1).padStart(2, '0')
+            const day = String(deliveryDate.getDate()).padStart(2, '0')
+            const deliveryDateStr = `${year}-${month}-${day}`
+
             const transaction = delivery.transaction
             const transactionItems = transaction?.items || []
             const driverName = delivery.driver?.full_name || ''
 
-            // Try to get retasi info: first from transaction.retasi_id, then by driver+date matching
+            // Find retasi by matching driver name and date
             let retasiInfo = null
+            if (driverName && allRetasiList.length > 0) {
+              const driverNameLower = driverName.toLowerCase().trim()
 
-            // Method 1: Direct lookup via transaction.retasi_id
-            const retasiId = transaction?.retasi_id
-            if (retasiId && deliveryRetasiMap[retasiId]) {
-              retasiInfo = deliveryRetasiMap[retasiId]
+              // Find matching retasi
+              retasiInfo = allRetasiList.find(r => {
+                const retasiDriver = (r.driver_name || '').toLowerCase().trim()
+                const retasiDate = r.departure_date // YYYY-MM-DD string from DB
+
+                // Flexible name matching (contains or exact)
+                const nameMatch = retasiDriver.includes(driverNameLower) ||
+                  driverNameLower.includes(retasiDriver) ||
+                  retasiDriver === driverNameLower
+
+                // Date matching
+                const dateMatch = retasiDate === deliveryDateStr
+
+                return nameMatch && dateMatch
+              })
+
+              if (!retasiInfo) {
+                console.log('[Report] No retasi match for:', driverName, deliveryDateStr)
+              }
             }
 
-            // Method 2: Match by driver name and delivery date
-            if (!retasiInfo && driverName) {
-              const driverKey = driverName.toLowerCase().trim()
-              const driverRetasiList = allRetasiMap[driverKey] || []
-              // Find retasi with matching departure_date
-              retasiInfo = driverRetasiList.find(r => r.departure_date === deliveryDateStr)
-            }
-
-            // Format display values
+            // Display just "ke-X" if found
             const retasiNumberDisplay = retasiInfo
-              ? `${retasiInfo.retasi_number} (ke-${retasiInfo.retasi_ke})`
-              : undefined
+              ? `ke-${retasiInfo.retasi_ke}`
+              : '-'
 
-            const driverNameDisplay = retasiInfo?.driver_name || driverName
+            const driverNameDisplay = driverName
 
             delivery.delivery_items?.forEach((item: any) => {
               const matchingTxItem = transactionItems.find((ti: any) =>

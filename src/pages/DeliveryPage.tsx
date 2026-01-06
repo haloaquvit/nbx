@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { useState, useEffect } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -106,6 +107,21 @@ export default function DeliveryPage() {
 
   // Edit delivery state
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null)
+
+  // Expand/collapse state for delivery details
+  const [expandedDeliveries, setExpandedDeliveries] = useState<Set<string>>(new Set())
+
+  const toggleExpandDelivery = (deliveryId: string) => {
+    setExpandedDeliveries(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(deliveryId)) {
+        newSet.delete(deliveryId)
+      } else {
+        newSet.add(deliveryId)
+      }
+      return newSet
+    })
+  }
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -969,144 +985,229 @@ export default function DeliveryPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredDeliveryHistory.map((delivery: any, index: number) => (
-                            <TableRow key={delivery.id} className="hover:bg-muted">
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">
-                                  #{index + 1}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary" className="text-xs">
-                                  {delivery.transactionId}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="font-medium">
-                                <div className="truncate max-w-[150px]" title={delivery.customerName}>
-                                  {delivery.customerName}
-                                </div>
-                                {delivery.customerAddress && (
-                                  <div className="text-xs text-muted-foreground truncate max-w-[150px]">
-                                    {delivery.customerAddress}
-                                  </div>
+                          {filteredDeliveryHistory.map((delivery: any, index: number) => {
+                            const isExpanded = expandedDeliveries.has(delivery.id)
+                            return (
+                              <React.Fragment key={delivery.id}>
+                                <TableRow className="hover:bg-muted">
+                                  <TableCell>
+                                    <div className="flex items-center gap-2">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() => toggleExpandDelivery(delivery.id)}
+                                      >
+                                        {isExpanded ? (
+                                          <ChevronUp className="h-4 w-4" />
+                                        ) : (
+                                          <ChevronDown className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                      <Badge variant="outline" className="text-xs">
+                                        #{index + 1}
+                                      </Badge>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="secondary" className="text-xs">
+                                      {delivery.transactionId}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="font-medium">
+                                    <div className="truncate max-w-[150px]" title={delivery.customerName}>
+                                      {delivery.customerName}
+                                    </div>
+                                    {delivery.customerAddress && (
+                                      <div className="text-xs text-muted-foreground truncate max-w-[150px]">
+                                        {delivery.customerAddress}
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    <div>{format(delivery.deliveryDate, "d MMM yyyy", { locale: idLocale })}</div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {format(delivery.deliveryDate, "HH:mm", { locale: idLocale })}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="text-sm">
+                                      {delivery.driverName || '-'}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="text-sm">
+                                      {delivery.helperName || '-'}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="text-sm">
+                                      {delivery.items?.length || 0} jenis
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                      {delivery.items?.reduce((sum: number, item: any) => sum + item.quantityDelivered, 0) || 0} total
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="font-semibold text-green-600 text-sm">
+                                      {new Intl.NumberFormat("id-ID", {
+                                        style: "currency",
+                                        currency: "IDR",
+                                        minimumFractionDigits: 0
+                                      }).format(delivery.transactionTotal)}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="text-sm">
+                                      {delivery.cashierName || <span className="text-muted-foreground">-</span>}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    {delivery.photoUrl ? (
+                                      <img
+                                        src={PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries')}
+                                        alt={`Foto pengantaran ${delivery.deliveryNumber || delivery.id.slice(-6)}`}
+                                        className="w-12 h-12 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
+                                        onClick={() => window.open(PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries'), '_blank')}
+                                        onError={(e) => {
+                                          const target = e.target as HTMLImageElement;
+                                          target.style.display = 'none';
+                                          const parent = target.parentElement;
+                                          if (parent) {
+                                            parent.innerHTML = `
+                                              <div class="w-12 h-12 bg-gray-100 rounded-md flex items-center justify-center">
+                                                <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                              </div>
+                                            `;
+                                          }
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="w-12 h-12 bg-gray-100 rounded-md flex items-center justify-center">
+                                        <Camera className="h-4 w-4 text-gray-400" />
+                                      </div>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="success" className="flex items-center gap-1 w-fit text-xs">
+                                      <CheckCircle className="h-3 w-3" />
+                                      <span className="hidden sm:inline">Selesai</span>
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex gap-1">
+                                      <DeliveryNotePDF delivery={delivery} />
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs px-2 py-1"
+                                        onClick={() => {
+                                          setSelectedDelivery(delivery)
+                                          setIsDetailModalOpen(true)
+                                        }}
+                                      >
+                                        <Eye className="h-3 w-3 sm:mr-1" />
+                                        <span className="hidden sm:inline">Detail</span>
+                                      </Button>
+                                      {/* Edit button - controlled by granular permission */}
+                                      {canEdit && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-xs px-2 py-1"
+                                          onClick={() => setEditingDelivery(delivery)}
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </Button>
+                                      )}
+                                      {/* Delete button - controlled by granular permission */}
+                                      {canDelete && (
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                          onClick={() => {
+                                            setDeliveryToDelete(delivery)
+                                            setIsDeleteDialogOpen(true)
+                                          }}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                                
+                                {/* Expanded row - Show delivery items */}
+                                {isExpanded && (
+                                  <TableRow>
+                                    <TableCell colSpan={12} className="p-0">
+                                      <div className="bg-gray-50 dark:bg-gray-900/30 p-4 border-l-4 border-blue-500">
+                                        <div className="mb-3">
+                                          <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                                            <Package className="h-4 w-4 text-blue-600" />
+                                            Detail Pengantaran
+                                          </h4>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                          <Table className="min-w-[600px]">
+                                            <TableHeader>
+                                              <TableRow>
+                                                <TableHead className="text-xs">No</TableHead>
+                                                <TableHead className="text-xs">Nama Barang</TableHead>
+                                                <TableHead className="text-xs text-center">Dipesan</TableHead>
+                                                <TableHead className="text-xs text-center">Diantar</TableHead>
+                                                <TableHead className="text-xs text-center">Sisa</TableHead>
+                                                <TableHead className="text-xs text-center">Satuan</TableHead>
+                                              </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                              {delivery.items && delivery.items.length > 0 ? (
+                                                delivery.items.map((item: any, itemIndex: number) => (
+                                                  <TableRow key={item.id} className="hover:bg-gray-100 dark:hover:bg-gray-800">
+                                                    <TableCell className="text-xs">{itemIndex + 1}</TableCell>
+                                                    <TableCell className="text-xs font-medium">{item.productName}</TableCell>
+                                                    <TableCell className="text-xs text-center">
+                                                      <span className="text-gray-600 dark:text-gray-400">
+                                                        {item.orderedQuantity || '-'}
+                                                      </span>
+                                                    </TableCell>
+                                                    <TableCell className="text-xs text-center">
+                                                      <span className="font-semibold text-green-600 dark:text-green-400">
+                                                        {item.quantityDelivered}
+                                                      </span>
+                                                    </TableCell>
+                                                    <TableCell className="text-xs text-center">
+                                                      <span className={
+                                                        item.remainingQuantity > 0 
+                                                          ? 'font-semibold text-orange-600 dark:text-orange-400'
+                                                          : 'text-green-600 dark:text-green-400'
+                                                      }>
+                                                        {item.remainingQuantity || 0}
+                                                      </span>
+                                                    </TableCell>
+                                                    <TableCell className="text-xs text-center">{item.unit || '-'}</TableCell>
+                                                  </TableRow>
+                                                ))
+                                              ) : (
+                                                <TableRow>
+                                                  <TableCell colSpan={6} className="text-xs text-center text-muted-foreground py-4">
+                                                    Tidak ada data barang
+                                                  </TableCell>
+                                                </TableRow>
+                                              )}
+                                            </TableBody>
+                                          </Table>
+                                        </div>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
                                 )}
-                              </TableCell>
-                              <TableCell className="text-sm">
-                                <div>{format(delivery.deliveryDate, "d MMM yyyy", { locale: idLocale })}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {format(delivery.deliveryDate, "HH:mm", { locale: idLocale })}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {delivery.driverName || '-'}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {delivery.helperName || '-'}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {delivery.items?.length || 0} jenis
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {delivery.items?.reduce((sum: number, item: any) => sum + item.quantityDelivered, 0) || 0} total
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-semibold text-green-600 text-sm">
-                                  {new Intl.NumberFormat("id-ID", {
-                                    style: "currency",
-                                    currency: "IDR",
-                                    minimumFractionDigits: 0
-                                  }).format(delivery.transactionTotal)}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {delivery.cashierName || <span className="text-muted-foreground">-</span>}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {delivery.photoUrl ? (
-                                  <img
-                                    src={PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries')}
-                                    alt={`Foto pengantaran ${delivery.deliveryNumber || delivery.id.slice(-6)}`}
-                                    className="w-12 h-12 object-cover rounded-md cursor-pointer hover:opacity-80 transition-opacity"
-                                    onClick={() => window.open(PhotoUploadService.getPhotoUrl(delivery.photoUrl, 'deliveries'), '_blank')}
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      target.style.display = 'none';
-                                      const parent = target.parentElement;
-                                      if (parent) {
-                                        parent.innerHTML = `
-                                          <div class="w-12 h-12 bg-gray-100 rounded-md flex items-center justify-center">
-                                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                            </svg>
-                                          </div>
-                                        `;
-                                      }
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="w-12 h-12 bg-gray-100 rounded-md flex items-center justify-center">
-                                    <Camera className="h-4 w-4 text-gray-400" />
-                                  </div>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="success" className="flex items-center gap-1 w-fit text-xs">
-                                  <CheckCircle className="h-3 w-3" />
-                                  <span className="hidden sm:inline">Selesai</span>
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex gap-1">
-                                  <DeliveryNotePDF delivery={delivery} />
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="text-xs px-2 py-1"
-                                    onClick={() => {
-                                      setSelectedDelivery(delivery)
-                                      setIsDetailModalOpen(true)
-                                    }}
-                                  >
-                                    <Eye className="h-3 w-3 sm:mr-1" />
-                                    <span className="hidden sm:inline">Detail</span>
-                                  </Button>
-                                  {/* Edit button - controlled by granular permission */}
-                                  {canEdit && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-xs px-2 py-1"
-                                      onClick={() => setEditingDelivery(delivery)}
-                                    >
-                                      <Pencil className="h-3 w-3" />
-                                    </Button>
-                                  )}
-                                  {/* Delete button - controlled by granular permission */}
-                                  {canDelete && (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                      onClick={() => {
-                                        setDeliveryToDelete(delivery)
-                                        setIsDeleteDialogOpen(true)
-                                      }}
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                              </React.Fragment>
+                            )
+                          })}
                         </TableBody>
                       </Table>
                     </div>
