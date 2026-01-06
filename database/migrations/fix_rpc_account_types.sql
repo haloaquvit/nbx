@@ -1,7 +1,10 @@
 -- ============================================================
 -- Fix Account ID Types in RPCs (UUID -> TEXT)
+-- AND Fix Entry Number Generation (Global Sequence)
 -- The accounts table uses TEXT ids (including 'acc-...' format),
 -- but some RPCs were incorrectly enforcing UUID types.
+-- Also fixed entry number generation to be GLOBAL (not per branch)
+-- to avoid unique constraint violations on entry_number.
 -- ============================================================
 
 -- 1. DROP OLD FUNCTIONS (to avoid signature conflict/overloading)
@@ -67,12 +70,11 @@ BEGIN
     RETURN;
   END IF;
 
-  -- GENERATE ENTRY NUMBER
+  -- GENERATE ENTRY NUMBER (GLOBAL SEQUENCE)
   SELECT 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(
     (COALESCE(
       (SELECT COUNT(*) + 1 FROM journal_entries
-       WHERE branch_id = p_branch_id
-       AND DATE(created_at) = CURRENT_DATE),
+       WHERE DATE(created_at) = CURRENT_DATE),
       1
     ))::TEXT, 4, '0')
   INTO v_entry_number;
@@ -181,12 +183,11 @@ BEGIN
     RETURN;
   END IF;
 
-  -- GENERATE ENTRY NUMBER
+  -- GENERATE ENTRY NUMBER (GLOBAL SEQUENCE)
   SELECT 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(
     (COALESCE(
       (SELECT COUNT(*) + 1 FROM journal_entries
-       WHERE branch_id = p_branch_id
-       AND DATE(created_at) = CURRENT_DATE),
+       WHERE DATE(created_at) = CURRENT_DATE),
       1
     ))::TEXT, 4, '0')
   INTO v_entry_number;
@@ -261,8 +262,9 @@ BEGIN
     RETURN;
   END IF;
 
+  -- GLOBAL SEQUENCE
   SELECT 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(
-    (COALESCE((SELECT COUNT(*) + 1 FROM journal_entries WHERE branch_id = p_branch_id AND DATE(created_at) = CURRENT_DATE), 1))::TEXT, 4, '0')
+    (COALESCE((SELECT COUNT(*) + 1 FROM journal_entries WHERE DATE(created_at) = CURRENT_DATE), 1))::TEXT, 4, '0')
   INTO v_entry_number;
 
   INSERT INTO journal_entries (
@@ -332,8 +334,9 @@ BEGIN
     RETURN;
   END IF;
 
+  -- GLOBAL SEQUENCE
   SELECT 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(
-    (COALESCE((SELECT COUNT(*) + 1 FROM journal_entries WHERE branch_id = p_branch_id AND DATE(created_at) = CURRENT_DATE), 1))::TEXT, 4, '0')
+    (COALESCE((SELECT COUNT(*) + 1 FROM journal_entries WHERE DATE(created_at) = CURRENT_DATE), 1))::TEXT, 4, '0')
   INTO v_entry_number;
 
   INSERT INTO journal_entries (
@@ -410,8 +413,9 @@ BEGIN
     RETURN;
   END IF;
 
+  -- GLOBAL SEQUENCE
   SELECT 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(
-    (COALESCE((SELECT COUNT(*) + 1 FROM journal_entries WHERE branch_id = p_branch_id AND DATE(created_at) = CURRENT_DATE), 1))::TEXT, 4, '0')
+    (COALESCE((SELECT COUNT(*) + 1 FROM journal_entries WHERE DATE(created_at) = CURRENT_DATE), 1))::TEXT, 4, '0')
   INTO v_entry_number;
 
   INSERT INTO journal_entries (
@@ -450,7 +454,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 7. Fix create_journal_atomic (remove UUID cast)
+-- 7. Fix create_journal_atomic (remove UUID cast AND use global sequence base)
 CREATE OR REPLACE FUNCTION create_journal_atomic(
   p_entry_date TIMESTAMP,
   p_description TEXT,
@@ -501,8 +505,9 @@ BEGIN
     END IF;
   END;
 
+  -- GLOBAL SEQUENCE BASE with random suffix for atomic journal
   v_entry_number := 'JE-' || TO_CHAR(p_entry_date, 'YYYYMMDD') || '-' ||
-    LPAD((SELECT COUNT(*) + 1 FROM journal_entries WHERE branch_id = p_branch_id AND DATE(created_at) = DATE(p_entry_date))::TEXT, 4, '0') ||
+    LPAD((SELECT COUNT(*) + 1 FROM journal_entries WHERE DATE(created_at) = DATE(p_entry_date))::TEXT, 4, '0') ||
     LPAD(FLOOR(RANDOM() * 1000)::TEXT, 3, '0');
 
   INSERT INTO journal_entries (
