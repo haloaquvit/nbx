@@ -728,6 +728,7 @@ export default function DeliveryPage() {
                                               <TableHead className="text-xs text-center">Diantar</TableHead>
                                               <TableHead className="text-xs text-center">Sisa</TableHead>
                                               <TableHead className="text-xs text-center">Satuan</TableHead>
+                                              <TableHead className="text-xs text-center">Waktu Antar</TableHead>
                                             </TableRow>
                                           </TableHeader>
                                           <TableBody>
@@ -756,6 +757,19 @@ export default function DeliveryPage() {
                                                     </span>
                                                   </TableCell>
                                                   <TableCell className="text-xs text-center">{item.unit}</TableCell>
+                                                  <TableCell className="text-xs text-center">
+                                                    {transaction.deliveries && transaction.deliveries.length > 0 ? (
+                                                      <div className="flex flex-col gap-1">
+                                                        {transaction.deliveries.map((delivery: any, dIndex: number) => (
+                                                          <div key={dIndex} className="text-xs">
+                                                            {format(new Date(delivery.deliveryDate), "dd/MM HH:mm", { locale: idLocale })}
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    ) : (
+                                                      <span className="text-gray-400">-</span>
+                                                    )}
+                                                  </TableCell>
                                                 </TableRow>
                                               ))
                                             ) : (
