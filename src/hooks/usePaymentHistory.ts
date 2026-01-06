@@ -58,7 +58,7 @@ export const usePaymentHistory = (filters?: {
         reference_id: item.transaction_id,
         reference_name: item.transaction_id,
         user_id: '',
-        user_name: 'System', // Or join with users table if needed
+        user_name: item.user_name || 'System',
         created_at: new Date(item.payment_date || item.created_at)
       }));
     },

@@ -1007,7 +1007,7 @@ export function TransactionTable() {
 
       {/* Filter Controls */}
       {showFilters && (
-        <div className="flex flex-col gap-4 p-4 border rounded-lg mb-4 bg-background">
+        <div className="bg-card border border-border rounded-lg p-4 mb-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium">Filter Transaksi</h3>
           </div>
@@ -1188,13 +1188,13 @@ export function TransactionTable() {
 
       {/* Summary Cards - Hidden on mobile */}
       <div className="hidden md:grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="text-sm font-medium text-blue-700">Total Transaksi</div>
-          <div className="text-2xl font-bold text-blue-600">{filteredSummary.count}</div>
+        <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+          <div className="text-sm font-medium text-blue-700 dark:text-blue-400">Total Transaksi</div>
+          <div className="text-2xl font-bold text-blue-600 dark:text-blue-300">{filteredSummary.count}</div>
         </div>
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="text-sm font-medium text-green-700">Total Nilai</div>
-          <div className="text-2xl font-bold text-green-600">
+        <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900 rounded-lg p-4">
+          <div className="text-sm font-medium text-green-700 dark:text-green-400">Total Nilai</div>
+          <div className="text-2xl font-bold text-green-600 dark:text-green-300">
             {new Intl.NumberFormat("id-ID", {
               style: "currency",
               currency: "IDR",
@@ -1202,9 +1202,9 @@ export function TransactionTable() {
             }).format(filteredSummary.totalAmount)}
           </div>
         </div>
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-          <div className="text-sm font-medium text-emerald-700">Dibayar</div>
-          <div className="text-2xl font-bold text-emerald-600">
+        <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg p-4">
+          <div className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Dibayar</div>
+          <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-300">
             {new Intl.NumberFormat("id-ID", {
               style: "currency",
               currency: "IDR",
@@ -1212,9 +1212,9 @@ export function TransactionTable() {
             }).format(filteredSummary.paidAmount)}
           </div>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="text-sm font-medium text-red-700">Sisa Tagihan</div>
-          <div className="text-2xl font-bold text-red-600">
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-4">
+          <div className="text-sm font-medium text-red-700 dark:text-red-400">Sisa Tagihan</div>
+          <div className="text-2xl font-bold text-red-600 dark:text-red-300">
             {new Intl.NumberFormat("id-ID", {
               style: "currency",
               currency: "IDR",
@@ -1263,7 +1263,7 @@ export function TransactionTable() {
         <div className="space-y-2">
           {isLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="bg-white border rounded-lg p-3">
+              <div key={i} className="bg-card border border-border rounded-lg p-3">
                 <Skeleton className="h-16 w-full" />
               </div>
             ))
@@ -1271,7 +1271,7 @@ export function TransactionTable() {
             filteredTransactions.map((transaction, index) => (
               <div
                 key={transaction.id}
-                className="bg-white border rounded-lg p-3 shadow-sm active:bg-gray-50"
+                className="bg-card border border-border rounded-lg p-3 shadow-sm active:bg-muted"
               >
                 <div
                   className="flex items-center justify-between"

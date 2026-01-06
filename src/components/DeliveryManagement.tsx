@@ -10,10 +10,8 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import {
   Table,
@@ -32,7 +30,7 @@ import {
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/components/ui/use-toast"
-import { Truck, Camera, Package, CheckCircle, Clock, AlertCircle, FileText, Trash2, Pencil } from "lucide-react"
+import { Camera, Package, CheckCircle, Clock, AlertCircle, FileText, Trash2, Pencil } from "lucide-react"
 import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 import { EditDeliveryDialog } from "@/components/EditDeliveryDialog"
 import { isOwner } from "@/utils/roleUtils"
@@ -40,7 +38,7 @@ import { format, isValid } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
 import { Checkbox } from "@/components/ui/checkbox"
-import { useDeliveries, useDeliveryEmployees } from "@/hooks/useDeliveries"
+import { useDeliveries } from "@/hooks/useDeliveries"
 import { useAuth } from "@/hooks/useAuth"
 import { Link } from "react-router-dom"
 import { compressImage, isImageFile } from "@/utils/imageCompression"
@@ -60,16 +58,9 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
   const { user } = useAuth()
   const { timezone } = useTimezone()
   const { createDelivery, createDeliveryNoStock, deleteDelivery } = useDeliveries()
-  const { data: employees, isLoading: isLoadingEmployees } = useDeliveryEmployees()
-  const [isOpen, setIsOpen] = useState(defaultOpen)
-
-  useEffect(() => {
-    if (defaultOpen) setIsOpen(true);
-  }, [defaultOpen]);
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null)
-  const [isMigration, setIsMigration] = useState(false)
 
   // Check if user is admin or owner
   const canDeleteDelivery = user?.role === 'admin' || user?.role === 'owner'
@@ -146,179 +137,6 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
     }))
   }
 
-  const handleItemNotesChange = (itemId: string, notes: string) => {
-    setFormData(prev => ({
-      ...prev,
-      items: prev.items.map(item =>
-        item.itemId === itemId ? { ...item, notes } : item
-      )
-    }))
-  }
-
-  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    // Validate image file
-    if (!isImageFile(file)) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "File harus berupa gambar"
-      })
-      return
-    }
-
-    // Validate file size (max 10MB before compression)
-    if (file.size > 10 * 1024 * 1024) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Ukuran file maksimal 10MB"
-      })
-      return
-    }
-
-    try {
-      // Compress image to max 100KB
-      const compressedFile = await compressImage(file, 100)
-      console.log(`Photo compressed: ${(file.size / 1024).toFixed(1)}KB -> ${(compressedFile.size / 1024).toFixed(1)}KB`)
-
-      setFormData(prev => ({ ...prev, photo: compressedFile }))
-
-      toast({
-        title: "Foto dikompres",
-        description: `Ukuran: ${(compressedFile.size / 1024).toFixed(1)}KB`
-      })
-    } catch (error) {
-      console.error('Error compressing image:', error)
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Gagal mengkompresi gambar"
-      })
-    }
-  }
-
-  const handleSubmit = async () => {
-    // Validate at least one item to deliver
-    const itemsToDeliver = formData.items.filter(item => item.quantityToDeliver > 0)
-    if (itemsToDeliver.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Pilih minimal satu item untuk diantar"
-      })
-      return
-    }
-
-    // Validate driver
-    if (!formData.driverId) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Supir wajib dipilih"
-      })
-      return
-    }
-
-    // Validate no item exceeds remaining quantity
-    const hasExcessiveQuantity = formData.items.some(item =>
-      item.quantityToDeliver > item.remainingQuantity
-    )
-    if (hasExcessiveQuantity) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Jumlah antar tidak boleh melebihi sisa pesanan"
-      })
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      // Debug: Log the items being delivered
-      const deliveryItems = itemsToDeliver.map(item => ({
-        productId: item.productId,
-        productName: item.productName,
-        quantityDelivered: item.quantityToDeliver,
-        isBonus: item.isBonus, // Added this field
-        unit: item.unit,
-        width: item.width,
-        height: item.height,
-        notes: item.notes || undefined,
-      }))
-
-      console.log('[DeliveryManagement] Items to deliver:', deliveryItems)
-
-      // Validate all product IDs are present
-      const invalidItems = deliveryItems.filter(item => !item.productId)
-      if (invalidItems.length > 0) {
-        console.error('[DeliveryManagement] Found items without product ID:', invalidItems)
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Beberapa item tidak memiliki ID produk yang valid"
-        })
-        return
-      }
-
-      const mutationFn = isMigration ? createDeliveryNoStock : createDelivery
-      const result = await mutationFn.mutateAsync({
-        transactionId: formData.transactionId,
-        deliveryDate: getOfficeTime(timezone), // Use office timezone
-        notes: formData.notes,
-        // Convert "no-driver" or empty string to null (explicitly for RPC)
-        driverId: (!formData.driverId || formData.driverId === "no-driver") ? null : formData.driverId,
-        helperId: (!formData.helperId || formData.helperId === "no-helper") ? undefined : formData.helperId,
-        items: deliveryItems,
-        photo: formData.photo,
-      })
-
-      // Check if there were any invalid products that were skipped
-      const hasInvalidProducts = (result as any)?._invalidProductIds?.length > 0
-
-      if (hasInvalidProducts) {
-        toast({
-          title: "Pengantaran Berhasil Dicatat dengan Peringatan",
-          description: `Pengantaran disimpan, tetapi beberapa item dilewati karena produk tidak ditemukan di database`,
-          variant: "default",
-        })
-      } else {
-        toast({
-          title: "Pengantaran Berhasil Dicatat",
-          description: `Pengantaran untuk transaksi ${transaction.id} berhasil disimpan`,
-        })
-      }
-
-      // Call completion dialog callback if provided
-      if (onDeliveryCreated && result) {
-        onDeliveryCreated(result as Delivery, transaction)
-      }
-
-      // Reset form
-      setFormData(prev => ({
-        ...prev,
-        deliveryDate: "", // Not used anymore
-        notes: "",
-        driverId: "",
-        helperId: "",
-        photo: undefined,
-        items: prev.items.map(item => ({ ...item, quantityToDeliver: 0, notes: "" }))
-      }))
-
-      setIsOpen(false)
-      onClose?.()
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error instanceof Error ? error.message : "Gagal menyimpan pengantaran"
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
 
   const handleDeleteDelivery = async (deliveryId: string, deliveryNumber: number) => {
     if (!confirm(`Apakah Anda yakin ingin menghapus pengantaran #${deliveryNumber}? Stock akan dikembalikan.`)) {
@@ -386,207 +204,7 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
                 </Button>
               </DeliveryNotePDF>
             )}
-            <Dialog open={isOpen} onOpenChange={setIsOpen}>
-              <DialogTrigger asChild>
-                <Button className="flex items-center gap-2">
-                  <Truck className="h-4 w-4" />
-                  Buat Pengantaran
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Buat Pengantaran Baru</DialogTitle>
-                  <DialogDescription>
-                    Catat pengantaran untuk order #{transaction.id} - {transaction.customerName}
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="grid gap-6">
-                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                    <p className="text-sm text-blue-700">
-                      💡 <strong>Waktu pengantaran akan otomatis dicatat saat pengantaran disimpan</strong>
-                    </p>
-                  </div>
-
-                  {isOwner(user?.role) && (
-                    <div className="flex items-center space-x-2 mb-4 p-3 border rounded-md bg-yellow-50 border-yellow-200">
-                      <Checkbox
-                        id="migration-mode"
-                        checked={isMigration}
-                        onCheckedChange={(checked) => setIsMigration(checked as boolean)}
-                      />
-                      <div className="grid gap-1.5 leading-none">
-                        <Label
-                          htmlFor="migration-mode"
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
-                          Mode Migrasi Data (Tanpa Potong Stock & Komisi)
-                        </Label>
-                        <p className="text-xs text-muted-foreground">
-                          Centang ini jika pengiriman sudah dilakukan sebelumnya (data lama) dan hanya ingin mencatat history saja.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="driverId">Supir *</Label>
-                      <Select
-                        value={formData.driverId}
-                        onValueChange={(value) => setFormData(prev => ({ ...prev, driverId: value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Pilih Supir" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="no-driver">Tanpa Supir</SelectItem>
-                          {employees?.filter(emp => emp.role?.toLowerCase() === 'supir').map((driver) => (
-                            <SelectItem key={driver.id} value={driver.id}>
-                              {driver.name} - {driver.position}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {isLoadingEmployees && <div className="text-sm text-muted-foreground">Loading employees...</div>}
-                    </div>
-                    <div>
-                      <Label htmlFor="helperId">Helper (Opsional)</Label>
-                      <Select
-                        value={formData.helperId || "no-helper"}
-                        onValueChange={(value) => setFormData(prev => ({ ...prev, helperId: value === "no-helper" ? "" : value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Pilih Helper" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="no-helper">Tidak ada helper</SelectItem>
-                          {employees?.filter(emp => ['helper', 'supir'].includes(emp.role?.toLowerCase())).map((helper) => (
-                            <SelectItem key={helper.id} value={helper.id}>
-                              {helper.name} - {helper.position}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <Label>Item yang Diantar</Label>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Produk</TableHead>
-                          <TableHead>Dipesan</TableHead>
-                          <TableHead>Sudah Diantar</TableHead>
-                          <TableHead>Sisa</TableHead>
-                          <TableHead>Antar Sekarang</TableHead>
-                          <TableHead>Catatan</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {formData.items.map((item, index) => (
-                          <TableRow key={`form-item-${item.productId}-${index}`} className={item.isBonus ? "bg-orange-50" : ""}>
-                            <TableCell>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <Link
-                                    to={`/products/${item.productId}`}
-                                    className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
-                                  >
-                                    {item.productName}
-                                  </Link>
-                                  {item.isBonus && (
-                                    <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 border-orange-300">
-                                      BONUS
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>{item.orderedQuantity} {item.unit}</TableCell>
-                            <TableCell>{item.deliveredQuantity} {item.unit}</TableCell>
-                            <TableCell>{item.remainingQuantity} {item.unit}</TableCell>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                min="0"
-                                max={item.remainingQuantity}
-                                value={item.quantityToDeliver}
-                                onChange={(e) => handleItemQuantityChange(item.itemId, parseInt(e.target.value) || 0)}
-                                placeholder={`Maks: ${item.remainingQuantity}`}
-                                className="w-20"
-                              />
-                              {item.quantityToDeliver > item.remainingQuantity && (
-                                <p className="text-xs text-red-600 mt-1">
-                                  Melebihi sisa ({item.remainingQuantity})
-                                </p>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                value={item.notes}
-                                onChange={(e) => handleItemNotesChange(item.itemId, e.target.value)}
-                                placeholder="Catatan..."
-                                className="w-32"
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  <div>
-                    <Label htmlFor="notes">Catatan Pengantaran</Label>
-                    <Textarea
-                      id="notes"
-                      value={formData.notes}
-                      onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
-                      placeholder="Catatan tambahan untuk pengantaran ini..."
-                      rows={3}
-                    />
-                  </div>
-
-                  <div>
-                    <Label>Foto Laporan Pengantaran (Opsional)</Label>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handlePhotoCapture}
-                      className="mt-2"
-                    />
-                    {formData.photo && (
-                      <div className="mt-2">
-                        <p className="text-sm text-muted-foreground">
-                          File terpilih: {formData.photo.name}
-                        </p>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setFormData(prev => ({ ...prev, photo: undefined }))}
-                          className="mt-1"
-                        >
-                          Hapus foto
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsOpen(false)}>
-                    Batal
-                  </Button>
-                  <Button onClick={handleSubmit} disabled={isSubmitting}>
-                    {isSubmitting ? "Menyimpan..." : "Simpan Pengantaran"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </div>
-        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

@@ -197,15 +197,15 @@ export function PaymentHistoryTable() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center gap-2 mb-4">
-          <Filter className="h-5 w-5 text-slate-600" />
+          <Filter className="h-5 w-5 text-muted-foreground" />
           <h3 className="font-medium">Filter Data</h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
-            <Label htmlFor="date_from" className="text-xs text-slate-600">Tanggal Dari</Label>
+            <Label htmlFor="date_from" className="text-xs text-muted-foreground">Tanggal Dari</Label>
             <Input
               id="date_from"
               type="date"
@@ -214,7 +214,7 @@ export function PaymentHistoryTable() {
             />
           </div>
           <div>
-            <Label htmlFor="date_to" className="text-xs text-slate-600">Tanggal Sampai</Label>
+            <Label htmlFor="date_to" className="text-xs text-muted-foreground">Tanggal Sampai</Label>
             <Input
               id="date_to"
               type="date"
@@ -223,7 +223,7 @@ export function PaymentHistoryTable() {
             />
           </div>
           <div>
-            <Label htmlFor="account_id" className="text-xs text-slate-600">Akun Pembayaran</Label>
+            <Label htmlFor="account_id" className="text-xs text-muted-foreground">Akun Pembayaran</Label>
             <Select value={filters.account_id} onValueChange={(value) => handleFilterChange('account_id', value)}>
               <SelectTrigger>
                 <SelectValue placeholder="Semua akun" />
@@ -256,30 +256,30 @@ export function PaymentHistoryTable() {
       </div>
 
       {/* Summary */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-xl p-4">
         <div className="flex justify-between items-center">
           <div>
-            <p className="text-sm text-blue-600">Total Pembayaran Piutang</p>
-            <p className="text-xl font-bold text-blue-800">
+            <p className="text-sm text-blue-600 dark:text-blue-400">Total Pembayaran Piutang</p>
+            <p className="text-xl font-bold text-blue-800 dark:text-blue-300">
               {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(total)}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-sm text-blue-600">Total Transaksi</p>
-            <p className="text-xl font-bold text-blue-800">{paymentHistory.length}</p>
+            <p className="text-sm text-blue-600 dark:text-blue-400">Total Transaksi</p>
+            <p className="text-xl font-bold text-blue-800 dark:text-blue-300">{paymentHistory.length}</p>
           </div>
         </div>
       </div>
 
       {/* Table */}
-      <div className="bg-white border border-slate-200 rounded-xl">
+      <div className="bg-card border border-border rounded-xl">
         <div className="px-4 py-3 border-b">
           <h3 className="font-medium">History Pembayaran Piutang</h3>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50">
+            <thead className="bg-muted/50">
               <tr>
                 <th className="text-left px-3 py-2">Tanggal</th>
                 <th className="text-left px-3 py-2">Pelanggan</th>
