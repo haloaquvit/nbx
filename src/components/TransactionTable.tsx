@@ -77,12 +77,26 @@ export function TransactionTable() {
 
   // Check if mobile view
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
+  // Track expanded transactions
+  const [expandedTransactions, setExpandedTransactions] = React.useState<Set<string>>(new Set());
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const toggleExpand = (transactionId: string) => {
+    setExpandedTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transactionId)) {
+        newSet.delete(transactionId);
+      } else {
+        newSet.add(transactionId);
+      }
+      return newSet;
+    });
+  };
 
   // Filter states
   const [showFilters, setShowFilters] = React.useState(false);
@@ -1284,24 +1298,24 @@ export function TransactionTable() {
                 <Skeleton className="h-16 w-full" />
               </div>
             ))
-          ) : filteredTransactions.length > 0 ? (
-            filteredTransactions.map((transaction, index) => {
-              const [expanded, setExpanded] = React.useState(false);
-              const total = transaction.total;
-              const paidAmount = transaction.paidAmount || 0;
-              const remaining = total - paidAmount;
-              const paymentCategory = getPaymentCategory(transaction);
+      ) : filteredTransactions.length > 0 ? (
+        filteredTransactions.map((transaction, index) => {
+          const total = transaction.total;
+          const paidAmount = transaction.paidAmount || 0;
+          const remaining = total - paidAmount;
+          const paymentCategory = getPaymentCategory(transaction);
+          const isExpanded = expandedTransactions.has(transaction.id);
 
-              return (
-                <div
-                  key={transaction.id}
-                  className="bg-white border rounded-lg shadow-sm overflow-hidden"
-                >
-                  {/* Main Card - Always Visible */}
-                  <div
-                    className="p-3 active:bg-gray-50"
-                    onClick={() => setExpanded(!expanded)}
-                  >
+          return (
+            <div
+              key={transaction.id}
+              className="bg-white border rounded-lg shadow-sm overflow-hidden"
+            >
+              {/* Main Card - Always Visible */}
+              <div
+                className="p-3 active:bg-gray-50"
+                onClick={() => toggleExpand(transaction.id)}
+              >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -1337,13 +1351,13 @@ export function TransactionTable() {
                           <Truck className="h-3 w-3 mr-1" />
                           Antar
                         </Button>
-                        {expanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                        {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
                       </div>
                     </div>
                   </div>
 
                   {/* Expanded Details */}
-                  {expanded && (
+                  {isExpanded && (
                     <div className="border-t bg-gray-50 p-3">
                       {/* Items */}
                       <div className="space-y-2 mb-3">
