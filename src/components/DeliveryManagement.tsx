@@ -82,20 +82,23 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
     notes: "",
     driverId: "",
     helperId: "",
-    items: transaction.deliverySummary.map((item, index) => ({
-      itemId: `${item.productId}-${index}`,
-      productId: item.productId,
-      productName: item.productName,
-      isBonus: item.isBonus || false,
-      orderedQuantity: item.orderedQuantity,
-      deliveredQuantity: item.deliveredQuantity,
-      remainingQuantity: item.remainingQuantity,
-      quantityToDeliver: 0,
-      unit: item.unit,
-      width: item.width,
-      height: item.height,
-      notes: "",
-    })),
+    // Filter out Unknown Product items
+    items: transaction.deliverySummary
+      .filter(item => item.productName && item.productName !== 'Unknown Product')
+      .map((item, index) => ({
+        itemId: `${item.productId}-${index}`,
+        productId: item.productId,
+        productName: item.productName,
+        isBonus: item.isBonus || false,
+        orderedQuantity: item.orderedQuantity,
+        deliveredQuantity: item.deliveredQuantity,
+        remainingQuantity: item.remainingQuantity,
+        quantityToDeliver: 0,
+        unit: item.unit,
+        width: item.width,
+        height: item.height,
+        notes: "",
+      })),
     photo: undefined,
   })
 
@@ -111,20 +114,23 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
       setFormData(prev => ({
         ...prev,
         transactionId: transaction.id,
-        items: transaction.deliverySummary.map((item, index) => ({
-          itemId: `${item.productId}-${index}`,
-          productId: item.productId,
-          productName: item.productName,
-          isBonus: item.isBonus || false,
-          orderedQuantity: item.orderedQuantity,
-          deliveredQuantity: item.deliveredQuantity,
-          remainingQuantity: item.remainingQuantity,
-          quantityToDeliver: 0,
-          unit: item.unit,
-          width: item.width,
-          height: item.height,
-          notes: "",
-        }))
+        // Filter out Unknown Product items
+        items: transaction.deliverySummary
+          .filter(item => item.productName && item.productName !== 'Unknown Product')
+          .map((item, index) => ({
+            itemId: `${item.productId}-${index}`,
+            productId: item.productId,
+            productName: item.productName,
+            isBonus: item.isBonus || false,
+            orderedQuantity: item.orderedQuantity,
+            deliveredQuantity: item.deliveredQuantity,
+            remainingQuantity: item.remainingQuantity,
+            quantityToDeliver: 0,
+            unit: item.unit,
+            width: item.width,
+            height: item.height,
+            notes: "",
+          }))
       }))
     }
   }, [transaction.id, transaction.deliverySummary])
