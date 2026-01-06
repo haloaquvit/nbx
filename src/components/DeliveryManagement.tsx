@@ -2,17 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+
 import {
   Table,
   TableBody,
@@ -36,14 +26,11 @@ import { EditDeliveryDialog } from "@/components/EditDeliveryDialog"
 import { isOwner } from "@/utils/roleUtils"
 import { format, isValid } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
-import { TransactionDeliveryInfo, DeliveryFormData, Delivery } from "@/types/delivery"
-import { Checkbox } from "@/components/ui/checkbox"
+import { TransactionDeliveryInfo, Delivery } from "@/types/delivery"
 import { useDeliveries } from "@/hooks/useDeliveries"
 import { useAuth } from "@/hooks/useAuth"
 import { Link } from "react-router-dom"
-
 import { useTimezone } from "@/contexts/TimezoneContext"
-import { getOfficeTime } from "@/utils/officeTime"
 
 interface DeliveryManagementProps {
   transaction: TransactionDeliveryInfo;
@@ -57,8 +44,8 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
   const { toast } = useToast()
   const { user } = useAuth()
   const { timezone } = useTimezone()
-  const { createDelivery, createDeliveryNoStock, deleteDelivery } = useDeliveries()
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { deleteDelivery } = useDeliveries()
+
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null)
 
@@ -66,77 +53,6 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
   const canDeleteDelivery = user?.role === 'admin' || user?.role === 'owner'
   // Check if user is owner (for edit)
   const canEditDelivery = isOwner(user?.role)
-
-  const [formData, setFormData] = useState<DeliveryFormData>({
-    transactionId: transaction.id,
-    deliveryDate: "", // Not used anymore, server time will be used
-    notes: "",
-    driverId: "",
-    helperId: "",
-    // Filter out Unknown Product items
-    items: transaction.deliverySummary
-      .filter(item => item.productName && item.productName !== 'Unknown Product')
-      .map((item, index) => ({
-        itemId: `${item.productId}-${index}`,
-        productId: item.productId,
-        productName: item.productName,
-        isBonus: item.isBonus || false,
-        orderedQuantity: item.orderedQuantity,
-        deliveredQuantity: item.deliveredQuantity,
-        remainingQuantity: item.remainingQuantity,
-        quantityToDeliver: 0,
-        unit: item.unit,
-        width: item.width,
-        height: item.height,
-        notes: "",
-      })),
-    photo: undefined,
-  })
-
-  // FIX: Update form items when transaction.deliverySummary changes (e.g., when data loads from API)
-  useEffect(() => {
-    console.log('📦 DeliveryManagement - transaction.deliverySummary changed:', {
-      transactionId: transaction.id,
-      deliverySummaryLength: transaction.deliverySummary?.length,
-      deliverySummary: transaction.deliverySummary
-    })
-
-    if (transaction.deliverySummary && transaction.deliverySummary.length > 0) {
-      setFormData(prev => ({
-        ...prev,
-        transactionId: transaction.id,
-        // Filter out Unknown Product items
-        items: transaction.deliverySummary
-          .filter(item => item.productName && item.productName !== 'Unknown Product')
-          .map((item, index) => ({
-            itemId: `${item.productId}-${index}`,
-            productId: item.productId,
-            productName: item.productName,
-            isBonus: item.isBonus || false,
-            orderedQuantity: item.orderedQuantity,
-            deliveredQuantity: item.deliveredQuantity,
-            remainingQuantity: item.remainingQuantity,
-            quantityToDeliver: 0,
-            unit: item.unit,
-            width: item.width,
-            height: item.height,
-            notes: "",
-          }))
-      }))
-    }
-  }, [transaction.id, transaction.deliverySummary])
-
-  const handleItemQuantityChange = (itemId: string, quantityToDeliver: number) => {
-    setFormData(prev => ({
-      ...prev,
-      items: prev.items.map(item =>
-        item.itemId === itemId
-          ? { ...item, quantityToDeliver: Math.max(0, Math.min(quantityToDeliver, item.remainingQuantity)) }
-          : item
-      )
-    }))
-  }
-
 
   const handleDeleteDelivery = async (deliveryId: string, deliveryNumber: number) => {
     if (!confirm(`Apakah Anda yakin ingin menghapus pengantaran #${deliveryNumber}? Stock akan dikembalikan.`)) {
