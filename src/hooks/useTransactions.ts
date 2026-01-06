@@ -183,7 +183,9 @@ export const useTransactions = (filters?: {
           : newTransaction.orderDate,
         notes: newTransaction.notes || null,
         sales_id: newTransaction.salesId || null,
-        sales_name: newTransaction.salesName || null
+        sales_name: newTransaction.salesName || null,
+        retasi_id: newTransaction.retasiId || null,
+        retasi_number: newTransaction.retasiNumber || null
       };
 
       // Prepare Items Data (Snake Case for RPC JSONB)

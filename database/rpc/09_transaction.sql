@@ -47,6 +47,8 @@ DECLARE
   v_notes TEXT;
   v_sales_id UUID;
   v_sales_name TEXT;
+  v_retasi_id UUID;
+  v_retasi_number TEXT;
 
   v_item JSONB;
   v_product_id UUID;
@@ -128,6 +130,8 @@ BEGIN
   v_sales_id := (p_transaction->>'sales_id')::UUID;
   v_sales_name := p_transaction->>'sales_name';
   v_payment_account_id := (p_transaction->>'payment_account_id')::TEXT;
+  v_retasi_id := (p_transaction->>'retasi_id')::UUID;
+  v_retasi_number := p_transaction->>'retasi_number';
 
   -- ==================== GET ACCOUNT IDS ====================
 
@@ -237,6 +241,8 @@ BEGIN
     delivery_status,
     is_office_sale,
     notes,
+    retasi_id,
+    retasi_number,
     created_at,
     updated_at
   ) VALUES (
@@ -258,6 +264,8 @@ BEGIN
     CASE WHEN v_is_office_sale THEN 'Completed' ELSE 'Pending' END,
     v_is_office_sale,
     v_notes,
+    v_retasi_id,
+    v_retasi_number,
     NOW(),
     NOW()
   );
