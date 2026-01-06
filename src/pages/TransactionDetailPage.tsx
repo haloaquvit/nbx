@@ -5,16 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, Printer, FileDown, Calendar, User, Package, CreditCard, Truck, FileText, MapPin, Phone } from "lucide-react"
+import { ArrowLeft, Printer, FileDown, Calendar, User, Package, CreditCard, MapPin, Phone } from "lucide-react"
 import { useTransactions } from "@/hooks/useTransactions"
-import { useTransactionDeliveryInfo } from "@/hooks/useDeliveries"
 import { useCustomers } from "@/hooks/useCustomers"
 import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
-import { DeliveryManagement } from "@/components/DeliveryManagement"
-import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
-import { Delivery } from "@/types/delivery"
-import { useState, useEffect } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -24,44 +19,10 @@ import { useCompanySettings } from "@/hooks/useCompanySettings"
 export default function TransactionDetailPage() {
   const { id: transactionId } = useParams<{ id: string }>()
   const { transactions, isLoading } = useTransactions()
-  const { data: deliveryInfo, isLoading: isLoadingDelivery, error: deliveryError } = useTransactionDeliveryInfo(transactionId || '')
-
-  // Debug: Log delivery info
-  console.log('📦 TransactionDetailPage - deliveryInfo:', {
-    transactionId,
-    deliveryInfo,
-    isLoadingDelivery,
-    deliveryError,
-    deliverySummaryCount: deliveryInfo?.deliverySummary?.length,
-    deliverySummary: deliveryInfo?.deliverySummary
-  })
   const { customers } = useCustomers()
   const { toast } = useToast()
   const { settings: companyInfo } = useCompanySettings()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const [showDeliveryForm, setShowDeliveryForm] = useState(false)
-
-  // Auto-open delivery form if action=delivery
-  const action = searchParams.get('action');
-
-  // Use effect to handle auto-opening
-  useEffect(() => {
-    if (action === 'delivery') {
-      setShowDeliveryForm(true);
-    }
-  }, [action]);
-  const [completionDialogOpen, setCompletionDialogOpen] = useState(false)
-  const [completedDelivery, setCompletedDelivery] = useState<Delivery | null>(null)
-  const [completedTransaction, setCompletedTransaction] = useState<any>(null)
-
-  // Handle delivery completion
-  const handleDeliveryCompleted = (delivery: Delivery, transaction: any) => {
-    setCompletedDelivery(delivery)
-    setCompletedTransaction(transaction)
-    setCompletionDialogOpen(true)
-    setShowDeliveryForm(false) // Close the form dialog
-  }
 
   const transaction = transactions?.find(t => t.id === transactionId)
   const customer = customers?.find(c => c.id === transaction?.customerId)
@@ -304,10 +265,10 @@ export default function TransactionDetailPage() {
             <span>${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.total)}</span>
           </div>
           <div class="border-t border-dashed border-black pt-1 space-y-1">
-            <div class="flex justify-between items-center">
-              <span>Status:</span>
-              <span class="text-right break-words ${getPaymentStatusText(transaction.paidAmount || 0, transaction.total) === 'Lunas' ? 'font-semibold' : ''}">${getPaymentStatusText(transaction.paidAmount || 0, transaction.total)}</span>
-            </div>
+                            <div class="flex justify-between items-center">
+                              <span>Status:</span>
+                              <span class="text-right break-words">${getPaymentStatusText(transaction.paidAmount || 0, transaction.total)}</span>
+                            </div>
             <div class="flex justify-between items-center">
               <span>Jumlah Bayar:</span>
               <span class="text-right whitespace-nowrap">${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(transaction.paidAmount || 0)}</span>
@@ -840,17 +801,6 @@ export default function TransactionDetailPage() {
 
         {/* Action Buttons - Hidden on mobile, shown on desktop */}
         <div className="hidden md:flex gap-2">
-          {/* Show delivery button if transaction has delivery info and not office sale */}
-          {deliveryInfo && !transaction?.isOfficeSale && (
-            <Button
-              variant="outline"
-              className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
-              onClick={() => setShowDeliveryForm(true)}
-            >
-              <Truck className="mr-2 h-4 w-4" />
-              Input Pengantaran
-            </Button>
-          )}
           <Button variant="outline" onClick={handleGenerateInvoicePdf}>
             <FileDown className="mr-2 h-4 w-4" />
             Simpan PDF
@@ -873,18 +823,6 @@ export default function TransactionDetailPage() {
       {/* Mobile Actions - Sticky at top (hanya tampilkan thermal/RawBT) */}
       <div className="md:hidden sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40 -mx-6 px-6 py-3">
         <div className="flex gap-2 overflow-x-auto">
-          {/* Show delivery button if transaction has delivery info and not office sale */}
-          {deliveryInfo && !transaction?.isOfficeSale && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-shrink-0 bg-green-50 border-green-200 text-green-700"
-              onClick={() => setShowDeliveryForm(true)}
-            >
-              <Truck className="mr-2 h-4 w-4" />
-              Antar
-            </Button>
-          )}
           <Button
             size="sm"
             className="flex-1 bg-blue-600 hover:bg-blue-700"
@@ -1232,38 +1170,6 @@ export default function TransactionDetailPage() {
         </div>
       </div>
 
-      {/* Delivery Management Section */}
-      {showDeliveryForm && deliveryInfo && (
-        <div className="mt-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Input Pengantaran</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDeliveryForm(false)}
-                >
-                  Tutup
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <DeliveryManagement
-                transaction={deliveryInfo}
-                defaultOpen={action === 'delivery'}
-                onClose={() => {
-                  setShowDeliveryForm(false)
-                  // Refresh data when delivery is updated
-                  window.location.reload()
-                }}
-                onDeliveryCreated={handleDeliveryCompleted}
-              />
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {/* Mobile Floating Print Button - Alternative option */}
       <div className="md:hidden fixed bottom-6 right-4 z-20">
         <div className="flex flex-col gap-2">
@@ -1277,13 +1183,6 @@ export default function TransactionDetailPage() {
         </div>
       </div>
 
-      {/* Delivery Completion Dialog */}
-      <DeliveryCompletionDialog
-        open={completionDialogOpen}
-        onOpenChange={setCompletionDialogOpen}
-        delivery={completedDelivery}
-        transaction={completedTransaction}
-      />
     </div>
   )
 }
