@@ -334,24 +334,14 @@ export const useTransactionsReadyForDelivery = () => {
         .neq('status', 'Dibatalkan')
         .order('order_date', { ascending: false });
 
-      // Client-side filter for case-insensitive delivery_status check
-      // Also check legacy 'status' column for old data compatibility
+      // Filter based on status column only
+      // Show in delivery list: "Pesanan Masuk" and "Diantar Sebagian"
+      // Hide from delivery list: "Selesai" (goes to history) and "Dibatalkan"
       const filteredData = (data || []).filter(txn => {
-        const deliveryStatus = (txn.delivery_status || '').toLowerCase();
-        const txnStatus = (txn.status || '').toLowerCase();
+        const txnStatus = (txn.status || '').trim();
 
-        // Exclude if delivery_status indicates delivered/completed (case-insensitive)
-        if (deliveryStatus === 'delivered' || deliveryStatus === 'completed' || deliveryStatus === 'selesai') {
-          return false;
-        }
-
-        // Also exclude if legacy status indicates completed delivery
-        // 'Selesai' and 'Diantar Sebagian' with no remaining items should be excluded
-        if (txnStatus === 'selesai') {
-          return false;
-        }
-
-        return true;
+        // Only show transactions with status "Pesanan Masuk" or "Diantar Sebagian"
+        return txnStatus === 'Pesanan Masuk' || txnStatus === 'Diantar Sebagian';
       });
 
       if (error) throw error;
