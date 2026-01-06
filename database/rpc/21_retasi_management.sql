@@ -68,6 +68,7 @@ BEGIN
     departure_date,
     departure_time,
     route,
+    total_items,
     notes,
     retasi_ke,
     is_returned,
@@ -87,6 +88,7 @@ BEGIN
          ELSE NULL
     END,
     p_route,
+    (SELECT COALESCE(SUM((item->>'quantity')::NUMERIC), 0) FROM jsonb_array_elements(p_items) AS item),
     p_notes,
     v_retasi_ke,
     FALSE,
