@@ -67,10 +67,9 @@ export const usePaymentHistory = (filters?: {
     gcTime: 5 * 60 * 1000,
     retry: 1,
   })
-})
 
-return {
-  paymentHistory: paymentHistory || [],
-  isLoading
-}
+  return {
+    paymentHistory: paymentHistory || [],
+    isLoading
+  }
 }
