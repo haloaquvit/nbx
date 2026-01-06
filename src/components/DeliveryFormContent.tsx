@@ -248,6 +248,45 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
 
     setIsSubmitting(true)
     try {
+      // Upload photo to VPS API if exists
+      let photoUrl: string | undefined = undefined
+      if (formData.photo) {
+        try {
+          // Create FormData for API upload
+          const uploadFormData = new FormData()
+          uploadFormData.append('photo', formData.photo)
+          uploadFormData.append('transactionId', formData.transactionId)
+
+          // Upload to VPS API endpoint
+          const uploadResponse = await fetch('/api/upload-photo', {
+            method: 'POST',
+            body: uploadFormData,
+          })
+
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json()
+            throw new Error(errorData.message || 'Upload gagal')
+          }
+
+          const uploadResult = await uploadResponse.json()
+          
+          if (!uploadResult.success) {
+            throw new Error(uploadResult.error || 'Upload gagal')
+          }
+
+          photoUrl = uploadResult.data.webViewLink
+          console.log('✅ Photo uploaded successfully:', photoUrl)
+        } catch (error) {
+          console.error('❌ Photo upload failed:', error)
+          // Continue without photo if upload fails
+          toast({
+            variant: "destructive",
+            title: "Warning",
+            description: "Gagal upload foto, pengantaran akan tetap disimpan tanpa foto"
+          })
+        }
+      }
+
       const deliveryItems = itemsToDeliver.map(item => ({
         productId: item.productId,
         productName: item.productName,
@@ -265,7 +304,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
         driverId: formData.driverId || undefined,  // Empty string -> undefined for optional UUID
         helperId: formData.helperId || undefined,
         items: deliveryItems,
-        photo: formData.photo,
+        photoUrl: photoUrl, // Send photoUrl instead of photo
       })
 
       // Check if there were any invalid products that were skipped
