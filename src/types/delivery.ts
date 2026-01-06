@@ -48,11 +48,13 @@ export interface DeliverySummaryItem {
 
 export interface TransactionDeliveryInfo {
   id: string;
+  orderNumber: string;
   customerName: string;
   customerAddress?: string; // Alamat pelanggan
+  customerPhone?: string;
+  totalAmount: number;
+  total: number; // Added for compatibility
   orderDate: Date;
-  items: any[]; // Transaction items
-  total: number;
   status: string;
   cashierName?: string;
   deliveries: Delivery[];

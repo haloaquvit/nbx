@@ -103,7 +103,7 @@ BEGIN
         p_amount,
         (v_transaction.total - v_new_paid_amount),
         'Tunai',
-        p_payment_account_id::UUID,
+        p_payment_account_id,
         NOW(),
         p_notes,
         p_user_id,

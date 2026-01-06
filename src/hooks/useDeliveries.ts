@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Delivery, DeliveryInput, DeliveryItem, DeliveryUpdateInput } from '@/types/delivery';
+import { Delivery, DeliveryInput, DeliveryItem, DeliveryUpdateInput, TransactionDeliveryInfo } from '@/types/delivery';
 import { useToast } from '@/hooks/use-toast';
 import { useBranch } from '@/contexts/BranchContext';
 
@@ -11,30 +11,6 @@ interface DeliveryEmployee {
   role: string;
 }
 
-// Type for transaction ready for delivery
-export interface TransactionDeliveryInfo {
-  id: string;
-  orderNumber: string;
-  customerName: string;
-  customerAddress: string;
-  customerPhone: string;
-  totalAmount: number;
-  total: number; // Added for compatibility
-  orderDate: Date;
-  status: string;
-  deliveries: Delivery[];
-  deliverySummary: Array<{
-    productId: string;
-    productName: string;
-    orderedQuantity: number;
-    deliveredQuantity: number;
-    remainingQuantity: number;
-    unit: string;
-    isBonus?: boolean;
-    width?: number;
-    height?: number;
-  }>;
-}
 
 const fromDbToDelivery = (dbData: any): Delivery => ({
   id: dbData.id,
