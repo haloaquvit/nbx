@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -65,6 +66,7 @@ export default function DeliveryPage() {
   const [completionDialogOpen, setCompletionDialogOpen] = useState(false)
   const [completedDelivery, setCompletedDelivery] = useState<Delivery | null>(null)
   const [completedTransaction, setCompletedTransaction] = useState<TransactionDeliveryInfo | null>(null)
+  const [searchParams] = useSearchParams()
 
   // Handle delivery completion
   const handleDeliveryCompleted = (delivery: Delivery, transaction: TransactionDeliveryInfo) => {
@@ -75,6 +77,20 @@ export default function DeliveryPage() {
   }
   const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = useState(false)
   const [selectedDeliveryTransaction, setSelectedDeliveryTransaction] = useState<TransactionDeliveryInfo | null>(null)
+
+  // Auto-open delivery dialog if transactionId query param exists
+  useEffect(() => {
+    const transactionIdParam = searchParams.get('transactionId')
+    if (transactionIdParam && transactions) {
+      const transaction = transactions.find(t => t.id === transactionIdParam)
+      if (transaction) {
+        setSelectedDeliveryTransaction(transaction)
+        setIsDeliveryDialogOpen(true)
+        // Clear the query param after opening
+        searchParams.delete('transactionId')
+      }
+    }
+  }, [searchParams, transactions])
 
   // New filter states for history
   const [startDate, setStartDate] = useState("")

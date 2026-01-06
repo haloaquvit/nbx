@@ -725,8 +725,8 @@ export function TransactionTable() {
               size="sm"
               onClick={(e) => {
                 e.stopPropagation()
-                // Navigate with a query param to auto-open delivery dialog
-                navigate(`/transactions/${transaction.id}?action=delivery`)
+                // Navigate to DeliveryPage with query param to auto-open delivery dialog
+                navigate(`/deliveries?transactionId=${transaction.id}`)
               }}
               disabled={isFullyDelivered}
               className={cn(
