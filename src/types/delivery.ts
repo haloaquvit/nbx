@@ -16,7 +16,11 @@ export interface Delivery {
   id: string;
   transactionId: string;
   deliveryNumber: number;
+  customerName?: string; // Customer name (stored in delivery for history)
+  customerAddress?: string; // Customer address (stored in delivery for history)
+  customerPhone?: string; // Customer phone (stored in delivery for history)
   deliveryDate: Date;
+  status?: string; // Delivery status (for history)
   photoUrl?: string;
   notes?: string;
   driverId?: string;

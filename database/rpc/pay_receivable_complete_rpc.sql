@@ -5,6 +5,7 @@
 
 DROP FUNCTION IF EXISTS pay_receivable_complete_rpc(TEXT, NUMERIC, TEXT, TEXT, UUID, TEXT);
 DROP FUNCTION IF EXISTS pay_receivable_complete_rpc(TEXT, NUMERIC, TEXT, TEXT, UUID, UUID);
+DROP FUNCTION IF EXISTS pay_receivable_complete_rpc(TEXT, NUMERIC, TEXT, TEXT, UUID, UUID, TEXT);
 
 CREATE OR REPLACE FUNCTION pay_receivable_complete_rpc(
     p_transaction_id TEXT,
@@ -12,7 +13,8 @@ CREATE OR REPLACE FUNCTION pay_receivable_complete_rpc(
     p_payment_account_id TEXT,
     p_notes TEXT DEFAULT NULL,
     p_branch_id UUID DEFAULT NULL,
-    p_user_id UUID DEFAULT NULL
+    p_user_id UUID DEFAULT NULL,
+    p_recorded_by_name TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     success BOOLEAN,
@@ -93,6 +95,7 @@ BEGIN
         payment_date,
         notes,
         recorded_by,
+        recorded_by_name,
         created_at
     ) VALUES (
         p_transaction_id,
@@ -104,6 +107,7 @@ BEGIN
         NOW(),
         p_notes,
         p_user_id,
+        p_recorded_by_name,
         NOW()
     ) RETURNING id INTO v_payment_id;
 
@@ -133,7 +137,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION pay_receivable_complete_rpc(TEXT, NUMERIC, TEXT, TEXT, UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION pay_receivable_complete_rpc(TEXT, NUMERIC, TEXT, TEXT, UUID, UUID, TEXT) TO authenticated;
 
 COMMENT ON FUNCTION pay_receivable_complete_rpc IS
-    'Complete receivable payment: update transaction, insert payment_history, and create journal entry';
+    'Complete receivable payment: update transaction, insert payment_history (with recorder name), and create journal entry';

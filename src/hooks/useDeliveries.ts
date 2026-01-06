@@ -54,6 +54,7 @@ const fromDbToDelivery = (dbData: any): Delivery => ({
   transactionTotal: dbData.transactions?.total || 0, // Map total from joined transaction
   cashierName: dbData.transactions?.cashier_name, // Map cashier name
   createdAt: new Date(dbData.created_at),
+  updatedAt: dbData.updated_at ? new Date(dbData.updated_at) : new Date(dbData.created_at),
   items: dbData.delivery_items?.map((item: any) => ({
     id: item.id,
     productId: item.product_id,
@@ -337,6 +338,16 @@ export const useTransactionsReadyForDelivery = () => {
         .neq('status', 'Dibatalkan')
         .order('order_date', { ascending: false });
 
+      // DEBUG: Log all transactions before filtering
+      console.log('🔍 All transactions fetched:', {
+        total: data?.length || 0,
+        transactions: data?.map(t => ({
+          id: t.id,
+          status: t.status,
+          itemsCount: Array.isArray(t.items) ? t.items.length : 0
+        }))
+      });
+
       // Filter based on status column only
       // Show in delivery list: "Pesanan Masuk" and "Diantar Sebagian"
       // Hide from delivery list: "Selesai" (goes to history) and "Dibatalkan"
@@ -345,6 +356,16 @@ export const useTransactionsReadyForDelivery = () => {
 
         // Only show transactions with status "Pesanan Masuk" or "Diantar Sebagian"
         return txnStatus === 'Pesanan Masuk' || txnStatus === 'Diantar Sebagian';
+      });
+
+      console.log('✅ Filtered transactions:', {
+        total: filteredData.length,
+        transactions: filteredData.map(t => ({
+          id: t.id,
+          customer: t.customer_name,
+          status: t.status,
+          itemsCount: Array.isArray(t.items) ? t.items.length : 0
+        }))
       });
 
       if (error) throw error;
@@ -364,11 +385,20 @@ export const useTransactionsReadyForDelivery = () => {
       }
 
       return filteredData.map(txn => {
+        // DEBUG: Log transaction items before mapping
+        console.log('📦 Processing transaction:', {
+          id: txn.id,
+          customer: txn.customer_name,
+          items: Array.isArray(txn.items) ? txn.items : 'NOT AN ARRAY',
+          itemsCount: Array.isArray(txn.items) ? txn.items.length : 0
+        });
+
         // Map deliveries (sorted by date ascending for correct delete logic using last element)
         const deliveries = (txn.deliveries || []).map(fromDbToDelivery)
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
         // Calculate delivery summary
+        console.log('📦 Deliveries found:', deliveries.length);
         const deliverySummary = (Array.isArray(txn.items) ? txn.items : [])
           .map((item: any) => {
             const productId = item.product_id || item.productId || item.product?.id;
@@ -376,8 +406,25 @@ export const useTransactionsReadyForDelivery = () => {
             const orderedQty = Number(item.quantity || item.orderedQuantity || 0);
 
             // Skip invalid items that would cause "Unknown Product" or "NaN"
-            if (!productName || productName === 'Unknown Product') return null;
-            if (orderedQty <= 0 && !productName.toLowerCase().includes('bonus')) return null;
+            if (!productName || productName === 'Unknown Product') {
+              console.warn('⚠️ Skipping invalid product:', {
+                productId: productId,
+                productName: productName
+              });
+              return null;
+            }
+            // Only skip items with quantity <= 0 if they're NOT bonus items
+            // Bonus items can have 0 ordered quantity
+            const isBonusName = productName.toLowerCase().includes('bonus') || productName.toLowerCase().includes('free');
+            if (orderedQty <= 0 && !isBonusName) {
+              console.warn('⚠️ Skipping item with non-positive quantity:', {
+                productId: productId,
+                productName: productName,
+                orderedQty: orderedQty,
+                isBonus: isBonusName
+              });
+              return null;
+            }
 
             // Better bonus detection
             const isBonus = item.is_bonus || item.isBonus ||
@@ -415,6 +462,18 @@ export const useTransactionsReadyForDelivery = () => {
             };
           })
           .filter((item): item is NonNullable<typeof item> => item !== null); // Remove skipped items
+
+        // DEBUG: Log delivery summary
+        console.log('📋 Delivery Summary:', {
+          transactionId: txn.id,
+          totalItems: deliverySummary.length,
+          items: deliverySummary.map(i => ({
+            name: i.productName,
+            ordered: i.orderedQuantity,
+            delivered: i.deliveredQuantity,
+            remaining: i.remainingQuantity
+          }))
+        });
 
         return {
           id: txn.id,
@@ -521,9 +580,46 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
       const deliveries = enhancedDeliveries.map(fromDbToDelivery)
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
+      // DEBUG: Log transaction items structure
+      console.log('📦 Transaction items for delivery summary:', {
+        transactionId: transactionId,
+        itemsType: typeof txn.items,
+        itemsIsArray: Array.isArray(txn.items),
+        items: Array.isArray(txn.items) ? txn.items : txn.items,
+        firstItem: Array.isArray(txn.items) && txn.items[0] ? txn.items[0] : 'N/A'
+      });
+
+      // DEBUG: Log deliveries structure
+      console.log('📦 Deliveries for delivery summary:', {
+        transactionId: transactionId,
+        deliveriesCount: deliveries.length,
+        deliveries: deliveries.map(d => ({
+          deliveryId: d.id,
+          itemsCount: d.items.length,
+          items: d.items.map(di => ({
+            productId: di.productId,
+            productName: di.productName,
+            quantityDelivered: di.quantityDelivered
+          }))
+        }))
+      });
+
       // Calculate delivery summary
       const deliverySummary = (Array.isArray(txn.items) ? txn.items : []).map((item: any) => {
         const productId = item.product_id || item.productId || item.product?.id;
+        const productName = item.product_name || item.productName || item.product?.name || 'Unknown Product';
+        const orderedQty = item.quantity;
+
+        console.log('📦 Processing item:', {
+          productId,
+          productName,
+          orderedQty,
+          productIdTypes: {
+            product_id: item.product_id,
+            productId: item.productId,
+            product_id_nested: item.product?.id
+          }
+        });
 
         // Calculate total delivered for this item across all deliveries
         const totalDelivered = deliveries.reduce((sum: number, d: Delivery) => {
@@ -533,15 +629,26 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
 
         return {
           productId: productId,
-          productName: item.product_name || item.productName || item.product?.name || 'Unknown Product',
-          orderedQuantity: item.quantity,
+          productName: productName,
+          orderedQuantity: orderedQty,
           deliveredQuantity: totalDelivered,
-          remainingQuantity: item.quantity - totalDelivered,
+          remainingQuantity: orderedQty - totalDelivered,
           unit: item.unit,
           isBonus: item.is_bonus || item.isBonus,
           width: item.width,
           height: item.height,
         };
+      });
+
+      console.log('📋 Final delivery summary:', {
+        transactionId: transactionId,
+        totalItems: deliverySummary.length,
+        items: deliverySummary.map(i => ({
+          name: i.productName,
+          ordered: i.orderedQuantity,
+          delivered: i.deliveredQuantity,
+          remaining: i.remainingQuantity
+        }))
       });
 
       return {
