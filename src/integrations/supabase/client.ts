@@ -185,7 +185,7 @@ function getBaseUrl(): string {
   // 'https://mkw.aquvit.id' for Manokwari
   // 'http://localhost:3001' for local database (via Docker PostgREST)
   // 'http://localhost:3003' for VPS aquvit_dev (via SSH tunnel)
-  return 'http://localhost:3003';
+  return 'https://mkw.aquvit.id';
 }
 
 function getTenantConfig(): TenantConfig {

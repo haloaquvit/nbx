@@ -25,6 +25,7 @@ export interface Delivery {
   helperName?: string;
   branchId?: string;
   transactionTotal?: number; // Total nilai order
+  cashierName?: string;
   items: DeliveryItem[];
   createdAt: Date;
   updatedAt: Date;

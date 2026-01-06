@@ -1,10 +1,10 @@
 -- ============================================================================
--- RPC 16: Purchase Order Management Atomic
+-- RPC 16: Purchase Order Management Atomic (FIXED - Prevent Duplicates)
 -- Purpose: Pembuatan dan Persetujuan PO secara atomik
+-- CHANGE: Added duplicate check to prevent double journal/AP creation
 -- ============================================================================
 
--- 1. CREATE PURCHASE ORDER ATOMIC
--- Membuat header dan item PO dalam satu transaksi
+-- 1. CREATE PURCHASE ORDER ATOMIC (No changes)
 CREATE OR REPLACE FUNCTION create_purchase_order_atomic(
   p_po_header JSONB,
   p_po_items JSONB,
@@ -74,7 +74,7 @@ BEGIN
     (p_po_header->>'expected_delivery_date')::TIMESTAMP,
     p_po_header->>'notes',
     p_branch_id,
-    auth.uid(),  -- Use auth.uid() instead of frontend-passed value
+    auth.uid(),
     NOW(),
     NOW()
   );
@@ -116,7 +116,7 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 2. APPROVE PURCHASE ORDER ATOMIC
+-- 2. APPROVE PURCHASE ORDER ATOMIC (FIXED - Added Duplicate Check)
 -- Set status Approved, buat Jurnal (Persediaan vs Hutang), dan buat Accounts Payable
 CREATE OR REPLACE FUNCTION approve_purchase_order_atomic(
   p_po_id TEXT,
@@ -151,6 +151,8 @@ DECLARE
   v_days INTEGER;
   v_due_date DATE;
   v_supplier_terms TEXT;
+  v_existing_journal_count INTEGER;
+  v_existing_ap_count INTEGER;
 BEGIN
   -- 1. Get PO Header
   SELECT * INTO v_po FROM purchase_orders WHERE id = p_po_id AND branch_id = p_branch_id;
@@ -161,6 +163,30 @@ BEGIN
 
   IF v_po.status <> 'Pending' THEN
     RETURN QUERY SELECT FALSE, NULL::UUID[], NULL::TEXT, 'Hanya PO status Pending yang bisa disetujui'::TEXT;
+    RETURN;
+  END IF;
+
+  -- 🔥 NEW: Check if journal already exists for this PO
+  SELECT COUNT(*) INTO v_existing_journal_count
+  FROM journal_entries
+  WHERE reference_id = p_po_id
+    AND reference_type = 'purchase_order'
+    AND is_voided = FALSE;
+
+  IF v_existing_journal_count > 0 THEN
+    RETURN QUERY SELECT FALSE, NULL::UUID[], NULL::TEXT, 
+      format('Journal sudah ada untuk PO ini (%s entries). Tidak dapat approve lagi.', v_existing_journal_count)::TEXT;
+    RETURN;
+  END IF;
+
+  -- 🔥 NEW: Check if AP already exists for this PO
+  SELECT COUNT(*) INTO v_existing_ap_count
+  FROM accounts_payable
+  WHERE purchase_order_id = p_po_id;
+
+  IF v_existing_ap_count > 0 THEN
+    RETURN QUERY SELECT FALSE, NULL::UUID[], NULL::TEXT, 
+      'Accounts Payable sudah ada untuk PO ini. Tidak dapat approve lagi.'::TEXT;
     RETURN;
   END IF;
 
@@ -260,7 +286,7 @@ BEGIN
   v_due_date := NOW()::DATE + INTERVAL '30 days'; -- Default
   SELECT payment_terms INTO v_supplier_terms FROM suppliers WHERE id = v_po.supplier_id;
   IF v_supplier_terms ILIKE '%net%' THEN
-    v_days := (regexp_matches(v_supplier_terms, '\d+'))[1]::INTEGER;
+    v_days := (regexp_matches(v_supplier_terms, '\\d+'))[1]::INTEGER;
     v_due_date := NOW()::DATE + (v_days || ' days')::INTERVAL;
   ELSIF v_supplier_terms ILIKE '%cash%' THEN
     v_due_date := NOW()::DATE;
@@ -296,3 +322,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- GRANTS
 GRANT EXECUTE ON FUNCTION create_purchase_order_atomic(JSONB, JSONB, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION approve_purchase_order_atomic(TEXT, UUID, UUID, TEXT) TO authenticated;
+
+-- COMMENTS
+COMMENT ON FUNCTION approve_purchase_order_atomic IS
+  'FIXED: Added duplicate check to prevent double journal/AP creation. Creates journal (Dr. Persediaan, Cr. Hutang) and AP record.';

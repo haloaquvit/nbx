@@ -77,7 +77,7 @@ export const PosForm = () => {
   const { data: salesEmployees } = useSalesEmployees();
   const { customers } = useCustomers();
   const { checkDriverAvailability } = useRetasi();
-  
+
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null)
   const [customerSearch, setCustomerSearch] = useState('')
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false)
@@ -99,7 +99,7 @@ export const PosForm = () => {
   const [isCustomerAddOpen, setIsCustomerAddOpen] = useState(false)
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
   const [savedTransaction, setSavedTransaction] = useState<Transaction | null>(null)
-  const [openProductDropdowns, setOpenProductDropdowns] = useState<{[key: number]: boolean}>({});
+  const [openProductDropdowns, setOpenProductDropdowns] = useState<{ [key: number]: boolean }>({});
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [showPaymentDetails, setShowPaymentDetails] = useState(false);
@@ -108,7 +108,7 @@ export const PosForm = () => {
   const [retasiMessage, setRetasiMessage] = useState('');
   const [isOfficeSale, setIsOfficeSale] = useState(false);
   const [transactionNotes, setTransactionNotes] = useState('');
-  const [loadingPrices, setLoadingPrices] = useState<{[key: number]: boolean}>({});
+  const [loadingPrices, setLoadingPrices] = useState<{ [key: number]: boolean }>({});
   const [sourceQuotation, setSourceQuotation] = useState<Quotation | null>(null);
   const productSearchInputRef = useRef<HTMLInputElement>(null);
   const debounceTimers = useRef<Record<number, NodeJS.Timeout>>({});
@@ -444,7 +444,7 @@ export const PosForm = () => {
       newItems[index].unit = selectedProduct.unit || 'pcs';
       setLoadingPrices(prev => ({ ...prev, [newItems[index].id]: false }));
     }
-    
+
     if (field === 'qty' && newItems[index].product && !newItems[index].isBonus) {
       const itemId = newItems[index].id;
       const itemToUpdate = { ...newItems[index], qty: value };
@@ -483,7 +483,7 @@ export const PosForm = () => {
       // Allow manual bonus quantity adjustment
       newItems[index].qty = value;
     }
-    
+
     setItems(newItems);
   };
 
@@ -500,7 +500,7 @@ export const PosForm = () => {
 
   const handlePrintDialogClose = (shouldNavigate: boolean = true) => {
     setIsPrintDialogOpen(false);
-    
+
     if (shouldNavigate) {
       // Reset form
       setSelectedCustomer(null);
@@ -513,12 +513,12 @@ export const PosForm = () => {
       setPpnMode('include');
       setPpnPercentage(getDefaultPPNPercentage());
       setIsOfficeSale(false);
-      
+
       // Reset due date
       const newDueDate = getOfficeTime(timezone);
       newDueDate.setDate(newDueDate.getDate() + 14);
       setDueDate(newDueDate.toISOString().split('T')[0]);
-      
+
       // Navigate to transactions page
       navigate('/transactions');
     }
@@ -656,36 +656,17 @@ export const PosForm = () => {
 
   const filteredCustomers = useMemo(() => {
     if (!customers) return [];
-    return customers.filter(customer => 
+    return customers.filter(customer =>
       customer.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
       customer.phone.includes(customerSearch)
     ).slice(0, 10); // Limit to 10 results
   }, [customers, customerSearch]);
 
   const addToCart = async (product: Product) => {
-    // Validasi stok untuk produk Produksi atau Bahan
-    const needsStockCheck = product.type === 'Produksi' || product.type === 'Bahan';
-    if (needsStockCheck && (product.currentStock || 0) <= 0) {
-      toast({
-        variant: "destructive",
-        title: "Stok Habis",
-        description: `${product.name} tidak tersedia. Stok saat ini: 0`,
-      });
-      return;
-    }
-
     const existing = items.find(item => item.product?.id === product.id && !item.isBonus);
     if (existing) {
-      // Cek apakah qty baru melebihi stok
+      // Hilangkan validasi stok agar tetap bisa jual walau stok 0
       const newQty = existing.qty + 1;
-      if (needsStockCheck && newQty > (product.currentStock || 0)) {
-        toast({
-          variant: "destructive",
-          title: "Stok Tidak Cukup",
-          description: `${product.name} hanya tersedia ${product.currentStock} ${product.unit || 'unit'}.`,
-        });
-        return;
-      }
       await updateItemWithBonuses(existing, newQty);
     } else {
       await addNewItemWithBonuses(product, 1);
@@ -713,7 +694,7 @@ export const PosForm = () => {
         ? { ...item, qty: newQty, harga: isMaterial ? item.harga : price }
         : item
     );
-    
+
     // Add bonus items if any
     if (calculation?.bonuses && calculation.bonuses.length > 0) {
       for (const bonus of calculation.bonuses) {
@@ -735,14 +716,14 @@ export const PosForm = () => {
         // For discount bonuses, we don't add separate items as the price is already adjusted
       }
     }
-    
+
     setItems(newItems);
   };
 
   const addNewItemWithBonuses = async (product: Product, quantity: number) => {
     const { price, calculation } = await calculateDynamicPrice(product, quantity);
     const newItemId = Date.now();
-    
+
     const newItem: FormTransactionItem = {
       id: newItemId,
       product: product,
@@ -751,9 +732,9 @@ export const PosForm = () => {
       harga: price,
       unit: product.unit || 'pcs'
     };
-    
+
     let newItems = [...items, newItem];
-    
+
     // Add bonus items if any
     if (calculation?.bonuses && calculation.bonuses.length > 0) {
       for (const bonus of calculation.bonuses) {
@@ -775,30 +756,30 @@ export const PosForm = () => {
         // For discount bonuses, we don't add separate items as the price is already adjusted
       }
     }
-    
+
     setItems(newItems);
   };
 
   return (
     <>
-      <CustomerSearchDialog 
-        open={isCustomerSearchOpen} 
-        onOpenChange={setIsCustomerSearchOpen} 
+      <CustomerSearchDialog
+        open={isCustomerSearchOpen}
+        onOpenChange={setIsCustomerSearchOpen}
         onCustomerSelect={(customer) => {
           setSelectedCustomer(customer)
           setCustomerSearch(customer?.name || '')
-        }} 
+        }}
       />
-      <AddCustomerDialog 
-        open={isCustomerAddOpen} 
-        onOpenChange={setIsCustomerAddOpen} 
+      <AddCustomerDialog
+        open={isCustomerAddOpen}
+        onOpenChange={setIsCustomerAddOpen}
         onCustomerAdded={(customer) => {
           setSelectedCustomer(customer)
           setCustomerSearch(customer?.name || '')
-        }} 
+        }}
       />
       {savedTransaction && <PrintReceiptDialog open={isPrintDialogOpen} onOpenChange={handlePrintDialogClose} transaction={savedTransaction} template="receipt" />}
-      
+
       <div className="min-h-screen bg-white dark:bg-gray-900">
         <div className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 p-3 md:p-4">
           <h1 className="text-lg md:text-xl font-bold text-gray-900 dark:text-white">Buat Transaksi Baru</h1>
@@ -809,478 +790,446 @@ export const PosForm = () => {
           <div className="flex flex-col lg:flex-row gap-6">
             {/* Left Panel - Main Form Content (Scrollable) */}
             <div className="flex-1 space-y-4 md:space-y-6 lg:overflow-auto">
-        {retasiBlocked && (
-          <div className="p-4 mb-4 text-sm text-red-800 dark:text-red-200 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700" role="alert">
-            <div className="flex items-center">
-              <AlertTriangle className="inline-block w-5 h-5 mr-2" />
-              <span className="font-medium">Akses POS Diblokir</span>
-            </div>
-            <p className="mt-2">{retasiMessage}</p>
-            <div className="mt-3">
-              <Button 
-                type="button" 
-                onClick={() => navigate('/retasi')} 
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                Buka Halaman Retasi
-              </Button>
-            </div>
-          </div>
-        )}
-          <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-1 lg:grid-cols-2 md:gap-6">
-            <div>
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Nama Pemesan</h3>
-              <div className="space-y-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Ketik nama pelanggan atau pilih dari dropdown..."
-                    value={customerSearch}
-                    onChange={(e) => {
-                      setCustomerSearch(e.target.value)
-                      setShowCustomerDropdown(true)
-                      if (!e.target.value) {
-                        setSelectedCustomer(null)
-                      }
-                    }}
-                    onFocus={() => setShowCustomerDropdown(true)}
-                    onBlur={() => {
-                      // Delay to allow click on dropdown items
-                      setTimeout(() => setShowCustomerDropdown(false), 150)
-                    }}
-                    disabled={retasiBlocked}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                  
-                  {showCustomerDropdown && filteredCustomers.length > 0 && (
-                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
-                      {filteredCustomers.map((customer) => (
-                        <div
-                          key={customer.id}
-                          className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
-                          onClick={() => {
-                            setSelectedCustomer(customer)
-                            setCustomerSearch(customer.name)
-                            setShowCustomerDropdown(false)
-                          }}
-                        >
-                          <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{customer.phone}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+              {retasiBlocked && (
+                <div className="p-4 mb-4 text-sm text-red-800 dark:text-red-200 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700" role="alert">
+                  <div className="flex items-center">
+                    <AlertTriangle className="inline-block w-5 h-5 mr-2" />
+                    <span className="font-medium">Akses POS Diblokir</span>
+                  </div>
+                  <p className="mt-2">{retasiMessage}</p>
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      onClick={() => navigate('/retasi')}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      Buka Halaman Retasi
+                    </Button>
+                  </div>
                 </div>
+              )}
+              <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-1 lg:grid-cols-2 md:gap-6">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Nama Pemesan</h3>
+                  <div className="space-y-3">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Ketik nama pelanggan atau pilih dari dropdown..."
+                        value={customerSearch}
+                        onChange={(e) => {
+                          setCustomerSearch(e.target.value)
+                          setShowCustomerDropdown(true)
+                          if (!e.target.value) {
+                            setSelectedCustomer(null)
+                          }
+                        }}
+                        onFocus={() => setShowCustomerDropdown(true)}
+                        onBlur={() => {
+                          // Delay to allow click on dropdown items
+                          setTimeout(() => setShowCustomerDropdown(false), 150)
+                        }}
+                        disabled={retasiBlocked}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      />
 
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={() => setIsCustomerSearchOpen(true)}
-                    disabled={retasiBlocked}
-                    variant="outline"
-                    size="sm"
-                    className="bg-yellow-400 hover:bg-yellow-500 text-black border-yellow-400 text-xs md:text-sm"
-                  >
-                    <Search className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
-                    Cari Lanjutan
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => setIsCustomerAddOpen(true)}
-                    disabled={retasiBlocked}
-                    variant="outline"
-                    size="sm"
-                    className="bg-gray-500 hover:bg-gray-600 text-white border-gray-500 text-xs md:text-sm"
-                  >
-                    <UserIcon className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
-                    Baru
-                  </Button>
-                </div>
-                
-                {selectedCustomer && (
-                  <div className="text-xs md:text-sm text-gray-600 dark:text-gray-300 space-y-2 bg-gray-50 dark:bg-gray-700 p-3 rounded">
-                    <div>
-                      <strong>Alamat:</strong> <span className="break-words">{selectedCustomer.address}</span>
+                      {showCustomerDropdown && filteredCustomers.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-auto">
+                          {filteredCustomers.map((customer) => (
+                            <div
+                              key={customer.id}
+                              className="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm"
+                              onClick={() => {
+                                setSelectedCustomer(customer)
+                                setCustomerSearch(customer.name)
+                                setShowCustomerDropdown(false)
+                              }}
+                            >
+                              <div className="font-medium text-gray-900 dark:text-white">{customer.name}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">{customer.phone}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <strong>Telp:</strong> {selectedCustomer.phone}
+
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        onClick={() => setIsCustomerSearchOpen(true)}
+                        disabled={retasiBlocked}
+                        variant="outline"
+                        size="sm"
+                        className="bg-yellow-400 hover:bg-yellow-500 text-black border-yellow-400 text-xs md:text-sm"
+                      >
+                        <Search className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
+                        Cari Lanjutan
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => setIsCustomerAddOpen(true)}
+                        disabled={retasiBlocked}
+                        variant="outline"
+                        size="sm"
+                        className="bg-gray-500 hover:bg-gray-600 text-white border-gray-500 text-xs md:text-sm"
+                      >
+                        <UserIcon className="w-3 h-3 md:w-4 md:h-4 mr-1 md:mr-2" />
+                        Baru
+                      </Button>
                     </div>
-                    {selectedCustomer.jumlah_galon_titip !== undefined && selectedCustomer.jumlah_galon_titip > 0 && (
-                      <div className="text-green-600 font-medium">
-                        <strong>🥤 Galon Titip:</strong> {selectedCustomer.jumlah_galon_titip} galon
+
+                    {selectedCustomer && (
+                      <div className="text-xs md:text-sm text-gray-600 dark:text-gray-300 space-y-2 bg-gray-50 dark:bg-gray-700 p-3 rounded">
+                        <div>
+                          <strong>Alamat:</strong> <span className="break-words">{selectedCustomer.address}</span>
+                        </div>
+                        <div>
+                          <strong>Telp:</strong> {selectedCustomer.phone}
+                        </div>
+                        {selectedCustomer.jumlah_galon_titip !== undefined && selectedCustomer.jumlah_galon_titip > 0 && (
+                          <div className="text-green-600 font-medium">
+                            <strong>🥤 Galon Titip:</strong> {selectedCustomer.jumlah_galon_titip} galon
+                          </div>
+                        )}
+                        <div className="flex gap-2 mt-2">
+                          {selectedCustomer.phone && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.location.href = `tel:${selectedCustomer.phone}`}
+                              className="flex items-center gap-1 text-xs"
+                            >
+                              <Phone className="h-3 w-3" />
+                              <span>Telepon</span>
+                            </Button>
+                          )}
+                          {selectedCustomer.latitude && selectedCustomer.longitude && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                window.open(`https://www.google.com/maps/dir//${selectedCustomer.latitude},${selectedCustomer.longitude}`, '_blank');
+                              }}
+                              className="flex items-center gap-1 text-xs"
+                            >
+                              <MapPin className="h-3 w-3" />
+                              <span>Lokasi GPS</span>
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     )}
-                    <div className="flex gap-2 mt-2">
-                      {selectedCustomer.phone && (
-                        <Button 
-                          type="button"
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => window.location.href = `tel:${selectedCustomer.phone}`}
-                          className="flex items-center gap-1 text-xs"
-                        >
-                          <Phone className="h-3 w-3" />
-                          <span>Telepon</span>
-                        </Button>
-                      )}
-                      {selectedCustomer.latitude && selectedCustomer.longitude && (
-                        <Button 
-                          type="button"
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => {
-                            window.open(`https://www.google.com/maps/dir//${selectedCustomer.latitude},${selectedCustomer.longitude}`, '_blank');
-                          }}
-                          className="flex items-center gap-1 text-xs"
-                        >
-                          <MapPin className="h-3 w-3" />
-                          <span>Lokasi GPS</span>
-                        </Button>
-                      )}
-                    </div>
                   </div>
-                )}
-              </div>
-            </div>
-
-            {/* Sales Selection */}
-            <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">Sales</h3>
-              <Select value={selectedSales} onValueChange={setSelectedSales} disabled={retasiBlocked}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih Sales (Opsional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">
-                    <span className="text-gray-500">Tanpa Sales</span>
-                  </SelectItem>
-                  {salesEmployees?.map((sales) => (
-                    <SelectItem key={sales.id} value={sales.id}>
-                      <div className="flex items-center gap-2">
-                        <UserIcon className="h-4 w-4" />
-                        <span>{sales.name}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedSales && selectedSales !== 'none' && (
-                <div className="mt-2 text-xs text-green-700">
-                  <strong>Sales:</strong> {salesEmployees?.find(s => s.id === selectedSales)?.name}
                 </div>
-              )}
-              {selectedSales === 'none' && (
-                <div className="mt-2 text-xs text-gray-500">
-                  <strong>Sales:</strong> Tanpa Sales
-                </div>
-              )}
-            </div>
 
-            {/* Office Sale Checkbox */}
-            <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
-              <label className="flex items-center space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isOfficeSale}
-                  onChange={(e) => setIsOfficeSale(e.target.checked)}
-                  className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                  disabled={retasiBlocked}
-                />
-                <div>
-                  <span className="text-lg font-medium text-blue-900">Laku Kantor</span>
-                  <p className="text-sm text-blue-700">Centang jika produk laku kantor (tidak perlu update ke pengantaran)</p>
-                </div>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Tgl Order</label>
-                {currentUser?.role === 'owner' ? (
-                  <DateTimePicker date={orderDate} setDate={setOrderDate} disabled={retasiBlocked} />
-                ) : (
-                  <div className="flex items-center h-10 px-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm text-gray-700 dark:text-gray-300">
-                    {orderDate ? new Intl.DateTimeFormat('id-ID', {
-                      timeZone: timezone,
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      hour12: false,
-                    }).format(orderDate) : '-'}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
-              <h3 className="text-base md:text-lg font-medium text-gray-900 dark:text-white">Daftar Item</h3>
-              <div className="relative flex-1">
-                <Button
-                  type="button"
-                  size="lg"
-                  className="w-full bg-gray-800 hover:bg-gray-900 text-sm md:text-base py-3 md:py-4"
-                  onClick={() => setShowProductDropdown(!showProductDropdown)}
-                  disabled={retasiBlocked}
-                >
-                  <Plus className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-                  Tambah Item
-                </Button>
-
-                {showProductDropdown && (
-                  <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-[40vh] overflow-hidden">
-                    <div className="p-2 border-b dark:border-gray-600 bg-gray-50 dark:bg-gray-700 sticky top-0">
-                      <Input
-                        ref={productSearchInputRef}
-                        placeholder="Cari produk..."
-                        value={productSearch}
-                        onChange={(e) => setProductSearch(e.target.value)}
-                        className="w-full text-sm h-9"
-                        autoFocus
-                      />
-                    </div>
-                    <div className="max-h-[calc(40vh-50px)] overflow-y-auto">
-                      {filteredProducts.map((product) => {
-                        // Cek apakah stok habis untuk produk Produksi atau Bahan
-                        const isOutOfStock = (product.type === 'Produksi' || product.type === 'Bahan') && (product.currentStock || 0) <= 0;
-
-                        return (
-                          <div
-                            key={product.id}
-                            className={`px-3 py-2 border-b dark:border-gray-600 last:border-b-0 transition-colors ${
-                              isOutOfStock
-                                ? 'bg-gray-100 dark:bg-gray-700 opacity-60 cursor-not-allowed'
-                                : 'hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer'
-                            }`}
-                            onClick={() => !isOutOfStock && addToCart(product)}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <span className={`font-medium text-sm ${isOutOfStock ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
-                                  {product.name}
-                                </span>
-                                <span className={`ml-2 inline-flex px-1.5 py-0.5 rounded text-xs ${
-                                  product.type === 'Produksi'
-                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300'
-                                    : product.type === 'Bahan'
-                                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'
-                                    : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
-                                }`}>
-                                  {product.type}
-                                </span>
-                                {isOutOfStock && (
-                                  <span className="ml-1 text-xs text-red-600 font-medium">Stok Habis</span>
-                                )}
-                              </div>
-                              <div className="shrink-0 flex items-center gap-3">
-                                <div className={`text-xs ${
-                                  isOutOfStock
-                                    ? 'text-red-500'
-                                    : (product.currentStock || 0) <= (product.minStock || 10)
-                                      ? 'text-amber-600'
-                                      : 'text-gray-500 dark:text-gray-400'
-                                }`}>
-                                  Stok: <span className="font-semibold">{product.currentStock ?? '-'}</span>
-                                </div>
-                                <div className={`text-sm font-semibold ${isOutOfStock ? 'text-gray-400' : 'text-green-600 dark:text-green-400'}`}>
-                                  {new Intl.NumberFormat("id-ID", {
-                                    style: "currency",
-                                    currency: "IDR",
-                                    maximumFractionDigits: 0,
-                                  }).format(product.basePrice || 0)}
-                                </div>
-                                {!isOutOfStock && (
-                                  <Plus className="h-4 w-4 text-green-600 dark:text-green-400" />
-                                )}
-                              </div>
-                            </div>
+                {/* Sales Selection */}
+                <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">Sales</h3>
+                  <Select value={selectedSales} onValueChange={setSelectedSales} disabled={retasiBlocked}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih Sales (Opsional)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <span className="text-gray-500">Tanpa Sales</span>
+                      </SelectItem>
+                      {salesEmployees?.map((sales) => (
+                        <SelectItem key={sales.id} value={sales.id}>
+                          <div className="flex items-center gap-2">
+                            <UserIcon className="h-4 w-4" />
+                            <span>{sales.name}</span>
                           </div>
-                        );
-                      })}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedSales && selectedSales !== 'none' && (
+                    <div className="mt-2 text-xs text-green-700">
+                      <strong>Sales:</strong> {salesEmployees?.find(s => s.id === selectedSales)?.name}
                     </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          
-            <div className="border dark:border-gray-600 rounded-lg overflow-x-auto">
-              <table className="w-full min-w-[600px]">
-                <thead className="bg-gray-50 dark:bg-gray-700">
-                  <tr>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Produk</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Qty</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Satuan</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Harga Satuan</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Catatan</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Total</th>
-                    <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 md:py-12 text-center text-gray-500">
-                        <div className="flex flex-col items-center">
-                          <div className="w-12 h-12 md:w-16 md:h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 md:mb-4">
-                            <Plus className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
-                          </div>
-                          <p className="text-xs md:text-sm">
-                            Belum ada item. Klik "Tambah Item" untuk menambahkan produk.
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    items.map((item, index) => (
-                      <tr key={item.id} className={`border-t dark:border-gray-600 ${item.isBonus ? 'bg-green-50 dark:bg-green-900/30' : ''}`}>
-                        <td className="px-2 md:px-4 py-2 md:py-3">
-                          {item.isBonus ? (
-                            <div className="text-xs text-green-700 dark:text-green-300 font-medium">
-                              🎁 {item.product?.name} (Bonus)
-                              {item.bonusDescription && (
-                                <div className="text-xs text-gray-600 mt-1">{item.bonusDescription}</div>
-                              )}
-                            </div>
-                          ) : (
-                            <Popover open={openProductDropdowns[index]} onOpenChange={(open) => {
-                              setOpenProductDropdowns(prev => ({ ...prev, [index]: open }));
-                            }}>
-                              <PopoverTrigger asChild disabled={retasiBlocked}>
-                                <Button
-                                  variant="outline"
-                                  role="combobox"
-                                  className={cn(
-                                    "w-full justify-between text-xs h-8",
-                                    !item.product && "text-muted-foreground"
-                                  )}
-                                >
-                                  {item.product ? item.product.name : "Pilih produk..."}
-                                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-[300px] p-0">
-                                <Command>
-                                  <CommandInput placeholder="Cari produk..." />
-                                  <CommandEmpty>Produk tidak ditemukan.</CommandEmpty>
-                                  <CommandGroup className="max-h-64 overflow-y-auto">
-                                    {(products || []).map((product) => (
-                                      <CommandItem
-                                        key={product.id}
-                                        value={product.name}
-                                        onSelect={() => {
-                                          handleItemChange(index, 'product', product);
-                                          setOpenProductDropdowns(prev => ({ ...prev, [index]: false }));
-                                        }}
-                                      >
-                                        <Check
-                                          className={cn(
-                                            "mr-2 h-4 w-4",
-                                            item.product?.id === product.id ? "opacity-100" : "opacity-0"
-                                          )}
-                                        />
-                                        <div>
-                                          <div className="font-medium">{product.name}</div>
-                                          <div className="text-xs text-gray-500">
-                                            {new Intl.NumberFormat("id-ID", {
-                                              style: "currency",
-                                              currency: "IDR",
-                                              maximumFractionDigits: 0,
-                                            }).format(product.basePrice || 0)} | {product.unit}
-                                          </div>
-                                        </div>
-                                      </CommandItem>
-                                    ))}
-                                  </CommandGroup>
-                                </Command>
-                              </PopoverContent>
-                            </Popover>
-                          )}
-                        </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-center">
-                          <NumberInput
-                            value={item.qty}
-                            onChange={(value) => handleItemChange(index, 'qty', value || 1)}
-                            min={1}
-                            decimalPlaces={0}
-                            className="w-16 md:w-20 text-center text-xs"
-                            disabled={retasiBlocked}
-                          />
-                        </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-900 dark:text-white">
-                          <div>{item.unit}</div>
-                          {/* Tampilkan stok untuk semua produk */}
-                          {item.product && (
-                            <div className={`text-xs mt-0.5 ${
-                              (item.product.currentStock || 0) <= 0
-                                ? 'text-red-500 font-medium'
-                                : (item.product.currentStock || 0) <= (item.product.minStock || 10)
-                                  ? 'text-amber-600'
-                                  : 'text-gray-500'
-                            }`}>
-                              Stok: {item.product.currentStock ?? '-'}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-right">
-                          {item.isBonus ? (
-                            <div className="text-center text-xs text-green-600 font-medium">GRATIS</div>
-                          ) : (
-                            <div className="relative">
-                              <NumberInput
-                                value={item.harga}
-                                onChange={(value) => handleItemChange(index, 'harga', value || 0)}
-                                min={0}
-                                decimalPlaces={2}
-                                className="w-20 md:w-32 text-right text-xs"
-                                disabled={retasiBlocked || loadingPrices[item.id] || currentUser?.role?.toLowerCase() === 'supir' || currentUser?.role?.toLowerCase() === 'helper'}
-                              />
-                              {loadingPrices[item.id] && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70">
-                                  <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-left">
-                          <Input
-                            type="text"
-                            placeholder="Catatan..."
-                            value={item.keterangan}
-                            onChange={(e) => handleItemChange(index, 'keterangan', e.target.value)}
-                            className="w-20 md:w-32 text-xs"
-                            disabled={retasiBlocked}
-                          />
-                        </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-900 dark:text-white">
-                          {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
-                        </td>
-                        <td className="px-2 md:px-4 py-2 md:py-3 text-center">
-                          <Button size="sm" variant="outline" onClick={() => handleRemoveItem(index)} disabled={retasiBlocked}>
-                            <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
                   )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                  {selectedSales === 'none' && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      <strong>Sales:</strong> Tanpa Sales
+                    </div>
+                  )}
+                </div>
 
-          <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Catatan</label>
-            <textarea
-              className="mt-1 w-full p-2 md:p-3 border dark:border-gray-600 rounded-lg resize-none text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              rows={2}
-              placeholder="Tambahkan catatan untuk transaksi ini..."
-              value={transactionNotes}
-              onChange={(e) => setTransactionNotes(e.target.value)}
-            />
-          </div>
+                {/* Office Sale Checkbox */}
+                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                  <label className="flex items-center space-x-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isOfficeSale}
+                      onChange={(e) => setIsOfficeSale(e.target.checked)}
+                      className="w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                      disabled={retasiBlocked}
+                    />
+                    <div>
+                      <span className="text-lg font-medium text-blue-900">Laku Kantor</span>
+                      <p className="text-sm text-blue-700">Centang jika produk laku kantor (tidak perlu update ke pengantaran)</p>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Tgl Order</label>
+                    {currentUser?.role === 'owner' ? (
+                      <DateTimePicker date={orderDate} setDate={setOrderDate} disabled={retasiBlocked} />
+                    ) : (
+                      <div className="flex items-center h-10 px-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm text-gray-700 dark:text-gray-300">
+                        {orderDate ? new Intl.DateTimeFormat('id-ID', {
+                          timeZone: timezone,
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: false,
+                        }).format(orderDate) : '-'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex flex-col md:flex-row md:items-center gap-3 mb-4">
+                  <h3 className="text-base md:text-lg font-medium text-gray-900 dark:text-white">Daftar Item</h3>
+                  <div className="relative flex-1">
+                    <Button
+                      type="button"
+                      size="lg"
+                      className="w-full bg-gray-800 hover:bg-gray-900 text-sm md:text-base py-3 md:py-4"
+                      onClick={() => setShowProductDropdown(!showProductDropdown)}
+                      disabled={retasiBlocked}
+                    >
+                      <Plus className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                      Tambah Item
+                    </Button>
+
+                    {showProductDropdown && (
+                      <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-xl z-50 max-h-[40vh] overflow-hidden">
+                        <div className="p-2 border-b dark:border-gray-600 bg-gray-50 dark:bg-gray-700 sticky top-0">
+                          <Input
+                            ref={productSearchInputRef}
+                            placeholder="Cari produk..."
+                            value={productSearch}
+                            onChange={(e) => setProductSearch(e.target.value)}
+                            className="w-full text-sm h-9"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="max-h-[calc(40vh-50px)] overflow-y-auto">
+                          {filteredProducts.map((product) => {
+                            return (
+                              <div
+                                key={product.id}
+                                className="px-3 py-2 border-b dark:border-gray-600 last:border-b-0 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                                onClick={() => addToCart(product)}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1 min-w-0">
+                                    <span className={`font-medium text-sm ${isOutOfStock ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-white'}`}>
+                                    </span>
+                                  </div>
+                                  <div className="shrink-0 flex items-center gap-3">
+                                    <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                                      {new Intl.NumberFormat("id-ID", {
+                                        style: "currency",
+                                        currency: "IDR",
+                                        maximumFractionDigits: 0,
+                                      }).format(product.basePrice || 0)}
+                                    </div>
+                                    <Plus className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="border dark:border-gray-600 rounded-lg overflow-x-auto">
+                  <table className="w-full min-w-[600px]">
+                    <thead className="bg-gray-50 dark:bg-gray-700">
+                      <tr>
+                        <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Produk</th>
+                        <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Qty</th>
+                        <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Satuan</th>
+                        <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Harga Satuan</th>
+                        <th className="px-2 md:px-4 py-2 md:py-3 text-left text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Catatan</th>
+                        <th className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Total</th>
+                        <th className="px-2 md:px-4 py-2 md:py-3 text-center text-xs md:text-sm font-medium text-gray-700 dark:text-gray-200">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 md:py-12 text-center text-gray-500">
+                            <div className="flex flex-col items-center">
+                              <div className="w-12 h-12 md:w-16 md:h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3 md:mb-4">
+                                <Plus className="w-6 h-6 md:w-8 md:h-8 text-gray-400" />
+                              </div>
+                              <p className="text-xs md:text-sm">
+                                Belum ada item. Klik "Tambah Item" untuk menambahkan produk.
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        items.map((item, index) => (
+                          <tr key={item.id} className={`border-t dark:border-gray-600 ${item.isBonus ? 'bg-green-50 dark:bg-green-900/30' : ''}`}>
+                            <td className="px-2 md:px-4 py-2 md:py-3">
+                              {item.isBonus ? (
+                                <div className="text-xs text-green-700 dark:text-green-300 font-medium">
+                                  🎁 {item.product?.name} (Bonus)
+                                  {item.bonusDescription && (
+                                    <div className="text-xs text-gray-600 mt-1">{item.bonusDescription}</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <Popover open={openProductDropdowns[index]} onOpenChange={(open) => {
+                                  setOpenProductDropdowns(prev => ({ ...prev, [index]: open }));
+                                }}>
+                                  <PopoverTrigger asChild disabled={retasiBlocked}>
+                                    <Button
+                                      variant="outline"
+                                      role="combobox"
+                                      className={cn(
+                                        "w-full justify-between text-xs h-8",
+                                        !item.product && "text-muted-foreground"
+                                      )}
+                                    >
+                                      {item.product ? item.product.name : "Pilih produk..."}
+                                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-[300px] p-0">
+                                    <Command>
+                                      <CommandInput placeholder="Cari produk..." />
+                                      <CommandEmpty>Produk tidak ditemukan.</CommandEmpty>
+                                      <CommandGroup className="max-h-64 overflow-y-auto">
+                                        {(products || []).map((product) => (
+                                          <CommandItem
+                                            key={product.id}
+                                            value={product.name}
+                                            onSelect={() => {
+                                              handleItemChange(index, 'product', product);
+                                              setOpenProductDropdowns(prev => ({ ...prev, [index]: false }));
+                                            }}
+                                          >
+                                            <Check
+                                              className={cn(
+                                                "mr-2 h-4 w-4",
+                                                item.product?.id === product.id ? "opacity-100" : "opacity-0"
+                                              )}
+                                            />
+                                            <div>
+                                              <div className="font-medium">{product.name}</div>
+                                              <div className="text-xs text-gray-500">
+                                                {new Intl.NumberFormat("id-ID", {
+                                                  style: "currency",
+                                                  currency: "IDR",
+                                                  maximumFractionDigits: 0,
+                                                }).format(product.basePrice || 0)} | {product.unit}
+                                              </div>
+                                            </div>
+                                          </CommandItem>
+                                        ))}
+                                      </CommandGroup>
+                                    </Command>
+                                  </PopoverContent>
+                                </Popover>
+                              )}
+                            </td>
+                            <td className="px-2 md:px-4 py-2 md:py-3 text-center">
+                              <NumberInput
+                                value={item.qty}
+                                onChange={(value) => handleItemChange(index, 'qty', value || 1)}
+                                min={1}
+                                decimalPlaces={0}
+                                className="w-16 md:w-20 text-center text-xs"
+                                disabled={retasiBlocked}
+                              />
+                            </td>
+                            <td className="px-2 md:px-4 py-2 md:py-3 text-xs md:text-sm text-gray-900 dark:text-white">
+                              <div>{item.unit}</div>
+                              {/* Tampilkan stok untuk semua produk */}
+                              {item.product && (
+                                <div className={`text-xs mt-0.5 ${(item.product.currentStock || 0) <= 0
+                                    ? 'text-red-500 font-medium'
+                                    : (item.product.currentStock || 0) <= (item.product.minStock || 10)
+                                      ? 'text-amber-600'
+                                      : 'text-gray-500'
+                                  }`}>
+                                  Stok: {item.product.currentStock ?? '-'}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-2 md:px-4 py-2 md:py-3 text-right">
+                              {item.isBonus ? (
+                                <div className="text-center text-xs text-green-600 font-medium">GRATIS</div>
+                              ) : (
+                                <div className="relative">
+                                  <NumberInput
+                                    value={item.harga}
+                                    onChange={(value) => handleItemChange(index, 'harga', value || 0)}
+                                    min={0}
+                                    decimalPlaces={2}
+                                    className="w-20 md:w-32 text-right text-xs"
+                                    disabled={retasiBlocked || loadingPrices[item.id] || currentUser?.role?.toLowerCase() === 'supir' || currentUser?.role?.toLowerCase() === 'helper'}
+                                  />
+                                  {loadingPrices[item.id] && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-70">
+                                      <div className="w-3 h-3 border border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-2 md:px-4 py-2 md:py-3 text-left">
+                              <Input
+                                type="text"
+                                placeholder="Catatan..."
+                                value={item.keterangan}
+                                onChange={(e) => handleItemChange(index, 'keterangan', e.target.value)}
+                                className="w-20 md:w-32 text-xs"
+                                disabled={retasiBlocked}
+                              />
+                            </td>
+                            <td className="px-2 md:px-4 py-2 md:py-3 text-right text-xs md:text-sm font-medium text-gray-900 dark:text-white">
+                              {new Intl.NumberFormat("id-ID").format(item.qty * item.harga)}
+                            </td>
+                            <td className="px-2 md:px-4 py-2 md:py-3 text-center">
+                              <Button size="sm" variant="outline" onClick={() => handleRemoveItem(index)} disabled={retasiBlocked}>
+                                <Trash2 className="w-3 h-3 md:w-4 md:h-4" />
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Catatan</label>
+                <textarea
+                  className="mt-1 w-full p-2 md:p-3 border dark:border-gray-600 rounded-lg resize-none text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  rows={2}
+                  placeholder="Tambahkan catatan untuk transaksi ini..."
+                  value={transactionNotes}
+                  onChange={(e) => setTransactionNotes(e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Right Panel - Payment & Submit (Sticky on Desktop) */}

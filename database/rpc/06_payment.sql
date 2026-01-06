@@ -452,6 +452,26 @@ BEGIN
     RETURN;
   END IF;
 
+  -- 🔥 NEW: Check if AP already exists for this PO
+  IF p_purchase_order_id IS NOT NULL THEN
+    DECLARE
+      v_existing_ap_count INTEGER;
+    BEGIN
+      SELECT COUNT(*) INTO v_existing_ap_count
+      FROM accounts_payable
+      WHERE purchase_order_id = p_purchase_order_id;
+
+      IF v_existing_ap_count > 0 THEN
+        RETURN QUERY SELECT FALSE, NULL::TEXT, NULL::UUID,
+          'Accounts Payable sudah ada untuk PO ini. Gunakan approve_purchase_order_atomic untuk PO.'::TEXT;
+        RETURN;
+      END IF;
+    END;
+
+    -- 🔥 FORCE skip_journal for PO (journal should be created by approve_purchase_order_atomic)
+    p_skip_journal := TRUE;
+  END IF;
+
   -- Generate Sequential ID
   v_payable_id := 'AP-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(FLOOR(RANDOM() * 10000)::TEXT, 4, '0');
 
@@ -556,5 +576,6 @@ COMMENT ON FUNCTION receive_payment_atomic IS
 COMMENT ON FUNCTION pay_supplier_atomic IS
   'Atomic payable payment: update saldo + journal. WAJIB branch_id.';
 COMMENT ON FUNCTION create_accounts_payable_atomic IS
-  'Atomic creation of accounts payable with optional automatic journal entry. WAJIB branch_id.';
+  'Atomic creation of accounts payable with optional automatic journal entry. WAJIB branch_id. PREVENTS duplicate AP for PO (use approve_purchase_order_atomic instead).';
+
 

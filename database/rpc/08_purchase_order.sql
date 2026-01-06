@@ -122,7 +122,7 @@ BEGIN
       INSERT INTO material_stock_movements (
         material_id,
         material_name,
-        movement_type,
+        type,
         reason,
         quantity,
         previous_stock,
@@ -236,7 +236,7 @@ BEGIN
     INSERT INTO material_stock_movements (
       material_id,
       material_name,
-      movement_type,
+      type,
       reason,
       quantity,
       previous_stock,

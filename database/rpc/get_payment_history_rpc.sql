@@ -1,9 +1,11 @@
 -- Create new RPC specifically for viewing payment history
+DROP FUNCTION IF EXISTS get_payment_history_rpc(UUID, INTEGER);
+
 CREATE OR REPLACE FUNCTION get_payment_history_rpc(
     p_branch_id UUID,
     p_limit INTEGER DEFAULT 50
 )
-RETURNS TABLE (
+ RETURNS TABLE (
     id UUID,
     payment_date TIMESTAMP WITH TIME ZONE,
     amount NUMERIC,
@@ -11,6 +13,8 @@ RETURNS TABLE (
     customer_name TEXT,
     payment_method TEXT,
     notes TEXT,
+    account_name TEXT,
+    user_name TEXT,
     created_at TIMESTAMP WITH TIME ZONE
 )
 LANGUAGE plpgsql
@@ -26,9 +30,13 @@ BEGIN
         t.customer_name,
         ph.payment_method,
         ph.notes,
+        COALESCE(a.name, 'Kas Besar') as account_name,
+        COALESCE(pr.full_name, 'System') as user_name,
         ph.created_at
     FROM payment_history ph
     LEFT JOIN transactions t ON ph.transaction_id = t.id
+    LEFT JOIN accounts a ON ph.account_id = a.id
+    LEFT JOIN profiles pr ON ph.recorded_by = pr.id
     WHERE ph.branch_id = p_branch_id
     ORDER BY ph.payment_date DESC
     LIMIT p_limit;
@@ -36,4 +44,4 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION get_payment_history_rpc(UUID, INTEGER) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_payment_history_rpc(UUID, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION get_payment_history_rpc(UUID, INTEGER) TO anon;

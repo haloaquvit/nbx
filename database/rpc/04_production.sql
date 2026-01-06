@@ -253,7 +253,7 @@ BEGIN
         v_entry_number,
         NOW(),
         format('Produksi %s: %s x%s', v_ref, v_product.name, p_quantity),
-        'adjustment',
+        'production',
         v_production_id::TEXT,
         p_branch_id,
         'draft',

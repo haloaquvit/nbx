@@ -125,21 +125,22 @@ BEGIN
   INSERT INTO product_stock_movements (
     product_id,
     branch_id,
-    movement_type,
+    type,
+    reason,
     quantity,
     reference_id,
     reference_type,
-    unit_cost,
     notes,
     created_at
   ) VALUES (
     p_product_id,
     p_branch_id,
     'OUT',
+    'delivery',
     p_quantity,
     p_reference_id,
     'fifo_consume',
-    CASE WHEN p_quantity > 0 THEN v_total_hpp / p_quantity ELSE 0 END,
+    -- unit_cost REMOVED
     format('FIFO consume: %s batches, HPP %s', jsonb_array_length(v_consumed), v_total_hpp),
     NOW()
   );
@@ -227,7 +228,7 @@ BEGIN
   INSERT INTO product_stock_movements (
     product_id,
     branch_id,
-    movement_type,
+    type,
     quantity,
     reference_id,
     reference_type,

@@ -102,17 +102,19 @@ BEGIN
            (v_item->>'width')::NUMERIC, (v_item->>'height')::NUMERIC, NOW()
          );
          
-         -- Consume Stock (FIFO) - Only if not office sale (already consumed) and not bonus (bonus also consumes stock? yes usually)
+         -- Consume Stock (FIFO) - Only if not office sale (already consumed)
          -- Check logic: Office sale consumes at transaction time.
          IF NOT v_transaction.is_office_sale THEN
-             -- Consume Real FIFO
-             SELECT * INTO v_consume_result FROM consume_inventory_fifo(
+             -- Consume Real FIFO (v3 supports negative stock)
+             SELECT * INTO v_consume_result FROM consume_inventory_fifo_v3(
                v_product_id, p_branch_id, v_qty, COALESCE(v_transaction.ref, 'TR-UNKNOWN')
              );
              
-             IF v_consume_result.success THEN
-                v_total_hpp_real := v_total_hpp_real + v_consume_result.total_hpp;
+             IF NOT v_consume_result.success THEN
+                RAISE EXCEPTION 'Gagal potong stok: %', v_consume_result.error_message;
              END IF;
+
+             v_total_hpp_real := v_total_hpp_real + v_consume_result.total_hpp;
          END IF;
       END IF;
   END LOOP;

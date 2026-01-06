@@ -7,6 +7,8 @@ import { generateSequentialId } from '@/utils/idGenerator'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { getOfficeDateString } from '@/utils/officeTime'
 // journalService removed - now using RPC for all journal operations
+// IMPORTANT: Do NOT create AP manually for PO - use approve_purchase_order_atomic instead
+
 
 // ============================================================================
 // CATATAN PENTING: DOUBLE-ENTRY ACCOUNTING SYSTEM
@@ -87,6 +89,11 @@ export const useAccountsPayable = () => {
     mutationFn: async (newPayable: Omit<AccountsPayable, 'id' | 'createdAt'> & { skipJournal?: boolean }): Promise<AccountsPayable> => {
       if (!currentBranch?.id) {
         throw new Error('Branch tidak dipilih. Silakan pilih branch terlebih dahulu.')
+      }
+
+      // 🔥 NEW: Prevent manual AP creation for PO
+      if (newPayable.purchaseOrderId) {
+        throw new Error('Hutang untuk PO dibuat otomatis saat approve PO. Tidak perlu membuat manual.');
       }
 
       // skipJournal = true when called from PO approve flow (journal created separately)

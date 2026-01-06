@@ -52,6 +52,7 @@ const fromDbToDelivery = (dbData: any): Delivery => ({
   photoUrl: dbData.photo_url,
   notes: dbData.notes,
   transactionTotal: dbData.transactions?.total || 0, // Map total from joined transaction
+  cashierName: dbData.transactions?.cashier_name, // Map cashier name
   createdAt: new Date(dbData.created_at),
   items: dbData.delivery_items?.map((item: any) => ({
     id: item.id,
@@ -81,7 +82,7 @@ export const useDeliveries = (transactionId?: string) => {
         .select(`
           *,
           delivery_items(*),
-          transactions(total),
+          transactions(total, cashier_name),
           driver:driver_id(full_name),
           helper:helper_id(full_name)
         `);
@@ -290,7 +291,7 @@ export const useDeliveryHistory = () => {
         .select(`
           *,
           delivery_items(*),
-          transactions(total),
+          transactions(total, cashier_name),
           driver:driver_id(full_name),
           helper:helper_id(full_name)
         `)
@@ -478,6 +479,7 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
         .select(`
           *,
           delivery_items(*),
+          transactions(total, cashier_name),
           driver:driver_id(full_name),
           helper:helper_id(full_name)
         `)

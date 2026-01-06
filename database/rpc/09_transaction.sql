@@ -41,6 +41,7 @@ DECLARE
   v_total NUMERIC;
   v_paid_amount NUMERIC;
   v_payment_method TEXT;
+  v_payment_account_id TEXT;
   v_is_office_sale BOOLEAN;
   v_date TIMESTAMPTZ;
   v_notes TEXT;
@@ -126,6 +127,7 @@ BEGIN
   v_notes := p_transaction->>'notes';
   v_sales_id := (p_transaction->>'sales_id')::UUID;
   v_sales_name := p_transaction->>'sales_name';
+  v_payment_account_id := (p_transaction->>'payment_account_id')::TEXT;
 
   -- ==================== GET ACCOUNT IDS ====================
 
@@ -165,20 +167,19 @@ BEGIN
     IF v_product_id IS NOT NULL AND v_quantity > 0 THEN
       -- Calculate HPP using FIFO
       IF v_is_office_sale THEN
-        -- Office Sale: Consume inventory immediately
-        SELECT * INTO v_fifo_result FROM consume_inventory_fifo(
+        -- Office Sale: Consume inventory immediately (v3 supports negative stock)
+        SELECT * INTO v_fifo_result FROM consume_inventory_fifo_v3(
           v_product_id,
           p_branch_id,
           v_quantity,
           v_transaction_id
         );
 
-        IF v_fifo_result.success THEN
-          v_item_hpp := v_fifo_result.total_hpp;
-        ELSE
-          -- Fallback to cost_price
-          v_item_hpp := v_cost_price * v_quantity;
+        IF NOT v_fifo_result.success THEN
+          RAISE EXCEPTION 'Gagal potong stok: %', v_fifo_result.error_message;
         END IF;
+
+        v_item_hpp := v_fifo_result.total_hpp;
       ELSE
         -- Non-Office Sale: Calculate only (consume at delivery)
         SELECT f.total_hpp INTO v_item_hpp FROM calculate_fifo_cost(
@@ -231,6 +232,7 @@ BEGIN
     total,
     paid_amount,
     payment_status,
+    payment_account_id,
     status,
     delivery_status,
     is_office_sale,
@@ -251,6 +253,7 @@ BEGIN
     v_total,
     v_paid_amount,
     CASE WHEN v_paid_amount >= v_total THEN 'Lunas' ELSE 'Belum Lunas' END,
+    v_payment_account_id,
     'Pesanan Masuk',
     CASE WHEN v_is_office_sale THEN 'Completed' ELSE 'Pending' END,
     v_is_office_sale,
@@ -497,6 +500,7 @@ DECLARE
   v_customer_name TEXT;
   v_date DATE;
   v_total_hpp NUMERIC := 0;
+  v_fifo_result RECORD;
 BEGIN
   -- ==================== VALIDASI ====================
 
@@ -622,7 +626,7 @@ BEGIN
     END IF;
 
     -- Create new journal
-    SELECT cja.journal_id INTO v_journal_id FROM create_journal_atomic(
+    SELECT * INTO v_fifo_result FROM create_journal_atomic(
       p_branch_id,
       v_date,
       'Penjualan ke ' || COALESCE(v_customer_name, 'Umum') || ' - ' || p_transaction_id || ' (Updated)',
@@ -631,6 +635,10 @@ BEGIN
       v_journal_lines,
       TRUE
     );
+
+    IF v_fifo_result.success THEN
+      v_journal_id := v_fifo_result.journal_id;
+    END IF;
 
     v_changes := array_append(v_changes, 'journal_updated');
   END IF;

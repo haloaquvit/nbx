@@ -66,22 +66,14 @@ BEGIN
     RETURN;
   END IF;
 
-  -- ==================== CEK STOK ====================
-
-  -- Cek available stock HANYA di branch ini
+  -- ==================== CEK STOK (MODIFIED: ALLOW NEGATIVE) ====================
+  -- We still calculate available stock for logging/HPP purposes
   SELECT COALESCE(SUM(remaining_quantity), 0)
   INTO v_available_stock
   FROM inventory_batches
   WHERE product_id = p_product_id
     AND branch_id = p_branch_id      -- WAJIB filter branch
     AND remaining_quantity > 0;
-
-  IF v_available_stock < p_quantity THEN
-    RETURN QUERY SELECT FALSE, 0::NUMERIC, '[]'::JSONB,
-      format('Stok tidak cukup untuk %s. Tersedia: %s, Diminta: %s',
-        v_product_name, v_available_stock, p_quantity)::TEXT;
-    RETURN;
-  END IF;
 
   -- ==================== CONSUME FIFO ====================
 
@@ -119,27 +111,60 @@ BEGIN
     v_remaining := v_remaining - v_deduct_qty;
   END LOOP;
 
+  -- ==================== HANDLE DEFICIT (NEGATIVE STOCK) ====================
+  -- If there is still quantity to consume, create a negative batch
+  IF v_remaining > 0 THEN
+    INSERT INTO inventory_batches (
+      product_id,
+      branch_id,
+      initial_quantity,
+      remaining_quantity,
+      unit_cost,
+      batch_date,
+      notes
+    ) VALUES (
+      p_product_id,
+      p_branch_id,
+      0,
+      -v_remaining, -- Negative stock
+      0,            -- Cost unknown for negative stock
+      NOW(),
+      format('Negative Stock fallback for %s', COALESCE(p_reference_id, 'sale'))
+    ) RETURNING id INTO v_batch.id;
+
+    v_consumed := v_consumed || jsonb_build_object(
+      'batch_id', v_batch.id,
+      'quantity', v_remaining,
+      'unit_cost', 0,
+      'subtotal', 0,
+      'notes', 'negative_fallback'
+    );
+    
+    v_remaining := 0;
+  END IF;
+
   -- ==================== LOGGING ====================
 
   -- Log consumption untuk audit
   INSERT INTO product_stock_movements (
     product_id,
     branch_id,
-    movement_type,
+    type,
+    reason,
     quantity,
     reference_id,
     reference_type,
-    unit_cost,
     notes,
     created_at
   ) VALUES (
     p_product_id,
     p_branch_id,
     'OUT',
+    'delivery',
     p_quantity,
     p_reference_id,
     'fifo_consume',
-    CASE WHEN p_quantity > 0 THEN v_total_hpp / p_quantity ELSE 0 END,
+    -- unit_cost REMOVED
     format('FIFO consume: %s batches, HPP %s', jsonb_array_length(v_consumed), v_total_hpp),
     NOW()
   );
@@ -227,7 +252,7 @@ BEGIN
   INSERT INTO product_stock_movements (
     product_id,
     branch_id,
-    movement_type,
+    type,
     quantity,
     reference_id,
     reference_type,

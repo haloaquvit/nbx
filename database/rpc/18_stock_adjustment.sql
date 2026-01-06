@@ -131,7 +131,7 @@ BEGIN
     id,
     product_id,
     branch_id,
-    movement_type,
+    type,
     quantity,
     reference_type,
     reference_id,
@@ -298,7 +298,7 @@ BEGIN
   -- ==================== CREATE STOCK MOVEMENT RECORD ====================
 
   INSERT INTO material_stock_movements (
-    id, material_id, branch_id, movement_type, quantity,
+    id, material_id, branch_id, type, quantity,
     reference_type, reference_id, notes, user_id, created_at
   ) VALUES (
     v_adjustment_id, p_material_id, p_branch_id,

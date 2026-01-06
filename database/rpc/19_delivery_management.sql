@@ -48,21 +48,27 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Get transaction to check is_office_sale
+  SELECT * INTO v_transaction FROM transactions WHERE id::TEXT = v_delivery.transaction_id;
+
   -- 2. Restore Original Stock (FIFO)
   -- Kita kembalikan stok dari pengiriman lama sebelum memproses yang baru
-  FOR v_item IN
-    SELECT product_id, quantity_delivered as quantity, product_name
-    FROM delivery_items
-    WHERE delivery_id = p_delivery_id AND quantity_delivered > 0
-  LOOP
-    PERFORM restore_inventory_fifo(
-      v_item.product_id,
-      p_branch_id,
-      v_item.quantity,
-      0, -- Unit cost (will use estimates or specific batch if found)
-      format('update_delivery_rollback_%s', p_delivery_id)
-    );
-  END LOOP;
+  -- HANYA jika bukan laku kantor (karena laku kantor potong di transaksi)
+  IF NOT COALESCE(v_transaction.is_office_sale, FALSE) THEN
+    FOR v_item IN
+      SELECT product_id, quantity_delivered as quantity, product_name
+      FROM delivery_items
+      WHERE delivery_id = p_delivery_id AND quantity_delivered > 0
+    LOOP
+      PERFORM restore_inventory_fifo(
+        v_item.product_id,
+        p_branch_id,
+        v_item.quantity,
+        0, -- Unit cost (will use estimates or specific batch if found)
+        format('update_delivery_rollback_%s', p_delivery_id)
+      );
+    END LOOP;
+  END IF;
 
   -- 3. Void Old Journal & Commissions
   UPDATE journal_entries SET is_voided = TRUE, voided_reason = 'Delivery updated' 
@@ -105,8 +111,8 @@ BEGIN
         v_is_bonus, (v_new_item->>'width')::NUMERIC, (v_new_item->>'height')::NUMERIC, v_new_item->>'notes', NOW()
       );
 
-      -- Consume Stock (if not bonus)
-      IF NOT v_is_bonus THEN
+      -- Consume Stock (FIFO) - Only if not office sale (already consumed)
+      IF NOT COALESCE(v_transaction.is_office_sale, FALSE) THEN
         SELECT * INTO v_consume_result FROM consume_inventory_fifo_v3(
           v_product_id, p_branch_id, v_qty, format('delivery_update_%s', p_delivery_id)
         );

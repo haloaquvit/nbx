@@ -51,7 +51,7 @@ export const usePaymentHistory = (filters?: {
       return (data || []).map((item: any) => ({
         id: item.id,
         account_id: '', // Not returned by RPC directly but valid for display
-        account_name: item.payment_method === 'transfer' ? 'Bank' : 'Kas Besar', // Simplified mapping or fetch if needed
+        account_name: item.account_name || 'Kas Besar',
         type: 'pembayaran_piutang',
         amount: item.amount,
         description: item.notes || `Pembayaran Piutang: ${item.transaction_id}`,

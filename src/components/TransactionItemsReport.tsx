@@ -189,27 +189,31 @@ export const TransactionItemsReport = () => {
             const transaction = delivery.transaction
             const transactionItems = transaction?.items || []
 
-            // Get retasi info for this delivery's transaction
-            const retasiInfo = transaction?.retasi_id ? deliveryRetasiMap[transaction.retasi_id] : null
+            // CRITICAL: Get retasi info from the transaction linked to this delivery
+            const retasiId = transaction?.retasi_id
+            const retasiInfo = retasiId ? deliveryRetasiMap[retasiId] : null
+
+            // If it has retasi info, use it. Otherwise use the delivery's own driver info.
             const retasiNumberDisplay = retasiInfo
               ? `${retasiInfo.retasi_number} (ke-${retasiInfo.retasi_ke})`
               : undefined
 
+            const driverNameDisplay = retasiInfo?.driver_name || delivery.driver?.full_name
+
             delivery.delivery_items?.forEach((item: any) => {
-              // Find matching transaction item to get price and isBonus info
               const matchingTxItem = transactionItems.find((ti: any) =>
                 ti.product?.id === item.product_id || ti.productId === item.product_id
               )
 
-              // Detect bonus from product name or transaction item
               const isBonus = item.product_name?.includes('BONUS') ||
                 item.product_name?.includes('(BONUS)') ||
                 Boolean(matchingTxItem?.isBonus)
 
               const price = matchingTxItem?.price || matchingTxItem?.product?.basePrice || 0
 
-              // Get payment account name
-              const paymentAcct = paymentAccounts.find(a => a.id === transaction?.payment_account_id)
+              // Double check payment account mapping
+              const paymentAcctId = transaction?.payment_account_id
+              const paymentAcct = paymentAccounts.find(a => a.id === paymentAcctId)
 
               items.push({
                 transactionId: delivery.transaction_id,
@@ -222,12 +226,12 @@ export const TransactionItemsReport = () => {
                 price: price,
                 total: item.quantity_delivered * price,
                 source: 'delivery',
-                driverName: delivery.driver?.full_name,
+                driverName: driverNameDisplay,
                 retasiNumber: retasiNumberDisplay,
                 retasiKe: retasiInfo?.retasi_ke,
                 cashierName: transaction?.cashier?.full_name || 'Unknown',
                 isBonus: isBonus,
-                paymentAccountId: transaction?.payment_account_id,
+                paymentAccountId: paymentAcctId,
                 paymentAccountName: paymentAcct?.name,
                 paymentStatus: transaction?.payment_status || 'Belum Lunas'
               })

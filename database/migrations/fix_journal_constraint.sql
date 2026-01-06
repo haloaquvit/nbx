@@ -1,8 +1,44 @@
 -- ============================================================================
--- RPC 17: Production Void Atomic
--- Purpose: Membatalkan produksi secara atomik (rollback stok & jurnal)
+-- MIGRATION: Fix journal_entries_reference_type_check
+-- Purpose: Add missing reference types used by various RPC functions
 -- ============================================================================
 
+-- 1. Drop the old constraint
+ALTER TABLE journal_entries DROP CONSTRAINT IF EXISTS journal_entries_reference_type_check;
+
+-- 2. Add the updated constraint with all allowed values
+ALTER TABLE journal_entries ADD CONSTRAINT journal_entries_reference_type_check 
+CHECK (
+  (reference_type IS NULL) OR 
+  (reference_type = ANY (ARRAY[
+    'transaction'::text, 
+    'expense'::text, 
+    'payroll'::text, 
+    'transfer'::text, 
+    'manual'::text,
+    'adjustment'::text, 
+    'closing'::text, 
+    'opening'::text, 
+    'opening_balance'::text,
+    'receivable_payment'::text, 
+    'advance'::text, 
+    'advance_payment'::text,
+    'payable_payment'::text, 
+    'purchase'::text, 
+    'purchase_order'::text,
+    'receivable'::text, 
+    'payable'::text,
+    'production'::text,
+    'production_error'::text,
+    'tax_payment'::text,
+    'zakat'::text,
+    'asset'::text,
+    'commission'::text,
+    'debt_installment'::text
+  ]))
+);
+
+-- 3. Also update void_production_atomic to support both types for backward compatibility
 CREATE OR REPLACE FUNCTION void_production_atomic(
   p_production_id UUID,
   p_branch_id UUID
@@ -27,26 +63,21 @@ BEGIN
   END IF;
 
   -- 2. Handle Stock Rollback (FIFO)
-  -- Cari semua konsumsi batch yang terkait dengan produksi ini (via reference_id/ref)
   FOR v_consumption IN 
     SELECT * FROM inventory_batch_consumptions 
     WHERE reference_id = v_record.ref AND reference_type IN ('production', 'production_error')
   LOOP
-    -- Kembalikan kuantitas ke batch asal
     UPDATE inventory_batches 
     SET remaining_quantity = remaining_quantity + v_consumption.quantity_consumed,
         updated_at = NOW()
     WHERE id = v_consumption.batch_id;
   END LOOP;
 
-  -- Hapus log konsumsi
   DELETE FROM inventory_batch_consumptions 
   WHERE reference_id = v_record.ref AND reference_type IN ('production', 'production_error');
 
   -- 3. Rollback Legacy Stock (materials.stock)
-  -- Meskipun deprecated, kita tetap sync untuk menjaga kompatibilitas UI lama
   IF v_record.consume_bom THEN
-    -- Restore materials stock based on movements
     FOR v_movement IN 
       SELECT material_id, quantity FROM material_stock_movements 
       WHERE reference_id = v_record.id::TEXT AND reference_type = 'production' AND type = 'OUT'
@@ -57,7 +88,6 @@ BEGIN
       WHERE id = v_movement.material_id;
     END LOOP;
   ELSIF v_record.quantity < 0 AND v_record.product_id IS NULL THEN
-    -- Case Spoilage/Error Input: restore material from notes or movement
     FOR v_movement IN 
       SELECT material_id, quantity FROM material_stock_movements 
       WHERE reference_id = v_record.id::TEXT AND reference_type = 'production' AND type = 'OUT'
@@ -74,22 +104,19 @@ BEGIN
   WHERE reference_id = v_record.id::TEXT AND reference_type = 'production';
 
   -- 5. Void Related Journals
-  -- Cari jurnal yang mereferensikan produksi ini
+  -- [FIXED] Search for both 'production' and 'adjustment' for compatibility
   FOR v_journal_id IN 
     SELECT id FROM journal_entries 
     WHERE reference_id = v_record.id::TEXT 
       AND reference_type IN ('production', 'adjustment') 
       AND is_voided = FALSE
   LOOP
-    -- Mark as voided
     UPDATE journal_entries 
     SET is_voided = TRUE, 
         voided_reason = 'Production deleted: ' || v_record.ref,
         status = 'voided',
         updated_at = NOW()
     WHERE id = v_journal_id;
-    
-    -- Jurnal lines tidak perlu dihapus, is_voided di header sudah cukup untuk exclude dari balance
   END LOOP;
 
   -- 6. Delete Inventory Batch for Product (Hasil Produksi)
@@ -108,6 +135,3 @@ EXCEPTION WHEN OTHERS THEN
   RETURN QUERY SELECT FALSE, SQLERRM::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- GRANT
-GRANT EXECUTE ON FUNCTION void_production_atomic(UUID, UUID) TO authenticated;
