@@ -747,9 +747,9 @@ export default function TransactionDetailPage() {
     receiptText += statusText + ' '.repeat(Math.max(0, statusSpacing)) + statusValue + '\n';
 
     const paidText = 'Jumlah Bayar:';
-    const paidAmount = formatCurrency(transaction.paidAmount || 0);
-    const paidSpacing = charWidth - paidText.length - paidAmount.length;
-    receiptText += paidText + ' '.repeat(Math.max(0, paidSpacing)) + paidAmount + '\n';
+    const paidAmountFormatted = formatCurrency(transaction.paidAmount || 0);
+    const paidSpacing = charWidth - paidText.length - paidAmountFormatted.length;
+    receiptText += paidText + ' '.repeat(Math.max(0, paidSpacing)) + paidAmountFormatted + '\n';
 
     if (transaction.total > (transaction.paidAmount || 0)) {
       const remainingText = 'Sisa Tagihan:';
