@@ -162,14 +162,39 @@ export const TransactionItemsReport = () => {
         if (deliveryError) {
           console.error('Error fetching deliveries:', deliveryError)
         } else if (deliveryData) {
-          // Collect retasi_ids from delivery transactions to get retasi_ke info
+          // Collect all delivery dates to find matching retasi records
+          const deliveryDates = [...new Set(
+            deliveryData.map((d: any) => {
+              const date = new Date(d.delivery_date)
+              return date.toISOString().split('T')[0] // YYYY-MM-DD format
+            })
+          )]
+
+          // Fetch ALL retasi records for the delivery date range to match by driver + date
+          let allRetasiMap: Record<string, any[]> = {} // Key: driver_name, Value: array of retasi
+          if (deliveryDates.length > 0) {
+            const { data: allRetasi } = await supabase
+              .from('retasi')
+              .select('id, retasi_number, retasi_ke, driver_name, departure_date')
+              .gte('departure_date', deliveryDates[deliveryDates.length - 1]) // earliest
+              .lte('departure_date', deliveryDates[0]) // latest
+
+            if (allRetasi) {
+              allRetasi.forEach(r => {
+                const key = r.driver_name?.toLowerCase().trim() || ''
+                if (!allRetasiMap[key]) allRetasiMap[key] = []
+                allRetasiMap[key].push(r)
+              })
+            }
+          }
+
+          // Also collect retasi_ids from transactions for direct lookup
           const deliveryRetasiIds = [...new Set(
             deliveryData
               .map((d: any) => d.transaction?.retasi_id)
               .filter(Boolean)
           )]
 
-          // Fetch retasi details for deliveries
           let deliveryRetasiMap: Record<string, any> = {}
           if (deliveryRetasiIds.length > 0) {
             const { data: deliveryRetasiDetails } = await supabase
@@ -186,19 +211,34 @@ export const TransactionItemsReport = () => {
 
           deliveryData.forEach((delivery: any) => {
             const deliveryDate = new Date(delivery.delivery_date)
+            const deliveryDateStr = deliveryDate.toISOString().split('T')[0]
             const transaction = delivery.transaction
             const transactionItems = transaction?.items || []
+            const driverName = delivery.driver?.full_name || ''
 
-            // CRITICAL: Get retasi info from the transaction linked to this delivery
+            // Try to get retasi info: first from transaction.retasi_id, then by driver+date matching
+            let retasiInfo = null
+
+            // Method 1: Direct lookup via transaction.retasi_id
             const retasiId = transaction?.retasi_id
-            const retasiInfo = retasiId ? deliveryRetasiMap[retasiId] : null
+            if (retasiId && deliveryRetasiMap[retasiId]) {
+              retasiInfo = deliveryRetasiMap[retasiId]
+            }
 
-            // If it has retasi info, use it. Otherwise use the delivery's own driver info.
+            // Method 2: Match by driver name and delivery date
+            if (!retasiInfo && driverName) {
+              const driverKey = driverName.toLowerCase().trim()
+              const driverRetasiList = allRetasiMap[driverKey] || []
+              // Find retasi with matching departure_date
+              retasiInfo = driverRetasiList.find(r => r.departure_date === deliveryDateStr)
+            }
+
+            // Format display values
             const retasiNumberDisplay = retasiInfo
               ? `${retasiInfo.retasi_number} (ke-${retasiInfo.retasi_ke})`
               : undefined
 
-            const driverNameDisplay = retasiInfo?.driver_name || delivery.driver?.full_name
+            const driverNameDisplay = retasiInfo?.driver_name || driverName
 
             delivery.delivery_items?.forEach((item: any) => {
               const matchingTxItem = transactionItems.find((ti: any) =>

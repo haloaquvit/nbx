@@ -78,11 +78,6 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
 
   // Cetak Dot Matrix - format sama dengan Faktur di TransactionDetailPage (A5 landscape)
   const handleDotMatrixPrint = () => {
-    if (!dotMatrixRef.current) {
-      console.error('Dot matrix ref is null')
-      return
-    }
-
     const orderDate = delivery.deliveryDate ? new Date(delivery.deliveryDate) : new Date()
 
     // Singkat satuan - sama dengan Faktur
