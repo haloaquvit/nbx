@@ -837,12 +837,11 @@ function AddRetasiDialog({
     try {
       // Use office timezone for departure date to ensure correct date
       const officeDateStr = getOfficeDateString(timezone);
-      const officeDate = new Date(officeDateStr + 'T00:00:00');
 
       await createRetasi.mutateAsync({
         driver_name: driver.name,
         helper_name: helper?.name || undefined,
-        departure_date: officeDate,
+        departure_date: officeDateStr, // Pass string YYYY-MM-DD directly for DATE type
         total_items: totalBawa,
         notes: notes || undefined,
         items: retasiItems,

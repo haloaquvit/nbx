@@ -305,18 +305,18 @@ export const useRetasi = (filters?: {
         .rpc('create_retasi_atomic', {
           p_branch_id: currentBranch.id,
           p_driver_name: mainData.driver_name,
-          p_helper_name: mainData.helper_name,
-          p_truck_number: mainData.truck_number,
-          p_route: mainData.route,
+          p_helper_name: mainData.helper_name || null,
+          p_truck_number: mainData.truck_number || null,
+          p_route: mainData.route || null,
           p_departure_date: mainData.departure_date instanceof Date ? mainData.departure_date.toISOString().split('T')[0] : mainData.departure_date,
-          p_departure_time: mainData.departure_time,
+          p_departure_time: mainData.departure_time || null,
           p_notes: mainData.notes || '',
           p_items: (items || []).map(item => ({
             product_id: item.product_id,
             product_name: item.product_name,
             quantity: item.quantity,
-            weight: item.weight,
-            notes: item.notes
+            weight: item.weight || 0,
+            notes: item.notes || ''
           })),
           p_created_by: user?.id || null
         });

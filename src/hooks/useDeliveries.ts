@@ -324,6 +324,8 @@ export const useTransactionsReadyForDelivery = () => {
           order_date,
           status,
           delivery_status,
+          cashier_id,
+          cashier_name,
           items,
           deliveries (
             *,
@@ -423,6 +425,7 @@ export const useTransactionsReadyForDelivery = () => {
           total: txn.total,
           orderDate: new Date(txn.order_date),
           status: txn.status,
+          cashierName: txn.cashier_name,
           deliveries,
           deliverySummary,
         };
