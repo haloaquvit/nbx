@@ -1483,17 +1483,125 @@ export function TransactionTable() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (<TableRow key={i}><TableCell colSpan={columns.length}><Skeleton className="h-8 w-full" /></TableCell></TableRow>))
                 ) : table.getRowModel().rows?.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      onClick={() => navigate(`/transactions/${row.original.id}`)}
-                      className="cursor-pointer table-row-hover"
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
-                      ))}
-                    </TableRow>
-                  ))
+                  table.getRowModel().rows.map((row) => {
+                    const transaction = row.original;
+                    const isExpanded = !!expandedTransactions[transaction.id];
+                    const total = transaction.total;
+                    const paidAmount = transaction.paidAmount || 0;
+                    const remaining = total - paidAmount;
+                    const paymentCategory = getPaymentCategory(transaction);
+
+                    return (
+                      <React.Fragment key={row.id}>
+                        <TableRow
+                          onClick={() => toggleExpand(transaction.id)}
+                          className="cursor-pointer table-row-hover"
+                        >
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline">{transaction.id}</Badge>
+                              {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            </div>
+                          </TableCell>
+                          {row.getVisibleCells().slice(1).map((cell) => (
+                            <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
+                          ))}
+                        </TableRow>
+                        
+                        {/* Expanded Detail Row */}
+                        {isExpanded && (
+                          <TableRow>
+                            <TableCell colSpan={columns.length} className="bg-gray-50 p-4">
+                              <div className="grid grid-cols-2 gap-6">
+                                {/* Items */}
+                                <div>
+                                  <h4 className="font-medium mb-2 text-sm">Item Pesanan:</h4>
+                                  <div className="space-y-1">
+                                    {transaction.items.map((item, idx) => (
+                                      <div key={idx} className="bg-white rounded p-2 border border-gray-200 text-sm">
+                                        <div className="flex justify-between items-start">
+                                          <div className="flex-1">
+                                            <div className="font-medium">{item.product?.name}</div>
+                                            <div className="text-xs text-gray-500">
+                                              {item.quantity} {item.unit}
+                                              {item.width && item.height && (
+                                                <span> ({item.width} x {item.height})</span>
+                                              )}
+                                            </div>
+                                          </div>
+                                          <div className="font-medium">
+                                            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.price * item.quantity)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Payment Status & Notes */}
+                                <div className="space-y-4">
+                                  <div>
+                                    <h4 className="font-medium mb-2 text-sm">Status Pembayaran:</h4>
+                                    <div className="space-y-1">
+                                      <Badge variant={paymentCategory === 'lunas' ? "success" : paymentCategory === 'jatuh-tempo' ? "outline" : paymentCategory === 'piutang' ? "secondary" : "destructive"}>
+                                        {paymentCategory === 'lunas' ? 'Tunai' : paymentCategory === 'jatuh-tempo' ? 'Jatuh Tempo' : 'Kredit'}
+                                      </Badge>
+                                      {paidAmount > 0 && (
+                                        <div className="text-sm text-gray-600">
+                                          Dibayar: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(paidAmount)}
+                                        </div>
+                                      )}
+                                      {remaining > 0 && (
+                                        <div className="text-sm text-red-600">
+                                          Sisa: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(remaining)}
+                                        </div>
+                                      )}
+                                      {transaction.dueDate && paymentCategory === 'jatuh-tempo' && (
+                                        <div className="text-sm text-red-500 font-medium">
+                                          Jatuh Tempo: {format(new Date(transaction.dueDate), "dd MMM yyyy")}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {transaction.notes && (
+                                    <div>
+                                      <h4 className="font-medium mb-2 text-sm">Catatan:</h4>
+                                      <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-sm text-gray-700">
+                                        {transaction.notes}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Quick Actions */}
+                                  <div className="flex gap-2 pt-2 border-t">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => navigate(`/transactions/${transaction.id}`)}
+                                      className="text-xs"
+                                    >
+                                      <Eye className="h-3 w-3 mr-1" />
+                                      Detail
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleDotMatrixPrint(transaction)}
+                                      className="text-xs"
+                                    >
+                                      <Printer className="h-3 w-3 mr-1" />
+                                      Cetak
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
                 ) : (
                   <TableRow><TableCell colSpan={columns.length} className="h-24 text-center">No results.</TableCell></TableRow>
                 )}
