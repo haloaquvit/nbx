@@ -82,23 +82,20 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
     notes: "",
     driverId: "",
     helperId: "",
-    // Filter out bonus items - they should not be delivered separately
-    items: transaction.deliverySummary
-      .filter(item => !item.isBonus) // Exclude bonus items
-      .map((item, index) => ({
-        itemId: `${item.productId}-${index}`,
-        productId: item.productId,
-        productName: item.productName,
-        isBonus: false, // Already filtered out
-        orderedQuantity: item.orderedQuantity,
-        deliveredQuantity: item.deliveredQuantity,
-        remainingQuantity: item.remainingQuantity,
-        quantityToDeliver: 0,
-        unit: item.unit,
-        width: item.width,
-        height: item.height,
-        notes: "",
-      })),
+    items: transaction.deliverySummary.map((item, index) => ({
+      itemId: `${item.productId}-${index}`,
+      productId: item.productId,
+      productName: item.productName,
+      isBonus: item.isBonus || false,
+      orderedQuantity: item.orderedQuantity,
+      deliveredQuantity: item.deliveredQuantity,
+      remainingQuantity: item.remainingQuantity,
+      quantityToDeliver: 0,
+      unit: item.unit,
+      width: item.width,
+      height: item.height,
+      notes: "",
+    })),
     photo: undefined,
   })
 
@@ -114,23 +111,20 @@ export function DeliveryManagement({ transaction, onClose, embedded = false, onD
       setFormData(prev => ({
         ...prev,
         transactionId: transaction.id,
-        // Filter out bonus items - they should not be delivered separately
-        items: transaction.deliverySummary
-          .filter(item => !item.isBonus) // Exclude bonus items
-          .map((item, index) => ({
-            itemId: `${item.productId}-${index}`,
-            productId: item.productId,
-            productName: item.productName,
-            isBonus: false, // Already filtered out
-            orderedQuantity: item.orderedQuantity,
-            deliveredQuantity: item.deliveredQuantity,
-            remainingQuantity: item.remainingQuantity,
-            quantityToDeliver: 0,
-            unit: item.unit,
-            width: item.width,
-            height: item.height,
-            notes: "",
-          }))
+        items: transaction.deliverySummary.map((item, index) => ({
+          itemId: `${item.productId}-${index}`,
+          productId: item.productId,
+          productName: item.productName,
+          isBonus: item.isBonus || false,
+          orderedQuantity: item.orderedQuantity,
+          deliveredQuantity: item.deliveredQuantity,
+          remainingQuantity: item.remainingQuantity,
+          quantityToDeliver: 0,
+          unit: item.unit,
+          width: item.width,
+          height: item.height,
+          notes: "",
+        }))
       }))
     }
   }, [transaction.id, transaction.deliverySummary])

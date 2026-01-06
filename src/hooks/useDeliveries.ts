@@ -368,10 +368,15 @@ export const useTransactionsReadyForDelivery = () => {
         // Calculate delivery summary
         const deliverySummary = (Array.isArray(txn.items) ? txn.items : []).map((item: any) => {
           const productId = item.product_id || item.productId || item.product?.id;
+          const isBonus = item.is_bonus || item.isBonus || false;
 
           // Calculate total delivered for this item across all deliveries
+          // IMPORTANT: Match by BOTH productId AND isBonus to separate parent and bonus items
           const totalDelivered = deliveries.reduce((sum, d) => {
-            const dItem = d.items.find(di => di.productId === productId);
+            const dItem = d.items.find(di =>
+              di.productId === productId &&
+              (di.isBonus || false) === isBonus  // Match bonus status
+            );
             return sum + (dItem ? dItem.quantityDelivered : 0);
           }, 0);
 
@@ -382,7 +387,7 @@ export const useTransactionsReadyForDelivery = () => {
             deliveredQuantity: totalDelivered,
             remainingQuantity: item.quantity - totalDelivered,
             unit: item.unit,
-            isBonus: item.is_bonus || item.isBonus,
+            isBonus: isBonus,
             width: item.width,
             height: item.height,
           };
