@@ -1275,7 +1275,7 @@ export function TransactionTable() {
           </div>
         </div>
       )}
-      {/* Mobile View - Simple Card List */}
+      {/* Mobile View - Simple Card List with Expand */}
       {isMobile ? (
         <div className="space-y-2">
           {isLoading ? (
@@ -1285,48 +1285,173 @@ export function TransactionTable() {
               </div>
             ))
           ) : filteredTransactions.length > 0 ? (
-            filteredTransactions.map((transaction, index) => (
-              <div
-                key={transaction.id}
-                className="bg-white border rounded-lg p-3 shadow-sm active:bg-gray-50"
-              >
+            filteredTransactions.map((transaction, index) => {
+              const [expanded, setExpanded] = React.useState(false);
+              const total = transaction.total;
+              const paidAmount = transaction.paidAmount || 0;
+              const remaining = total - paidAmount;
+              const paymentCategory = getPaymentCategory(transaction);
+
+              return (
                 <div
-                  className="flex items-center justify-between"
-                  onClick={() => navigate(`/transactions/${transaction.id}`)}
+                  key={transaction.id}
+                  className="bg-white border rounded-lg shadow-sm overflow-hidden"
                 >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">
-                        #{index + 1}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {transaction.orderDate ? format(new Date(transaction.orderDate), "d MMM", { locale: id }) : '-'}
-                      </span>
-                    </div>
-                    <div className="font-medium text-sm truncate">{transaction.customerName}</div>
-                    <div className="text-xs text-gray-500 truncate">
-                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}
+                  {/* Main Card - Always Visible */}
+                  <div
+                    className="p-3 active:bg-gray-50"
+                    onClick={() => setExpanded(!expanded)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded">
+                            #{index + 1}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {transaction.orderDate ? format(new Date(transaction.orderDate), "d MMM", { locale: id }) : '-'}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {transaction.orderDate ? format(new Date(transaction.orderDate), "HH:mm", { locale: id }) : ''}
+                          </span>
+                        </div>
+                        <div className="font-medium text-sm truncate">{transaction.customerName}</div>
+                        <div className="text-xs text-gray-500 truncate">
+                          {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1 items-end">
+                        <Button
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Find transaction in ready for delivery list
+                            const readyTransaction = transactionsReadyForDelivery?.find(t => t.id === transaction.id)
+                            if (readyTransaction) {
+                              setSelectedDeliveryTransaction(readyTransaction)
+                              setIsDeliveryDialogOpen(true)
+                            }
+                          }}
+                          className="bg-green-600 hover:bg-green-700 text-white h-8 px-2 text-xs"
+                        >
+                          <Truck className="h-3 w-3 mr-1" />
+                          Antar
+                        </Button>
+                        {expanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                      </div>
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Find transaction in ready for delivery list
-                      const readyTransaction = transactionsReadyForDelivery?.find(t => t.id === transaction.id)
-                      if (readyTransaction) {
-                        setSelectedDeliveryTransaction(readyTransaction)
-                        setIsDeliveryDialogOpen(true)
-                      }
-                    }}
-                    className="bg-green-600 hover:bg-green-700 text-white ml-2 h-10 px-3"
-                  >
-                    <Truck className="h-4 w-4 mr-1" />
-                    Antar
-                  </Button>
+
+                  {/* Expanded Details */}
+                  {expanded && (
+                    <div className="border-t bg-gray-50 p-3">
+                      {/* Items */}
+                      <div className="space-y-2 mb-3">
+                        <div className="text-xs font-medium text-gray-600 mb-1">Item Pesanan:</div>
+                        {transaction.items.map((item, idx) => (
+                          <div key={idx} className="bg-white rounded p-2 border border-gray-200">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{item.product?.name}</div>
+                                <div className="text-xs text-gray-500">
+                                  {item.quantity} {item.unit}
+                                  {item.width && item.height && (
+                                    <span> ({item.width} x {item.height})</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-sm font-medium text-right ml-2">
+                                {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(item.price * item.quantity)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Payment Status */}
+                      <div className="space-y-1 mb-3">
+                        <div className="text-xs font-medium text-gray-600">Status Pembayaran:</div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={paymentCategory === 'lunas' ? "success" : paymentCategory === 'jatuh-tempo' ? "outline" : paymentCategory === 'piutang' ? "secondary" : "destructive"}>
+                            {paymentCategory === 'lunas' ? 'Tunai' : paymentCategory === 'jatuh-tempo' ? 'Jatuh Tempo' : 'Kredit'}
+                          </Badge>
+                        </div>
+                        {paidAmount > 0 && (
+                          <div className="text-xs text-gray-600">
+                            Dibayar: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(paidAmount)}
+                          </div>
+                        )}
+                        {remaining > 0 && (
+                          <div className="text-xs text-red-600">
+                            Sisa: {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(remaining)}
+                          </div>
+                        )}
+                        {transaction.dueDate && paymentCategory === 'jatuh-tempo' && (
+                          <div className="text-xs text-red-500 font-medium">
+                            Jatuh Tempo: {format(new Date(transaction.dueDate), "dd MMM yyyy")}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Notes if any */}
+                      {transaction.notes && (
+                        <div className="text-xs text-gray-600">
+                          <div className="font-medium mb-1">Catatan:</div>
+                          <div className="bg-yellow-50 border border-yellow-200 rounded p-2 text-gray-700">
+                            {transaction.notes}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-2 mt-3 pt-3 border-t">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/transactions/${transaction.id}`)}
+                          className="flex-1 text-xs"
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          Detail
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleEditClick(transaction)}
+                          className="flex-1 text-xs"
+                        >
+                          <Edit className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDotMatrixPrint(transaction);
+                          }}
+                          className="flex-1 text-xs"
+                        >
+                          <Printer className="h-3 w-3 mr-1" />
+                          Cetak
+                        </Button>
+                        {isOwner(user) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleDeleteClick(transaction)}
+                            className="flex-1 text-xs text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Hapus
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))
+              );
+            })
           ) : (
             <div className="text-center py-8 text-gray-500">Tidak ada transaksi</div>
           )}
