@@ -271,13 +271,6 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
     setIsDialogOpen(true)
   }
 
-
-
-  // Di mobile tidak tampilkan opsi cetak (karena hanya ada dot matrix dan PDF, tidak ada thermal)
-  if (isMobile) {
-    return null
-  }
-
   return (
     <>
       {children ? (

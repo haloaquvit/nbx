@@ -3,10 +3,11 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Truck, User, Clock, Package, Camera, MapPin, Phone, ExternalLink } from "lucide-react"
+import { Truck, User, Clock, Package, Camera, MapPin, Phone, ExternalLink, Printer } from "lucide-react"
 import { format } from "date-fns"
 import { id as idLocale } from "date-fns/locale/id"
 import { PhotoUploadService } from "@/services/photoUploadService"
+import { DeliveryNotePDF } from "@/components/DeliveryNotePDF"
 
 interface DeliveryDetailModalProps {
   delivery: any
@@ -21,10 +22,18 @@ export function DeliveryDetailModal({ delivery, open, onOpenChange }: DeliveryDe
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Truck className="h-5 w-5" />
-            Detail Pengantaran #{delivery.deliveryNumber || delivery.id.slice(-6)}
-          </DialogTitle>
+          <div className="flex items-center justify-between w-full">
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="h-5 w-5" />
+              Detail Pengantaran #{delivery.deliveryNumber || delivery.id.slice(-6)}
+            </DialogTitle>
+            <DeliveryNotePDF delivery={delivery}>
+              <Button variant="outline" size="sm" className="flex items-center gap-2">
+                <Printer className="h-4 w-4" />
+                Cetak
+              </Button>
+            </DeliveryNotePDF>
+          </div>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -51,7 +60,7 @@ export function DeliveryDetailModal({ delivery, open, onOpenChange }: DeliveryDe
                 </div>
               </div>
             </div>
-            
+
             <div className="space-y-3">
               <div>
                 <label className="text-sm font-medium text-muted-foreground">Driver</label>
