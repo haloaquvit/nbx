@@ -78,18 +78,25 @@ export class PhotoUploadService {
   static async uploadPhoto(file: File, customerName: string, category: string = 'customers'): Promise<PhotoUploadResult> {
     try {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('category', category);
 
+      // Sanitasi nama file dan pastikan ekstensi benar
       const cleanName = customerName.replace(/[^\w\s-]/gi, '').replace(/\s+/g, '-').toLowerCase();
       const timestamp = Date.now();
-      const extension = file.name.split('.').pop() || 'jpg';
+
+      // Check if file is likely a JPEG (common from compression)
+      let extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      if (file.type === 'image/jpeg') extension = 'jpg';
+
       const filename = `${cleanName}-${timestamp}.${extension}`;
+
+      // Append fields BEFORE file (Best Practice for Multer/Busboy)
+      formData.append('category', category);
       formData.append('filename', filename);
+      formData.append('file', file);
 
       const uploadUrl = this.getUploadUrl();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60s
 
       let response: Response;
       try {
