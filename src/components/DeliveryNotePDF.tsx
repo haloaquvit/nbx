@@ -49,30 +49,107 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
   // Prioritize: transactionInfo prop > fetched data (which has deliverySummary)
   const transaction = transactionInfo || fetchedTransactionInfo
 
-  const handlePrintPDF = async () => {
-    if (!printRef.current) {
-      console.error('Print ref is null')
+  // Generate PDF using browser print dialog (more stable than html2canvas)
+  const handlePrintPDF = () => {
+    if (!transaction) {
+      alert('Data transaksi belum dimuat. Mohon tunggu sebentar.')
       return
     }
 
-    try {
-      console.log('Starting PDF generation...', {
-        element: printRef.current,
-        width: printRef.current.offsetWidth,
-        height: printRef.current.offsetHeight
-      })
+    const orderDate = delivery.deliveryDate ? new Date(delivery.deliveryDate) : new Date()
 
-      await createCompressedPDF(
-        printRef.current,
-        `Surat-Jalan-${delivery.transactionId}-${delivery.deliveryNumber}.pdf`,
-        [210, 297], // A4 size (210mm x 297mm)
-        200 // Max 200KB for A4
-      )
-      console.log('PDF generation completed successfully')
+    const formatNumber = (num: number) => new Intl.NumberFormat("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num)
+    const shortUnit = (unit: string) => {
+      const unitMap: Record<string, string> = {
+        'Karton': 'Krt', 'karton': 'Krt',
+        'Lusin': 'Lsn', 'lusin': 'Lsn',
+        'Botol': 'Btl', 'botol': 'Btl',
+        'Pieces': 'Pcs', 'pieces': 'Pcs', 'Pcs': 'Pcs', 'pcs': 'Pcs',
+      }
+      return unitMap[unit] || unit
+    }
+
+    const pdfContent = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto;">
+        <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px;">
+          <div>
+            <h1 style="margin: 0; font-size: 24px;">${currentBranch?.name || settings?.name || 'AQUVIT'}</h1>
+            <p style="margin: 5px 0; font-size: 12px;">${currentBranch?.address || settings?.address || ''}</p>
+            <p style="margin: 5px 0; font-size: 12px;">Telp: ${currentBranch?.phone || settings?.phone || '-'}</p>
+          </div>
+          <div style="text-align: right;">
+            <h2 style="margin: 0; font-size: 28px; color: #999;">SURAT JALAN</h2>
+            <p style="margin: 5px 0;"><strong>No:</strong> ${delivery.transactionId}-${delivery.deliveryNumber}</p>
+            <p style="margin: 5px 0;"><strong>Tanggal:</strong> ${safeFormatDate(orderDate, "d MMMM yyyy")}</p>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 40px; margin-bottom: 20px;">
+          <div style="flex: 1;">
+            <p><strong>Dikirim Kepada:</strong></p>
+            <p style="font-size: 18px; font-weight: bold;">${transaction?.customerName}</p>
+            ${transaction?.customerAddress ? `<p>${transaction.customerAddress}</p>` : ''}
+          </div>
+          <div>
+            <p><strong>Driver:</strong> ${delivery.driverName || '-'}</p>
+            <p><strong>Helper:</strong> ${delivery.helperName || '-'}</p>
+          </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <thead>
+            <tr style="background: #f0f0f0;">
+              <th style="border: 1px solid #333; padding: 8px; text-align: left;">No</th>
+              <th style="border: 1px solid #333; padding: 8px; text-align: left;">Nama Barang</th>
+              <th style="border: 1px solid #333; padding: 8px; text-align: center;">Antar</th>
+              <th style="border: 1px solid #333; padding: 8px; text-align: center;">Satuan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${delivery.items.map((item, index) => `
+              <tr>
+                <td style="border: 1px solid #333; padding: 8px;">${index + 1}</td>
+                <td style="border: 1px solid #333; padding: 8px;">${item.productName}</td>
+                <td style="border: 1px solid #333; padding: 8px; text-align: center;">${formatNumber(item.quantityDelivered)}</td>
+                <td style="border: 1px solid #333; padding: 8px; text-align: center;">${shortUnit(item.unit)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        ${delivery.notes ? `<p><strong>Catatan:</strong> ${delivery.notes}</p>` : ''}
+
+        <div style="display: flex; justify-content: space-around; margin-top: 50px; text-align: center;">
+          <div><p>Supir</p><div style="height: 60px;"></div><p>(${delivery.driverName || '..............'})</p></div>
+          <div><p>Kepala Gudang</p><div style="height: 60px;"></div><p>(..............)</p></div>
+          <div><p>Pelanggan</p><div style="height: 60px;"></div><p>(..............)</p></div>
+        </div>
+      </div>
+    `
+
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Surat Jalan ${delivery.transactionId}-${delivery.deliveryNumber}</title>
+            <meta charset="UTF-8">
+            <style>
+              @page { size: A4; margin: 15mm; }
+              @media print {
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              }
+              body { margin: 0; padding: 0; background: white; }
+            </style>
+          </head>
+          <body onload="window.print();">
+            ${pdfContent}
+          </body>
+        </html>
+      `)
+      printWindow.document.close()
       setIsDialogOpen(false)
-    } catch (error) {
-      console.error('Error generating PDF:', error)
-      alert('Gagal membuat PDF: ' + (error as Error).message)
     }
   }
 

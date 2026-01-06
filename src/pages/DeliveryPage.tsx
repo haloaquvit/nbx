@@ -586,114 +586,193 @@ export default function DeliveryPage() {
                           const overallStatus = getOverallStatus(transaction)
                           const StatusIcon = overallStatus.icon
                           const remainingItems = transaction.deliverySummary.reduce((sum, item) => sum + item.remainingQuantity, 0)
-
+                          const isExpanded = expandedDeliveries.has(transaction.id)
                           return (
-                            <TableRow
-                              key={transaction.id}
-                              className="cursor-pointer hover:bg-muted"
-                              onClick={() => {
-                                setSelectedTransaction(transaction)
-                              }}
-                            >
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">#{transaction.id}</Badge>
-                              </TableCell>
-                              <TableCell className="font-medium">
-                                <div className="truncate max-w-[150px]" title={transaction.customerName}>
-                                  {transaction.customerName}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-sm">
-                                <div>{format(transaction.orderDate, "d MMM yyyy", { locale: idLocale })}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {format(transaction.orderDate, "HH:mm", { locale: idLocale })}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="font-semibold text-green-600 text-sm">
-                                  {new Intl.NumberFormat("id-ID", {
-                                    style: "currency",
-                                    currency: "IDR",
-                                    minimumFractionDigits: 0
-                                  }).format(transaction.total)}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant={overallStatus.variant} className="flex items-center gap-1 w-fit text-xs">
-                                  <StatusIcon className="h-3 w-3" />
-                                  <span className="hidden sm:inline">{overallStatus.status}</span>
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {transaction.cashierName || <span className="text-muted-foreground">-</span>}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  <div>{remainingItems} item</div>
-                                  <div className="text-muted-foreground text-xs">
-                                    {transaction.deliveries.length} pengantaran
+                            <React.Fragment key={transaction.id}>
+                              <TableRow className="hover:bg-muted">
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        toggleExpandDelivery(transaction.id)
+                                      }}
+                                    >
+                                      {isExpanded ? (
+                                        <ChevronUp className="h-4 w-4" />
+                                      ) : (
+                                        <ChevronDown className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                    <Badge variant="outline" className="text-xs">#{transaction.id}</Badge>
                                   </div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex gap-1">
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      setSelectedDeliveryTransaction(transaction)
-                                      setIsDeliveryDialogOpen(true)
-                                    }}
-                                    size="sm"
-                                    className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
-                                  >
-                                    <Truck className="h-3 w-3 sm:mr-1" />
-                                    <span className="hidden sm:inline">Antar</span>
-                                  </Button>
-
-                                  {/* Delete Transaction Button (Owner/Admin Only) - NEW */}
-                                  {(user?.role === 'owner' || user?.role === 'admin') && (
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  <div className="truncate max-w-[150px]" title={transaction.customerName}>
+                                    {transaction.customerName}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-sm">
+                                  <div>{format(transaction.orderDate, "d MMM yyyy", { locale: idLocale })}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {format(transaction.orderDate, "HH:mm", { locale: idLocale })}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-semibold text-green-600 text-sm">
+                                    {new Intl.NumberFormat("id-ID", {
+                                      style: "currency",
+                                      currency: "IDR",
+                                      minimumFractionDigits: 0
+                                    }).format(transaction.total)}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={overallStatus.variant} className="flex items-center gap-1 w-fit text-xs">
+                                    <StatusIcon className="h-3 w-3" />
+                                    <span className="hidden sm:inline">{overallStatus.status}</span>
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="text-sm">
+                                    {transaction.cashierName || <span className="text-muted-foreground">-</span>}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="text-sm">
+                                    <div>{remainingItems} item</div>
+                                    <div className="text-muted-foreground text-xs">
+                                      {transaction.deliveries.length} pengantaran
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex gap-1">
                                     <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      className="text-xs px-2 py-1"
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        setTransactionToDelete(transaction)
-                                        setIsTransactionDeleteDialogOpen(true)
+                                        setSelectedDeliveryTransaction(transaction)
+                                        setIsDeliveryDialogOpen(true)
                                       }}
-                                      title="Hapus Transaksi & Data Terkait"
-                                    >
-                                      <Trash2 className="h-3 w-3" />
-                                    </Button>
-                                  )}
-
-                                  {/* Delete last delivery button - controlled by granular permission */}
-                                  {canDelete && transaction.deliveries.length > 0 && (
-                                    <Button
                                       size="sm"
-                                      variant="outline"
-                                      className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        // Delete the most recent delivery for this transaction
-                                        const lastDelivery = transaction.deliveries[transaction.deliveries.length - 1]
-                                        setDeliveryToDelete({
-                                          ...lastDelivery,
-                                          customerName: transaction.customerName,
-                                          transactionTotal: transaction.total
-                                        })
-                                        setIsDeleteDialogOpen(true)
-                                      }}
-                                      title={`Hapus pengantaran terakhir (${transaction.deliveries.length} pengantaran)`}
+                                      className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1"
                                     >
-                                      <History className="h-3 w-3" /> {/* Changed icon to History to differ from Transaction Delete */}
+                                      <Truck className="h-3 w-3 sm:mr-1" />
+                                      <span className="hidden sm:inline">Antar</span>
                                     </Button>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
+
+                                    {/* Delete Transaction Button (Owner/Admin Only) - NEW */}
+                                    {(user?.role === 'owner' || user?.role === 'admin') && (
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        className="text-xs px-2 py-1"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setTransactionToDelete(transaction)
+                                          setIsTransactionDeleteDialogOpen(true)
+                                        }}
+                                        title="Hapus Transaksi & Data Terkait"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    )}
+
+                                    {/* Delete last delivery button - controlled by granular permission */}
+                                    {canDelete && transaction.deliveries.length > 0 && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          // Delete the most recent delivery for this transaction
+                                          const lastDelivery = transaction.deliveries[transaction.deliveries.length - 1]
+                                          setDeliveryToDelete({
+                                            ...lastDelivery,
+                                            customerName: transaction.customerName,
+                                            transactionTotal: transaction.total
+                                          })
+                                          setIsDeleteDialogOpen(true)
+                                        }}
+                                        title={`Hapus pengantaran terakhir (${transaction.deliveries.length} pengantaran)`}
+                                      >
+                                        <History className="h-3 w-3" /> {/* Changed icon to History to differ from Transaction Delete */}
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+
+                              {/* Expanded row - Show delivery summary for active transactions */}
+                              {isExpanded && (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="p-0">
+                                    <div className="bg-gray-50 dark:bg-gray-900/30 p-4 border-l-4 border-green-500">
+                                      <div className="mb-3">
+                                        <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                                          <Package className="h-4 w-4 text-green-600" />
+                                          Detail Pengantaran
+                                        </h4>
+                                      </div>
+                                      <div className="overflow-x-auto">
+                                        <Table className="min-w-[600px]">
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead className="text-xs">No</TableHead>
+                                              <TableHead className="text-xs">Nama Barang</TableHead>
+                                              <TableHead className="text-xs text-center">Dipesan</TableHead>
+                                              <TableHead className="text-xs text-center">Diantar</TableHead>
+                                              <TableHead className="text-xs text-center">Sisa</TableHead>
+                                              <TableHead className="text-xs text-center">Satuan</TableHead>
+                                            </TableRow>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {transaction.deliverySummary && transaction.deliverySummary.length > 0 ? (
+                                              transaction.deliverySummary.map((item: any, index: number) => (
+                                                <TableRow key={item.productId} className="hover:bg-gray-100 dark:hover:bg-gray-800">
+                                                  <TableCell className="text-xs">{index + 1}</TableCell>
+                                                  <TableCell className="text-xs font-medium">{item.productName}</TableCell>
+                                                  <TableCell className="text-xs text-center">
+                                                    <span className="text-gray-600 dark:text-gray-400">
+                                                      {item.orderedQuantity}
+                                                    </span>
+                                                  </TableCell>
+                                                  <TableCell className="text-xs text-center">
+                                                    <span className="font-semibold text-green-600 dark:text-green-400">
+                                                      {item.deliveredQuantity}
+                                                    </span>
+                                                  </TableCell>
+                                                  <TableCell className="text-xs text-center">
+                                                    <span className={
+                                                      item.remainingQuantity > 0 
+                                                        ? 'font-semibold text-orange-600 dark:text-orange-400'
+                                                        : 'text-green-600 dark:text-green-400'
+                                                    }>
+                                                      {item.remainingQuantity}
+                                                    </span>
+                                                  </TableCell>
+                                                  <TableCell className="text-xs text-center">{item.unit}</TableCell>
+                                                </TableRow>
+                                              ))
+                                            ) : (
+                                              <TableRow>
+                                                <TableCell colSpan={6} className="text-xs text-center text-muted-foreground py-4">
+                                                  Tidak ada data barang
+                                                </TableCell>
+                                              </TableRow>
+                                            )}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </React.Fragment>
                           )
                         })}
                       </TableBody>
