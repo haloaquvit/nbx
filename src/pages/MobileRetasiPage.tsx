@@ -330,12 +330,13 @@ function AddRetasiMobileDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  drivers: { id: string; name: string }[];
+  drivers: any[];
   createRetasi: any;
   checkDriverAvailability: (driverName: string) => Promise<boolean>;
   refetchRetasiList: () => Promise<any>;
 }) {
-  const [driverId, setDriverId] = useState(drivers[0]?.id || "");
+  const { timezone } = useTimezone();
+  const [driverId, setDriverId] = useState(drivers?.[0]?.id || "");
   const [retasiItems, setRetasiItems] = useState<CreateRetasiItemData[]>([]);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [itemQuantity, setItemQuantity] = useState(1);
@@ -356,7 +357,7 @@ function AddRetasiMobileDialog({
   const recomputeMeta = async (driverId: string) => {
     if (!driverId) return;
 
-    const driver = drivers.find(d => d.id === driverId);
+    const driver = drivers?.find((d: any) => d.id === driverId);
     if (!driver) return;
 
     try {
@@ -438,7 +439,7 @@ function AddRetasiMobileDialog({
       return;
     }
 
-    const driver = drivers.find(d => d.id === driverId);
+    const driver = drivers?.find((d: any) => d.id === driverId);
     if (!driver) return;
 
     if (retasiItems.length === 0) {
@@ -475,7 +476,7 @@ function AddRetasiMobileDialog({
             Input Retasi Berangkat
           </DialogTitle>
           <DialogDescription>
-            Retasi {nextSeq} - {format(new Date(), 'dd MMM yyyy HH:mm', { locale: id })}
+            Retasi {nextSeq} - {format(getOfficeDateString(timezone), 'dd MMM yyyy HH:mm', { locale: id })}
           </DialogDescription>
         </DialogHeader>
 
@@ -489,7 +490,7 @@ function AddRetasiMobileDialog({
                   <SelectValue placeholder="Pilih Supir" />
                 </SelectTrigger>
                 <SelectContent>
-                  {drivers.map((driver) => (
+                  {drivers?.map((driver: any) => (
                     <SelectItem key={driver.id} value={driver.id}>
                       {driver.name}
                     </SelectItem>
