@@ -17,6 +17,7 @@ import { canDeliverWithoutDriver } from "@/utils/roleUtils"
 import { Capacitor } from "@capacitor/core"
 import { useTimezone } from "@/contexts/TimezoneContext"
 import { getOfficeTime } from "@/utils/officeTime"
+import { PhotoUploadService } from "@/services/photoUploadService"
 
 interface DeliveryFormContentProps {
   transaction: TransactionDeliveryInfo;
@@ -51,7 +52,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
   // Check if driver is optional (web view + allowed role)
   const isWebView = !isCapacitorApp()
   const driverOptional = isWebView && canDeliverWithoutDriver(user?.role)
-  
+
   const [formData, setFormData] = useState<DeliveryFormData>(() => ({
     transactionId: transaction.id,
     deliveryDate: format(getOfficeTime(timezone), "yyyy-MM-dd'T'HH:mm"),
@@ -77,7 +78,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
 
   // State untuk preview foto
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
-  
+
   // FIX: Update form items when transaction.deliverySummary changes (e.g., after delivery deletion)
   useEffect(() => {
     console.log('🔄 Updating form data due to transaction change:', {
@@ -88,15 +89,15 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
         remaining: item.remainingQuantity
       }))
     })
-    
+
     setFormData(prev => ({
       ...prev,
       items: transaction.deliverySummary.map((item, index) => {
         // Try to preserve existing quantityToDeliver if item exists
-        const existingItem = prev.items.find(existing => 
+        const existingItem = prev.items.find(existing =>
           existing.productId === item.productId && existing.productName === item.productName
         )
-        
+
         return {
           itemId: `${item.productId}-${index}`,
           productId: item.productId,
@@ -234,7 +235,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
     }
 
     // Validate no item exceeds remaining quantity
-    const hasExcessiveQuantity = formData.items.some(item => 
+    const hasExcessiveQuantity = formData.items.some(item =>
       item.quantityToDeliver > item.remainingQuantity
     )
     if (hasExcessiveQuantity) {
@@ -248,33 +249,17 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
 
     setIsSubmitting(true)
     try {
-      // Upload photo to VPS API if exists
+      // Upload photo to VPS using PhotoUploadService
       let photoUrl: string | undefined = undefined
       if (formData.photo) {
         try {
-          // Create FormData for API upload
-          const uploadFormData = new FormData()
-          uploadFormData.append('photo', formData.photo)
-          uploadFormData.append('transactionId', formData.transactionId)
+          const uploadResult = await PhotoUploadService.uploadPhoto(
+            formData.photo,
+            `${transaction.id}-delivery`,
+            'deliveries'
+          )
 
-          // Upload to VPS API endpoint
-          const uploadResponse = await fetch('/api/upload-photo', {
-            method: 'POST',
-            body: uploadFormData,
-          })
-
-          if (!uploadResponse.ok) {
-            const errorData = await uploadResponse.json()
-            throw new Error(errorData.message || 'Upload gagal')
-          }
-
-          const uploadResult = await uploadResponse.json()
-          
-          if (!uploadResult.success) {
-            throw new Error(uploadResult.error || 'Upload gagal')
-          }
-
-          photoUrl = uploadResult.data.webViewLink
+          photoUrl = uploadResult.id // Store filename/ID
           console.log('✅ Photo uploaded successfully:', photoUrl)
         } catch (error) {
           console.error('❌ Photo upload failed:', error)
@@ -309,7 +294,7 @@ export function DeliveryFormContent({ transaction, onSuccess, onDeliveryCreated 
 
       // Check if there were any invalid products that were skipped
       const hasInvalidProducts = (result as any)?._invalidProductIds?.length > 0
-      
+
       if (hasInvalidProducts) {
         toast({
           title: "Pengantaran Berhasil Dicatat dengan Peringatan",
