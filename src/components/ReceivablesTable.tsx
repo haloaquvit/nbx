@@ -179,7 +179,7 @@ export function ReceivablesTable() {
       cell: ({ row }) => {
         const isExpanded = expandedRows.has(row.original.id)
         const hasPaymentHistory = paymentHistories[row.original.id]?.length > 0
-        
+
         return hasPaymentHistory ? (
           <Button
             variant="ghost"
@@ -282,7 +282,7 @@ export function ReceivablesTable() {
         let statusLabel: string
         let statusColor: string
         let statusIcon: React.ReactNode
-        
+
         if (paid === 0) {
           status = 'unpaid'
           statusLabel = 'Belum Bayar'
@@ -299,7 +299,7 @@ export function ReceivablesTable() {
           statusColor = 'bg-yellow-100 text-yellow-800'
           statusIcon = <Clock className="h-3 w-3" />
         }
-        
+
         return (
           <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${statusColor}`}>
             {statusIcon}
@@ -526,77 +526,77 @@ export function ReceivablesTable() {
 
       {/* Summary Cards - Due Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600" />
-            <h3 className="font-medium text-red-900">Jatuh Tempo</h3>
+            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-500" />
+            <h3 className="font-medium text-red-900 dark:text-red-200">Jatuh Tempo</h3>
           </div>
-          <p className="text-2xl font-bold text-red-600">{overdueCount}</p>
-          <p className="text-sm text-red-700">Transaksi terlambat</p>
+          <p className="text-2xl font-bold text-red-600 dark:text-red-400">{overdueCount}</p>
+          <p className="text-sm text-red-700 dark:text-red-300">Transaksi terlambat</p>
         </div>
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+        <div className="bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg p-4">
           <div className="flex items-center gap-2">
-            <Clock className="w-5 h-5 text-orange-600" />
-            <h3 className="font-medium text-orange-900">Segera Jatuh Tempo</h3>
+            <Clock className="w-5 h-5 text-orange-600 dark:text-orange-500" />
+            <h3 className="font-medium text-orange-900 dark:text-orange-200">Segera Jatuh Tempo</h3>
           </div>
-          <p className="text-2xl font-bold text-orange-600">{dueSoonCount}</p>
-          <p className="text-sm text-orange-700">≤ 3 hari lagi</p>
+          <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{dueSoonCount}</p>
+          <p className="text-sm text-orange-700 dark:text-orange-300">≤ 3 hari lagi</p>
         </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
           <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-blue-600" />
-            <h3 className="font-medium text-blue-900">Total Piutang</h3>
+            <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-500" />
+            <h3 className="font-medium text-blue-900 dark:text-blue-200">Total Piutang</h3>
           </div>
-          <p className="text-2xl font-bold text-blue-600">{allReceivables.length}</p>
-          <p className="text-sm text-blue-700">Belum lunas</p>
+          <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{allReceivables.length}</p>
+          <p className="text-sm text-blue-700 dark:text-blue-300">Belum lunas</p>
         </div>
       </div>
 
       {/* Aging Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div
-          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '0-30' ? 'ring-2 ring-green-500' : ''} bg-green-50 border-green-200 hover:shadow-md`}
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '0-30' ? 'ring-2 ring-green-500' : ''} bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900 hover:shadow-md`}
           onClick={() => setFilterAging(filterAging === '0-30' ? 'all' : '0-30')}
         >
           <div className="flex items-center gap-2 mb-2">
             <div className="w-3 h-3 rounded-full bg-green-500" />
-            <h3 className="font-medium text-green-900 text-sm">0-30 Hari</h3>
+            <h3 className="font-medium text-green-900 dark:text-green-200 text-sm">0-30 Hari</h3>
           </div>
-          <p className="text-xl font-bold text-green-700">{agingCounts.counts['0-30']}</p>
-          <p className="text-xs text-green-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['0-30'])}</p>
+          <p className="text-xl font-bold text-green-700 dark:text-green-400">{agingCounts.counts['0-30']}</p>
+          <p className="text-xs text-green-600 dark:text-green-500">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['0-30'])}</p>
         </div>
         <div
-          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '31-60' ? 'ring-2 ring-yellow-500' : ''} bg-yellow-50 border-yellow-200 hover:shadow-md`}
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '31-60' ? 'ring-2 ring-yellow-500' : ''} bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-900 hover:shadow-md`}
           onClick={() => setFilterAging(filterAging === '31-60' ? 'all' : '31-60')}
         >
           <div className="flex items-center gap-2 mb-2">
             <div className="w-3 h-3 rounded-full bg-yellow-500" />
-            <h3 className="font-medium text-yellow-900 text-sm">31-60 Hari</h3>
+            <h3 className="font-medium text-yellow-900 dark:text-yellow-200 text-sm">31-60 Hari</h3>
           </div>
-          <p className="text-xl font-bold text-yellow-700">{agingCounts.counts['31-60']}</p>
-          <p className="text-xs text-yellow-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['31-60'])}</p>
+          <p className="text-xl font-bold text-yellow-700 dark:text-yellow-400">{agingCounts.counts['31-60']}</p>
+          <p className="text-xs text-yellow-600 dark:text-yellow-500">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['31-60'])}</p>
         </div>
         <div
-          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '61-90' ? 'ring-2 ring-orange-500' : ''} bg-orange-50 border-orange-200 hover:shadow-md`}
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '61-90' ? 'ring-2 ring-orange-500' : ''} bg-orange-50 dark:bg-orange-950/30 border-orange-200 dark:border-orange-900 hover:shadow-md`}
           onClick={() => setFilterAging(filterAging === '61-90' ? 'all' : '61-90')}
         >
           <div className="flex items-center gap-2 mb-2">
             <div className="w-3 h-3 rounded-full bg-orange-500" />
-            <h3 className="font-medium text-orange-900 text-sm">61-90 Hari</h3>
+            <h3 className="font-medium text-orange-900 dark:text-orange-200 text-sm">61-90 Hari</h3>
           </div>
-          <p className="text-xl font-bold text-orange-700">{agingCounts.counts['61-90']}</p>
-          <p className="text-xs text-orange-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['61-90'])}</p>
+          <p className="text-xl font-bold text-orange-700 dark:text-orange-400">{agingCounts.counts['61-90']}</p>
+          <p className="text-xs text-orange-600 dark:text-orange-500">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['61-90'])}</p>
         </div>
         <div
-          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '>90' ? 'ring-2 ring-red-500' : ''} bg-red-50 border-red-200 hover:shadow-md`}
+          className={`border rounded-lg p-4 cursor-pointer transition-all ${filterAging === '>90' ? 'ring-2 ring-red-500' : ''} bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900 hover:shadow-md`}
           onClick={() => setFilterAging(filterAging === '>90' ? 'all' : '>90')}
         >
           <div className="flex items-center gap-2 mb-2">
             <div className="w-3 h-3 rounded-full bg-red-500" />
-            <h3 className="font-medium text-red-900 text-sm">&gt;90 Hari</h3>
+            <h3 className="font-medium text-red-900 dark:text-red-200 text-sm">&gt;90 Hari</h3>
           </div>
-          <p className="text-xl font-bold text-red-700">{agingCounts.counts['>90']}</p>
-          <p className="text-xs text-red-600">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['>90'])}</p>
+          <p className="text-xl font-bold text-red-700 dark:text-red-400">{agingCounts.counts['>90']}</p>
+          <p className="text-xs text-red-600 dark:text-red-500">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(agingCounts.amounts['>90'])}</p>
         </div>
       </div>
 

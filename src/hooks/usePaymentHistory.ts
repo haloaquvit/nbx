@@ -14,6 +14,7 @@ export interface PaymentHistory {
   reference_name: string
   user_id: string
   user_name: string
+  customer_name?: string
   created_at: Date
 }
 
@@ -59,6 +60,7 @@ export const usePaymentHistory = (filters?: {
         reference_name: item.transaction_id,
         user_id: '',
         user_name: item.user_name || 'System',
+        customer_name: item.customer_name,
         created_at: new Date(item.payment_date || item.created_at)
       }));
     },

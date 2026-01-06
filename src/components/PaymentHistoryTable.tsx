@@ -197,7 +197,7 @@ export function PaymentHistoryTable() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="bg-card border border-border rounded-xl p-4">
+      <div className="bg-card dark:bg-slate-900 border border-border rounded-xl p-4">
         <div className="flex items-center gap-2 mb-4">
           <Filter className="h-5 w-5 text-muted-foreground" />
           <h3 className="font-medium">Filter Data</h3>
@@ -272,7 +272,7 @@ export function PaymentHistoryTable() {
       </div>
 
       {/* Table */}
-      <div className="bg-card border border-border rounded-xl">
+      <div className="bg-card dark:bg-slate-900 border border-border rounded-xl">
         <div className="px-4 py-3 border-b">
           <h3 className="font-medium">History Pembayaran Piutang</h3>
         </div>
@@ -310,7 +310,7 @@ export function PaymentHistoryTable() {
                       {format(payment.created_at, 'dd/MM/yyyy HH:mm')}
                     </td>
                     <td className="px-3 py-2 font-medium">
-                      {payment.reference_id?.split('-')[0] || 'Unknown'}
+                      {payment.customer_name || payment.reference_id?.split('-')[0] || 'Unknown'}
                     </td>
                     <td className="px-3 py-2">
                       {payment.description}
