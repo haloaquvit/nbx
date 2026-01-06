@@ -1025,6 +1025,7 @@ export const PosForm = () => {
                         </div>
                         <div className="max-h-[calc(40vh-50px)] overflow-y-auto">
                           {filteredProducts.map((product) => {
+                            const isOutOfStock = (product.currentStock || 0) <= 0;
                             return (
                               <div
                                 key={product.id}
@@ -1164,10 +1165,10 @@ export const PosForm = () => {
                               {/* Tampilkan stok untuk semua produk */}
                               {item.product && (
                                 <div className={`text-xs mt-0.5 ${(item.product.currentStock || 0) <= 0
-                                    ? 'text-red-500 font-medium'
-                                    : (item.product.currentStock || 0) <= (item.product.minStock || 10)
-                                      ? 'text-amber-600'
-                                      : 'text-gray-500'
+                                  ? 'text-red-500 font-medium'
+                                  : (item.product.currentStock || 0) <= (item.product.minStock || 10)
+                                    ? 'text-amber-600'
+                                    : 'text-gray-500'
                                   }`}>
                                   Stok: {item.product.currentStock ?? '-'}
                                 </div>
