@@ -3,6 +3,7 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
+  getExpandedRowModel,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -77,8 +78,8 @@ export function TransactionTable() {
 
   // Check if mobile view
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
-  // Track expanded transactions
-  const [expandedTransactions, setExpandedTransactions] = React.useState<Set<string>>(new Set());
+  // Track expanded transactions - use Record<string, boolean> for TanStack Table
+  const [expandedTransactions, setExpandedTransactions] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -87,16 +88,14 @@ export function TransactionTable() {
   }, []);
 
   const toggleExpand = (transactionId: string) => {
-    setExpandedTransactions(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(transactionId)) {
-        newSet.delete(transactionId);
-      } else {
-        newSet.add(transactionId);
-      }
-      return newSet;
-    });
+    setExpandedTransactions(prev => ({
+      ...prev,
+      [transactionId]: !prev[transactionId]
+    }));
   };
+
+  // For desktop, we'll use a simple expand state without TanStack Table's expand feature
+  // to avoid complexity. We can add it later if needed.
 
   // Filter states
   const [showFilters, setShowFilters] = React.useState(false);
@@ -1304,7 +1303,7 @@ export function TransactionTable() {
           const paidAmount = transaction.paidAmount || 0;
           const remaining = total - paidAmount;
           const paymentCategory = getPaymentCategory(transaction);
-          const isExpanded = expandedTransactions.has(transaction.id);
+          const isExpanded = !!expandedTransactions[transaction.id];
 
           return (
             <div
