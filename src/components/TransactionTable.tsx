@@ -28,6 +28,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
@@ -53,8 +60,13 @@ import { UserRole } from "@/types/user"
 import { EditTransactionDialog } from "./EditTransactionDialog"
 import { MigrationTransactionDialog } from "./MigrationTransactionDialog"
 import { isOwner } from '@/utils/roleUtils'
-import { useDeliveryEmployees, useDeliveryHistory } from "@/hooks/useDeliveries"
+import { useDeliveryEmployees, useDeliveryHistory, useDeliveries } from "@/hooks/useDeliveries"
 import { useAccounts } from "@/hooks/useAccounts"
+import { DeliveryFormContent } from "@/components/DeliveryFormContent"
+import { DeliveryCompletionDialog } from "@/components/DeliveryCompletionDialog"
+import { TransactionDeliveryInfo } from "@/types/delivery"
+import { useTransactionsReadyForDelivery } from "@/hooks/useDeliveries"
+import { Delivery } from "@/types/delivery"
 
 
 export function TransactionTable() {
@@ -97,6 +109,22 @@ export function TransactionTable() {
 
   // Get payment accounts for filter dropdown
   const { accounts } = useAccounts();
+  const { data: transactionsReadyForDelivery } = useTransactionsReadyForDelivery();
+
+  // Delivery dialog state
+  const [isDeliveryDialogOpen, setIsDeliveryDialogOpen] = React.useState(false);
+  const [selectedDeliveryTransaction, setSelectedDeliveryTransaction] = React.useState<TransactionDeliveryInfo | null>(null);
+  const [completionDialogOpen, setCompletionDialogOpen] = React.useState(false);
+  const [completedDelivery, setCompletedDelivery] = React.useState<Delivery | null>(null);
+  const [completedTransaction, setCompletedTransaction] = React.useState<TransactionDeliveryInfo | null>(null);
+
+  // Handle delivery completion
+  const handleDeliveryCompleted = (delivery: Delivery, transaction: TransactionDeliveryInfo) => {
+    setCompletedDelivery(delivery)
+    setCompletedTransaction(transaction)
+    setCompletionDialogOpen(true)
+    setIsDeliveryDialogOpen(false) // Close the form dialog
+  }
   const paymentAccounts = React.useMemo(() => {
     if (!accounts) return [];
     return accounts.filter(acc => acc.isPaymentAccount && !acc.isHeader && acc.isActive !== false);
@@ -725,8 +753,12 @@ export function TransactionTable() {
               size="sm"
               onClick={(e) => {
                 e.stopPropagation()
-                // Navigate to DeliveryPage with query param to auto-open delivery dialog
-                navigate(`/deliveries?transactionId=${transaction.id}`)
+                // Find transaction in ready for delivery list
+                const readyTransaction = transactionsReadyForDelivery?.find(t => t.id === transaction.id)
+                if (readyTransaction) {
+                  setSelectedDeliveryTransaction(readyTransaction)
+                  setIsDeliveryDialogOpen(true)
+                }
               }}
               disabled={isFullyDelivered}
               className={cn(
@@ -1263,7 +1295,7 @@ export function TransactionTable() {
         <div className="space-y-2">
           {isLoading ? (
             Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="bg-card border border-border rounded-lg p-3">
+              <div key={i} className="bg-white border rounded-lg p-3">
                 <Skeleton className="h-16 w-full" />
               </div>
             ))
@@ -1271,7 +1303,7 @@ export function TransactionTable() {
             filteredTransactions.map((transaction, index) => (
               <div
                 key={transaction.id}
-                className="bg-card border border-border rounded-lg p-3 shadow-sm active:bg-muted"
+                className="bg-white border rounded-lg p-3 shadow-sm active:bg-gray-50"
               >
                 <div
                   className="flex items-center justify-between"
@@ -1295,7 +1327,12 @@ export function TransactionTable() {
                     size="sm"
                     onClick={(e) => {
                       e.stopPropagation();
-                      navigate(`/transactions/${transaction.id}`);
+                      // Find transaction in ready for delivery list
+                      const readyTransaction = transactionsReadyForDelivery?.find(t => t.id === transaction.id)
+                      if (readyTransaction) {
+                        setSelectedDeliveryTransaction(readyTransaction)
+                        setIsDeliveryDialogOpen(true)
+                      }
                     }}
                     className="bg-green-600 hover:bg-green-700 text-white ml-2 h-10 px-3"
                   >
@@ -1385,6 +1422,39 @@ export function TransactionTable() {
       <MigrationTransactionDialog
         open={isMigrationDialogOpen}
         onOpenChange={setIsMigrationDialogOpen}
+      />
+
+      {/* Delivery Dialog */}
+      {selectedDeliveryTransaction && (
+        <Dialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Buat Pengantaran Baru</DialogTitle>
+              <DialogDescription>
+                Catat pengantaran untuk order #{selectedDeliveryTransaction.id} - {selectedDeliveryTransaction.customerName}
+              </DialogDescription>
+            </DialogHeader>
+
+            <DeliveryFormContent
+              transaction={selectedDeliveryTransaction}
+              onSuccess={() => {
+                setSelectedDeliveryTransaction(null)
+                setIsDeliveryDialogOpen(false)
+                // Note: refetch is not available in this context, 
+                // the transactions list will auto-refresh from the hook
+              }}
+              onDeliveryCreated={handleDeliveryCompleted}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delivery Completion Dialog */}
+      <DeliveryCompletionDialog
+        open={completionDialogOpen}
+        onOpenChange={setCompletionDialogOpen}
+        delivery={completedDelivery}
+        transaction={completedTransaction}
       />
     </div>
   )
