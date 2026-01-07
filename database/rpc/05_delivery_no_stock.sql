@@ -39,6 +39,8 @@ DECLARE
   v_total_ordered NUMERIC;
   v_total_delivered NUMERIC;
   v_new_status TEXT;
+  v_item_type TEXT;
+  v_material_id UUID;
 BEGIN
   -- ==================== VALIDASI ====================
 
@@ -129,7 +131,8 @@ BEGIN
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
-    v_product_id := (v_item->>'product_id')::UUID;
+    v_product_id := NULL;
+    v_material_id := NULL;
     v_qty := (v_item->>'quantity')::NUMERIC;
     v_product_name := v_item->>'product_name';
     v_is_bonus := COALESCE((v_item->>'is_bonus')::BOOLEAN, FALSE);
@@ -137,6 +140,14 @@ BEGIN
     v_unit := v_item->>'unit';
     v_width := (v_item->>'width')::NUMERIC;
     v_height := (v_item->>'height')::NUMERIC;
+    v_item_type := v_item->>'item_type';
+
+    -- Determine if this is a material or product based on ID prefix
+    IF (v_item->>'product_id') LIKE 'material-%' THEN
+      v_material_id := (v_item->>'material_id')::UUID;
+    ELSE
+      v_product_id := (v_item->>'product_id')::UUID;
+    END IF;
 
     IF v_qty > 0 THEN
        -- Insert Delivery Item ONLY

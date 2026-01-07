@@ -40,6 +40,7 @@ DECLARE
   v_qty NUMERIC;
   v_product_name TEXT;
   v_is_bonus BOOLEAN;
+  v_counter_int INTEGER;
 BEGIN
   -- 1. Validasi & Get current delivery
   SELECT * INTO v_delivery FROM deliveries WHERE id = p_delivery_id AND branch_id = p_branch_id;
@@ -113,7 +114,7 @@ BEGIN
 
       -- Consume Stock (FIFO) - Only if not office sale (already consumed)
       IF NOT COALESCE(v_transaction.is_office_sale, FALSE) THEN
-        SELECT * INTO v_consume_result FROM consume_inventory_fifo_v3(
+        SELECT * INTO v_consume_result FROM consume_inventory_fifo(
           v_product_id, p_branch_id, v_qty, format('delivery_update_%s', p_delivery_id)
         );
 
@@ -159,14 +160,30 @@ BEGIN
     SELECT id INTO v_persediaan_id FROM accounts WHERE code = '1310' AND branch_id = p_branch_id AND is_active = TRUE LIMIT 1;
 
     IF v_hpp_account_id IS NOT NULL AND v_persediaan_id IS NOT NULL THEN
-      v_entry_number := 'JE-' || TO_CHAR(p_delivery_date, 'YYYYMMDD') || '-' ||
-        LPAD((SELECT COUNT(*) + 1 FROM journal_entries WHERE branch_id = p_branch_id AND DATE(created_at) = DATE(p_delivery_date))::TEXT, 4, '0');
+      -- Initialize counter based on entry_date/NOW()
+      -- Since this is update, we use NOW() as entry_date in the original code, but description uses v_transaction.ref
+      -- We'll stick to NOW() for entry_date as per original logic for updates
+      SELECT COUNT(*) INTO v_counter_int 
+      FROM journal_entries 
+      WHERE branch_id = p_branch_id AND DATE(entry_date) = DATE(p_delivery_date);
+         
+      LOOP
+        v_counter_int := v_counter_int + 1;
+        v_entry_number := 'JE-' || TO_CHAR(p_delivery_date, 'YYYYMMDD') || '-' ||
+            LPAD(v_counter_int::TEXT, 4, '0');
 
-      INSERT INTO journal_entries (
-        entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit
-      ) VALUES (
-        v_entry_number, NOW(), format('HPP Pengiriman %s (update)', v_transaction.ref), 'adjustment', p_delivery_id::TEXT, p_branch_id, 'posted', v_total_hpp, v_total_hpp
-      ) RETURNING id INTO v_journal_id;
+        BEGIN
+          INSERT INTO journal_entries (
+            entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit
+          ) VALUES (
+            v_entry_number, NOW(), format('HPP Pengiriman %s (update)', v_transaction.ref), 'adjustment', p_delivery_id::TEXT, p_branch_id, 'posted', v_total_hpp, v_total_hpp
+          ) RETURNING id INTO v_journal_id;
+          
+          EXIT; 
+        EXCEPTION WHEN unique_violation THEN
+          -- Retry
+        END;
+      END LOOP;
 
       INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
       VALUES 

@@ -114,6 +114,9 @@ export const useEmployeeAdvances = () => {
         query = query.eq('branch_id', currentBranch.id);
       }
 
+      // Filter out cancelled advances
+      query = query.neq('status', 'cancelled');
+
       // Role-based filtering: only kasir, admin, owner can see all data
       // Other users can only see their own advances
       if (user && !['kasir', 'admin', 'owner'].includes(user.role || '')) {
@@ -125,7 +128,12 @@ export const useEmployeeAdvances = () => {
         console.error("❌ Gagal mengambil data panjar:", error.message);
         throw new Error(error.message);
       }
-      return data ? data.map(fromDbToApp) : [];
+
+      // Client-side filter as backup
+      const filteredData = data ? data.filter((d: any) => d.status !== 'cancelled') : [];
+      console.log('UseEmployeeAdvances: Fetched', data?.length, 'Filtered', filteredData.length);
+
+      return filteredData.map(fromDbToApp);
     },
     enabled: !!currentBranch,
     // Optimized for panjar management
@@ -209,17 +217,17 @@ export const useEmployeeAdvances = () => {
         });
 
       if (rpcError) {
-      console.error('❌ RPC Error:', rpcError);
-      throw new Error(`Gagal memproses pelunasan: ${rpcError.message}`);
-    }
+        console.error('❌ RPC Error:', rpcError);
+        throw new Error(`Gagal memproses pelunasan: ${rpcError.message}`);
+      }
 
       const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
-    if(!rpcResult?.success) {
-      throw new Error(rpcResult?.error_message || 'Gagal memproses pelunasan');
-    }
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal memproses pelunasan');
+      }
 
       console.log('✅ Repayment Success via RPC:', rpcResult.repayment_id, 'Journal:', rpcResult.journal_id);
-  },
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -228,46 +236,46 @@ export const useEmployeeAdvances = () => {
     }
   });
 
-const deleteAdvance = useMutation({
-  mutationFn: async (advanceToDelete: EmployeeAdvance): Promise<void> => {
-    if (!currentBranch?.id) throw new Error('Branch ID is required');
+  const deleteAdvance = useMutation({
+    mutationFn: async (advanceToDelete: EmployeeAdvance): Promise<void> => {
+      if (!currentBranch?.id) throw new Error('Branch ID is required');
 
-    console.log('🗑️ Voiding Advance via RPC...', advanceToDelete.id);
+      console.log('🗑️ Voiding Advance via RPC...', advanceToDelete.id);
 
-    const { data: rpcResultRaw, error: rpcError } = await supabase
-      .rpc('void_employee_advance_atomic', {
-        p_branch_id: currentBranch.id,
-        p_advance_id: advanceToDelete.id,
-        p_reason: 'Dihapus oleh user'
-      });
+      const { data: rpcResultRaw, error: rpcError } = await supabase
+        .rpc('void_employee_advance_atomic', {
+          p_branch_id: currentBranch.id,
+          p_advance_id: advanceToDelete.id,
+          p_reason: 'Dihapus oleh user'
+        });
 
-    if (rpcError) {
-      console.error('❌ RPC Error:', rpcError);
-      throw new Error(`Gagal menghapus panjar: ${rpcError.message}`);
+      if (rpcError) {
+        console.error('❌ RPC Error:', rpcError);
+        throw new Error(`Gagal menghapus panjar: ${rpcError.message}`);
+      }
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      if (!rpcResult?.success) {
+        throw new Error(rpcResult?.error_message || 'Gagal menghapus panjar');
+      }
+
+      console.log('✅ Advance Deleted & Journals Voided:', rpcResult.journals_voided);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
+      queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
     }
+  });
 
-    const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
-    if (!rpcResult?.success) {
-      throw new Error(rpcResult?.error_message || 'Gagal menghapus panjar');
-    }
-
-    console.log('✅ Advance Deleted & Journals Voided:', rpcResult.journals_voided);
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['employeeAdvances'] });
-    queryClient.invalidateQueries({ queryKey: ['accounts'] });
-    queryClient.invalidateQueries({ queryKey: ['cashFlow'] });
-    queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+  return {
+    advances,
+    isLoading,
+    isError,
+    error,
+    addAdvance,
+    addRepayment,
+    deleteAdvance,
   }
-});
-
-return {
-  advances,
-  isLoading,
-  isError,
-  error,
-  addAdvance,
-  addRepayment,
-  deleteAdvance,
-}
 }

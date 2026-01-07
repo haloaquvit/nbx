@@ -80,11 +80,9 @@ const PROD_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIs
 // Local JWT (signed with docker-compose JWT secret: reallyreallyreallyreallyverysafeandsecurejwtsecret)
 const LOCAL_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImF1ZCI6ImFub24iLCJpYXQiOjE3Njc1MzE0ODUsImV4cCI6NDkyMTEzMTQ4NX0.5fqX3eXr6VhW2vGWUUlHQxPO_ATFsJxyX6zJXqMduxs';
 
-// Use local JWT for localhost, production JWT for VPS
+// Use production JWT for all connections (connect to mkw.aquvit.id)
 function getAnonJWT(): string {
-  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-    return LOCAL_ANON_JWT;
-  }
+  // Always use production JWT since we want to connect to production database
   return PROD_ANON_JWT;
 }
 
@@ -300,9 +298,15 @@ function createSupabaseClient(): SupabaseClient {
             }
           }
 
+          // Log the final URL for debugging
+          // console.log('[SupabaseClient] Fetching:', finalUrl, method);
+
           return fetch(finalUrl, {
             ...options,
             headers,
+          }).catch(err => {
+            console.error('[SupabaseClient] Fetch Failed:', finalUrl, err);
+            throw err;
           });
         },
       },

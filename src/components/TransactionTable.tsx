@@ -412,7 +412,7 @@ export function TransactionTable() {
                     <tr><td width="80">No</td><td>: ${transaction.id}</td><td width="50">SALES</td><td>: ${transaction.cashierName?.split(' ')[0] || 'KANTOR'}</td></tr>
                     <tr><td>Tanggal</td><td>: ${orderDate ? format(orderDate, "dd/MM/yy HH:mm", { locale: id }) : '-'}</td><td>PPN</td><td>: ${transaction.ppnEnabled ? 'Ya' : '-'}</td></tr>
                     <tr><td>Pelanggan</td><td colspan="3">: ${transaction.customerName}</td></tr>
-                    <tr><td>Alamat</td><td colspan="3">: -</td></tr>
+                    <tr><td>Alamat</td><td colspan="3">: ${transaction.customerAddress || '-'}</td></tr>
                   </table>
                 </td>
               </tr>
@@ -1297,24 +1297,24 @@ export function TransactionTable() {
                 <Skeleton className="h-16 w-full" />
               </div>
             ))
-      ) : filteredTransactions.length > 0 ? (
-        filteredTransactions.map((transaction, index) => {
-          const total = transaction.total;
-          const paidAmount = transaction.paidAmount || 0;
-          const remaining = total - paidAmount;
-          const paymentCategory = getPaymentCategory(transaction);
-          const isExpanded = !!expandedTransactions[transaction.id];
+          ) : filteredTransactions.length > 0 ? (
+            filteredTransactions.map((transaction, index) => {
+              const total = transaction.total;
+              const paidAmount = transaction.paidAmount || 0;
+              const remaining = total - paidAmount;
+              const paymentCategory = getPaymentCategory(transaction);
+              const isExpanded = !!expandedTransactions[transaction.id];
 
-          return (
-            <div
-              key={transaction.id}
-              className="bg-white border rounded-lg shadow-sm overflow-hidden"
-            >
-              {/* Main Card - Always Visible */}
-              <div
-                className="p-3 active:bg-gray-50"
-                onClick={() => toggleExpand(transaction.id)}
-              >
+              return (
+                <div
+                  key={transaction.id}
+                  className="bg-white border rounded-lg shadow-sm overflow-hidden"
+                >
+                  {/* Main Card - Always Visible */}
+                  <div
+                    className="p-3 active:bg-gray-50"
+                    onClick={() => toggleExpand(transaction.id)}
+                  >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -1507,7 +1507,7 @@ export function TransactionTable() {
                             <TableCell key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</TableCell>
                           ))}
                         </TableRow>
-                        
+
                         {/* Expanded Detail Row */}
                         {isExpanded && (
                           <TableRow>

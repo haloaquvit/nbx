@@ -119,8 +119,13 @@ export const useSuppliers = () => {
   // Create supplier
   const createSupplier = useMutation({
     mutationFn: async (data: CreateSupplierData): Promise<Supplier> => {
+      // Auto-generate code if not provided to satisfy DB constraint
+      // ID uses timestamp to ensure uniqueness
+      const generatedCode = `SUP-${Math.floor(Date.now() / 1000)}`;
+
       const dbData = {
         ...toDbSupplier(data),
+        code: data.code || generatedCode,
         branch_id: currentBranch?.id || null,
       }
       // Use .order('id').limit(1) and handle array response because our client forces Accept: application/json
@@ -169,7 +174,7 @@ export const useSuppliers = () => {
         .from('suppliers')
         .delete()
         .eq('id', id)
-      
+
       if (error) throw new Error(error.message)
     },
     onSuccess: () => {
@@ -203,7 +208,7 @@ export const useSupplierMaterials = () => {
           materials(name)
         `)
         .order('last_updated', { ascending: false })
-      
+
       if (error) throw new Error(error.message)
       return data ? data.map(item => ({
         id: item.id,
@@ -235,7 +240,7 @@ export const useSupplierMaterials = () => {
       .eq('material_id', materialId)
       .eq('is_active', true)
       .order('supplier_price')
-    
+
     if (error) throw new Error(error.message)
     return data ? data.map(item => ({
       id: item.id,

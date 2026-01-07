@@ -6,7 +6,7 @@ import path from "path";
 export default defineConfig(() => ({
   server: {
     host: "::",
-    port: 5174,
+    port: 8080,
     // Add history API fallback for SPA routing
     historyApiFallback: true,
   },
@@ -35,4 +35,3 @@ export default defineConfig(() => ({
     include: ['react', 'react-dom', 'react-router-dom'],
   },
 }));
-

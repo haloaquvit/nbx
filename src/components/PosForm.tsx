@@ -424,6 +424,21 @@ export const PosForm = () => {
     }
   }, [currentUser, checkDriverAvailability]);
 
+  // Auto-set Laku Kantor for specific customers
+  useEffect(() => {
+    const name = (selectedCustomer?.name || customerSearch || '').toLowerCase();
+    // Check if name indicates factory/office sale
+    if (name.includes('laku pabrik') || name.includes('laku kantor')) {
+      if (!isOfficeSale) {
+        setIsOfficeSale(true);
+        toast({
+          title: "Mode Laku Kantor Aktif",
+          description: "Transaksi ini otomatis ditandai sebagai Laku Kantor (Tanpa Pengantaran).",
+        });
+      }
+    }
+  }, [selectedCustomer, customerSearch]);
+
   const handleAddItem = () => {
     const newItem: FormTransactionItem = {
       id: Date.now(), product: null, keterangan: '', qty: 1, harga: 0, unit: 'pcs'

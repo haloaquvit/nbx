@@ -18,14 +18,14 @@ import { useAuth } from "@/hooks/useAuth"
 import { isOwner, isAdmin, isAdminOrOwner, canManageCash } from "@/utils/roleUtils"
 import { ChartOfAccountsTree } from "./ChartOfAccountsTree"
 import { CoaTableView } from "./CoaTableView"
-import { 
-  STANDARD_COA_TEMPLATE, 
-  generateNextAccountCode, 
+import {
+  STANDARD_COA_TEMPLATE,
+  generateNextAccountCode,
   validateAccountCode,
   mapLegacyTypeToCategory,
-  getNormalBalanceForCategory 
+  getNormalBalanceForCategory
 } from "@/utils/chartOfAccountsUtils"
-import { 
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -33,7 +33,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -164,6 +164,7 @@ export function EnhancedAccountManagement() {
         initialBalance: data.balance, // For new accounts, initial = balance
         isPaymentAccount: data.isPaymentAccount,
         code: data.code || undefined,
+        // Sanitize parentId - ensure it is a valid UUID
         parentId: data.parentId || undefined,
         normalBalance: data.normalBalance,
         isHeader: data.isHeader,
@@ -253,9 +254,9 @@ export function EnhancedAccountManagement() {
     const templateData = STANDARD_COA_TEMPLATE.map(template => ({
       code: template.code,
       name: template.name,
-      type: template.category === 'ASET' ? 'Aset' : 
-            template.category === 'KEWAJIBAN' ? 'Kewajiban' :
-            template.category === 'MODAL' ? 'Modal' :
+      type: template.category === 'ASET' ? 'Aset' :
+        template.category === 'KEWAJIBAN' ? 'Kewajiban' :
+          template.category === 'MODAL' ? 'Modal' :
             template.category === 'PENDAPATAN' ? 'Pendapatan' : 'Beban',
       parentCode: template.parentCode,
       level: template.level,
@@ -288,6 +289,7 @@ export function EnhancedAccountManagement() {
   const userCanManageCash = canManageCash(user);
 
   // Get accounts for parent selection (header accounts only)
+  // Filter out any accounts with invalid IDs (non-UUIDs) to prevent errors
   const parentAccountOptions = accounts?.filter(acc => acc.isHeader) || []
 
   return (
@@ -298,11 +300,11 @@ export function EnhancedAccountManagement() {
           <h2 className="text-2xl font-bold">Chart of Accounts</h2>
           <p className="text-muted-foreground">Kelola struktur akun keuangan perusahaan</p>
         </div>
-        
+
         {userIsAdminOrOwner && (
           <div className="flex gap-2">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={importStandardCoA}
               disabled={importCoAMutation.isPending}
             >
@@ -362,19 +364,19 @@ export function EnhancedAccountManagement() {
                         <Label className="text-sm font-medium">Nama</Label>
                         <p className="text-sm">{selectedAccount.name}</p>
                       </div>
-                      
+
                       {selectedAccount.code && (
                         <div>
                           <Label className="text-sm font-medium">Kode</Label>
                           <p className="text-sm font-mono">{selectedAccount.code}</p>
                         </div>
                       )}
-                      
+
                       <div>
                         <Label className="text-sm font-medium">Tipe</Label>
                         <p className="text-sm">{selectedAccount.type}</p>
                       </div>
-                      
+
                       <div>
                         <Label className="text-sm font-medium">Saldo Saat Ini</Label>
                         <p className="text-lg font-semibold">
@@ -385,14 +387,14 @@ export function EnhancedAccountManagement() {
                           }).format(selectedAccount.balance)}
                         </p>
                       </div>
-                      
+
                       {selectedAccount.normalBalance && (
                         <div>
                           <Label className="text-sm font-medium">Normal Balance</Label>
                           <p className="text-sm">{selectedAccount.normalBalance}</p>
                         </div>
                       )}
-                      
+
                       <div className="flex gap-2">
                         {selectedAccount.isPaymentAccount && (
                           <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
@@ -452,7 +454,7 @@ export function EnhancedAccountManagement() {
               Buat account baru dalam Chart of Accounts
             </DialogDescription>
           </DialogHeader>
-          
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -460,7 +462,7 @@ export function EnhancedAccountManagement() {
                 <Input id="name" {...register("name")} />
                 {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="code">Kode Account</Label>
                 <Input id="code" {...register("code")} placeholder="1110" />
@@ -483,7 +485,7 @@ export function EnhancedAccountManagement() {
                 </Select>
                 {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
               </div>
-              
+
               {!parentAccountForNew && (
                 <div className="space-y-2">
                   <Label htmlFor="parentId">Parent Account</Label>
@@ -508,11 +510,11 @@ export function EnhancedAccountManagement() {
                 <Input id="balance" type="number" {...register("balance")} />
                 {errors.balance && <p className="text-sm text-destructive">{errors.balance.message}</p>}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="normalBalance">Normal Balance</Label>
-                <Select onValueChange={(value) => setValue("normalBalance", value as NormalBalance)} 
-                        value={watch('normalBalance') || 'DEBIT'}>
+                <Select onValueChange={(value) => setValue("normalBalance", value as NormalBalance)}
+                  value={watch('normalBalance') || 'DEBIT'}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="DEBIT">Debit</SelectItem>
@@ -527,7 +529,7 @@ export function EnhancedAccountManagement() {
                 <Checkbox id="isPaymentAccount" onCheckedChange={(checked) => setValue('isPaymentAccount', !!checked)} />
                 <Label htmlFor="isPaymentAccount" className="text-sm">Account Pembayaran</Label>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <Checkbox id="isHeader" onCheckedChange={(checked) => setValue('isHeader', !!checked)} />
                 <Label htmlFor="isHeader" className="text-sm">Header Account</Label>
@@ -555,7 +557,7 @@ export function EnhancedAccountManagement() {
               Edit informasi account yang dipilih
             </DialogDescription>
           </DialogHeader>
-          
+
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -563,7 +565,7 @@ export function EnhancedAccountManagement() {
                 <Input id="edit-name" {...register("name")} />
                 {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="edit-code">Kode Account</Label>
                 <Input id="edit-code" {...register("code")} placeholder="1110" />
@@ -586,7 +588,7 @@ export function EnhancedAccountManagement() {
                 </Select>
                 {errors.type && <p className="text-sm text-destructive">{errors.type.message}</p>}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="edit-parentId">Parent Account</Label>
                 <Select onValueChange={(value) => setValue("parentId", value === "none" ? "" : value)} value={watchedParentId || "none"}>
@@ -609,11 +611,11 @@ export function EnhancedAccountManagement() {
                 <Input id="edit-balance" type="number" {...register("balance")} />
                 {errors.balance && <p className="text-sm text-destructive">{errors.balance.message}</p>}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="edit-normalBalance">Normal Balance</Label>
-                <Select onValueChange={(value) => setValue("normalBalance", value as NormalBalance)} 
-                        value={watch('normalBalance') || 'DEBIT'}>
+                <Select onValueChange={(value) => setValue("normalBalance", value as NormalBalance)}
+                  value={watch('normalBalance') || 'DEBIT'}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="DEBIT">Debit</SelectItem>
@@ -625,28 +627,28 @@ export function EnhancedAccountManagement() {
 
             <div className="flex gap-4">
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="edit-isPaymentAccount" 
+                <Checkbox
+                  id="edit-isPaymentAccount"
                   checked={watch('isPaymentAccount')}
-                  onCheckedChange={(checked) => setValue('isPaymentAccount', !!checked)} 
+                  onCheckedChange={(checked) => setValue('isPaymentAccount', !!checked)}
                 />
                 <Label htmlFor="edit-isPaymentAccount" className="text-sm">Account Pembayaran</Label>
               </div>
-              
+
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="edit-isHeader" 
+                <Checkbox
+                  id="edit-isHeader"
                   checked={watch('isHeader')}
-                  onCheckedChange={(checked) => setValue('isHeader', !!checked)} 
+                  onCheckedChange={(checked) => setValue('isHeader', !!checked)}
                 />
                 <Label htmlFor="edit-isHeader" className="text-sm">Header Account</Label>
               </div>
 
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="edit-isActive" 
+                <Checkbox
+                  id="edit-isActive"
                   checked={watch('isActive') !== false}
-                  onCheckedChange={(checked) => setValue('isActive', !!checked)} 
+                  onCheckedChange={(checked) => setValue('isActive', !!checked)}
                 />
                 <Label htmlFor="edit-isActive" className="text-sm">Account Aktif</Label>
               </div>

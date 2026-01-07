@@ -94,11 +94,15 @@ export const useProductStockMovements = () => {
       }
 
       // Get current stock from VIEW
+      // Get current stock from VIEW for CURRENT BRANCH
+      if (!currentBranch?.id) throw new Error('Branch tidak valid');
+
       const { data: stockData } = await supabase
         .from('v_product_current_stock')
         .select('current_stock')
         .eq('product_id', productId)
-        .single();
+        .eq('branch_id', currentBranch.id)
+        .maybeSingle(); // Use maybeSingle to handle no rows (0 stock) gracefully
 
       const previousStock = Number(stockData?.current_stock) || 0;
 
@@ -164,11 +168,15 @@ export const useProductStockMovements = () => {
       }
 
       // Get current stock from VIEW
+      // Get current stock from VIEW for CURRENT BRANCH
+      if (!currentBranch?.id) throw new Error('Branch tidak valid');
+
       const { data: stockData } = await supabase
         .from('v_product_current_stock')
         .select('current_stock')
         .eq('product_id', productId)
-        .single();
+        .eq('branch_id', currentBranch.id)
+        .maybeSingle();
 
       const previousStock = Number(stockData?.current_stock) || 0;
 

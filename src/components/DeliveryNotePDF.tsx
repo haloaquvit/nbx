@@ -102,10 +102,10 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
           <div>
             <h3 style="font-size: 18px; font-weight: 600; color: #111827; margin: 0 0 12px 0;">Dikirim Kepada:</h3>
             <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px;">
-              <p style="font-size: 18px; font-weight: bold; color: #111827; margin: 0;">${transaction?.customerName}</p>
+              <p style="font-size: 18px; font-weight: bold; color: #111827; margin: 0;">${transaction?.customerName || delivery.customerName || '-'}</p>
               <p style="font-size: 14px; color: #4b5563; margin: 4px 0 0 0;">Customer</p>
             </div>
-            ${transaction?.customerAddress ? `<p style="margin-top: 8px; font-size: 14px; color: #4b5563;">${transaction.customerAddress}</p>` : ''}
+            ${(transaction?.customerAddress || delivery.customerAddress) ? `<p style="margin-top: 8px; font-size: 14px; color: #4b5563;">${transaction?.customerAddress || delivery.customerAddress}</p>` : ''}
           </div>
           <div style="font-size: 14px;">
             <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 8px;">
@@ -310,8 +310,8 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                   <table style="width: 100%;">
                     <tr><td width="80">No</td><td>: ${delivery.transactionId}-${delivery.deliveryNumber}</td><td width="50">Driver</td><td>: ${delivery.driverName?.split(' ')[0] || '-'}</td></tr>
                     <tr><td>Tanggal</td><td>: ${safeFormatDate(orderDate, "dd/MM/yy HH:mm")}</td><td>Helper</td><td>: ${delivery.helperName?.split(' ')[0] || '-'}</td></tr>
-                    <tr><td>Pelanggan</td><td colspan="3">: ${transaction?.customerName || '-'}</td></tr>
-                    <tr><td>Alamat</td><td colspan="3">: ${transaction?.customerAddress || '-'}</td></tr>
+                    <tr><td>Pelanggan</td><td colspan="3">: ${transaction?.customerName || delivery.customerName || '-'}</td></tr>
+                    <tr><td>Alamat</td><td colspan="3">: ${transaction?.customerAddress || delivery.customerAddress || '-'}</td></tr>
                   </table>
                 </td>
               </tr>
@@ -482,11 +482,11 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         </div>
       ) : (
         <Button
-          onClick={handleDotMatrixPrint}
+          onClick={() => setIsDialogOpen(true)}
           size="icon"
           variant="outline"
           className="rounded-full shadow-sm hover:shadow-md transition-shadow h-8 w-8"
-          title="Cetak Surat Jalan (Dot Matrix)"
+          title="Cetak Surat Jalan"
         >
           <Printer className="h-4 w-4" />
         </Button>

@@ -124,12 +124,12 @@ export const useAccounts = () => {
         p_name: newAccountData.name,
         p_code: newAccountData.code || '',
         p_type: newAccountData.type,
-        p_initial_balance: newAccountData.initialBalance || newAccountData.balance || 0,
-        p_is_payment_account: newAccountData.isPaymentAccount || false,
+        p_initial_balance: newAccountData.initialBalance ?? newAccountData.balance ?? 0,
+        p_is_payment_account: newAccountData.isPaymentAccount ?? false,
         p_parent_id: newAccountData.parentId || null,
-        p_level: newAccountData.level || 1,
-        p_is_header: newAccountData.isHeader || false,
-        p_sort_order: newAccountData.sortOrder || 0,
+        p_level: newAccountData.level ?? 1,
+        p_is_header: newAccountData.isHeader ?? false,
+        p_sort_order: newAccountData.sortOrder ?? 0,
         p_employee_id: newAccountData.employeeId || null
       });
 
@@ -196,14 +196,14 @@ export const useAccounts = () => {
         p_name,
         p_code: p_code || '',
         p_type,
-        p_initial_balance: p_initial,
-        p_is_payment_account: p_pay,
-        p_parent_id: p_parent,
-        p_level: p_level,
-        p_is_header: p_header,
-        p_is_active: p_active,
-        p_sort_order: p_sort,
-        p_employee_id: p_emp
+        p_initial_balance: p_initial ?? 0,
+        p_is_payment_account: p_pay ?? false,
+        p_parent_id: p_parent ?? null,
+        p_level: p_level ?? 1,
+        p_is_header: p_header ?? false,
+        p_is_active: p_active ?? true,
+        p_sort_order: p_sort ?? 0,
+        p_employee_id: p_emp ?? null
       });
 
       if (error) throw error;

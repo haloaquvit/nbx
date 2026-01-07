@@ -7,8 +7,13 @@
 -- PENTING: Semua operasi WAJIB filter by branch_id
 -- ============================================================================
 
--- Drop existing functions
+-- Drop existing functions (old signatures)
 DROP FUNCTION IF EXISTS receive_po_atomic(UUID, UUID, DATE, UUID, TEXT);
+DROP FUNCTION IF EXISTS delete_po_atomic(UUID, UUID, BOOLEAN);
+
+-- Also drop new signatures if they exist to ensure clean replace
+DROP FUNCTION IF EXISTS receive_po_atomic(TEXT, UUID, DATE, UUID, TEXT);
+DROP FUNCTION IF EXISTS delete_po_atomic(TEXT, UUID, BOOLEAN);
 
 -- ============================================================================
 -- 1. RECEIVE PO ATOMIC
@@ -16,7 +21,7 @@ DROP FUNCTION IF EXISTS receive_po_atomic(UUID, UUID, DATE, UUID, TEXT);
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION receive_po_atomic(
-  p_po_id UUID,
+  p_po_id TEXT,               -- CHANGED: UUID -> TEXT
   p_branch_id UUID,           -- WAJIB: identitas cabang
   p_received_date DATE DEFAULT CURRENT_DATE,
   p_user_id UUID DEFAULT NULL,
@@ -142,7 +147,7 @@ BEGIN
         v_item.quantity,
         v_previous_stock,
         v_new_stock,
-        p_po_id::TEXT,
+        p_po_id,
         'purchase_order',
         format('PO %s - Stock received', p_po_id),
         p_user_id,
@@ -256,7 +261,7 @@ BEGIN
       v_po.quantity,
       v_previous_stock,
       v_new_stock,
-      p_po_id::TEXT,
+      p_po_id,
       'purchase_order',
       format('PO %s - Stock received (legacy)', p_po_id),
       p_user_id,
@@ -322,7 +327,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION delete_po_atomic(
-  p_po_id UUID,
+  p_po_id TEXT,               -- CHANGED: UUID -> TEXT
   p_branch_id UUID,           -- WAJIB: identitas cabang
   p_skip_validation BOOLEAN DEFAULT FALSE
 )
@@ -399,7 +404,7 @@ BEGIN
     voided_at = NOW(),
     voided_reason = format('PO %s dihapus', p_po_id),
     updated_at = NOW()
-  WHERE reference_id = p_po_id::TEXT
+  WHERE reference_id = p_po_id
     AND branch_id = p_branch_id
     AND is_voided = FALSE;
 
@@ -441,7 +446,7 @@ BEGIN
 
   -- Delete material movements
   DELETE FROM material_stock_movements
-  WHERE reference_id = p_po_id::TEXT
+  WHERE reference_id = p_po_id
     AND reference_type = 'purchase_order';
 
   -- Delete accounts payable
@@ -470,8 +475,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- GRANTS
 -- ============================================================================
 
-GRANT EXECUTE ON FUNCTION receive_po_atomic(UUID, UUID, DATE, UUID, TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION delete_po_atomic(UUID, UUID, BOOLEAN) TO authenticated;
+GRANT EXECUTE ON FUNCTION receive_po_atomic(TEXT, UUID, DATE, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION delete_po_atomic(TEXT, UUID, BOOLEAN) TO authenticated;
 
 -- ============================================================================
 -- COMMENTS

@@ -54,9 +54,7 @@ BEGIN
     expected_delivery_date,
     notes,
     branch_id,
-    created_by,
-    created_at,
-    updated_at
+    created_at
   ) VALUES (
     v_po_id,
     p_po_header->>'po_number',
@@ -74,8 +72,6 @@ BEGIN
     (p_po_header->>'expected_delivery_date')::TIMESTAMP,
     p_po_header->>'notes',
     p_branch_id,
-    auth.uid(),
-    NOW(),
     NOW()
   );
 

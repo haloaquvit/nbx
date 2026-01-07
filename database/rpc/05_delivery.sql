@@ -42,6 +42,9 @@ DECLARE
   v_new_status TEXT;
   v_hpp_account_id TEXT;  -- Changed from UUID to TEXT for compatibility
   v_entry_number TEXT;
+  v_counter_int INTEGER;
+  v_item_type TEXT;
+  v_material_id UUID;
 BEGIN
   -- ==================== VALIDASI ====================
   
@@ -87,37 +90,61 @@ BEGIN
   -- ==================== CONSUME STOCK & ITEMS ====================
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP
-      v_product_id := (v_item->>'product_id')::UUID;
-      v_qty := (v_item->>'quantity')::NUMERIC;
-      v_product_name := v_item->>'product_name';
-      v_is_bonus := COALESCE((v_item->>'is_bonus')::BOOLEAN, FALSE);
+        v_product_id := NULL;
+        v_material_id := NULL;
+        v_qty := (v_item->>'quantity')::NUMERIC;
+        v_product_name := v_item->>'product_name';
+        v_is_bonus := COALESCE((v_item->>'is_bonus')::BOOLEAN, FALSE);
+        v_item_type := v_item->>'item_type'; -- 'product' or 'material'
 
-      IF v_qty > 0 THEN
-         -- Insert Item
-         INSERT INTO delivery_items (
-           delivery_id, product_id, product_name, quantity_delivered, unit, is_bonus, notes, width, height, created_at
-         ) VALUES (
-           v_delivery_id, v_product_id, v_product_name, v_qty, 
-           COALESCE(v_item->>'unit', 'pcs'), v_is_bonus, v_item->>'notes', 
-           (v_item->>'width')::NUMERIC, (v_item->>'height')::NUMERIC, NOW()
-         );
-         
-         -- Consume Stock (FIFO) - Only if not office sale (already consumed)
-         -- Check logic: Office sale consumes at transaction time.
-         IF NOT v_transaction.is_office_sale THEN
-             -- Consume Real FIFO (v3 supports negative stock)
-             SELECT * INTO v_consume_result FROM consume_inventory_fifo_v3(
-               v_product_id, p_branch_id, v_qty, COALESCE(v_transaction.ref, 'TR-UNKNOWN')
-             );
-             
-             IF NOT v_consume_result.success THEN
-                RAISE EXCEPTION 'Gagal potong stok: %', v_consume_result.error_message;
-             END IF;
+        -- Determine if this is a material or product based on ID prefix
+        IF (v_item->>'product_id') LIKE 'material-%' THEN
+          -- This is a material item
+          v_material_id := (v_item->>'material_id')::UUID;
+        ELSE
+          -- This is a regular product
+          v_product_id := (v_item->>'product_id')::UUID;
+        END IF;
 
-             v_total_hpp_real := v_total_hpp_real + v_consume_result.total_hpp;
-         END IF;
-      END IF;
-  END LOOP;
+        IF v_qty > 0 THEN
+           -- Insert Item
+           INSERT INTO delivery_items (
+             delivery_id, product_id, product_name, quantity_delivered, unit, is_bonus, notes, width, height, created_at
+           ) VALUES (
+             v_delivery_id, v_product_id, v_product_name, v_qty, 
+             COALESCE(v_item->>'unit', 'pcs'), v_is_bonus, v_item->>'notes', 
+             (v_item->>'width')::NUMERIC, (v_item->>'height')::NUMERIC, NOW()
+           );
+           
+           -- Consume Stock (FIFO) - Only if not office sale (already consumed)
+           -- Check logic: Office sale consumes at transaction time.
+           IF NOT v_transaction.is_office_sale THEN
+               IF v_material_id IS NOT NULL THEN
+                 -- This is a material - use consume_material_fifo
+                 SELECT * INTO v_consume_result FROM consume_material_fifo(
+                   v_material_id, p_branch_id, v_qty, COALESCE(v_transaction.ref, 'TR-UNKNOWN'), 'delivery'
+                 );
+                 
+                 IF NOT v_consume_result.success THEN
+                    RAISE EXCEPTION 'Gagal potong stok material: %', v_consume_result.error_message;
+                 END IF;
+                 
+                 v_total_hpp_real := v_total_hpp_real + COALESCE(v_consume_result.total_cost, 0);
+               ELSIF v_product_id IS NOT NULL THEN
+                 -- This is a regular product - use consume_inventory_fifo
+                 SELECT * INTO v_consume_result FROM consume_inventory_fifo(
+                   v_product_id, p_branch_id, v_qty, COALESCE(v_transaction.ref, 'TR-UNKNOWN')
+                 );
+                 
+                 IF NOT v_consume_result.success THEN
+                    RAISE EXCEPTION 'Gagal potong stok produk: %', v_consume_result.error_message;
+                 END IF;
+                 
+                 v_total_hpp_real := v_total_hpp_real + v_consume_result.total_hpp;
+               END IF;
+           END IF;
+        END IF;
+    END LOOP;
 
   -- Update Delivery HPP
   UPDATE deliveries SET hpp_total = v_total_hpp_real WHERE id = v_delivery_id;
@@ -153,15 +180,30 @@ BEGIN
       SELECT id INTO v_acc_persediaan FROM accounts WHERE code = '1310' AND branch_id = p_branch_id LIMIT 1;
 
       IF v_acc_tertahan IS NOT NULL AND v_acc_persediaan IS NOT NULL THEN
-         v_entry_number := 'JE-DEL-' || TO_CHAR(p_delivery_date, 'YYYYMMDD') || '-' ||
-            LPAD((SELECT COUNT(*) + 1 FROM journal_entries WHERE branch_id = p_branch_id AND DATE(created_at) = DATE(p_delivery_date))::TEXT, 4, '0');
+         -- Initialize counter based on entry_date, not created_at, to support backdating properly and avoid conflicts
+         SELECT COUNT(*) INTO v_counter_int 
+         FROM journal_entries 
+         WHERE branch_id = p_branch_id AND DATE(entry_date) = DATE(p_delivery_date);
+         
+         LOOP
+            v_counter_int := v_counter_int + 1;
+            v_entry_number := 'JE-DEL-' || TO_CHAR(p_delivery_date, 'YYYYMMDD') || '-' ||
+               LPAD(v_counter_int::TEXT, 4, '0');
 
-         INSERT INTO journal_entries (
-           entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit
-         ) VALUES (
-           v_entry_number, p_delivery_date, format('Pengiriman %s', v_transaction.ref), 'transaction', v_delivery_id::TEXT, p_branch_id, 'posted', v_total_hpp_real, v_total_hpp_real
-         )
-         RETURNING id INTO v_journal_id;
+            BEGIN
+                INSERT INTO journal_entries (
+                  entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit
+                ) VALUES (
+                  v_entry_number, p_delivery_date, format('Pengiriman %s', v_transaction.ref), 'transaction', v_delivery_id::TEXT, p_branch_id, 'posted', v_total_hpp_real, v_total_hpp_real
+                )
+                RETURNING id INTO v_journal_id;
+                
+                EXIT; -- Insert successful
+            EXCEPTION WHEN unique_violation THEN
+                -- Try next number
+                -- Loop will continue and increment v_counter_int
+            END;
+         END LOOP;
 
          -- Dr. Modal Barang Dagang Tertahan (Mengurangi Hutang Barang)
          INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)

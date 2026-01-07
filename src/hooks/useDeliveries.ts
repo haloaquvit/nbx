@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Delivery, DeliveryInput, DeliveryItem, DeliveryUpdateInput, TransactionDeliveryInfo } from '@/types/delivery';
 import { useToast } from '@/hooks/use-toast';
 import { useBranch } from '@/contexts/BranchContext';
+import { PhotoUploadService } from '@/services/photoUploadService';
 
 // Type for delivery employees
 interface DeliveryEmployee {
@@ -17,7 +18,7 @@ const fromDbToDelivery = (dbData: any): Delivery => ({
   transactionId: dbData.transaction_id,
   deliveryNumber: dbData.delivery_number,
   customerName: dbData.customer_name,
-  customerAddress: dbData.customer_address,
+  customerAddress: dbData.customer_address || dbData.transactions?.customer?.address, // Try to find address in joined transaction if missing in delivery
   customerPhone: dbData.customer_phone,
   driverId: dbData.driver_id,
   driverName: dbData.driver?.full_name || dbData.driverName, // Map from joined profile
@@ -59,7 +60,11 @@ export const useDeliveries = (transactionId?: string) => {
         .select(`
           *,
           delivery_items(*),
-          transactions(total, cashier_name),
+          transactions(
+            total, 
+            cashier_name,
+            customer:customer_id(address)
+          ),
           driver:driver_id(full_name),
           helper:helper_id(full_name)
         `);
@@ -83,10 +88,41 @@ export const useDeliveries = (transactionId?: string) => {
     mutationFn: async (input: DeliveryInput) => {
       if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
 
+      // 1. Upload Photo if present
+      let finalPhotoUrl = input.photoUrl;
+
+      if (input.photo) {
+        try {
+          // Use a descriptive name for the file
+          const referenceName = `delivery-${input.transactionId}-${Date.now()}`;
+          const uploadResult = await PhotoUploadService.uploadPhoto(
+            input.photo,
+            referenceName,
+            'deliveries'
+          );
+
+          finalPhotoUrl = uploadResult.webViewLink;
+          console.log('[useDeliveries] Photo uploaded successfully:', finalPhotoUrl);
+        } catch (uploadError) {
+          console.error('[useDeliveries] Photo upload failed:', uploadError);
+          // Optional: decide whether to throw error or proceed without photo
+          // For now, we'll throw to ensure data integrity per user requirement "Foto pengantaran wajib"
+          throw new Error('Gagal mengupload foto pengantaran: ' + (uploadError as Error).message);
+        }
+      }
+
+      // Filter out material items - materials are sold directly and don't go through delivery
+      // Materials are processed at transaction time: record revenue + consume raw material stock
+      const nonMaterialItems = input.items.filter(item => !item.productId?.startsWith('material-'));
+      
+      if (nonMaterialItems.length === 0 && input.items.length > 0) {
+        throw new Error('Item ini adalah material. Material langsung dijual tanpa pengantaran.');
+      }
+      
       const { data, error } = await supabase.rpc('process_delivery_atomic', {
         p_transaction_id: input.transactionId,
         p_branch_id: currentBranch.id,
-        p_items: input.items.map(item => ({
+        p_items: nonMaterialItems.map(item => ({
           product_id: item.productId,
           quantity: item.quantityDelivered,
           is_bonus: item.isBonus,
@@ -100,7 +136,7 @@ export const useDeliveries = (transactionId?: string) => {
         p_helper_id: input.helperId || null,  // Empty string -> null for UUID
         p_delivery_date: input.deliveryDate.toISOString(),
         p_notes: input.notes,
-        p_photo_url: input.photoUrl
+        p_photo_url: finalPhotoUrl
       });
 
       if (error) throw error;
@@ -123,10 +159,18 @@ export const useDeliveries = (transactionId?: string) => {
     mutationFn: async (input: DeliveryInput) => {
       if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
 
+      // Filter out material items - materials are sold directly and don't go through delivery
+      // Materials are processed at transaction time: record revenue + consume raw material stock
+      const nonMaterialItems = input.items.filter(item => !item.productId?.startsWith('material-'));
+      
+      if (nonMaterialItems.length === 0 && input.items.length > 0) {
+        throw new Error('Item ini adalah material. Material langsung dijual tanpa pengantaran.');
+      }
+      
       const { data, error } = await supabase.rpc('process_delivery_atomic_no_stock', {
         p_transaction_id: input.transactionId,
         p_branch_id: currentBranch.id,
-        p_items: input.items.map(item => ({
+        p_items: nonMaterialItems.map(item => ({
           product_id: item.productId,
           quantity: item.quantityDelivered,
           is_bonus: item.isBonus,
@@ -161,10 +205,18 @@ export const useDeliveries = (transactionId?: string) => {
     mutationFn: async (input: DeliveryUpdateInput) => {
       if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
 
+      // Filter out material items - materials are sold directly and don't go through delivery
+      // Materials are processed at transaction time: record revenue + consume raw material stock
+      const nonMaterialItems = input.items.filter(item => !item.productId?.startsWith('material-'));
+      
+      if (nonMaterialItems.length === 0 && input.items.length > 0) {
+        throw new Error('Item ini adalah material. Material langsung dijual tanpa pengantaran.');
+      }
+      
       const { data, error } = await supabase.rpc('update_delivery_atomic', {
         p_delivery_id: input.id,
         p_branch_id: currentBranch.id,
-        p_items: input.items.map(item => ({
+        p_items: nonMaterialItems.map(item => ({
           product_id: item.productId,
           quantity: item.quantityDelivered,
           is_bonus: item.isBonus,
@@ -268,7 +320,11 @@ export const useDeliveryHistory = () => {
         .select(`
           *,
           delivery_items(*),
-          transactions(total, cashier_name),
+          transactions(
+            total,
+            cashier_name,
+            customer:customer_id(address)
+          ),
           driver:driver_id(full_name),
           helper:helper_id(full_name)
         `)
@@ -331,7 +387,9 @@ export const useTransactionsReadyForDelivery = () => {
         const txnStatus = (txn.status || '').trim();
 
         // Only show transactions with status "Pesanan Masuk" or "Diantar Sebagian"
-        return txnStatus === 'Pesanan Masuk' || txnStatus === 'Diantar Sebagian';
+        // AND delivery_status is NOT "Completed" (to exclude Laku Kantor/Self Pickup)
+        const deliveryStatus = (txn.delivery_status || '').trim();
+        return (txnStatus === 'Pesanan Masuk' || txnStatus === 'Diantar Sebagian') && deliveryStatus !== 'Completed';
       });
 
       console.log('✅ Filtered transactions:', {
@@ -514,7 +572,11 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
         .select(`
           *,
           delivery_items(*),
-          transactions(total, cashier_name),
+          transactions(
+            total,
+            cashier_name,
+            customer:customer_id(address)
+          ),
           driver:driver_id(full_name),
           helper:helper_id(full_name)
         `)

@@ -75,6 +75,7 @@ const fromDb = (dbTransaction: any): Transaction => {
     id: dbTransaction.id,
     customerId: dbTransaction.customer_id,
     customerName: dbTransaction.customer_name,
+    customerAddress: dbTransaction.customer?.address,
     customerClassification: dbTransaction.customer?.classification || undefined,
     cashierId: dbTransaction.cashier_id,
     cashierName: dbTransaction.cashier_name,
@@ -116,8 +117,8 @@ export const useTransactions = (filters?: {
   const { data: transactions, isLoading } = useQuery<Transaction[]>({
     queryKey: ['transactions', filters, currentBranch?.id],
     queryFn: async () => {
-      // Join dengan customers untuk mendapatkan classification
-      const selectFields = '*, customer:customers(classification)';
+      // Join dengan customers untuk mendapatkan classification DAN address
+      const selectFields = '*, customer:customers(classification, address)';
 
       let query = supabase
         .from('transactions')
@@ -190,14 +191,18 @@ export const useTransactions = (filters?: {
 
       // Prepare Items Data (Snake Case for RPC JSONB)
       // RPC 09_transaction.sql expects properties like: product_id, quantity, etc.
-      // For materials, use _materialId (clean UUID) instead of prefixed id ("material-xxx")
+      // For materials: product_id = "material-xxx", material_id = actual UUID
       const itemsData = newTransaction.items.map((item: any) => {
         const product = item.product;
-        const productId = product?._isMaterial && product?._materialId
-          ? product._materialId
+        const isMaterial = product?._isMaterial || product?.type === 'material';
+        const materialId = isMaterial ? (product?._materialId || product?.materialId) : null;
+        const productId = isMaterial 
+          ? `material-${materialId}`  // Send prefixed ID for detection in RPC
           : (product?.id || item.productId);
+        
         return {
           product_id: productId,
+          material_id: materialId || undefined,  // Send actual material UUID separately
           product_name: item.product?.name || item.productName || 'Unknown Product',
           quantity: item.quantity || 0,
           price: item.price || 0,
@@ -207,7 +212,7 @@ export const useTransactions = (filters?: {
           unit: item.unit || 'pcs',
           width: item.width || null,
           height: item.height || null
-        };
+        } as any;
       });
 
       // Call Atomic RPC

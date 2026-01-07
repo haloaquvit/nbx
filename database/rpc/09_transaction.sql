@@ -75,6 +75,9 @@ DECLARE
   v_hpp_account_id TEXT;
   v_hpp_bonus_account_id TEXT;
   v_persediaan_account_id TEXT;
+  v_bahan_baku_account_id TEXT;
+  v_item_type TEXT;
+  v_material_id UUID;
 
   v_journal_lines JSONB := '[]'::JSONB;
   v_items_array JSONB := '[]'::JSONB;
@@ -153,11 +156,17 @@ BEGIN
   SELECT id INTO v_persediaan_account_id FROM accounts
   WHERE branch_id = p_branch_id AND code = '1310' AND is_active = TRUE LIMIT 1;
 
+  SELECT id INTO v_bahan_baku_account_id FROM accounts
+  WHERE branch_id = p_branch_id AND code = '1320' AND is_active = TRUE LIMIT 1;
+
   -- ==================== PROCESS ITEMS & CALCULATE HPP ====================
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
-    v_product_id := (v_item->>'product_id')::UUID;
+    -- Reset for each item
+    v_product_id := NULL;
+    v_material_id := NULL;
+    
     v_product_name := v_item->>'product_name';
     v_quantity := COALESCE((v_item->>'quantity')::NUMERIC, 0);
     v_price := COALESCE((v_item->>'price')::NUMERIC, 0);
@@ -167,12 +176,66 @@ BEGIN
     v_unit := v_item->>'unit';
     v_width := (v_item->>'width')::NUMERIC;
     v_height := (v_item->>'height')::NUMERIC;
+    v_item_type := v_item->>'product_type';
 
-    IF v_product_id IS NOT NULL AND v_quantity > 0 THEN
-      -- Calculate HPP using FIFO
+    -- Determine if this is a material or product based on ID prefix
+    IF (v_item->>'product_id') LIKE 'material-%' THEN
+      -- This is a material item
+      v_material_id := (v_item->>'material_id')::UUID;
+    ELSE
+      -- This is a regular product
+      v_product_id := (v_item->>'product_id')::UUID;
+    END IF;
+
+    -- Process based on type
+    IF v_material_id IS NOT NULL AND v_quantity > 0 THEN
+      -- MATERIAL: Consume material stock immediately (no delivery needed)
+      SELECT * INTO v_fifo_result FROM consume_material_fifo(
+        v_material_id,
+        p_branch_id,
+        v_quantity,
+        v_transaction_id,
+        'sale',
+        'Material sold directly'
+      );
+
+      IF NOT v_fifo_result.success THEN
+        RAISE EXCEPTION 'Gagal potong stok material: %', v_fifo_result.error_message;
+      END IF;
+
+      -- For materials, cost comes from material FIFO
+      v_item_hpp := COALESCE(v_fifo_result.total_cost, v_cost_price * v_quantity);
+
+      -- Accumulate HPP
+      IF v_is_bonus THEN
+        v_total_hpp_bonus := v_total_hpp_bonus + v_item_hpp;
+      ELSE
+        v_total_hpp := v_total_hpp + v_item_hpp;
+      END IF;
+
+      -- Build item for storage
+      v_items_array := v_items_array || jsonb_build_object(
+        'productId', COALESCE(v_product_id, v_material_id),
+        'productName', v_product_name,
+        'quantity', v_quantity,
+        'price', v_price,
+        'discount', v_discount,
+        'isBonus', v_is_bonus,
+        'costPrice', v_cost_price,
+        'hppAmount', v_item_hpp,
+        'productType', CASE WHEN v_material_id IS NOT NULL THEN 'material' ELSE 'product' END,
+        'unit', v_unit,
+        'width', v_width,
+        'height', v_height
+      );
+
+      v_items_inserted := v_items_inserted + 1;
+
+    ELSIF v_product_id IS NOT NULL AND v_quantity > 0 THEN
+      -- PRODUCT: Calculate HPP using FIFO
       IF v_is_office_sale THEN
         -- Office Sale: Consume inventory immediately (v3 supports negative stock)
-        SELECT * INTO v_fifo_result FROM consume_inventory_fifo_v3(
+        SELECT * INTO v_fifo_result FROM consume_inventory_fifo(
           v_product_id,
           p_branch_id,
           v_quantity,
@@ -203,7 +266,7 @@ BEGIN
 
       -- Build item for storage
       v_items_array := v_items_array || jsonb_build_object(
-        'productId', v_product_id,
+        'productId', COALESCE(v_product_id, v_material_id),
         'productName', v_product_name,
         'quantity', v_quantity,
         'price', v_price,
@@ -211,6 +274,7 @@ BEGIN
         'isBonus', v_is_bonus,
         'costPrice', v_cost_price,
         'hppAmount', v_item_hpp,
+        'productType', CASE WHEN v_material_id IS NOT NULL THEN 'material' ELSE 'product' END,
         'unit', v_unit,
         'width', v_width,
         'height', v_height
@@ -871,4 +935,3 @@ COMMENT ON FUNCTION update_transaction_atomic IS
   'Update transaction dan recreate journal jika amounts berubah. WAJIB branch_id.';
 COMMENT ON FUNCTION void_transaction_atomic IS
   'Void transaction dengan restore inventory LIFO, void journals, delete commissions & deliveries.';
-

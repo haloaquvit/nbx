@@ -1,9 +1,32 @@
--- ============================================================================
--- RPC 14: Employee Advance (Kasbon) Atomic Functions
--- Purpose: Manage employee advances with proper journal entries
--- - Create advance: Dr. Piutang Karyawan, Cr. Kas
--- - Repay advance: Dr. Kas, Cr. Piutang Karyawan
--- ============================================================================
+-- Drop existing functions generically to avoid ambiguity
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  -- Drop create_employee_advance_atomic
+  FOR r IN SELECT oid::regprocedure AS func_signature
+           FROM pg_proc
+           WHERE proname = 'create_employee_advance_atomic'
+  LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE';
+  END LOOP;
+
+  -- Drop repay_employee_advance_atomic
+  FOR r IN SELECT oid::regprocedure AS func_signature
+           FROM pg_proc
+           WHERE proname = 'repay_employee_advance_atomic'
+  LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE';
+  END LOOP;
+
+  -- Drop void_employee_advance_atomic
+  FOR r IN SELECT oid::regprocedure AS func_signature
+           FROM pg_proc
+           WHERE proname = 'void_employee_advance_atomic'
+  LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE';
+  END LOOP;
+END $$;
 
 -- ============================================================================
 -- 1. CREATE EMPLOYEE ADVANCE ATOMIC
@@ -28,10 +51,10 @@ DECLARE
   v_amount NUMERIC;
   v_advance_date DATE;
   v_reason TEXT;
-  v_payment_account_id UUID;
+  v_payment_account_id TEXT;
 
-  v_kas_account_id UUID;
-  v_piutang_karyawan_id UUID;
+  v_kas_account_id TEXT;
+  v_piutang_karyawan_id TEXT;
   v_entry_number TEXT;
 BEGIN
   -- ==================== VALIDASI ====================
@@ -57,7 +80,7 @@ BEGIN
   v_amount := COALESCE((p_advance->>'amount')::NUMERIC, 0);
   v_advance_date := COALESCE((p_advance->>'advance_date')::DATE, CURRENT_DATE);
   v_reason := COALESCE(p_advance->>'reason', 'Kasbon karyawan');
-  v_payment_account_id := (p_advance->>'payment_account_id')::UUID;
+  v_payment_account_id := (p_advance->>'payment_account_id'); -- No cast to UUID, it's TEXT
 
   IF v_employee_id IS NULL THEN
     RETURN QUERY SELECT FALSE, NULL::UUID, NULL::UUID, 'Employee ID is required'::TEXT;
@@ -108,25 +131,23 @@ BEGIN
     employee_name,
     amount,
     remaining_amount,
-    advance_date,
-    reason,
+    date,      -- Correct column name
+    notes,     -- Map reason to notes
     status,
-    created_by,
-    created_at,
-    updated_at
+    created_at, -- No created_by column in schema output, let's omit or check if it exists differently? schema said no created_by
+    account_id  -- Map payment account
   ) VALUES (
-    v_advance_id,
+    v_advance_id::TEXT, -- Cast to TEXT as ID in table is TEXT
     p_branch_id,
     v_employee_id,
     v_employee_name,
     v_amount,
-    v_amount, -- remaining = full amount initially
+    v_amount, 
     v_advance_date,
     v_reason,
     'active',
-    auth.uid(),
     NOW(),
-    NOW()
+    v_payment_account_id
   );
 
   -- ==================== CREATE JOURNAL ENTRY ====================
@@ -223,8 +244,8 @@ DECLARE
   v_advance RECORD;
   v_payment_id UUID;
   v_journal_id UUID;
-  v_kas_account_id UUID;
-  v_piutang_karyawan_id UUID;
+  v_kas_account_id TEXT;
+  v_piutang_karyawan_id TEXT;
   v_entry_number TEXT;
   v_new_remaining NUMERIC;
 BEGIN
@@ -409,7 +430,7 @@ BEGIN
   -- Get advance
   SELECT * INTO v_advance
   FROM employee_advances
-  WHERE id = p_advance_id AND branch_id = p_branch_id
+  WHERE id = p_advance_id::TEXT AND branch_id = p_branch_id
   FOR UPDATE;
 
   IF v_advance.id IS NULL THEN
@@ -443,9 +464,9 @@ BEGIN
 
   UPDATE employee_advances
   SET
-    status = 'cancelled',
-    updated_at = NOW()
-  WHERE id = p_advance_id;
+    status = 'cancelled'
+    -- updated_at doesn't exist in schema, removing it
+  WHERE id = p_advance_id::TEXT;
 
   -- ==================== SUCCESS ====================
 

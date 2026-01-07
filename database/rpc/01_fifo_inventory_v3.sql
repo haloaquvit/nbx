@@ -14,7 +14,7 @@ DROP FUNCTION IF EXISTS restore_inventory_fifo(UUID, UUID, NUMERIC, NUMERIC, TEX
 -- Returns: success, total_hpp, batches_consumed, error_message
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION consume_inventory_fifo_v3(
+CREATE OR REPLACE FUNCTION consume_inventory_fifo(
   p_product_id UUID,
   p_branch_id UUID,           -- WAJIB: identitas cabang
   p_quantity NUMERIC,

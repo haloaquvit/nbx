@@ -54,6 +54,7 @@ DECLARE
   v_required_qty NUMERIC;
   v_available_stock NUMERIC;
   v_material_name TEXT;
+  v_seq INTEGER;
 BEGIN
   -- ==================== VALIDASI ====================
 
@@ -233,10 +234,15 @@ BEGIN
 
     IF v_persediaan_barang_id IS NOT NULL AND v_persediaan_bahan_id IS NOT NULL THEN
       -- Generate entry number
+      -- Fix: Use MAX sequence instead of COUNT to prevent duplicates
+      SELECT COALESCE(MAX(NULLIF(regexp_replace(entry_number, '.*-', ''), '')::INTEGER), 0) + 1
+      INTO v_seq
+      FROM journal_entries
+      WHERE branch_id = p_branch_id
+        AND entry_number LIKE 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-%';
+
       v_entry_number := 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' ||
-        LPAD((SELECT COUNT(*) + 1 FROM journal_entries
-              WHERE branch_id = p_branch_id
-              AND DATE(created_at) = CURRENT_DATE)::TEXT, 4, '0');
+        LPAD(v_seq::TEXT, 4, '0');
 
       -- Create journal header as draft
       INSERT INTO journal_entries (
@@ -349,6 +355,7 @@ DECLARE
   v_entry_number TEXT;
   v_beban_lain_id TEXT;         -- accounts.id is TEXT not UUID
   v_persediaan_bahan_id TEXT;   -- accounts.id is TEXT not UUID
+  v_seq INTEGER;
 BEGIN
   -- ==================== VALIDASI ====================
 
@@ -457,10 +464,15 @@ BEGIN
     LIMIT 1;
 
     IF v_beban_lain_id IS NOT NULL AND v_persediaan_bahan_id IS NOT NULL THEN
+      -- Fix sequence
+      SELECT COALESCE(MAX(NULLIF(regexp_replace(entry_number, '.*-', ''), '')::INTEGER), 0) + 1
+      INTO v_seq
+      FROM journal_entries
+      WHERE branch_id = p_branch_id
+        AND entry_number LIKE 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-%';
+
       v_entry_number := 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' ||
-        LPAD((SELECT COUNT(*) + 1 FROM journal_entries
-              WHERE branch_id = p_branch_id
-              AND DATE(created_at) = CURRENT_DATE)::TEXT, 4, '0');
+        LPAD(v_seq::TEXT, 4, '0');
 
       INSERT INTO journal_entries (
         entry_number,
