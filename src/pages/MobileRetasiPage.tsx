@@ -75,11 +75,16 @@ export default function MobileRetasiPage() {
 
   // Calculate totals
   const totals = useMemo(() => {
-    const bawa = filteredRetasi.reduce((sum, r) => sum + (r.total_items || 0), 0);
-    const kembali = filteredRetasi.reduce((sum, r) => sum + (r.returned_items_count || 0), 0);
-    const error = filteredRetasi.reduce((sum, r) => sum + (r.error_items_count || 0), 0);
-    const laku = filteredRetasi.reduce((sum, r) => sum + (r.barang_laku || 0), 0);
-    const tidakLaku = filteredRetasi.reduce((sum, r) => sum + (r.barang_tidak_laku || 0), 0);
+    const bawa = filteredRetasi.reduce((sum, r) => sum + (r.items?.reduce((isum, i) => isum + (i.quantity || 0), 0) || 0), 0);
+
+    const kembali = filteredRetasi.reduce((sum, r) => sum + (r.items?.reduce((isum, i) => isum + (i.returned_quantity || 0), 0) || 0), 0);
+
+    const error = filteredRetasi.reduce((sum, r) => sum + (r.items?.reduce((isum, i) => isum + (i.error_quantity || 0), 0) || 0), 0);
+
+    const laku = filteredRetasi.reduce((sum, r) => sum + (r.items?.reduce((isum, i) => isum + (i.sold_quantity || 0), 0) || 0), 0);
+
+    const tidakLaku = filteredRetasi.reduce((sum, r) => sum + (r.items?.reduce((isum, i) => isum + (i.unsold_quantity || 0), 0) || 0), 0);
+
     const selisih = bawa - kembali - error - laku - tidakLaku;
 
     return { bawa, kembali, error, laku, tidakLaku, selisih };
@@ -215,11 +220,14 @@ export default function MobileRetasiPage() {
         ) : (
           <div className="space-y-2">
             {filteredRetasi.map((retasi) => {
-              const selisih = (retasi.total_items || 0) -
-                (retasi.returned_items_count || 0) -
-                (retasi.error_items_count || 0) -
-                (retasi.barang_laku || 0) -
-                (retasi.barang_tidak_laku || 0);
+              // Calculate totals from items to match Web View
+              const totalBawa = retasi.items?.reduce((sum, i) => sum + (i.quantity || 0), 0) || 0;
+              const totalKembali = retasi.items?.reduce((sum, i) => sum + (i.returned_quantity || 0), 0) || 0;
+              const totalLaku = retasi.items?.reduce((sum, i) => sum + (i.sold_quantity || 0), 0) || 0;
+              const totalError = retasi.items?.reduce((sum, i) => sum + (i.error_quantity || 0), 0) || 0;
+              const totalTidakLaku = retasi.items?.reduce((sum, i) => sum + (i.unsold_quantity || 0), 0) || 0;
+
+              const selisih = totalBawa - totalKembali - totalError - totalLaku - totalTidakLaku;
 
               return (
                 <Card
@@ -252,23 +260,23 @@ export default function MobileRetasiPage() {
 
                     <div className="grid grid-cols-5 gap-1 text-center text-xs">
                       <div>
-                        <div className="text-blue-600 font-medium">{retasi.total_items || 0}</div>
+                        <div className="text-blue-600 font-medium">{totalBawa}</div>
                         <div className="text-gray-400">Bawa</div>
                       </div>
                       <div>
-                        <div className="text-gray-600 font-medium">{retasi.returned_items_count || 0}</div>
+                        <div className="text-gray-600 font-medium">{totalKembali}</div>
                         <div className="text-gray-400">Kembali</div>
                       </div>
                       <div>
-                        <div className="text-green-600 font-medium">{retasi.barang_laku || 0}</div>
+                        <div className="text-green-600 font-medium">{totalLaku}</div>
                         <div className="text-gray-400">Laku</div>
                       </div>
                       <div>
-                        <div className="text-red-600 font-medium">{retasi.error_items_count || 0}</div>
+                        <div className="text-red-600 font-medium">{totalError}</div>
                         <div className="text-gray-400">Error</div>
                       </div>
                       <div>
-                        <div className={`font-medium ${selisih >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                        <div className={`font-medium ${selisih !== 0 ? 'text-red-600' : 'text-blue-600'}`}>
                           {selisih}
                         </div>
                         <div className="text-gray-400">Selisih</div>
