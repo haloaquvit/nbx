@@ -288,7 +288,7 @@ export function TransactionTable() {
     filtered.sort((a, b) => {
       const dateA = new Date(a.orderDate || 0).getTime();
       const dateB = new Date(b.orderDate || 0).getTime();
-      return dateB - dateA; // Consistent: newest first for both mobile and desktop
+      return isMobile ? dateA - dateB : dateB - dateA; // Mobile: oldest first, Desktop: newest first
     });
 
     setFilteredTransactions(filtered);
@@ -1314,17 +1314,6 @@ export function TransactionTable() {
               const paymentCategory = getPaymentCategory(transaction);
               const isExpanded = !!expandedTransactions[transaction.id];
 
-              // Calculate delivery status for mobile button
-              const myDeliveries = deliveryHistory?.filter(d => d.transactionId === transaction.id) || [];
-              let isFullyDelivered = false;
-              if (transaction.items && transaction.items.length > 0) {
-                const totalOrdered = transaction.items.reduce((sum, item) => sum + (item.quantity || 0), 0);
-                const totalDelivered = myDeliveries.reduce((sum, d) =>
-                  sum + d.items.reduce((isum, di) => isum + (di.quantityDelivered || 0), 0)
-                  , 0);
-                isFullyDelivered = totalDelivered >= totalOrdered;
-              }
-
               return (
                 <div
                   key={transaction.id}
@@ -1348,14 +1337,7 @@ export function TransactionTable() {
                             {transaction.orderDate ? format(new Date(transaction.orderDate), "HH:mm", { locale: id }) : ''}
                           </span>
                         </div>
-                        <div className="flex flex-col gap-1">
-                          <div className="font-medium text-sm truncate">{transaction.customerName}</div>
-                          {(transaction.notes?.startsWith('[MIGRASI]') || transaction.notes?.toLowerCase().includes('migrasi')) && (
-                            <Badge variant="secondary" className="text-[10px] w-fit border-amber-500 text-amber-600 bg-amber-50">
-                              Migrasi
-                            </Badge>
-                          )}
-                        </div>
+                        <div className="font-medium text-sm truncate">{transaction.customerName}</div>
                         <div className="text-xs text-gray-500 truncate">
                           {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(transaction.total)}
                         </div>
@@ -1372,16 +1354,10 @@ export function TransactionTable() {
                               setIsDeliveryDialogOpen(true)
                             }
                           }}
-                          disabled={isFullyDelivered}
-                          className={cn(
-                            "h-8 px-2 text-xs",
-                            isFullyDelivered
-                              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-                              : "bg-green-600 hover:bg-green-700 text-white"
-                          )}
+                          className="bg-green-600 hover:bg-green-700 text-white h-8 px-2 text-xs"
                         >
                           <Truck className="h-3 w-3 mr-1" />
-                          {isFullyDelivered ? "Selesai" : "Antar"}
+                          Antar
                         </Button>
                         {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
                       </div>
