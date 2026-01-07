@@ -180,38 +180,45 @@ BEGIN
       SELECT id INTO v_acc_persediaan FROM accounts WHERE code = '1310' AND branch_id = p_branch_id LIMIT 1;
 
       IF v_acc_tertahan IS NOT NULL AND v_acc_persediaan IS NOT NULL THEN
-         -- Initialize counter based on entry_date, not created_at, to support backdating properly and avoid conflicts
-         SELECT COUNT(*) INTO v_counter_int 
-         FROM journal_entries 
-         WHERE branch_id = p_branch_id AND DATE(entry_date) = DATE(p_delivery_date);
-         
-         LOOP
-            v_counter_int := v_counter_int + 1;
-            v_entry_number := 'JE-DEL-' || TO_CHAR(p_delivery_date, 'YYYYMMDD') || '-' ||
-               LPAD(v_counter_int::TEXT, 4, '0');
+         DECLARE
+           v_journal_lines JSONB;
+           v_journal_res RECORD;
+         BEGIN
+           -- Construct lines
+           -- Dr. Modal Barang Dagang Tertahan (2140)
+           -- Cr. Persediaan Barang Jadi (1310)
+           v_journal_lines := jsonb_build_array(
+             jsonb_build_object(
+               'account_id', v_acc_tertahan,
+               'debit_amount', v_total_hpp_real,
+               'credit_amount', 0,
+               'description', 'Realisasi Pengiriman'
+             ),
+             jsonb_build_object(
+               'account_id', v_acc_persediaan,
+               'debit_amount', 0,
+               'credit_amount', v_total_hpp_real,
+               'description', 'Barang Keluar Gudang'
+             )
+           );
 
-            BEGIN
-                INSERT INTO journal_entries (
-                  entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit
-                ) VALUES (
-                  v_entry_number, p_delivery_date, format('Pengiriman %s', v_transaction.ref), 'transaction', v_delivery_id::TEXT, p_branch_id, 'posted', v_total_hpp_real, v_total_hpp_real
-                )
-                RETURNING id INTO v_journal_id;
-                
-                EXIT; -- Insert successful
-            EXCEPTION WHEN unique_violation THEN
-                -- Try next number
-                -- Loop will continue and increment v_counter_int
-            END;
-         END LOOP;
+           -- Use atomic creator
+           SELECT * INTO v_journal_res FROM create_journal_atomic(
+             p_branch_id,
+             p_delivery_date::DATE, -- Ensure DATE type
+             format('Pengiriman %s', v_transaction.ref),
+             'transaction', -- Reference type is transaction here as stated in original code
+             v_delivery_id::TEXT, -- Using delivery ID as reference ID
+             v_journal_lines,
+             TRUE -- auto_post
+           );
 
-         -- Dr. Modal Barang Dagang Tertahan (Mengurangi Hutang Barang)
-         INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-         VALUES (v_journal_id, 1, v_acc_tertahan, 'Realisasi Pengiriman', v_total_hpp_real, 0);
-
-         -- Cr. Persediaan Barang Jadi (Stok Fisik Keluar)
-         INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-         VALUES (v_journal_id, 2, v_acc_persediaan, 'Barang Keluar Gudang', 0, v_total_hpp_real);
+           IF v_journal_res.success THEN
+              v_journal_id := v_journal_res.journal_id;
+           ELSE
+              RAISE EXCEPTION 'Gagal membuat jurnal pengiriman: %', v_journal_res.error_message;
+           END IF;
+         END;
       END IF;
   END IF;
 

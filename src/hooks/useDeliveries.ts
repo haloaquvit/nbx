@@ -114,11 +114,11 @@ export const useDeliveries = (transactionId?: string) => {
       // Filter out material items - materials are sold directly and don't go through delivery
       // Materials are processed at transaction time: record revenue + consume raw material stock
       const nonMaterialItems = input.items.filter(item => !item.productId?.startsWith('material-'));
-      
+
       if (nonMaterialItems.length === 0 && input.items.length > 0) {
         throw new Error('Item ini adalah material. Material langsung dijual tanpa pengantaran.');
       }
-      
+
       const { data, error } = await supabase.rpc('process_delivery_atomic', {
         p_transaction_id: input.transactionId,
         p_branch_id: currentBranch.id,
@@ -162,11 +162,11 @@ export const useDeliveries = (transactionId?: string) => {
       // Filter out material items - materials are sold directly and don't go through delivery
       // Materials are processed at transaction time: record revenue + consume raw material stock
       const nonMaterialItems = input.items.filter(item => !item.productId?.startsWith('material-'));
-      
+
       if (nonMaterialItems.length === 0 && input.items.length > 0) {
         throw new Error('Item ini adalah material. Material langsung dijual tanpa pengantaran.');
       }
-      
+
       const { data, error } = await supabase.rpc('process_delivery_atomic_no_stock', {
         p_transaction_id: input.transactionId,
         p_branch_id: currentBranch.id,
@@ -208,11 +208,11 @@ export const useDeliveries = (transactionId?: string) => {
       // Filter out material items - materials are sold directly and don't go through delivery
       // Materials are processed at transaction time: record revenue + consume raw material stock
       const nonMaterialItems = input.items.filter(item => !item.productId?.startsWith('material-'));
-      
+
       if (nonMaterialItems.length === 0 && input.items.length > 0) {
         throw new Error('Item ini adalah material. Material langsung dijual tanpa pengantaran.');
       }
-      
+
       const { data, error } = await supabase.rpc('update_delivery_atomic', {
         p_delivery_id: input.id,
         p_branch_id: currentBranch.id,
@@ -371,6 +371,7 @@ export const useTransactionsReadyForDelivery = () => {
         .order('order_date', { ascending: false });
 
       // DEBUG: Log all transactions before filtering
+      /*
       console.log('🔍 All transactions fetched:', {
         total: data?.length || 0,
         transactions: data?.map(t => ({
@@ -379,6 +380,7 @@ export const useTransactionsReadyForDelivery = () => {
           itemsCount: Array.isArray(t.items) ? t.items.length : 0
         }))
       });
+      */
 
       // Filter based on status column only
       // Show in delivery list: "Pesanan Masuk" and "Diantar Sebagian"
@@ -392,6 +394,7 @@ export const useTransactionsReadyForDelivery = () => {
         return (txnStatus === 'Pesanan Masuk' || txnStatus === 'Diantar Sebagian') && deliveryStatus !== 'Completed';
       });
 
+      /*
       console.log('✅ Filtered transactions:', {
         total: filteredData.length,
         transactions: filteredData.map(t => ({
@@ -401,6 +404,7 @@ export const useTransactionsReadyForDelivery = () => {
           itemsCount: Array.isArray(t.items) ? t.items.length : 0
         }))
       });
+      */
 
       if (error) throw error;
 
@@ -420,19 +424,21 @@ export const useTransactionsReadyForDelivery = () => {
 
       return filteredData.map(txn => {
         // DEBUG: Log transaction items before mapping
+        /*
         console.log('📦 Processing transaction:', {
           id: txn.id,
           customer: txn.customer_name,
           items: Array.isArray(txn.items) ? txn.items : 'NOT AN ARRAY',
           itemsCount: Array.isArray(txn.items) ? txn.items.length : 0
         });
+        */
 
-        // Map deliveries (sorted by date ascending for correct delete logic using last element)
+        // Map deliveries (sorted by date ascending for correct logic)
         const deliveries = (txn.deliveries || []).map(fromDbToDelivery)
           .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
         // Calculate delivery summary
-        console.log('📦 Deliveries found:', deliveries.length);
+        // console.log('📦 Deliveries found:', deliveries.length);
         const deliverySummary = (Array.isArray(txn.items) ? txn.items : [])
           .map((item: any) => {
             const productId = item.product_id || item.productId || item.product?.id;
@@ -498,6 +504,7 @@ export const useTransactionsReadyForDelivery = () => {
           .filter((item): item is NonNullable<typeof item> => item !== null); // Remove skipped items
 
         // DEBUG: Log delivery summary
+        /*
         console.log('📋 Delivery Summary:', {
           transactionId: txn.id,
           totalItems: deliverySummary.length,
@@ -508,6 +515,7 @@ export const useTransactionsReadyForDelivery = () => {
             remaining: i.remainingQuantity
           }))
         });
+        */
 
         return {
           id: txn.id,
@@ -586,11 +594,13 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
 
       if (delError) throw delError;
 
-      console.log('📦 Manual Delivery Fetch:', {
-        txnId: transactionId,
-        deliveriesFound: deliveriesData?.length,
-        deliveries: deliveriesData
-      });
+      if (delError) throw delError;
+
+      // console.log('📦 Manual Delivery Fetch:', {
+      //   txnId: transactionId,
+      //   deliveriesFound: deliveriesData?.length,
+      //   deliveries: deliveriesData
+      // });
 
       // Prepare data for mapping
       // Inject transaction total into deliveries for fromDbToDelivery to use
@@ -619,6 +629,7 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
       // DEBUG: Log transaction items structure
+      /*
       console.log('📦 Transaction items for delivery summary:', {
         transactionId: transactionId,
         itemsType: typeof txn.items,
@@ -626,8 +637,10 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
         items: Array.isArray(txn.items) ? txn.items : txn.items,
         firstItem: Array.isArray(txn.items) && txn.items[0] ? txn.items[0] : 'N/A'
       });
+      */
 
       // DEBUG: Log deliveries structure
+      /*
       console.log('📦 Deliveries for delivery summary:', {
         transactionId: transactionId,
         deliveriesCount: deliveries.length,
@@ -641,6 +654,7 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
           }))
         }))
       });
+      */
 
       // Calculate delivery summary
       const deliverySummary = (Array.isArray(txn.items) ? txn.items : []).map((item: any) => {
@@ -648,6 +662,7 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
         const productName = item.product_name || item.productName || item.product?.name || 'Unknown Product';
         const orderedQty = item.quantity;
 
+        /*
         console.log('📦 Processing item:', {
           productId,
           productName,
@@ -658,6 +673,7 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
             product_id_nested: item.product?.id
           }
         });
+        */
 
         // Calculate total delivered for this item across all deliveries
         const totalDelivered = deliveries.reduce((sum: number, d: Delivery) => {

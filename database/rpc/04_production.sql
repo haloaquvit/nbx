@@ -233,77 +233,47 @@ BEGIN
     LIMIT 1;
 
     IF v_persediaan_barang_id IS NOT NULL AND v_persediaan_bahan_id IS NOT NULL THEN
-      -- Generate entry number
-      -- Fix: Use MAX sequence instead of COUNT to prevent duplicates
-      SELECT COALESCE(MAX(NULLIF(regexp_replace(entry_number, '.*-', ''), '')::INTEGER), 0) + 1
-      INTO v_seq
-      FROM journal_entries
-      WHERE branch_id = p_branch_id
-        AND entry_number LIKE 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-%';
+       -- Build Journal Lines for create_journal_atomic
+       -- Dr. Persediaan Barang Dagang (1310)
+       -- Cr. Persediaan Bahan Baku (1320)
+       
+       DECLARE
+         v_journal_lines JSONB;
+         v_journal_res RECORD;
+       BEGIN
+         v_journal_lines := jsonb_build_array(
+           jsonb_build_object(
+             'account_id', v_persediaan_barang_id,
+             'debit_amount', v_total_material_cost,
+             'credit_amount', 0,
+             'description', format('Hasil produksi: %s x%s', v_product.name, p_quantity)
+           ),
+           jsonb_build_object(
+             'account_id', v_persediaan_bahan_id,
+             'credit_amount', v_total_material_cost,
+             'debit_amount', 0,
+             'description', format('Bahan terpakai: %s', RTRIM(v_material_details, ', '))
+           )
+         );
 
-      v_entry_number := 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' ||
-        LPAD(v_seq::TEXT, 4, '0');
+         SELECT * INTO v_journal_res FROM create_journal_atomic(
+           p_branch_id,
+           CURRENT_DATE,
+           format('Produksi %s: %s x%s', v_ref, v_product.name, p_quantity),
+           'production',
+           v_production_id::TEXT,
+           v_journal_lines,
+           TRUE -- auto_post
+         );
 
-      -- Create journal header as draft
-      INSERT INTO journal_entries (
-        entry_number,
-        entry_date,
-        description,
-        reference_type,
-        reference_id,
-        branch_id,
-        status,
-        total_debit,
-        total_credit
-      ) VALUES (
-        v_entry_number,
-        NOW(),
-        format('Produksi %s: %s x%s', v_ref, v_product.name, p_quantity),
-        'production',
-        v_production_id::TEXT,
-        p_branch_id,
-        'draft',
-        v_total_material_cost,
-        v_total_material_cost
-      )
-      RETURNING id INTO v_journal_id;
-
-      -- Dr. Persediaan Barang Dagang (1310)
-      INSERT INTO journal_entry_lines (
-        journal_entry_id,
-        line_number,
-        account_id,
-        description,
-        debit_amount,
-        credit_amount
-      ) VALUES (
-        v_journal_id,
-        1,
-        v_persediaan_barang_id,
-        format('Hasil produksi: %s x%s', v_product.name, p_quantity),
-        v_total_material_cost,
-        0
-      );
-
-      -- Cr. Persediaan Bahan Baku (1320)
-      INSERT INTO journal_entry_lines (
-        journal_entry_id,
-        line_number,
-        account_id,
-        description,
-        debit_amount,
-        credit_amount
-      ) VALUES (
-        v_journal_id,
-        2,
-        v_persediaan_bahan_id,
-        format('Bahan terpakai: %s', RTRIM(v_material_details, ', ')),
-        0,
-        v_total_material_cost
-      );
-
-      -- Post the journal
-      UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
+         IF v_journal_res.success THEN
+            v_journal_id := v_journal_res.journal_id;
+         ELSE
+            -- Log error but don't fail transaction? Or fail? 
+            -- Better to fail if journal fails.
+            RAISE EXCEPTION 'Gagal membuat jurnal: %', v_journal_res.error_message;
+         END IF;
+       END;
     END IF;
   END IF;
 
@@ -464,74 +434,42 @@ BEGIN
     LIMIT 1;
 
     IF v_beban_lain_id IS NOT NULL AND v_persediaan_bahan_id IS NOT NULL THEN
-      -- Fix sequence
-      SELECT COALESCE(MAX(NULLIF(regexp_replace(entry_number, '.*-', ''), '')::INTEGER), 0) + 1
-      INTO v_seq
-      FROM journal_entries
-      WHERE branch_id = p_branch_id
-        AND entry_number LIKE 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-%';
+       -- Use create_journal_atomic
+       DECLARE
+         v_journal_lines JSONB;
+         v_journal_res RECORD;
+       BEGIN
+         v_journal_lines := jsonb_build_array(
+           jsonb_build_object(
+             'account_id', v_beban_lain_id,
+             'debit_amount', v_spoilage_cost,
+             'credit_amount', 0,
+             'description', format('Bahan rusak: %s x%s', v_material.name, p_quantity)
+           ),
+           jsonb_build_object(
+             'account_id', v_persediaan_bahan_id,
+             'debit_amount', 0,
+             'credit_amount', v_spoilage_cost,
+             'description', format('Bahan keluar: %s x%s', v_material.name, p_quantity)
+           )
+         );
 
-      v_entry_number := 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' ||
-        LPAD(v_seq::TEXT, 4, '0');
+         SELECT * INTO v_journal_res FROM create_journal_atomic(
+           p_branch_id,
+           CURRENT_DATE,
+           format('Bahan Rusak %s: %s x%s %s', v_ref, v_material.name, p_quantity, COALESCE(v_material.unit, 'pcs')),
+           'adjustment',
+           v_record_id::TEXT,
+           v_journal_lines,
+           TRUE
+         );
 
-      INSERT INTO journal_entries (
-        entry_number,
-        entry_date,
-        description,
-        reference_type,
-        reference_id,
-        branch_id,
-        status,
-        total_debit,
-        total_credit
-      ) VALUES (
-        v_entry_number,
-        NOW(),
-        format('Bahan Rusak %s: %s x%s %s', v_ref, v_material.name, p_quantity, COALESCE(v_material.unit, 'pcs')),
-        'adjustment',
-        v_record_id::TEXT,
-        p_branch_id,
-        'draft',
-        v_spoilage_cost,
-        v_spoilage_cost
-      )
-      RETURNING id INTO v_journal_id;
-
-      -- Dr. Beban Lain-lain (8100)
-      INSERT INTO journal_entry_lines (
-        journal_entry_id,
-        line_number,
-        account_id,
-        description,
-        debit_amount,
-        credit_amount
-      ) VALUES (
-        v_journal_id,
-        1,
-        v_beban_lain_id,
-        format('Bahan rusak: %s x%s', v_material.name, p_quantity),
-        v_spoilage_cost,
-        0
-      );
-
-      -- Cr. Persediaan Bahan Baku (1320)
-      INSERT INTO journal_entry_lines (
-        journal_entry_id,
-        line_number,
-        account_id,
-        description,
-        debit_amount,
-        credit_amount
-      ) VALUES (
-        v_journal_id,
-        2,
-        v_persediaan_bahan_id,
-        format('Bahan keluar: %s x%s', v_material.name, p_quantity),
-        0,
-        v_spoilage_cost
-      );
-
-      UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
+         IF v_journal_res.success THEN
+            v_journal_id := v_journal_res.journal_id;
+         ELSE
+            RAISE EXCEPTION 'Gagal membuat jurnal spoilage: %', v_journal_res.error_message;
+         END IF;
+       END;
     END IF;
   END IF;
 

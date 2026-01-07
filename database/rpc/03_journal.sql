@@ -144,37 +144,43 @@ BEGIN
 
   -- ==================== GENERATE ENTRY NUMBER ====================
 
-  v_entry_number := 'JE-' || TO_CHAR(p_entry_date, 'YYYYMMDD') || '-' ||
-    LPAD((SELECT COUNT(*) + 1 FROM journal_entries
-          WHERE branch_id = p_branch_id
-          AND DATE(created_at) = DATE(p_entry_date))::TEXT, 4, '0') ||
-    LPAD(FLOOR(RANDOM() * 1000)::TEXT, 3, '0');
+  FOR i IN 1..10 LOOP
+    v_entry_number := 'JE-' || TO_CHAR(p_entry_date, 'YYYYMMDD') || '-' ||
+      LPAD((SELECT COUNT(*) + 1 FROM journal_entries
+            WHERE branch_id = p_branch_id
+            AND DATE(created_at) = DATE(p_entry_date))::TEXT, 4, '0') ||
+      LPAD(FLOOR(RANDOM() * 1000)::TEXT, 3, '0');
 
-  -- ==================== CREATE JOURNAL HEADER ====================
-
-  -- Create as draft first (trigger may block lines on posted)
-  INSERT INTO journal_entries (
-    entry_number,
-    entry_date,
-    description,
-    reference_type,
-    reference_id,
-    branch_id,
-    status,
-    total_debit,
-    total_credit
-  ) VALUES (
-    v_entry_number,
-    p_entry_date,
-    p_description,
-    p_reference_type,
-    p_reference_id,
-    p_branch_id,
-    'draft',
-    v_total_debit,
-    v_total_credit
-  )
-  RETURNING id INTO v_journal_id;
+    BEGIN
+      INSERT INTO journal_entries (
+        entry_number,
+        entry_date,
+        description,
+        reference_type,
+        reference_id,
+        branch_id,
+        status,
+        total_debit,
+        total_credit
+      ) VALUES (
+        v_entry_number,
+        p_entry_date,
+        p_description,
+        p_reference_type,
+        p_reference_id,
+        p_branch_id,
+        'draft',
+        v_total_debit,
+        v_total_credit
+      )
+      RETURNING id INTO v_journal_id;
+      
+      EXIT; -- Insert successful
+    EXCEPTION WHEN unique_violation THEN
+      IF i = 10 THEN RAISE; END IF;
+      -- Retry loop
+    END;
+  END LOOP;
 
   -- ==================== CREATE JOURNAL LINES ====================
 

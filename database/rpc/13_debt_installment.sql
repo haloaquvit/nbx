@@ -139,72 +139,47 @@ BEGIN
   LIMIT 1;
 
   IF v_kas_account_id IS NOT NULL AND v_hutang_account_id IS NOT NULL THEN
-    v_entry_number := 'JE-' || TO_CHAR(v_payment_date, 'YYYYMMDD') || '-' ||
-      LPAD((SELECT COUNT(*) + 1 FROM journal_entries
-            WHERE branch_id = p_branch_id
-            AND DATE(created_at) = v_payment_date)::TEXT, 4, '0');
+  IF v_kas_account_id IS NOT NULL AND v_hutang_account_id IS NOT NULL THEN
+     DECLARE
+       v_journal_lines JSONB;
+       v_journal_res RECORD;
+     BEGIN
+       -- Dr. Hutang Usaha
+       -- Cr. Kas/Bank
+       v_journal_lines := jsonb_build_array(
+         jsonb_build_object(
+           'account_id', v_hutang_account_id,
+           'debit_amount', v_installment.total_amount,
+           'credit_amount', 0,
+           'description', format('Angsuran #%s - %s', v_installment.installment_number, COALESCE(v_payable.supplier_name, 'Supplier'))
+         ),
+         jsonb_build_object(
+           'account_id', v_kas_account_id,
+           'debit_amount', 0,
+           'credit_amount', v_installment.total_amount,
+           'description', format('Pembayaran angsuran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier'))
+         )
+       );
 
-    INSERT INTO journal_entries (
-      entry_number,
-      entry_date,
-      description,
-      reference_type,
-      reference_id,
-      branch_id,
-      status,
-      total_debit,
-      total_credit
-    ) VALUES (
-      v_entry_number,
-      v_payment_date,
-      format('Bayar angsuran #%s ke: %s%s',
-        v_installment.installment_number,
-        COALESCE(v_payable.supplier_name, 'Supplier'),
-        CASE WHEN p_notes IS NOT NULL THEN ' - ' || p_notes ELSE '' END),
-      'debt_installment',
-      p_installment_id::TEXT,
-      p_branch_id,
-      'draft',
-      v_installment.total_amount,
-      v_installment.total_amount
-    )
-    RETURNING id INTO v_journal_id;
+       SELECT * INTO v_journal_res FROM create_journal_atomic(
+         p_branch_id,
+         v_payment_date,
+         format('Bayar angsuran #%s ke: %s%s',
+           v_installment.installment_number,
+           COALESCE(v_payable.supplier_name, 'Supplier'),
+           CASE WHEN p_notes IS NOT NULL THEN ' - ' || p_notes ELSE '' END),
+         'debt_installment',
+         p_installment_id::TEXT,
+         v_journal_lines,
+         TRUE
+       );
 
-    -- Dr. Hutang Usaha
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      line_number,
-      account_id,
-      description,
-      debit_amount,
-      credit_amount
-    ) VALUES (
-      v_journal_id,
-      1,
-      v_hutang_account_id,
-      format('Angsuran #%s - %s', v_installment.installment_number, COALESCE(v_payable.supplier_name, 'Supplier')),
-      v_installment.total_amount,
-      0
-    );
-
-    -- Cr. Kas/Bank
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      line_number,
-      account_id,
-      description,
-      debit_amount,
-      credit_amount
-    ) VALUES (
-      v_journal_id,
-      2,
-      v_kas_account_id,
-      format('Pembayaran angsuran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier')),
-      0,
-      v_installment.total_amount
-    );
-
-    UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
+       IF v_journal_res.success THEN
+         v_journal_id := v_journal_res.journal_id;
+       ELSE
+         RAISE EXCEPTION 'Gagal membuat jurnal angsuran: %', v_journal_res.error_message;
+       END IF;
+     END;
   END IF;
 
   RETURN QUERY SELECT

@@ -82,11 +82,11 @@ BEGIN
     AND (branch_id = p_branch_id OR branch_id IS NULL)  -- Support legacy data tanpa branch
     AND remaining_quantity > 0;
 
+  -- Cek available stock (removed strict check to allow negative stock)
+  -- We still calculate available stock for logging, but we don't block.
   IF v_available_stock < p_quantity THEN
-    RETURN QUERY SELECT FALSE, 0::NUMERIC, '[]'::JSONB,
-      format('Stok material tidak cukup untuk %s. Tersedia: %s, Diminta: %s',
-        v_material_name, v_available_stock, p_quantity)::TEXT;
-    RETURN;
+     -- Check if we should warn? For now, we proceed to create negative stock.
+     -- Just a log or simple note could be useful, but we proceed.
   END IF;
 
   -- ==================== CONSUME FIFO ====================
@@ -148,6 +148,48 @@ BEGIN
 
     v_remaining := v_remaining - v_deduct_qty;
   END LOOP;
+
+  -- ==================== HANDLE DEFICIT (NEGATIVE STOCK) ====================
+  -- If there is still quantity to consume, create a negative batch
+  IF v_remaining > 0 THEN
+    INSERT INTO inventory_batches (
+      id, -- Generate ID explicitly or let default handle it? Schema usually has default. But let's check inserts below.
+      material_id, -- Note: This table holds both product/material batches usually, or material has its own? 
+      -- Code above selects from inventory_batches where material_id = p_material_id. So it is the same table.
+      branch_id,
+      initial_quantity,
+      remaining_quantity,
+      unit_cost,
+      batch_date,
+      notes,
+      created_at,
+      updated_at
+    ) VALUES (
+      gen_random_uuid(),
+      p_material_id,
+      p_branch_id,
+      0,
+      -v_remaining, -- Negative stock
+      0,            -- Cost unknown for negative stock
+      NOW(),
+      format('Negative Stock fallback for %s', COALESCE(p_reference_id, 'production')),
+      NOW(),
+      NOW()
+    ) RETURNING id INTO v_batch.id;
+
+    v_consumed := v_consumed || jsonb_build_object(
+      'batch_id', v_batch.id,
+      'quantity', v_remaining,
+      'unit_cost', 0,
+      'subtotal', 0,
+      'notes', 'negative_fallback'
+    );
+    
+    -- Log consumption for this negative part if needed
+    -- For now, we trust the final log.
+    
+    v_remaining := 0;
+  END IF;
 
   -- ==================== LOGGING ====================
 

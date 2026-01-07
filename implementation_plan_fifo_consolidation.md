@@ -36,8 +36,10 @@ We should standardise on the **Enhanced Version (v3)** because the system (espec
     *   *Note: This ensures the filename matches the contents and intention.*
 
 3.  **Redeploy**:
-    *   Deploy the new `01_fifo_inventory.sql`.
-    *   Dependencies (05, 07, 09, 18, 19) do **not** need to be changed because they already call `consume_inventory_fifo`, and we are swapping the implementation "under the hood" to the superior v3 version.
+    *   [x] Deploy the new `01_fifo_inventory.sql`.
+    *   [x] Dependencies (05, 07, 09, 18, 19) do **not** need to be changed because they already call `consume_inventory_fifo`, and we are swapping the implementation "under the hood" to the superior v3 version.
+    *   [x] Updated `04_production.sql` to use `create_journal_atomic` with retry logic for `entry_number`.
 
 4.  **Verification**:
-    *   Verify `consume_inventory_fifo` exists and allows negative stock (by checking if a delivery > stock succeeds).
+    *   [x] Verify `consume_inventory_fifo` exists and allows negative stock (by checking if a delivery > stock succeeds).
+    *   [x] Verify `process_production_atomic` handles concurrent journal creation properly.

@@ -544,7 +544,16 @@ export function TransactionTable() {
     {
       accessorKey: "id",
       header: "No. Order",
-      cell: ({ row }) => <Badge variant="outline">{row.getValue("id")}</Badge>,
+      cell: ({ row }) => (
+        <div className="flex flex-col gap-1">
+          <Badge variant="outline">{row.getValue("id")}</Badge>
+          {(row.original.notes?.startsWith('[MIGRASI]') || row.original.notes?.toLowerCase().includes('migrasi')) && (
+            <Badge variant="secondary" className="text-[10px] w-fit border-amber-500 text-amber-600 bg-amber-50">
+              Migrasi
+            </Badge>
+          )}
+        </div>
+      ),
     },
     {
       accessorKey: "customerName",

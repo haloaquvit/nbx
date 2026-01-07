@@ -142,69 +142,43 @@ BEGIN
   LIMIT 1;
 
   IF v_kas_account_id IS NOT NULL AND v_piutang_account_id IS NOT NULL THEN
-    v_entry_number := 'JE-' || TO_CHAR(p_payment_date, 'YYYYMMDD') || '-' ||
-      LPAD((SELECT COUNT(*) + 1 FROM journal_entries
-            WHERE branch_id = p_branch_id
-            AND DATE(created_at) = p_payment_date)::TEXT, 4, '0');
+    DECLARE
+      v_journal_lines JSONB;
+      v_journal_res RECORD;
+    BEGIN
+       -- Dr. Kas/Bank
+       -- Cr. Piutang Usaha
+       v_journal_lines := jsonb_build_array(
+         jsonb_build_object(
+           'account_id', v_kas_account_id,
+           'debit_amount', p_amount,
+           'credit_amount', 0,
+           'description', format('Terima dari %s', COALESCE(v_receivable.customer_name, 'Customer'))
+         ),
+         jsonb_build_object(
+           'account_id', v_piutang_account_id,
+           'debit_amount', 0,
+           'credit_amount', p_amount,
+           'description', format('Pelunasan piutang: %s', COALESCE(v_receivable.customer_name, 'Customer'))
+         )
+       );
 
-    INSERT INTO journal_entries (
-      entry_number,
-      entry_date,
-      description,
-      reference_type,
-      reference_id,
-      branch_id,
-      status,
-      total_debit,
-      total_credit
-    ) VALUES (
-      v_entry_number,
-      p_payment_date,
-      format('Terima pembayaran piutang: %s', COALESCE(v_receivable.customer_name, 'Customer')),
-      'receivable_payment',
-      v_payment_id::TEXT,
-      p_branch_id,
-      'draft',
-      p_amount,
-      p_amount
-    )
-    RETURNING id INTO v_journal_id;
+       SELECT * INTO v_journal_res FROM create_journal_atomic(
+         p_branch_id,
+         p_payment_date,
+         format('Terima pembayaran piutang: %s', COALESCE(v_receivable.customer_name, 'Customer')),
+         'receivable_payment',
+         v_payment_id::TEXT,
+         v_journal_lines,
+         TRUE
+       );
 
-    -- Dr. Kas/Bank
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      line_number,
-      account_id,
-      description,
-      debit_amount,
-      credit_amount
-    ) VALUES (
-      v_journal_id,
-      1,
-      v_kas_account_id,
-      format('Terima dari %s', COALESCE(v_receivable.customer_name, 'Customer')),
-      p_amount,
-      0
-    );
-
-    -- Cr. Piutang Usaha
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      line_number,
-      account_id,
-      description,
-      debit_amount,
-      credit_amount
-    ) VALUES (
-      v_journal_id,
-      2,
-      v_piutang_account_id,
-      format('Pelunasan piutang: %s', COALESCE(v_receivable.customer_name, 'Customer')),
-      0,
-      p_amount
-    );
-
-    UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
+       IF v_journal_res.success THEN
+          v_journal_id := v_journal_res.journal_id;
+       ELSE
+          RAISE EXCEPTION 'Gagal membuat jurnal penerimaan: %', v_journal_res.error_message;
+       END IF;
+    END;
   END IF;
 
   RETURN QUERY SELECT
@@ -332,69 +306,43 @@ BEGIN
   LIMIT 1;
 
   IF v_kas_account_id IS NOT NULL AND v_hutang_account_id IS NOT NULL THEN
-    v_entry_number := 'JE-' || TO_CHAR(p_payment_date, 'YYYYMMDD') || '-' ||
-      LPAD((SELECT COUNT(*) + 1 FROM journal_entries
-            WHERE branch_id = p_branch_id
-            AND DATE(created_at) = p_payment_date)::TEXT, 4, '0');
+    DECLARE
+       v_journal_lines JSONB;
+       v_journal_res RECORD;
+    BEGIN
+       -- Dr. Hutang Usaha
+       -- Cr. Kas/Bank
+       v_journal_lines := jsonb_build_array(
+         jsonb_build_object(
+           'account_id', v_hutang_account_id,
+           'debit_amount', p_amount,
+           'credit_amount', 0,
+           'description', format('Bayar ke %s', COALESCE(v_payable.supplier_name, 'Supplier'))
+         ),
+         jsonb_build_object(
+           'account_id', v_kas_account_id,
+           'debit_amount', 0,
+           'credit_amount', p_amount,
+           'description', format('Pembayaran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier'))
+         )
+       );
 
-    INSERT INTO journal_entries (
-      entry_number,
-      entry_date,
-      description,
-      reference_type,
-      reference_id,
-      branch_id,
-      status,
-      total_debit,
-      total_credit
-    ) VALUES (
-      v_entry_number,
-      p_payment_date,
-      format('Bayar hutang ke: %s', COALESCE(v_payable.supplier_name, 'Supplier')),
-      'payable_payment',
-      v_payment_id::TEXT,
-      p_branch_id,
-      'draft',
-      p_amount,
-      p_amount
-    )
-    RETURNING id INTO v_journal_id;
+       SELECT * INTO v_journal_res FROM create_journal_atomic(
+         p_branch_id,
+         p_payment_date,
+         format('Bayar hutang ke: %s', COALESCE(v_payable.supplier_name, 'Supplier')),
+         'payable_payment',
+         v_payment_id::TEXT,
+         v_journal_lines,
+         TRUE
+       );
 
-    -- Dr. Hutang Usaha
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      line_number,
-      account_id,
-      description,
-      debit_amount,
-      credit_amount
-    ) VALUES (
-      v_journal_id,
-      1,
-      v_hutang_account_id,
-      format('Bayar ke %s', COALESCE(v_payable.supplier_name, 'Supplier')),
-      p_amount,
-      0
-    );
-
-    -- Cr. Kas/Bank
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      line_number,
-      account_id,
-      description,
-      debit_amount,
-      credit_amount
-    ) VALUES (
-      v_journal_id,
-      2,
-      v_kas_account_id,
-      format('Pembayaran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier')),
-      0,
-      p_amount
-    );
-
-    UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
+       IF v_journal_res.success THEN
+         v_journal_id := v_journal_res.journal_id;
+       ELSE
+         RAISE EXCEPTION 'Gagal membuat jurnal pembayaran hutang: %', v_journal_res.error_message;
+       END IF;
+    END;
   END IF;
 
   RETURN QUERY SELECT
@@ -514,41 +462,43 @@ BEGIN
     SELECT id INTO v_lawan_account_id FROM accounts WHERE code = '5110' AND branch_id = p_branch_id AND is_active = TRUE LIMIT 1;
 
     IF v_hutang_account_id IS NOT NULL AND v_lawan_account_id IS NOT NULL THEN
-      v_entry_number := 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' ||
-        LPAD((SELECT COUNT(*) + 1 FROM journal_entries WHERE branch_id = p_branch_id AND DATE(created_at) = CURRENT_DATE)::TEXT, 4, '0');
+       DECLARE
+         v_journal_lines JSONB;
+         v_journal_res RECORD;
+       BEGIN
+         -- Dr. Lawan
+         -- Cr. Hutang
+         v_journal_lines := jsonb_build_array(
+           jsonb_build_object(
+             'account_id', v_lawan_account_id,
+             'debit_amount', p_amount,
+             'credit_amount', 0,
+             'description', COALESCE(p_description, 'Hutang Baru')
+           ),
+           jsonb_build_object(
+             'account_id', v_hutang_account_id,
+             'debit_amount', 0,
+             'credit_amount', p_amount,
+             'description', COALESCE(p_description, 'Hutang Baru')
+           )
+         );
 
-      INSERT INTO journal_entries (
-        entry_number,
-        entry_date,
-        description,
-        reference_type,
-        reference_id,
-        branch_id,
-        status,
-        total_debit,
-        total_credit
-      ) VALUES (
-        v_entry_number,
-        CURRENT_DATE,
-        COALESCE(p_description, 'Hutang Baru: ' || p_supplier_name),
-        'accounts_payable',
-        v_payable_id,
-        p_branch_id,
-        'draft',
-        p_amount,
-        p_amount
-      )
-      RETURNING id INTO v_journal_id;
+         SELECT * INTO v_journal_res FROM create_journal_atomic(
+           p_branch_id,
+           CURRENT_DATE,
+           COALESCE(p_description, 'Hutang Baru: ' || p_supplier_name),
+           'accounts_payable',
+           v_payable_id,
+           v_journal_lines,
+           TRUE -- auto post
+         );
 
-      -- Dr. Lawan (Expense/Asset)
-      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 1, v_lawan_account_id, COALESCE(p_description, 'Hutang Baru'), p_amount, 0);
-
-      -- Cr. Hutang Usaha
-      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 2, v_hutang_account_id, COALESCE(p_description, 'Hutang Baru'), 0, p_amount);
-
-      UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
+         IF v_journal_res.success THEN
+           v_journal_id := v_journal_res.journal_id;
+         ELSE
+           RAISE EXCEPTION 'Gagal membuat jurnal hutang: %', v_journal_res.error_message;
+         END IF;
+       END;
     END IF;
   END IF;
 
