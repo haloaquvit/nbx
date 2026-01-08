@@ -57,7 +57,8 @@ export const TransactionItemsReport = () => {
   const [availableRetasiKe, setAvailableRetasiKe] = useState<{ value: string, label: string }[]>([])
   const [paymentAccountFilter, setPaymentAccountFilter] = useState<string>('all')
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'Lunas' | 'Belum Lunas'>('all')
-  const [reportData, setReportData] = useState<SoldProduct[]>([])
+  const [allItems, setAllItems] = useState<SoldProduct[]>([])
+  // const [reportData, setReportData] = useState<SoldProduct[]>([]) // Removed state, now derived
   const [isLoading, setIsLoading] = useState(false)
 
   const { currentBranch } = useBranch()
@@ -74,6 +75,51 @@ export const TransactionItemsReport = () => {
       acc.name?.toLowerCase().includes('bank')
     ).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
   }, [accounts])
+
+  // Filter Logic moved to useMemo for instant updates
+  const reportData = useMemo(() => {
+    let filteredItems = allItems
+
+    // Apply product filter if selected
+    if (productFilter !== 'all') {
+      filteredItems = filteredItems.filter(item => item.productName === productFilter)
+    }
+
+    // Apply source filter if selected
+    if (sourceFilter !== 'all') {
+      filteredItems = filteredItems.filter(item => item.source === sourceFilter)
+    }
+
+    // Apply driver/kasir filter if selected
+    if (driverKasirFilter !== 'all') {
+      filteredItems = filteredItems.filter(item => {
+        if (item.source === 'delivery' || item.source === 'retasi') {
+          return item.driverName === driverKasirFilter
+        }
+        return item.cashierName === driverKasirFilter
+      })
+    }
+
+    // Apply retasi ke filter if selected
+    if (retasiKeFilter !== 'all') {
+      const filterKe = parseInt(retasiKeFilter)
+      // Robust comparison in case of type mismatch (though we cast to int)
+      filteredItems = filteredItems.filter(item => item.retasiKe == filterKe)
+    }
+
+    // Apply payment account filter if selected
+    if (paymentAccountFilter !== 'all') {
+      filteredItems = filteredItems.filter(item => item.paymentAccountId === paymentAccountFilter)
+    }
+
+    // Apply payment status filter if selected
+    if (paymentStatusFilter !== 'all') {
+      filteredItems = filteredItems.filter(item => item.paymentStatus === paymentStatusFilter)
+    }
+
+    return filteredItems
+  }, [allItems, productFilter, sourceFilter, driverKasirFilter, retasiKeFilter, paymentAccountFilter, paymentStatusFilter])
+
 
   const months = [
     { value: 1, label: 'Januari' },
@@ -470,41 +516,7 @@ export const TransactionItemsReport = () => {
         label: `Retasi Ke-${ke}`
       })))
 
-      // Apply filters
-      let filteredItems = items
-
-      // Apply product filter if selected
-      if (productFilter !== 'all') {
-        filteredItems = filteredItems.filter(item => item.productName === productFilter)
-      }
-
-      // Apply driver/kasir filter if selected
-      if (driverKasirFilter !== 'all') {
-        filteredItems = filteredItems.filter(item => {
-          if (item.source === 'delivery' || item.source === 'retasi') {
-            return item.driverName === driverKasirFilter
-          }
-          return item.cashierName === driverKasirFilter
-        })
-      }
-
-      // Apply retasi ke filter if selected
-      if (retasiKeFilter !== 'all') {
-        const filterKe = parseInt(retasiKeFilter)
-        filteredItems = filteredItems.filter(item => item.retasiKe === filterKe)
-      }
-
-      // Apply payment account filter if selected
-      if (paymentAccountFilter !== 'all') {
-        filteredItems = filteredItems.filter(item => item.paymentAccountId === paymentAccountFilter)
-      }
-
-      // Apply payment status filter if selected
-      if (paymentStatusFilter !== 'all') {
-        filteredItems = filteredItems.filter(item => item.paymentStatus === paymentStatusFilter)
-      }
-
-      setReportData(filteredItems)
+      setAllItems(items) // Store all items for client-side filtering
     } catch (error) {
       console.error('Error generating report:', error)
     } finally {
