@@ -175,6 +175,7 @@ export const TransactionItemsReport = () => {
             id,
             transaction_id,
             delivery_date,
+            created_at,
             driver_id,
             driver:profiles!deliveries_driver_id_fkey(full_name),
             delivery_items(
@@ -213,7 +214,7 @@ export const TransactionItemsReport = () => {
           if (currentBranch?.id) {
             const { data: allRetasi } = await supabase
               .from('retasi')
-              .select('id, retasi_number, retasi_ke, driver_name, departure_date')
+              .select('id, retasi_number, retasi_ke, driver_name, departure_date, created_at')
               .eq('branch_id', currentBranch.id)
               .order('departure_date', { ascending: false })
 
@@ -248,7 +249,8 @@ export const TransactionItemsReport = () => {
               const driverNameLower = driverName.toLowerCase().trim()
 
               // Find matching retasi
-              retasiInfo = allRetasiList.find(r => {
+              // Find ALL matching retasis
+              const candidates = allRetasiList.filter(r => {
                 const retasiDriver = (r.driver_name || '').toLowerCase().trim()
                 const retasiDate = r.departure_date // YYYY-MM-DD string from DB
 
@@ -262,6 +264,33 @@ export const TransactionItemsReport = () => {
 
                 return nameMatch && dateMatch
               })
+
+              if (candidates.length === 1) {
+                // Exact single match
+                retasiInfo = candidates[0]
+              } else if (candidates.length > 1) {
+                // Multiple matches (e.g., Retasi 1, Retasi 2 on same day)
+                // Heuristic: Use created_at timestamps. The delivery should belong to the retasi active at that time.
+                // Or, simply, associate with the retasi created most recently BEFORE the delivery.
+
+                const deliveryTime = new Date(delivery.created_at || delivery.delivery_date).getTime()
+
+                // Sort candidates by creation time ASC
+                candidates.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+
+                // Find the candidate that was created most recently before deliveryTime
+                // Default to the last one if all are before (or if timestamps are weird)
+                let bestMatch = candidates[candidates.length - 1]
+
+                for (let i = candidates.length - 1; i >= 0; i--) {
+                  const rTime = new Date(candidates[i].created_at).getTime()
+                  if (rTime <= deliveryTime) {
+                    bestMatch = candidates[i]
+                    break
+                  }
+                }
+                retasiInfo = bestMatch
+              }
             }
 
             if (!retasiInfo) {
