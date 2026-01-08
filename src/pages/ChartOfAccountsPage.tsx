@@ -402,7 +402,8 @@ export default function ChartOfAccountsPage() {
     isHeader: false,
     isPaymentAccount: false,
     initialBalance: 0,
-    employeeId: '' as string // Karyawan yang ditugaskan untuk akun kas
+    employeeId: '' as string, // Karyawan yang ditugaskan untuk akun kas
+    parentId: '' as string
   })
 
   // Filter employees for cash account assignment (supir, driver, cashier, sales, helper)
@@ -1108,7 +1109,7 @@ export default function ChartOfAccountsPage() {
 
     // Find parent to determine type and level
     const parent = STANDARD_COA_INDONESIA.find(a => a.code === parentCode) ||
-                   accounts?.find(a => a.code === parentCode)
+      accounts?.find(a => a.code === parentCode)
 
     if (parent) {
       // Generate next code based on parent code
@@ -1175,7 +1176,8 @@ export default function ChartOfAccountsPage() {
       isHeader: existingAccount.isHeader || false,
       isPaymentAccount: existingAccount.isPaymentAccount,
       initialBalance: openingBalance,
-      employeeId: existingAccount.employeeId || ''
+      employeeId: existingAccount.employeeId || '',
+      parentId: existingAccount.parentId || ''
     })
     setIsEditDialogOpen(true)
   }
@@ -1317,8 +1319,9 @@ export default function ChartOfAccountsPage() {
           code: formData.code,
           type: formData.type,
           isHeader: formData.isHeader,
+          isHeader: formData.isHeader,
           isPaymentAccount: formData.isPaymentAccount,
-          // Do NOT include parentId - preserve existing parent
+          parentId: formData.parentId || null,
           // Only include employeeId for payment accounts (cash/bank)
           ...(formData.isPaymentAccount && { employeeId: formData.employeeId || undefined })
         }
@@ -1592,6 +1595,26 @@ export default function ChartOfAccountsPage() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 noFormat
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Induk Akun (Parent)</Label>
+              <Select
+                value={formData.parentId || "none"}
+                onValueChange={(v) => setFormData({ ...formData, parentId: v === "none" ? "" : v })}
+              >
+                <SelectTrigger><SelectValue placeholder="Pilih parent (opsional)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Tidak ada parent (Root)</SelectItem>
+                  {accounts?.filter(a => a.isHeader && a.id !== accountToEdit?.id)
+                    .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+                    .map(a => (
+                      <SelectItem key={a.id} value={a.id}>
+                        {a.code} - {a.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">

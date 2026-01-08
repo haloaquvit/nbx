@@ -310,7 +310,8 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nfix: retasi calculation - Single Source of Truth in RPC\n\n- Move all retasi return calculations to RPC (mark_retasi_returned_atomic)\n- RPC now calculates SUM of quantities instead of COUNT of items\n- Added manual parameters for legacy data without item details\n- Frontend only sends item data, RPC handles totals\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nfix: COA edit & expense improvements\n\n- fix: update_account RPC - preserve parent_id using COALESCE\n- fix: update_account RPC - remove initial_balance update (use atomic RPC instead)\n- fix: update_account_initial_balance_atomic - sync accounts.initial_balance column\n- fix: create_expense_atomic - save account_name (sumber dana) to expense record\n- feat: ExpenseManagement - add date and account filters for expense list\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git commit -m \"$(cat <<''EOF''\nfix: COA journal uses Modal Disetor (3100) & expense filter fix\n\n- fix: update_account_initial_balance_atomic - prioritize 3100 Modal Disetor\n- fix: prevent using header account (3000) as journal counterpart\n- fix: ExpenseManagement filter - use \"all\" instead of empty string for SelectItem\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(npx supabase db push:*)"
+      "Bash(npx supabase db push:*)",
+      "Bash(ls -la \"d:\\App\\Aquvit Fix - Copy\"\"*.md 2>/dev/null || dir /b \"d:AppAquvit Fix - Copy*.md \")"
     ],
     "deny": [],
     "ask": [],
