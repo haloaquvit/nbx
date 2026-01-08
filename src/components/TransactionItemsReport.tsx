@@ -525,12 +525,11 @@ export const TransactionItemsReport = () => {
       // 4. Fetch direct sale transactions (non-office sale without delivery/retasi - includes migration data)
       // These are transactions that don't have delivery records and don't have retasi_id
       if (sourceFilter === 'all' || sourceFilter === 'migration') {
-        // Get all transaction IDs that already have deliveries
+        // Get all transaction IDs that already have deliveries (no date filter - we want ALL deliveries)
+        // This ensures transactions with delivery records outside the date range are properly excluded
         let deliveredTxQuery = supabase
           .from('deliveries')
           .select('transaction_id')
-          .gte('delivery_date', fromDate.toISOString())
-          .lte('delivery_date', toDate.toISOString())
 
         if (currentBranch?.id) {
           deliveredTxQuery = deliveredTxQuery.eq('branch_id', currentBranch.id)
