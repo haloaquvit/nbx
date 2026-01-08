@@ -4,8 +4,8 @@
 DO $$
 DECLARE
     r_branch RECORD;
-    v_correct_acc_id UUID;
-    v_wrong_acc_id UUID;
+    v_correct_acc_id TEXT;
+    v_wrong_acc_id TEXT;
     v_count INTEGER;
 BEGIN
     RAISE NOTICE 'Starting Account 3000 Fix...';
