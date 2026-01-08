@@ -1,2 +1,0 @@
-/usr/lib/postgresql/14/bin/psql: invalid option -- 'i'
-Try "psql --help" for more information.
