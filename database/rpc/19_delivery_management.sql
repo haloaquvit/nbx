@@ -76,8 +76,13 @@ BEGIN
   WHERE reference_id = p_delivery_id::TEXT AND reference_type = 'payroll' AND branch_id = p_branch_id AND is_voided = FALSE;
   
   -- HPP Journal also needs to be voided
+  -- HPP Journal also needs to be voided
+  -- Fix: Check both 'transaction' (new standard) and 'adjustment' (legacy) types
   UPDATE journal_entries SET is_voided = TRUE, voided_reason = 'Delivery updated' 
-  WHERE reference_id = p_delivery_id::TEXT AND reference_type = 'adjustment' AND branch_id = p_branch_id AND is_voided = FALSE;
+  WHERE reference_id = p_delivery_id::TEXT 
+  AND reference_type IN ('transaction', 'adjustment') 
+  AND branch_id = p_branch_id 
+  AND is_voided = FALSE;
 
   DELETE FROM commission_entries WHERE delivery_id = p_delivery_id;
 
@@ -155,8 +160,9 @@ BEGIN
   UPDATE transactions SET status = v_new_status, updated_at = NOW() WHERE id = v_transaction.id;
 
   -- 8. Create NEW HPP Journal
+  -- Fix: Use Modal Tertahan (2140) instead of HPP (5100) to match process_delivery_atomic logic
   IF NOT v_transaction.is_office_sale AND v_total_hpp > 0 THEN
-    SELECT id INTO v_hpp_account_id FROM accounts WHERE code = '5100' AND branch_id = p_branch_id AND is_active = TRUE LIMIT 1;
+    SELECT id INTO v_hpp_account_id FROM accounts WHERE code = '2140' AND branch_id = p_branch_id AND is_active = TRUE LIMIT 1;
     SELECT id INTO v_persediaan_id FROM accounts WHERE code = '1310' AND branch_id = p_branch_id AND is_active = TRUE LIMIT 1;
 
     IF v_hpp_account_id IS NOT NULL AND v_persediaan_id IS NOT NULL THEN
@@ -176,7 +182,7 @@ BEGIN
           INSERT INTO journal_entries (
             entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit
           ) VALUES (
-            v_entry_number, NOW(), format('HPP Pengiriman %s (update)', v_transaction.ref), 'adjustment', p_delivery_id::TEXT, p_branch_id, 'posted', v_total_hpp, v_total_hpp
+            v_entry_number, NOW(), format('Pengiriman %s (Update)', v_transaction.ref), 'transaction', p_delivery_id::TEXT, p_branch_id, 'posted', v_total_hpp, v_total_hpp
           ) RETURNING id INTO v_journal_id;
           
           EXIT; 
@@ -187,7 +193,7 @@ BEGIN
 
       INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
       VALUES 
-        (v_journal_id, 1, v_hpp_account_id, format('COGS: %s', v_transaction.ref), v_total_hpp, 0),
+        (v_journal_id, 1, v_hpp_account_id, format('Realisasi Pengiriman: %s', v_transaction.ref), v_total_hpp, 0),
         (v_journal_id, 2, v_persediaan_id, format('Stock keluar: %s', v_transaction.ref), 0, v_total_hpp);
     END IF;
   END IF;
