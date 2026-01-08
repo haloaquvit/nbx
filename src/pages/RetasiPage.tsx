@@ -448,8 +448,10 @@ export default function RetasiPage() {
                         >
                           <TableCell>
                             {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
-                            {retasi.departure_time && (
+                            {retasi.departure_time ? (
                               <div className="text-xs text-muted-foreground">{retasi.departure_time}</div>
+                            ) : (
+                              <div className="text-xs text-muted-foreground">{format(new Date(retasi.created_at), 'HH:mm')}</div>
                             )}
                           </TableCell>
                           <TableCell>
@@ -498,8 +500,10 @@ export default function RetasiPage() {
                             {idx === 0 ? (
                               <>
                                 {format(retasi.departure_date, 'dd/MM/yyyy', { locale: id })}
-                                {retasi.departure_time && (
+                                {retasi.departure_time ? (
                                   <div className="text-xs text-muted-foreground">{retasi.departure_time}</div>
+                                ) : (
+                                  <div className="text-xs text-muted-foreground">{format(new Date(retasi.created_at), 'HH:mm')}</div>
                                 )}
                               </>
                             ) : ''}
