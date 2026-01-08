@@ -233,7 +233,31 @@ export const useAccounts = () => {
     },
   });
 
-  // UPDATE INITIAL BALANCE - RPC Atomik
+  // GET OPENING BALANCE - Ambil saldo awal dari jurnal opening_balance
+  const getOpeningBalance = useMutation({
+    mutationFn: async (accountId: string): Promise<{ openingBalance: number; journalId: string | null; lastUpdated: string | null }> => {
+      if (!currentBranch?.id) throw new Error('Branch required');
+
+      const { data: rpcResultRaw, error } = await supabase.rpc('get_account_opening_balance', {
+        p_account_id: accountId,
+        p_branch_id: currentBranch.id
+      });
+
+      if (error) {
+        console.error('[getOpeningBalance] RPC error:', error);
+        throw new Error(error.message);
+      }
+
+      const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
+      return {
+        openingBalance: Number(rpcResult?.opening_balance) || 0,
+        journalId: rpcResult?.journal_id || null,
+        lastUpdated: rpcResult?.last_updated || null
+      };
+    }
+  });
+
+  // UPDATE INITIAL BALANCE - RPC Atomik (void jurnal lama, buat baru)
   const updateInitialBalance = useMutation({
     mutationFn: async ({ accountId, initialBalance }: { accountId: string, initialBalance: number }): Promise<void> => {
       if (!currentBranch?.id) throw new Error('Branch required');
@@ -261,6 +285,7 @@ export const useAccounts = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
       queryClient.invalidateQueries({ queryKey: ['journalEntries'] });
+      queryClient.invalidateQueries({ queryKey: ['openingBalances'] });
     },
   });
 
@@ -401,6 +426,7 @@ export const useAccounts = () => {
     addAccount,
     updateAccount,
     updateInitialBalance,
+    getOpeningBalance,
     deleteAccount,
     getAccountsHierarchy,
     moveAccount,

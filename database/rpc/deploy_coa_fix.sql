@@ -1,18 +1,197 @@
 -- ============================================================================
--- RPC 15: COA Adjustments
--- Purpose: Atomic operations for COA initial balance and journal posting
--- ============================================================================
---
--- ARSITEKTUR AKUNTANSI (Single Source of Truth):
--- - Saldo Awal HANYA dicatat via jurnal opening_balance
--- - Kolom accounts.initial_balance DEPRECATED (tidak dipakai untuk perhitungan)
--- - Semua saldo dihitung MURNI dari jurnal entries
--- - Saat edit saldo awal: VOID jurnal lama, BUAT jurnal baru (audit trail)
+-- DEPLOY: COA Balance Fix - Single Source of Truth (Pure Journal)
+-- Date: 2026-01-08
+-- Purpose:
+--   1. Saldo akun dihitung MURNI dari jurnal (tanpa initial_balance)
+--   2. Saldo awal dicatat via jurnal opening_balance
+--   3. Edit saldo awal: void jurnal lama, buat jurnal baru (audit trail)
+--   4. Tambah fungsi get_account_opening_balance untuk display di UI
 -- ============================================================================
 
 -- ============================================================================
--- 0. GET ACCOUNT OPENING BALANCE
--- Ambil saldo awal akun dari jurnal opening_balance (untuk display di UI)
+-- PART 1: UPDATE VIEWS (Pure Journal Calculation)
+-- ============================================================================
+
+-- VIEW 1: v_account_balances - Saldo akun MURNI dari jurnal
+CREATE OR REPLACE VIEW v_account_balances AS
+WITH journal_movements AS (
+    SELECT
+        jel.account_id,
+        COALESCE(SUM(jel.debit_amount), 0) as total_debit,
+        COALESCE(SUM(jel.credit_amount), 0) as total_credit
+    FROM journal_entry_lines jel
+    INNER JOIN journal_entries je ON je.id = jel.journal_entry_id
+    WHERE je.status = 'posted'
+      AND je.is_voided = FALSE
+    GROUP BY jel.account_id
+)
+SELECT
+    a.id as account_id,
+    a.code as account_code,
+    a.name as account_name,
+    a.type as account_type,
+    a.parent_id,
+    a.level,
+    a.is_header,
+    a.branch_id,
+    a.initial_balance as initial_balance_deprecated,
+    a.balance as stored_balance,
+    COALESCE(jm.total_debit, 0) as total_debit,
+    COALESCE(jm.total_credit, 0) as total_credit,
+    CASE
+        WHEN a.type IN ('Aset', 'Beban') THEN
+            COALESCE(jm.total_debit, 0) - COALESCE(jm.total_credit, 0)
+        ELSE
+            COALESCE(jm.total_credit, 0) - COALESCE(jm.total_debit, 0)
+    END as calculated_balance,
+    CASE
+        WHEN a.type IN ('Aset', 'Beban') THEN
+            (COALESCE(jm.total_debit, 0) - COALESCE(jm.total_credit, 0)) - a.balance
+        ELSE
+            (COALESCE(jm.total_credit, 0) - COALESCE(jm.total_debit, 0)) - a.balance
+    END as balance_difference
+FROM accounts a
+LEFT JOIN journal_movements jm ON jm.account_id = a.id
+WHERE a.is_active = TRUE;
+
+-- VIEW 2: v_account_balance_mismatches
+CREATE OR REPLACE VIEW v_account_balance_mismatches AS
+SELECT
+    account_id,
+    account_code,
+    account_name,
+    account_type,
+    branch_id,
+    initial_balance_deprecated,
+    stored_balance,
+    calculated_balance,
+    balance_difference
+FROM v_account_balances
+WHERE ABS(balance_difference) > 0.01;
+
+-- VIEW 3: v_trial_balance
+CREATE OR REPLACE VIEW v_trial_balance AS
+SELECT
+    account_code,
+    account_name,
+    account_type,
+    branch_id,
+    CASE
+        WHEN account_type IN ('Aset', 'Beban') THEN calculated_balance
+        ELSE 0
+    END as debit_balance,
+    CASE
+        WHEN account_type NOT IN ('Aset', 'Beban') THEN calculated_balance
+        ELSE 0
+    END as credit_balance
+FROM v_account_balances
+WHERE is_header = FALSE
+  AND calculated_balance != 0
+ORDER BY account_code;
+
+-- ============================================================================
+-- PART 2: UPDATE FUNCTIONS (Pure Journal Calculation)
+-- ============================================================================
+
+-- FUNCTION: get_account_balance
+CREATE OR REPLACE FUNCTION get_account_balance(p_account_id TEXT)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_balance NUMERIC;
+    v_account_type TEXT;
+    v_total_debit NUMERIC;
+    v_total_credit NUMERIC;
+BEGIN
+    SELECT type INTO v_account_type FROM accounts WHERE id = p_account_id;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+
+    SELECT
+        COALESCE(SUM(jel.debit_amount), 0),
+        COALESCE(SUM(jel.credit_amount), 0)
+    INTO v_total_debit, v_total_credit
+    FROM journal_entry_lines jel
+    INNER JOIN journal_entries je ON je.id = jel.journal_entry_id
+    WHERE jel.account_id = p_account_id
+      AND je.status = 'posted'
+      AND je.is_voided = FALSE;
+
+    IF v_account_type IN ('Aset', 'Beban') THEN
+        v_balance := v_total_debit - v_total_credit;
+    ELSE
+        v_balance := v_total_credit - v_total_debit;
+    END IF;
+
+    RETURN v_balance;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- FUNCTION: get_account_balance_at_date
+CREATE OR REPLACE FUNCTION get_account_balance_at_date(
+    p_account_id TEXT,
+    p_as_of_date DATE
+)
+RETURNS NUMERIC AS $$
+DECLARE
+    v_balance NUMERIC;
+    v_account_type TEXT;
+    v_total_debit NUMERIC;
+    v_total_credit NUMERIC;
+BEGIN
+    SELECT type INTO v_account_type FROM accounts WHERE id = p_account_id;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+
+    SELECT
+        COALESCE(SUM(jel.debit_amount), 0),
+        COALESCE(SUM(jel.credit_amount), 0)
+    INTO v_total_debit, v_total_credit
+    FROM journal_entry_lines jel
+    INNER JOIN journal_entries je ON je.id = jel.journal_entry_id
+    WHERE jel.account_id = p_account_id
+      AND je.status = 'posted'
+      AND je.is_voided = FALSE
+      AND je.entry_date <= p_as_of_date;
+
+    IF v_account_type IN ('Aset', 'Beban') THEN
+        v_balance := v_total_debit - v_total_credit;
+    ELSE
+        v_balance := v_total_credit - v_total_debit;
+    END IF;
+
+    RETURN v_balance;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+-- FUNCTION: sync_account_balances
+CREATE OR REPLACE FUNCTION sync_account_balances()
+RETURNS TABLE(
+    account_id TEXT,
+    account_code VARCHAR(10),
+    account_name TEXT,
+    old_balance NUMERIC,
+    new_balance NUMERIC,
+    difference NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH updated AS (
+        UPDATE accounts a
+        SET balance = vab.calculated_balance,
+            updated_at = NOW()
+        FROM v_account_balances vab
+        WHERE a.id = vab.account_id
+          AND ABS(a.balance - vab.calculated_balance) > 0.01
+        RETURNING
+            a.id, a.code, a.name,
+            vab.stored_balance as old_bal,
+            vab.calculated_balance as new_bal
+    )
+    SELECT u.id, u.code, u.name, u.old_bal, u.new_bal, u.new_bal - u.old_bal as diff
+    FROM updated u;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- PART 3: NEW FUNCTION - get_account_opening_balance
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION get_account_opening_balance(
@@ -28,7 +207,6 @@ RETURNS TABLE (
 DECLARE
   v_account_type TEXT;
 BEGIN
-  -- Get account type
   SELECT type INTO v_account_type
   FROM accounts
   WHERE id = p_account_id AND branch_id = p_branch_id;
@@ -38,7 +216,6 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Get opening balance from journal line for this account
   RETURN QUERY
   SELECT
     CASE
@@ -58,7 +235,6 @@ BEGIN
   ORDER BY je.created_at DESC
   LIMIT 1;
 
-  -- If no result, return 0
   IF NOT FOUND THEN
     RETURN QUERY SELECT 0::NUMERIC, NULL::UUID, NULL::DATE, NULL::TIMESTAMPTZ;
   END IF;
@@ -66,8 +242,7 @@ END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 -- ============================================================================
--- 1. UPDATE ACCOUNT INITIAL BALANCE ATOMIC
--- Buat jurnal opening_balance baru untuk saldo awal akun (void yang lama)
+-- PART 4: UPDATE update_account_initial_balance_atomic
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION update_account_initial_balance_atomic(
@@ -188,7 +363,7 @@ BEGIN
     created_by
   ) VALUES (
     v_entry_number,
-    DATE_TRUNC('year', NOW())::DATE, -- Tanggal 1 Januari tahun berjalan
+    DATE_TRUNC('year', NOW())::DATE,
     v_description,
     'opening_balance',
     p_account_id,
@@ -201,13 +376,11 @@ BEGIN
 
   -- 8. Create journal lines based on account type
   IF v_account.type IN ('Aset', 'Beban') THEN
-    -- Akun Debit Normal: Debit Akun, Credit Modal
     INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
     VALUES
       (v_new_journal_id, 1, p_account_id, v_description, ABS(p_new_initial_balance), 0),
       (v_new_journal_id, 2, v_equity_account_id, v_description, 0, ABS(p_new_initial_balance));
   ELSE
-    -- Akun Credit Normal (Kewajiban/Modal/Pendapatan): Credit Akun, Debit Modal
     INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
     VALUES
       (v_new_journal_id, 1, p_account_id, v_description, 0, ABS(p_new_initial_balance)),
@@ -225,53 +398,18 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
--- 2. POST JOURNAL ATOMIC
--- Safely change journal status to posted
+-- PART 5: GRANTS
 -- ============================================================================
 
-CREATE OR REPLACE FUNCTION post_journal_atomic(
-  p_journal_id UUID,
-  p_branch_id UUID
-)
-RETURNS TABLE (
-  success BOOLEAN,
-  message TEXT
-) AS $$
-DECLARE
-  v_journal RECORD;
-BEGIN
-  SELECT id, status, total_debit, total_credit INTO v_journal
-  FROM journal_entries
-  WHERE id = p_journal_id AND branch_id = p_branch_id;
-
-  IF v_journal.id IS NULL THEN
-    RETURN QUERY SELECT FALSE, 'Journal entry not found'::TEXT;
-    RETURN;
-  END IF;
-
-  IF v_journal.status = 'posted' THEN
-    RETURN QUERY SELECT TRUE, 'Journal already posted'::TEXT;
-    RETURN;
-  END IF;
-
-  IF v_journal.total_debit != v_journal.total_credit THEN
-    RETURN QUERY SELECT FALSE, 'Journal is not balanced'::TEXT;
-    RETURN;
-  END IF;
-
-  UPDATE journal_entries
-  SET status = 'posted',
-      updated_at = NOW()
-  WHERE id = p_journal_id;
-
-  RETURN QUERY SELECT TRUE, 'Journal posted successfully'::TEXT;
-
-EXCEPTION WHEN OTHERS THEN
-  RETURN QUERY SELECT FALSE, SQLERRM::TEXT;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- GRANTS
+GRANT SELECT ON v_account_balances TO authenticated;
+GRANT SELECT ON v_account_balance_mismatches TO authenticated;
+GRANT SELECT ON v_trial_balance TO authenticated;
+GRANT EXECUTE ON FUNCTION get_account_balance(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_account_balance_at_date(TEXT, DATE) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_account_opening_balance(TEXT, UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION update_account_initial_balance_atomic(TEXT, NUMERIC, UUID, UUID, TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION post_journal_atomic(UUID, UUID) TO authenticated;
+
+-- ============================================================================
+-- DONE
+-- ============================================================================
+SELECT 'COA Balance Fix deployed successfully!' as status;

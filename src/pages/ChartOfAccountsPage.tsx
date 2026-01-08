@@ -348,7 +348,7 @@ function TreeNodeRow({
 // MAIN COMPONENT
 // ============================================================================
 export default function ChartOfAccountsPage() {
-  const { accounts, isLoading, addAccount, updateAccount, deleteAccount, updateInitialBalance } = useAccounts()
+  const { accounts, isLoading, addAccount, updateAccount, deleteAccount, updateInitialBalance, getOpeningBalance } = useAccounts()
   const { currentBranch } = useBranch()
   const { employees } = useEmployees()
   const { toast } = useToast()
@@ -365,6 +365,7 @@ export default function ChartOfAccountsPage() {
   const [parentCodeForNew, setParentCodeForNew] = useState<string | null>(null)
   const [accountToEdit, setAccountToEdit] = useState<Account | null>(null)
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null)
+  const [originalOpeningBalance, setOriginalOpeningBalance] = useState<number>(0) // From journal, for comparison
 
   // Journal view state
   const [isJournalDialogOpen, setIsJournalDialogOpen] = useState(false)
@@ -1141,20 +1142,33 @@ export default function ChartOfAccountsPage() {
     setIsAddDialogOpen(true)
   }
 
-  const handleEdit = (account: TreeNode['account']) => {
+  const handleEdit = async (account: TreeNode['account']) => {
     if (!account.id) return
 
     const existingAccount = accounts?.find(a => a.id === account.id)
     if (!existingAccount) return
 
     setAccountToEdit(existingAccount)
+
+    // Fetch opening balance from journal (Single Source of Truth)
+    let openingBalance = 0
+    try {
+      const result = await getOpeningBalance.mutateAsync(existingAccount.id)
+      openingBalance = result.openingBalance
+    } catch (error) {
+      console.warn('Could not fetch opening balance from journal, using 0')
+    }
+
+    // Store original opening balance for comparison during save
+    setOriginalOpeningBalance(openingBalance)
+
     setFormData({
       code: existingAccount.code || '',
       name: existingAccount.name,
       type: existingAccount.type,
       isHeader: existingAccount.isHeader || false,
       isPaymentAccount: existingAccount.isPaymentAccount,
-      initialBalance: existingAccount.initialBalance || 0,
+      initialBalance: openingBalance,
       employeeId: existingAccount.employeeId || ''
     })
     setIsEditDialogOpen(true)
@@ -1284,12 +1298,12 @@ export default function ChartOfAccountsPage() {
     if (!accountToEdit) return
 
     try {
-      // Check if initial balance changed
-      const oldInitialBalance = accountToEdit.initialBalance || 0
+      // Check if initial balance changed (compare with journal value, not accounts column)
       const newInitialBalance = formData.initialBalance || 0
-      const initialBalanceChanged = oldInitialBalance !== newInitialBalance
+      const initialBalanceChanged = originalOpeningBalance !== newInitialBalance
 
-      // Update account basic data (without initialBalance if it changed)
+      // Update account basic data
+      // IMPORTANT: Do NOT include parentId to prevent accidental parent change
       await updateAccount.mutateAsync({
         accountId: accountToEdit.id,
         newData: {
@@ -1298,8 +1312,7 @@ export default function ChartOfAccountsPage() {
           type: formData.type,
           isHeader: formData.isHeader,
           isPaymentAccount: formData.isPaymentAccount,
-          // Only include initialBalance if it didn't change (to avoid double update)
-          ...(!initialBalanceChanged && { initialBalance: formData.initialBalance }),
+          // Do NOT include parentId - preserve existing parent
           // Only include employeeId for payment accounts (cash/bank)
           ...(formData.isPaymentAccount && { employeeId: formData.employeeId || undefined })
         }
@@ -1316,6 +1329,7 @@ export default function ChartOfAccountsPage() {
       toast({ title: "Sukses", description: "Akun berhasil diupdate" })
       setIsEditDialogOpen(false)
       setAccountToEdit(null)
+      setOriginalOpeningBalance(0)
     } catch (error: any) {
       toast({ variant: "destructive", title: "Gagal", description: error.message })
     }
