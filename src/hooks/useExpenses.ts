@@ -182,13 +182,18 @@ export const useExpenses = () => {
       // Handles: expense record + journal (Dr. Beban, Cr. Kas) in single transaction
       // ============================================================================
       if (currentBranch?.id) {
+        // Simply use ISO string - Date object already has the correct local time
+        const dateToSend = newExpenseData.date instanceof Date
+          ? newExpenseData.date.toISOString()
+          : newExpenseData.date;
+
         const { data: rpcResultRaw, error: rpcError } = await supabase
           .rpc('create_expense_atomic', {
             p_expense: {
               description: newExpenseData.description,
               amount: newExpenseData.amount,
               category: newExpenseData.category || 'Beban Umum',
-              date: newExpenseData.date instanceof Date ? newExpenseData.date.toISOString().split('T')[0] : newExpenseData.date,
+              date: dateToSend,
               account_id: newExpenseData.accountId,
               expense_account_id: newExpenseData.expenseAccountId,
               expense_account_name: newExpenseData.expenseAccountName,
