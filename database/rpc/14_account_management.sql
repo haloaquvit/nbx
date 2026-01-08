@@ -160,14 +160,16 @@ BEGIN
     END IF;
   END IF;
 
+  -- NOTE: initial_balance is NOT updated here!
+  -- Use update_account_initial_balance_atomic() instead to maintain journal audit trail
   UPDATE accounts
   SET
     name = COALESCE(p_name, name),
     code = NULLIF(p_code, ''),
     type = COALESCE(p_type, type),
-    initial_balance = COALESCE(p_initial_balance, initial_balance),
+    -- initial_balance REMOVED - use update_account_initial_balance_atomic() for Single Source of Truth
     is_payment_account = COALESCE(p_is_payment_account, is_payment_account),
-    parent_id = p_parent_id, -- No cast
+    parent_id = COALESCE(p_parent_id, parent_id), -- Preserve existing parent if null passed
     level = COALESCE(p_level, level),
     is_header = COALESCE(p_is_header, is_header),
     is_active = COALESCE(p_is_active, is_active),

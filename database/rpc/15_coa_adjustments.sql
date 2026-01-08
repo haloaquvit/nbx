@@ -152,6 +152,10 @@ BEGIN
 
   -- 5. Handle saldo awal = 0: just void, don't create new journal
   IF p_new_initial_balance = 0 THEN
+    -- Update accounts.initial_balance column for UI display
+    UPDATE accounts SET initial_balance = 0, updated_at = NOW()
+    WHERE id = p_account_id;
+
     RETURN QUERY SELECT TRUE, NULL::UUID, NULL::TEXT;
     RETURN;
   END IF;
@@ -231,6 +235,10 @@ BEGIN
 
   -- 9. Post the journal
   UPDATE journal_entries SET status = 'posted' WHERE id = v_new_journal_id;
+
+  -- 10. Update accounts.initial_balance column for UI display (sync with journal)
+  UPDATE accounts SET initial_balance = p_new_initial_balance, updated_at = NOW()
+  WHERE id = p_account_id;
 
   RETURN QUERY SELECT TRUE, v_new_journal_id, NULL::TEXT;
 

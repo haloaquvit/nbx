@@ -19,7 +19,7 @@ import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
 import { canManageCash } from '@/utils/roleUtils'
-import { Trash2, Check, ChevronsUpDown } from "lucide-react"
+import { Trash2, Check, ChevronsUpDown, Filter, X } from "lucide-react"
 import { ExpenseReceiptPDF } from "./ExpenseReceiptPDF"
 import { Badge } from "./ui/badge"
 import { cn } from "@/lib/utils"
@@ -100,8 +100,18 @@ export function ExpenseManagement() {
   const canDeleteExpense = canManageCash(user);
   const [expenseAccountOpen, setExpenseAccountOpen] = useState(false);
 
+  // Filter states
+  const [filterStartDate, setFilterStartDate] = useState<Date | undefined>(undefined);
+  const [filterEndDate, setFilterEndDate] = useState<Date | undefined>(undefined);
+  const [filterExpenseAccountId, setFilterExpenseAccountId] = useState<string>("");
+  const [filterPaymentAccountId, setFilterPaymentAccountId] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
+
   // Filter akun beban (type = 'Beban') yang bukan header
   const expenseAccounts = accounts?.filter(a => a.type === 'Beban' && !a.isHeader) || [];
+
+  // Payment accounts for filter
+  const paymentAccounts = accounts?.filter(a => a.isPaymentAccount) || [];
 
   // Get selected expense account for display
   const selectedExpenseAccount = expenseAccounts.find(a => a.id === watchExpenseAccountId);
@@ -147,6 +157,39 @@ export function ExpenseManagement() {
       }
     })
   }
+
+  // Filter expenses
+  const filteredExpenses = expenses?.filter(exp => {
+    // Date filter
+    if (filterStartDate) {
+      const expDate = new Date(exp.date);
+      expDate.setHours(0, 0, 0, 0);
+      const startDate = new Date(filterStartDate);
+      startDate.setHours(0, 0, 0, 0);
+      if (expDate < startDate) return false;
+    }
+    if (filterEndDate) {
+      const expDate = new Date(exp.date);
+      expDate.setHours(23, 59, 59, 999);
+      const endDate = new Date(filterEndDate);
+      endDate.setHours(23, 59, 59, 999);
+      if (expDate > endDate) return false;
+    }
+    // Expense account filter
+    if (filterExpenseAccountId && exp.expenseAccountId !== filterExpenseAccountId) return false;
+    // Payment account (sumber dana) filter
+    if (filterPaymentAccountId && exp.accountId !== filterPaymentAccountId) return false;
+    return true;
+  }) || [];
+
+  const clearFilters = () => {
+    setFilterStartDate(undefined);
+    setFilterEndDate(undefined);
+    setFilterExpenseAccountId("");
+    setFilterPaymentAccountId("");
+  };
+
+  const hasActiveFilters = filterStartDate || filterEndDate || filterExpenseAccountId || filterPaymentAccountId;
 
   return (
     <div className="space-y-6">
@@ -254,10 +297,82 @@ export function ExpenseManagement() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Riwayat Pengeluaran</CardTitle>
+          <Button
+            variant={showFilters ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filter
+            {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[filterStartDate, filterEndDate, filterExpenseAccountId, filterPaymentAccountId].filter(Boolean).length}</Badge>}
+          </Button>
         </CardHeader>
         <CardContent>
+          {/* Filter Section */}
+          {showFilters && (
+            <div className="mb-4 p-4 border rounded-lg bg-muted/50 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>Dari Tanggal</Label>
+                  <DateTimePicker
+                    date={filterStartDate}
+                    setDate={setFilterStartDate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Sampai Tanggal</Label>
+                  <DateTimePicker
+                    date={filterEndDate}
+                    setDate={setFilterEndDate}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Akun Beban</Label>
+                  <Select value={filterExpenseAccountId} onValueChange={setFilterExpenseAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Semua akun beban" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Semua akun beban</SelectItem>
+                      {expenseAccounts.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          {acc.code ? `${acc.code} - ${acc.name}` : acc.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Sumber Dana</Label>
+                  <Select value={filterPaymentAccountId} onValueChange={setFilterPaymentAccountId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Semua sumber dana" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Semua sumber dana</SelectItem>
+                      {paymentAccounts.map(acc => (
+                        <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {hasActiveFilters && (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Menampilkan {filteredExpenses.length} dari {expenses?.length || 0} pengeluaran
+                  </p>
+                  <Button variant="ghost" size="sm" onClick={clearFilters}>
+                    <X className="h-4 w-4 mr-2" />
+                    Hapus Filter
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           <Table>
             <TableHeader>
               <TableRow>
@@ -272,7 +387,14 @@ export function ExpenseManagement() {
             </TableHeader>
             <TableBody>
               {isLoadingExpenses ? <TableRow><TableCell colSpan={canDeleteExpense ? 7 : 6}>Memuat...</TableCell></TableRow> :
-                expenses?.map(exp => {
+                filteredExpenses.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={canDeleteExpense ? 7 : 6} className="text-center text-muted-foreground py-8">
+                      {hasActiveFilters ? 'Tidak ada pengeluaran yang sesuai filter' : 'Belum ada pengeluaran'}
+                    </TableCell>
+                  </TableRow>
+                ) :
+                filteredExpenses.map(exp => {
                   const isDebtPayment = exp.category === 'Pembayaran Hutang';
                   return (
                     <TableRow key={exp.id}>

@@ -34,6 +34,7 @@ DECLARE
   v_category TEXT;
   v_date DATE;
   v_cash_account_id TEXT;  -- accounts.id is TEXT not UUID
+  v_cash_account_name TEXT; -- Sumber dana (payment account name)
   v_expense_account_id TEXT;  -- accounts.id is TEXT not UUID
   v_expense_account_name TEXT;
   v_journal_id UUID;
@@ -105,9 +106,9 @@ BEGIN
     END IF;
   END IF;
 
-  -- Find cash/payment account
+  -- Find cash/payment account and get its name
   IF v_cash_account_id IS NULL THEN
-    SELECT id INTO v_cash_account_id
+    SELECT id, name INTO v_cash_account_id, v_cash_account_name
     FROM accounts
     WHERE branch_id = p_branch_id
       AND is_active = TRUE
@@ -115,6 +116,11 @@ BEGIN
       AND code LIKE '11%'
     ORDER BY code
     LIMIT 1;
+  ELSE
+    -- Get account name if account_id was provided
+    SELECT name INTO v_cash_account_name
+    FROM accounts
+    WHERE id = v_cash_account_id AND branch_id = p_branch_id;
   END IF;
 
   -- Validate accounts found
@@ -144,6 +150,7 @@ BEGIN
     category,
     date,
     account_id,
+    account_name,
     expense_account_id,
     expense_account_name,
     branch_id,
@@ -155,6 +162,7 @@ BEGIN
     v_category,
     v_date,
     v_cash_account_id,
+    v_cash_account_name,
     v_expense_account_id,
     v_expense_account_name,
     p_branch_id,
