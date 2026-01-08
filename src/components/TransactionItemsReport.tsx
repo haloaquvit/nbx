@@ -30,7 +30,7 @@ interface SoldProduct {
   unit: string
   price: number
   total: number
-  source: 'delivery' | 'office_sale' | 'retasi' // Sumber: pengantaran, laku kantor, atau retasi
+  source: 'delivery' | 'office_sale' | 'retasi' | 'migration' // Sumber: pengantaran, laku kantor, retasi, atau data migrasi
   driverName?: string
   retasiNumber?: string
   retasiKe?: number // Retasi ke-berapa (1, 2, 3, dst)
@@ -50,7 +50,7 @@ export const TransactionItemsReport = () => {
   const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [productFilter, setProductFilter] = useState<string>('all') // Filter by product name
   const [availableProducts, setAvailableProducts] = useState<string[]>([]) // List of unique product names
-  const [sourceFilter, setSourceFilter] = useState<'all' | 'delivery' | 'office_sale' | 'retasi'>('all')
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'delivery' | 'office_sale' | 'retasi' | 'migration'>('all')
   const [driverKasirFilter, setDriverKasirFilter] = useState<string>('all')
   const [availableDriversKasir, setAvailableDriversKasir] = useState<string[]>([])
   const [retasiKeFilter, setRetasiKeFilter] = useState<string>('all')
@@ -381,9 +381,9 @@ export const TransactionItemsReport = () => {
               if (item._isSalesMeta || item._isMigrationMeta) return
 
               // Skip items without product info
-              if (!item.product?.name && !item.name) return
+              if (!item.product?.name && !item.name && !item.productName) return
 
-              const productName = item.product?.name || item.name
+              const productName = item.product?.name || item.name || item.productName
               const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
 
               const price = item.price || item.product?.basePrice || 0
@@ -481,9 +481,9 @@ export const TransactionItemsReport = () => {
               if (item._isSalesMeta || item._isMigrationMeta) return
 
               // Skip items without product info
-              if (!item.product?.name && !item.name) return
+              if (!item.product?.name && !item.name && !item.productName) return
 
-              const productName = item.product?.name || item.name
+              const productName = item.product?.name || item.name || item.productName
               const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
 
               const price = item.price || item.product?.basePrice || 0
@@ -512,6 +512,98 @@ export const TransactionItemsReport = () => {
                 retasiKe: retasiInfo?.retasi_ke,
                 driverName: retasiInfo?.driver_name || transaction.cashier_name,
                 cashierName: transaction.cashier_name || 'Unknown',
+                isBonus: isBonus,
+                paymentAccountId: transaction.payment_account_id,
+                paymentAccountName: paymentAcct?.name,
+                paymentStatus: transaction.payment_status || 'Belum Lunas'
+              })
+            })
+          })
+        }
+      }
+
+      // 4. Fetch direct sale transactions (non-office sale without delivery/retasi - includes migration data)
+      // These are transactions that don't have delivery records and don't have retasi_id
+      if (sourceFilter === 'all' || sourceFilter === 'migration') {
+        // Get all transaction IDs that already have deliveries
+        let deliveredTxQuery = supabase
+          .from('deliveries')
+          .select('transaction_id')
+          .gte('delivery_date', fromDate.toISOString())
+          .lte('delivery_date', toDate.toISOString())
+
+        if (currentBranch?.id) {
+          deliveredTxQuery = deliveredTxQuery.eq('branch_id', currentBranch.id)
+        }
+
+        const { data: deliveredTxData } = await deliveredTxQuery
+        const deliveredTxIds = new Set((deliveredTxData || []).map(d => d.transaction_id))
+
+        // Get transactions that are NOT office_sale, NOT retasi, and NOT delivered
+        let directSaleQuery = supabase
+          .from('transactions')
+          .select(`
+            id,
+            customer_name,
+            order_date,
+            items,
+            cashier_id,
+            payment_account_id,
+            payment_status,
+            cashier:profiles!transactions_cashier_id_fkey(full_name)
+          `)
+          .or('is_office_sale.eq.false,is_office_sale.is.null')
+          .is('retasi_id', null)
+          .gte('order_date', fromDate.toISOString())
+          .lte('order_date', toDate.toISOString())
+
+        if (currentBranch?.id) {
+          directSaleQuery = directSaleQuery.eq('branch_id', currentBranch.id)
+        }
+
+        const { data: directSaleData, error: directSaleError } = await directSaleQuery
+
+        if (directSaleError) {
+          console.error('Error fetching direct sales:', directSaleError)
+        } else if (directSaleData) {
+          // Filter out transactions that already have deliveries
+          const directSalesWithoutDelivery = directSaleData.filter(t => !deliveredTxIds.has(t.id))
+
+          console.log('Direct Sales (without delivery):', directSalesWithoutDelivery.length)
+
+          directSalesWithoutDelivery.forEach((transaction: any) => {
+            const orderDate = new Date(transaction.order_date)
+            const transactionItems = transaction.items || []
+
+            transactionItems.forEach((item: any) => {
+              // Skip metadata items (sales meta, migration meta)
+              if (item._isSalesMeta || item._isMigrationMeta) return
+
+              // Skip items without product info
+              if (!item.product?.name && !item.name && !item.productName) return
+
+              const productName = item.product?.name || item.name || item.productName
+              const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
+
+              const price = item.price || item.product?.basePrice || 0
+              const quantity = item.quantity || 0
+
+              // Get payment account name
+              const paymentAcct = paymentAccounts.find(a => a.id === transaction.payment_account_id)
+
+              items.push({
+                transactionId: transaction.id,
+                transactionDate: orderDate,
+                soldDate: orderDate,
+                customerName: transaction.customer_name || 'Customer',
+                productName: productName,
+                quantity: quantity,
+                unit: item.unit || item.product?.unit || 'pcs',
+                price: price,
+                total: quantity * price,
+                source: 'migration',
+                driverName: undefined,
+                cashierName: transaction.cashier?.full_name || 'Unknown',
                 isBonus: isBonus,
                 paymentAccountId: transaction.payment_account_id,
                 paymentAccountName: paymentAcct?.name,
@@ -596,7 +688,7 @@ export const TransactionItemsReport = () => {
       item.quantity.toString(),
       `Rp ${item.price.toLocaleString()}`,
       `Rp ${item.total.toLocaleString()}`,
-      item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
+      item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : item.source === 'retasi' ? 'Retasi' : 'Migrasi',
       item.retasiNumber || '-',
       item.source === 'delivery' ? (item.driverName || '-') :
         item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
@@ -638,11 +730,12 @@ export const TransactionItemsReport = () => {
     const deliveryItems = reportData.filter(item => item.source === 'delivery').length
     const officeSaleItems = reportData.filter(item => item.source === 'office_sale').length
     const retasiItems = reportData.filter(item => item.source === 'retasi').length
+    const migrationItems = reportData.filter(item => item.source === 'migration').length
     const regularItems = reportData.filter(item => !item.isBonus).length
     const bonusItems = reportData.filter(item => item.isBonus).length
 
     doc.setFont('helvetica', 'normal')
-    doc.text(`• Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems})`, 14, finalY + 8)
+    doc.text(`• Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems}, Migrasi: ${migrationItems})`, 14, finalY + 8)
     if (productFilter === 'all') {
       doc.text(`• Produk Reguler: ${regularItems}, Produk Bonus: ${bonusItems}`, 14, finalY + 16)
       doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 24)
@@ -677,7 +770,7 @@ export const TransactionItemsReport = () => {
       'Unit': item.unit,
       'Harga': item.price,
       'Total': item.total,
-      'Sumber': item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
+      'Sumber': item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : item.source === 'retasi' ? 'Retasi' : 'Migrasi',
       'Retasi': item.retasiNumber || '-',
       'Supir/Kasir': item.source === 'delivery' || item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
       'Akun Pembayaran': item.paymentAccountName || '-',
@@ -708,11 +801,12 @@ export const TransactionItemsReport = () => {
     const deliveryItems = reportData.filter(item => item.source === 'delivery').length
     const officeSaleItems = reportData.filter(item => item.source === 'office_sale').length
     const retasiItems = reportData.filter(item => item.source === 'retasi').length
+    const migrationItems = reportData.filter(item => item.source === 'migration').length
 
     const summaryStartRow = 5 + excelData.length + 2
     XLSX.utils.sheet_add_aoa(ws, [
       ['Ringkasan:'],
-      [`Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems})`],
+      [`Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems}, Migrasi: ${migrationItems})`],
       [`Total Quantity: ${totalQuantity}`],
       [`Total Nilai: Rp ${totalValue.toLocaleString()}`],
       [`Total Transaksi: ${uniqueTransactions}`]
@@ -750,7 +844,7 @@ export const TransactionItemsReport = () => {
     XLSX.writeFile(wb, filename)
   }
 
-  const getSourceBadge = (source: 'delivery' | 'office_sale' | 'retasi', retasiNumber?: string) => {
+  const getSourceBadge = (source: 'delivery' | 'office_sale' | 'retasi' | 'migration', retasiNumber?: string) => {
     if (source === 'delivery') {
       return (
         <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-300">
@@ -764,6 +858,14 @@ export const TransactionItemsReport = () => {
         <Badge variant="secondary" className="bg-purple-100 text-purple-800 border-purple-300">
           <Navigation className="h-3 w-3 mr-1" />
           {retasiNumber ? `Retasi ${retasiNumber}` : 'Retasi'}
+        </Badge>
+      )
+    }
+    if (source === 'migration') {
+      return (
+        <Badge variant="secondary" className="bg-orange-100 text-orange-800 border-orange-300">
+          <Package className="h-3 w-3 mr-1" />
+          Migrasi
         </Badge>
       )
     }
@@ -784,7 +886,7 @@ export const TransactionItemsReport = () => {
             Laporan Produk Laku
           </CardTitle>
           <CardDescription>
-            Laporan produk yang sudah laku berdasarkan pengantaran, laku kantor, dan retasi
+            Laporan produk yang sudah laku berdasarkan pengantaran, laku kantor, retasi, dan data migrasi
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -826,7 +928,7 @@ export const TransactionItemsReport = () => {
 
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Sumber</Label>
-                <Select value={sourceFilter} onValueChange={(value: 'all' | 'delivery' | 'office_sale' | 'retasi') => setSourceFilter(value)}>
+                <Select value={sourceFilter} onValueChange={(value: 'all' | 'delivery' | 'office_sale' | 'retasi' | 'migration') => setSourceFilter(value)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -835,6 +937,7 @@ export const TransactionItemsReport = () => {
                     <SelectItem value="delivery">Pengantaran</SelectItem>
                     <SelectItem value="office_sale">Laku Kantor</SelectItem>
                     <SelectItem value="retasi">Retasi</SelectItem>
+                    <SelectItem value="migration">Data Migrasi</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1032,7 +1135,7 @@ export const TransactionItemsReport = () => {
             </div>
 
             {/* Summary Cards - Moved to Header */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mt-4">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
                 <div className="text-xl font-bold">{reportData.length}</div>
                 <div className="text-xs text-muted-foreground">Total Produk</div>
@@ -1048,6 +1151,10 @@ export const TransactionItemsReport = () => {
               <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3 text-center">
                 <div className="text-xl font-bold text-purple-600">{reportData.filter(item => item.source === 'retasi').length}</div>
                 <div className="text-xs text-muted-foreground">Retasi</div>
+              </div>
+              <div className="bg-orange-50 dark:bg-orange-900/30 rounded-lg p-3 text-center">
+                <div className="text-xl font-bold text-orange-600">{reportData.filter(item => item.source === 'migration').length}</div>
+                <div className="text-xs text-muted-foreground">Migrasi</div>
               </div>
               <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
                 <div className="text-xl font-bold">{reportData.reduce((sum, item) => sum + item.quantity, 0)}</div>
@@ -1160,7 +1267,7 @@ export const TransactionItemsReport = () => {
               Pilih periode dan klik "Generate Laporan" untuk melihat produk yang laku.
             </p>
             <p className="text-sm text-muted-foreground mt-2">
-              Laporan ini menampilkan produk dari pengantaran, laku kantor, dan retasi.
+              Laporan ini menampilkan produk dari pengantaran, laku kantor, retasi, dan data migrasi.
             </p>
           </CardContent>
         </Card>
