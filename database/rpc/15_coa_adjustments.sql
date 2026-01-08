@@ -160,12 +160,30 @@ BEGIN
     RETURN;
   END IF;
 
-  -- 6. Find equity/modal account for balancing (3xxx)
+  -- 6. Find "Modal Disetor" account (3100) for balancing
+  -- Priority: exact code 3100 > name contains 'disetor' > any non-header 3xxx
   SELECT id INTO v_equity_account_id
   FROM accounts
-  WHERE code LIKE '3%' AND branch_id = p_branch_id AND is_active = TRUE
-  ORDER BY code ASC
+  WHERE branch_id = p_branch_id
+    AND is_active = TRUE
+    AND is_header = FALSE
+    AND (code = '3100' OR LOWER(name) LIKE '%disetor%')
+  ORDER BY
+    CASE WHEN code = '3100' THEN 1 ELSE 2 END,
+    code ASC
   LIMIT 1;
+
+  -- Fallback: any non-header equity account (3xxx)
+  IF v_equity_account_id IS NULL THEN
+    SELECT id INTO v_equity_account_id
+    FROM accounts
+    WHERE code LIKE '3%'
+      AND branch_id = p_branch_id
+      AND is_active = TRUE
+      AND is_header = FALSE
+    ORDER BY code ASC
+    LIMIT 1;
+  END IF;
 
   IF v_equity_account_id IS NULL THEN
     RETURN QUERY SELECT FALSE, NULL::UUID, 'Akun Modal (3xxx) tidak ditemukan untuk pasangan jurnal'::TEXT;

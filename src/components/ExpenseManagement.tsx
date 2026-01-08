@@ -103,8 +103,8 @@ export function ExpenseManagement() {
   // Filter states
   const [filterStartDate, setFilterStartDate] = useState<Date | undefined>(undefined);
   const [filterEndDate, setFilterEndDate] = useState<Date | undefined>(undefined);
-  const [filterExpenseAccountId, setFilterExpenseAccountId] = useState<string>("");
-  const [filterPaymentAccountId, setFilterPaymentAccountId] = useState<string>("");
+  const [filterExpenseAccountId, setFilterExpenseAccountId] = useState<string>("all");
+  const [filterPaymentAccountId, setFilterPaymentAccountId] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
 
   // Filter akun beban (type = 'Beban') yang bukan header
@@ -175,21 +175,21 @@ export function ExpenseManagement() {
       endDate.setHours(23, 59, 59, 999);
       if (expDate > endDate) return false;
     }
-    // Expense account filter
-    if (filterExpenseAccountId && exp.expenseAccountId !== filterExpenseAccountId) return false;
-    // Payment account (sumber dana) filter
-    if (filterPaymentAccountId && exp.accountId !== filterPaymentAccountId) return false;
+    // Expense account filter (skip if "all")
+    if (filterExpenseAccountId && filterExpenseAccountId !== "all" && exp.expenseAccountId !== filterExpenseAccountId) return false;
+    // Payment account (sumber dana) filter (skip if "all")
+    if (filterPaymentAccountId && filterPaymentAccountId !== "all" && exp.accountId !== filterPaymentAccountId) return false;
     return true;
   }) || [];
 
   const clearFilters = () => {
     setFilterStartDate(undefined);
     setFilterEndDate(undefined);
-    setFilterExpenseAccountId("");
-    setFilterPaymentAccountId("");
+    setFilterExpenseAccountId("all");
+    setFilterPaymentAccountId("all");
   };
 
-  const hasActiveFilters = filterStartDate || filterEndDate || filterExpenseAccountId || filterPaymentAccountId;
+  const hasActiveFilters = filterStartDate || filterEndDate || (filterExpenseAccountId && filterExpenseAccountId !== "all") || (filterPaymentAccountId && filterPaymentAccountId !== "all");
 
   return (
     <div className="space-y-6">
@@ -335,7 +335,7 @@ export function ExpenseManagement() {
                       <SelectValue placeholder="Semua akun beban" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Semua akun beban</SelectItem>
+                      <SelectItem value="all">Semua akun beban</SelectItem>
                       {expenseAccounts.map(acc => (
                         <SelectItem key={acc.id} value={acc.id}>
                           {acc.code ? `${acc.code} - ${acc.name}` : acc.name}
@@ -351,7 +351,7 @@ export function ExpenseManagement() {
                       <SelectValue placeholder="Semua sumber dana" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Semua sumber dana</SelectItem>
+                      <SelectItem value="all">Semua sumber dana</SelectItem>
                       {paymentAccounts.map(acc => (
                         <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
                       ))}
