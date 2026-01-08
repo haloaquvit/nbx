@@ -149,7 +149,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         ds.productName?.toLowerCase() === itemProductName.toLowerCase()
       )
 
-      const orderedQuantity = deliverySummaryItem?.orderedQuantity || item.quantityDelivered
+      const orderedQuantity = item.orderedQuantity || deliverySummaryItem?.orderedQuantity || item.quantityDelivered
       const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
 
       const cumulativeDeliveredAtThisPoint = transaction?.deliveries
@@ -339,7 +339,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
         ds.productName?.toLowerCase() === itemProductName.toLowerCase()
       )
 
-      const orderedQuantity = deliverySummaryItem?.orderedQuantity || item.quantityDelivered
+      const orderedQuantity = item.orderedQuantity || deliverySummaryItem?.orderedQuantity || item.quantityDelivered
       const deliveryCreatedAt = delivery.createdAt ? new Date(delivery.createdAt).getTime() : Date.now()
 
       // Calculate cumulative delivered up to this delivery point
@@ -619,7 +619,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                     // FIXED: Calculate historical cumulative totals up to and including this delivery
                     // Get the delivery summary item for baseline data
                     const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
-                    const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
+                    const orderedQuantity = (item as any).orderedQuantity || deliverySummaryItem?.orderedQuantity || 0
 
                     // Calculate cumulative delivered quantity up to and including this delivery
                     // by finding all deliveries for this product up to this delivery's creation date
@@ -760,7 +760,7 @@ export function DeliveryNotePDF({ delivery, transactionInfo, children }: Deliver
                   // FIXED: Calculate historical cumulative totals up to and including this delivery
                   // Get the delivery summary item for baseline data
                   const deliverySummaryItem = transaction.deliverySummary?.find(ds => ds.productId === item.productId)
-                  const orderedQuantity = deliverySummaryItem?.orderedQuantity || 0
+                  const orderedQuantity = (item as any).orderedQuantity || deliverySummaryItem?.orderedQuantity || 0
 
                   // Calculate cumulative delivered quantity up to and including this delivery
                   // by finding all deliveries for this product up to this delivery's creation date
