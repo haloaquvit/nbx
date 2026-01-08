@@ -152,45 +152,62 @@ BEGIN
 
   -- ==================== CREATE JOURNAL ENTRY ====================
 
-  -- ==================== CREATE JOURNAL ENTRY ====================
-  
-  DECLARE
-    v_journal_lines JSONB;
-    v_journal_res RECORD;
-  BEGIN
-    -- Dr. Piutang Karyawan
-    -- Cr. Kas
-    v_journal_lines := jsonb_build_array(
-      jsonb_build_object(
-        'account_id', v_piutang_karyawan_id,
-        'debit_amount', v_amount,
-        'credit_amount', 0,
-        'description', 'Kasbon ' || v_employee_name
-      ),
-      jsonb_build_object(
-        'account_id', v_kas_account_id,
-        'debit_amount', 0,
-        'credit_amount', v_amount,
-        'description', 'Pengeluaran kas untuk kasbon'
-      )
-    );
+  -- Generate entry number
+  SELECT 'JE-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(
+    (COALESCE(
+      (SELECT COUNT(*) + 1 FROM journal_entries
+       WHERE branch_id = p_branch_id
+       AND DATE(created_at) = CURRENT_DATE),
+      1
+    ))::TEXT, 4, '0')
+  INTO v_entry_number;
 
-    SELECT * INTO v_journal_res FROM create_journal_atomic(
-      p_branch_id,
-      v_advance_date,
-      'Kasbon Karyawan - ' || v_employee_name || ' - ' || v_reason,
-      'advance',
-      v_advance_id::TEXT,
-      v_journal_lines,
-      TRUE
-    );
+  -- Create journal header
+  INSERT INTO journal_entries (
+    id,
+    branch_id,
+    entry_number,
+    entry_date,
+    description,
+    reference_type,
+    reference_id,
+    status,
+    is_voided,
+    created_at,
+    updated_at
+  ) VALUES (
+    gen_random_uuid(),
+    p_branch_id,
+    v_entry_number,
+    v_advance_date,
+    'Kasbon Karyawan - ' || v_employee_name || ' - ' || v_reason,
+    'advance',
+    v_advance_id::TEXT,
+    'posted',
+    FALSE,
+    NOW(),
+    NOW()
+  ) RETURNING id INTO v_journal_id;
 
-    IF v_journal_res.success THEN
-      v_journal_id := v_journal_res.journal_id;
-    ELSE
-      RAISE EXCEPTION 'Gagal membuat jurnal kasbon: %', v_journal_res.error_message;
-    END IF;
-  END;
+  -- Dr. Piutang Karyawan
+  INSERT INTO journal_entry_lines (
+    journal_entry_id, account_id, account_name,
+    debit_amount, credit_amount, description, line_number
+  ) VALUES (
+    v_journal_id, v_piutang_karyawan_id,
+    (SELECT name FROM accounts WHERE id = v_piutang_karyawan_id),
+    v_amount, 0, 'Kasbon ' || v_employee_name, 1
+  );
+
+  -- Cr. Kas
+  INSERT INTO journal_entry_lines (
+    journal_entry_id, account_id, account_name,
+    debit_amount, credit_amount, description, line_number
+  ) VALUES (
+    v_journal_id, v_kas_account_id,
+    (SELECT name FROM accounts WHERE id = v_kas_account_id),
+    0, v_amount, 'Pengeluaran kas untuk kasbon', 2
+  );
 
   -- ==================== SUCCESS ====================
 

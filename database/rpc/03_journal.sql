@@ -96,27 +96,26 @@ BEGIN
   )
   LOOP
     -- Validasi account exists
-    -- Fix: Allow accounts with matching branch_id OR NULL branch_id (shared accounts)
     IF v_line.account_id IS NOT NULL THEN
       IF NOT EXISTS (
         SELECT 1 FROM accounts
         WHERE id = v_line.account_id
-          AND (branch_id = p_branch_id OR branch_id IS NULL)
+          AND branch_id = p_branch_id
           AND is_active = TRUE
       ) THEN
         RETURN QUERY SELECT FALSE AS success, NULL::UUID AS journal_id, NULL::TEXT AS entry_number,
-          format('Account ID %s tidak ditemukan atau tidak aktif di branch ini', v_line.account_id)::TEXT AS error_message;
+          format('Account ID %s tidak ditemukan di branch ini', v_line.account_id)::TEXT AS error_message;
         RETURN;
       END IF;
     ELSIF v_line.account_code IS NOT NULL THEN
       IF NOT EXISTS (
         SELECT 1 FROM accounts
         WHERE code = v_line.account_code
-          AND (branch_id = p_branch_id OR branch_id IS NULL)
+          AND branch_id = p_branch_id
           AND is_active = TRUE
       ) THEN
         RETURN QUERY SELECT FALSE AS success, NULL::UUID AS journal_id, NULL::TEXT AS entry_number,
-          format('Account code %s tidak ditemukan atau tidak aktif di branch ini', v_line.account_code)::TEXT AS error_message;
+          format('Account code %s tidak ditemukan di branch ini', v_line.account_code)::TEXT AS error_message;
         RETURN;
       END IF;
     ELSE
@@ -145,43 +144,37 @@ BEGIN
 
   -- ==================== GENERATE ENTRY NUMBER ====================
 
-  FOR i IN 1..10 LOOP
-    v_entry_number := 'JE-' || TO_CHAR(p_entry_date, 'YYYYMMDD') || '-' ||
-      LPAD((SELECT COUNT(*) + 1 FROM journal_entries
-            WHERE branch_id = p_branch_id
-            AND DATE(created_at) = DATE(p_entry_date))::TEXT, 4, '0') ||
-      LPAD(FLOOR(RANDOM() * 1000)::TEXT, 3, '0');
+  v_entry_number := 'JE-' || TO_CHAR(p_entry_date, 'YYYYMMDD') || '-' ||
+    LPAD((SELECT COUNT(*) + 1 FROM journal_entries
+          WHERE branch_id = p_branch_id
+          AND DATE(created_at) = DATE(p_entry_date))::TEXT, 4, '0') ||
+    LPAD(FLOOR(RANDOM() * 1000)::TEXT, 3, '0');
 
-    BEGIN
-      INSERT INTO journal_entries (
-        entry_number,
-        entry_date,
-        description,
-        reference_type,
-        reference_id,
-        branch_id,
-        status,
-        total_debit,
-        total_credit
-      ) VALUES (
-        v_entry_number,
-        p_entry_date,
-        p_description,
-        p_reference_type,
-        p_reference_id,
-        p_branch_id,
-        'draft',
-        v_total_debit,
-        v_total_credit
-      )
-      RETURNING id INTO v_journal_id;
-      
-      EXIT; -- Insert successful
-    EXCEPTION WHEN unique_violation THEN
-      IF i = 10 THEN RAISE; END IF;
-      -- Retry loop
-    END;
-  END LOOP;
+  -- ==================== CREATE JOURNAL HEADER ====================
+
+  -- Create as draft first (trigger may block lines on posted)
+  INSERT INTO journal_entries (
+    entry_number,
+    entry_date,
+    description,
+    reference_type,
+    reference_id,
+    branch_id,
+    status,
+    total_debit,
+    total_credit
+  ) VALUES (
+    v_entry_number,
+    p_entry_date,
+    p_description,
+    p_reference_type,
+    p_reference_id,
+    p_branch_id,
+    'draft',
+    v_total_debit,
+    v_total_credit
+  )
+  RETURNING id INTO v_journal_id;
 
   -- ==================== CREATE JOURNAL LINES ====================
 
@@ -201,7 +194,6 @@ BEGIN
       line_number,
       account_id,
       account_code,
-      account_name,
       description,
       debit_amount,
       credit_amount
@@ -210,17 +202,10 @@ BEGIN
       v_line_number,
       CASE
         WHEN v_line.account_id IS NOT NULL THEN v_line.account_id  -- accounts.id is TEXT
-        ELSE (SELECT id FROM accounts WHERE code = v_line.account_code AND (branch_id = p_branch_id OR branch_id IS NULL) LIMIT 1)
+        ELSE (SELECT id FROM accounts WHERE code = v_line.account_code AND branch_id = p_branch_id LIMIT 1)
       END,
       COALESCE(v_line.account_code,
         (SELECT code FROM accounts WHERE id = v_line.account_id LIMIT 1)),
-      -- Get account_name from accounts table
-      CASE
-        WHEN v_line.account_id IS NOT NULL THEN
-          (SELECT name FROM accounts WHERE id = v_line.account_id LIMIT 1)
-        ELSE
-          (SELECT name FROM accounts WHERE code = v_line.account_code AND (branch_id = p_branch_id OR branch_id IS NULL) LIMIT 1)
-      END,
       COALESCE(v_line.description, p_description),
       COALESCE(v_line.debit_amount, 0),
       COALESCE(v_line.credit_amount, 0)

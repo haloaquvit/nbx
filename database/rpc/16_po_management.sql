@@ -225,52 +225,27 @@ BEGIN
       RETURN;
     END IF;
 
-    DECLARE
-       v_journal_lines JSONB := '[]'::JSONB;
-       v_journal_res RECORD;
-    BEGIN
-       -- Dr. Persediaan Bahan Baku
-       v_journal_lines := v_journal_lines || jsonb_build_object(
-          'account_id', v_acc_persediaan_bahan,
-          'debit_amount', v_total_material,
-          'credit_amount', 0,
-          'description', 'Persediaan: ' || v_material_names
-       );
-       
-       -- Dr. Piutang Pajak (PPN Masukan) jika ada
-       IF v_material_ppn > 0 AND v_acc_piutang_pajak IS NOT NULL THEN
-          v_journal_lines := v_journal_lines || jsonb_build_object(
-            'account_id', v_acc_piutang_pajak,
-            'debit_amount', v_material_ppn,
-            'credit_amount', 0,
-            'description', 'PPN Masukan (PO ' || p_po_id || ')'
-          );
-       END IF;
+    v_entry_number := 'JE-PO-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(FLOOR(RANDOM()*10000)::TEXT, 4, '0');
+    
+    INSERT INTO journal_entries(entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit)
+    VALUES (v_entry_number, NOW(), 'Pembelian Bahan Baku: ' || v_po.supplier_name || ' (' || p_po_id || ')', 'purchase_order', p_po_id, p_branch_id, 'posted', v_total_material + v_material_ppn, v_total_material + v_material_ppn)
+    RETURNING id INTO v_journal_id;
+    
+    v_journal_ids := array_append(v_journal_ids, v_journal_id);
 
-       -- Cr. Hutang Usaha
-       v_journal_lines := v_journal_lines || jsonb_build_object(
-          'account_id', v_acc_hutang_usaha,
-          'debit_amount', 0,
-          'credit_amount', v_total_material + v_material_ppn,
-          'description', 'Hutang: ' || v_po.supplier_name
-       );
+    -- Dr. Persediaan Bahan Baku
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+    VALUES (v_journal_id, 1, v_acc_persediaan_bahan, 'Persediaan: ' || v_material_names, v_total_material, 0);
+    
+    -- Dr. Piutang Pajak (PPN Masukan) jika ada
+    IF v_material_ppn > 0 AND v_acc_piutang_pajak IS NOT NULL THEN
+      INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+      VALUES (v_journal_id, 2, v_acc_piutang_pajak, 'PPN Masukan (PO ' || p_po_id || ')', v_material_ppn, 0);
+    END IF;
 
-       SELECT * INTO v_journal_res FROM create_journal_atomic(
-         p_branch_id,
-         CURRENT_DATE,
-         'Pembelian Bahan Baku: ' || v_po.supplier_name || ' (' || p_po_id || ')',
-         'purchase_order',
-         p_po_id,
-         v_journal_lines,
-         TRUE
-       );
-
-       IF v_journal_res.success THEN
-         v_journal_ids := array_append(v_journal_ids, v_journal_res.journal_id);
-       ELSE
-         RAISE EXCEPTION 'Gagal membuat jurnal bahan baku PO: %', v_journal_res.error_message;
-       END IF;
-    END;
+    -- Cr. Hutang Usaha
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+    VALUES (v_journal_id, 3, v_acc_hutang_usaha, 'Hutang: ' || v_po.supplier_name, 0, v_total_material + v_material_ppn);
   END IF;
 
   -- 5. Create Product Journal
@@ -280,52 +255,27 @@ BEGIN
       RETURN;
     END IF;
 
-    DECLARE
-       v_journal_lines JSONB := '[]'::JSONB;
-       v_journal_res RECORD;
-    BEGIN
-       -- Dr. Persediaan Produk Jadi
-       v_journal_lines := v_journal_lines || jsonb_build_object(
-          'account_id', v_acc_persediaan_produk,
-          'debit_amount', v_total_product,
-          'credit_amount', 0,
-          'description', 'Persediaan: ' || v_product_names
-       );
+    v_entry_number := 'JE-PO-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(FLOOR(RANDOM()*10000)::TEXT, 4, '1');
+    
+    INSERT INTO journal_entries(entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit)
+    VALUES (v_entry_number, NOW(), 'Pembelian Produk Jadi: ' || v_po.supplier_name || ' (' || p_po_id || ')', 'purchase_order', p_po_id, p_branch_id, 'posted', v_total_product + v_product_ppn, v_total_product + v_product_ppn)
+    RETURNING id INTO v_journal_id;
+    
+    v_journal_ids := array_append(v_journal_ids, v_journal_id);
 
-       -- Dr. Piutang Pajak (PPN Masukan) jika ada
-       IF v_product_ppn > 0 AND v_acc_piutang_pajak IS NOT NULL THEN
-           v_journal_lines := v_journal_lines || jsonb_build_object(
-            'account_id', v_acc_piutang_pajak,
-            'debit_amount', v_product_ppn,
-            'credit_amount', 0,
-            'description', 'PPN Masukan (PO ' || p_po_id || ')'
-           );
-       END IF;
+    -- Dr. Persediaan Produk Jadi
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+    VALUES (v_journal_id, 1, v_acc_persediaan_produk, 'Persediaan: ' || v_product_names, v_total_product, 0);
+    
+    -- Dr. Piutang Pajak (PPN Masukan) jika ada
+    IF v_product_ppn > 0 AND v_acc_piutang_pajak IS NOT NULL THEN
+      INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+      VALUES (v_journal_id, 2, v_acc_piutang_pajak, 'PPN Masukan (PO ' || p_po_id || ')', v_product_ppn, 0);
+    END IF;
 
-       -- Cr. Hutang Usaha
-       v_journal_lines := v_journal_lines || jsonb_build_object(
-          'account_id', v_acc_hutang_usaha,
-          'debit_amount', 0,
-          'credit_amount', v_total_product + v_product_ppn,
-          'description', 'Hutang: ' || v_po.supplier_name
-       );
-       
-       SELECT * INTO v_journal_res FROM create_journal_atomic(
-         p_branch_id,
-         CURRENT_DATE,
-         'Pembelian Produk Jadi: ' || v_po.supplier_name || ' (' || p_po_id || ')',
-         'purchase_order',
-         p_po_id,
-         v_journal_lines,
-         TRUE
-       );
-
-       IF v_journal_res.success THEN
-         v_journal_ids := array_append(v_journal_ids, v_journal_res.journal_id);
-       ELSE
-         RAISE EXCEPTION 'Gagal membuat jurnal produk PO: %', v_journal_res.error_message;
-       END IF;
-    END;
+    -- Cr. Hutang Usaha
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+    VALUES (v_journal_id, 3, v_acc_hutang_usaha, 'Hutang: ' || v_po.supplier_name, 0, v_total_product + v_product_ppn);
   END IF;
 
   -- 6. Create Accounts Payable (AP)

@@ -66,22 +66,14 @@ BEGIN
     RETURN;
   END IF;
 
-  -- ==================== CEK STOK ====================
-
-  -- Cek available stock HANYA di branch ini
+  -- ==================== CEK STOK (MODIFIED: ALLOW NEGATIVE) ====================
+  -- We still calculate available stock for logging/HPP purposes
   SELECT COALESCE(SUM(remaining_quantity), 0)
   INTO v_available_stock
   FROM inventory_batches
   WHERE product_id = p_product_id
     AND branch_id = p_branch_id      -- WAJIB filter branch
     AND remaining_quantity > 0;
-
-  IF v_available_stock < p_quantity THEN
-    RETURN QUERY SELECT FALSE, 0::NUMERIC, '[]'::JSONB,
-      format('Stok tidak cukup untuk %s. Tersedia: %s, Diminta: %s',
-        v_product_name, v_available_stock, p_quantity)::TEXT;
-    RETURN;
-  END IF;
 
   -- ==================== CONSUME FIFO ====================
 
@@ -118,6 +110,38 @@ BEGIN
 
     v_remaining := v_remaining - v_deduct_qty;
   END LOOP;
+
+  -- ==================== HANDLE DEFICIT (NEGATIVE STOCK) ====================
+  -- If there is still quantity to consume, create a negative batch
+  IF v_remaining > 0 THEN
+    INSERT INTO inventory_batches (
+      product_id,
+      branch_id,
+      initial_quantity,
+      remaining_quantity,
+      unit_cost,
+      batch_date,
+      notes
+    ) VALUES (
+      p_product_id,
+      p_branch_id,
+      0,
+      -v_remaining, -- Negative stock
+      0,            -- Cost unknown for negative stock
+      NOW(),
+      format('Negative Stock fallback for %s', COALESCE(p_reference_id, 'sale'))
+    ) RETURNING id INTO v_batch.id;
+
+    v_consumed := v_consumed || jsonb_build_object(
+      'batch_id', v_batch.id,
+      'quantity', v_remaining,
+      'unit_cost', 0,
+      'subtotal', 0,
+      'notes', 'negative_fallback'
+    );
+    
+    v_remaining := 0;
+  END IF;
 
   -- ==================== LOGGING ====================
 
@@ -286,12 +310,82 @@ $$ LANGUAGE plpgsql STABLE;
 
 
 -- ============================================================================
+-- 4. SYNC PRODUCT INITIAL STOCK ATOMIC
+-- Sinkronisasi stok awal produk (batch khusus 'Stok Awal')
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION sync_product_initial_stock_atomic(
+  p_product_id UUID,
+  p_branch_id UUID,
+  p_new_initial_stock NUMERIC,
+  p_unit_cost NUMERIC DEFAULT 0
+)
+RETURNS TABLE (
+  success BOOLEAN,
+  batch_id UUID,
+  error_message TEXT
+) AS $$
+DECLARE
+  v_batch_id UUID;
+  v_old_initial NUMERIC;
+  v_qty_diff NUMERIC;
+BEGIN
+  -- ==================== VALIDASI ====================
+  IF p_branch_id IS NULL THEN
+    RETURN QUERY SELECT FALSE, NULL::UUID, 'Branch ID is REQUIRED'::TEXT;
+    RETURN;
+  END IF;
+
+  -- Cari batch "Stok Awal" yang ada
+  SELECT id, initial_quantity INTO v_batch_id, v_old_initial
+  FROM inventory_batches
+  WHERE product_id = p_product_id AND branch_id = p_branch_id AND notes = 'Stok Awal'
+  LIMIT 1;
+
+  IF v_batch_id IS NOT NULL THEN
+    v_qty_diff := p_new_initial_stock - v_old_initial;
+    
+    UPDATE inventory_batches
+    SET initial_quantity = p_new_initial_stock,
+        remaining_quantity = GREATEST(0, remaining_quantity + v_qty_diff),
+        unit_cost = p_unit_cost,
+        updated_at = NOW()
+    WHERE id = v_batch_id;
+  ELSE
+    INSERT INTO inventory_batches (
+      product_id, 
+      branch_id, 
+      initial_quantity, 
+      remaining_quantity, 
+      unit_cost, 
+      notes, 
+      batch_date
+    ) VALUES (
+      p_product_id, 
+      p_branch_id, 
+      p_new_initial_stock, 
+      p_new_initial_stock, 
+      p_unit_cost, 
+      'Stok Awal', 
+      NOW()
+    ) RETURNING id INTO v_batch_id;
+  END IF;
+
+  RETURN QUERY SELECT TRUE, v_batch_id, NULL::TEXT;
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN QUERY SELECT FALSE, NULL::UUID, SQLERRM::TEXT;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
 -- GRANTS
 -- ============================================================================
 
 GRANT EXECUTE ON FUNCTION consume_inventory_fifo(UUID, UUID, NUMERIC, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION restore_inventory_fifo(UUID, UUID, NUMERIC, NUMERIC, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_product_stock(UUID, UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION sync_product_initial_stock_atomic(UUID, UUID, NUMERIC, NUMERIC) TO authenticated;
 
 -- ============================================================================
 -- COMMENTS
@@ -303,3 +397,6 @@ COMMENT ON FUNCTION restore_inventory_fifo IS
   'Restore stok produk dengan membuat batch baru. WAJIB branch_id.';
 COMMENT ON FUNCTION get_product_stock IS
   'Get current stock produk di branch tertentu.';
+COMMENT ON FUNCTION sync_product_initial_stock_atomic IS
+  'Sinkronisasi stok awal produk (batch khusus Stok Awal).';
+
