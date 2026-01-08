@@ -491,6 +491,9 @@ export const useTransactionsReadyForDelivery = () => {
         // console.log('📦 Deliveries found:', deliveries.length);
         const deliverySummary = (Array.isArray(txn.items) ? txn.items : [])
           .map((item: any) => {
+            // Skip metadata items explicitly
+            if (item._isSalesMeta || item._isMigrationMeta) return null;
+
             const productId = item.product_id || item.productId || item.product?.id;
             const productName = item.product_name || item.productName || item.product?.name || '';
             const orderedQty = Number(item.quantity || item.orderedQuantity || 0);
@@ -708,6 +711,9 @@ export const useTransactionDeliveryInfo = (transactionId: string, options?: { en
 
       // Calculate delivery summary
       const deliverySummary = (Array.isArray(txn.items) ? txn.items : []).map((item: any) => {
+        // Skip metadata items explicitly
+        if (item._isSalesMeta || item._isMigrationMeta) return null;
+
         const productId = item.product_id || item.productId || item.product?.id;
         const productName = item.product_name || item.productName || item.product?.name || 'Unknown Product';
         const orderedQty = item.quantity;

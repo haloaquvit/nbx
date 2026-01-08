@@ -305,7 +305,8 @@
       "Bash(for table in production_records material_stock_movements inventory_batches products materials)",
       "Bash(do echo \"=== $table ===\" docker exec aquvit-postgres psql -U postgres -d aquvit_test -c \"\\d $table\")",
       "Bash(__NEW_LINE__ ssh -i 'd:/App/Aquvit Fix - Copy/Aquvit.pem' -o StrictHostKeyChecking=no deployer@103.197.190.54 \"sudo -u postgres psql -d aquvit_new -c \"\"\nSELECT \n  table_name, \n  column_name, \n  data_type,\n  CASE WHEN character_maximum_length IS NOT NULL THEN ''('' || character_maximum_length || '')'' ELSE '''' END as length,\n  column_default,\n  is_nullable\nFROM information_schema.columns \nWHERE table_schema = ''public''\nORDER BY table_name, ordinal_position;\n\"\"\")",
-      "Bash(__NEW_LINE__ echo \"Local columns:\")"
+      "Bash(__NEW_LINE__ echo \"Local columns:\")",
+      "Bash(dir \"d:\\App\\Aquvit Fix - Copy\\*.md\" /b)"
     ],
     "deny": [],
     "ask": [],
