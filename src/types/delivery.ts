@@ -9,6 +9,8 @@ export interface DeliveryItem {
   height?: number;
   notes?: string;
   isBonus?: boolean; // Menandai apakah item ini adalah bonus (tidak dihitung komisi)
+  orderedQuantity?: number; // Added for history view
+  remainingQuantity?: number; // Added for history view
   createdAt: Date;
 }
 

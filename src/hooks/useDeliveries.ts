@@ -13,37 +13,83 @@ interface DeliveryEmployee {
 }
 
 
-const fromDbToDelivery = (dbData: any): Delivery => ({
-  id: dbData.id,
-  transactionId: dbData.transaction_id,
-  deliveryNumber: dbData.delivery_number,
-  customerName: dbData.customer_name,
-  customerAddress: dbData.customer_address || dbData.transactions?.customer?.address, // Try to find address in joined transaction if missing in delivery
-  customerPhone: dbData.customer_phone,
-  driverId: dbData.driver_id,
-  driverName: dbData.driver?.full_name || dbData.driverName, // Map from joined profile
-  helperId: dbData.helper_id,
-  helperName: dbData.helper?.full_name || dbData.helperName, // Map from joined profile
-  deliveryDate: new Date(dbData.delivery_date),
-  status: dbData.status,
-  photoUrl: dbData.photo_url,
-  notes: dbData.notes,
-  transactionTotal: dbData.transactions?.total || 0, // Map total from joined transaction
-  cashierName: dbData.transactions?.cashier_name, // Map cashier name
-  createdAt: new Date(dbData.created_at),
-  updatedAt: dbData.updated_at ? new Date(dbData.updated_at) : new Date(dbData.created_at),
-  items: dbData.delivery_items?.map((item: any) => ({
-    id: item.id,
-    productId: item.product_id,
-    productName: item.product_name,
-    quantityDelivered: Number(item.quantity_delivered),
-    unit: item.unit,
-    isBonus: item.is_bonus,
-    width: item.width,
-    height: item.height,
-    notes: item.notes,
-  })) || [],
-});
+const fromDbToDelivery = (dbData: any): Delivery => {
+  // Helper to calculate ordered and remaining quantity if transaction data is available
+  const getTransactionItemInfo = (productId: string, isBonus: boolean) => {
+    if (!dbData.transactions?.items || !Array.isArray(dbData.transactions.items)) {
+      return { ordered: 0, remaining: 0 };
+    }
+
+    // Find ordered quantity from transaction items
+    const txnItems = dbData.transactions.items;
+    const txnItem = txnItems.find((ti: any) => {
+      const pId = ti.product_id || ti.productId || ti.product?.id;
+      // Check bonus status match
+      const tiIsBonus = ti.is_bonus || ti.isBonus ||
+        (ti.product_name || '').toLowerCase().includes('bonus') ||
+        (ti.product_name || '').toLowerCase().includes('free');
+
+      return pId === productId && !!tiIsBonus === !!isBonus;
+    });
+
+    const ordered = Number(txnItem?.quantity || txnItem?.orderedQuantity || 0);
+
+    // Calculate total delivered from all deliveries if available (for remaining quantity)
+    let totalDelivered = 0;
+    if (dbData.transactions.deliveries && Array.isArray(dbData.transactions.deliveries)) {
+      dbData.transactions.deliveries.forEach((d: any) => {
+        if (d.delivery_items && Array.isArray(d.delivery_items)) {
+          d.delivery_items.forEach((di: any) => {
+            if (di.product_id === productId && !!di.is_bonus === !!isBonus) {
+              totalDelivered += Number(di.quantity_delivered || 0);
+            }
+          });
+        }
+      });
+    }
+
+    const remaining = Math.max(0, ordered - totalDelivered);
+
+    return { ordered, remaining };
+  };
+
+  return {
+    id: dbData.id,
+    transactionId: dbData.transaction_id,
+    deliveryNumber: dbData.delivery_number,
+    customerName: dbData.customer_name,
+    customerAddress: dbData.customer_address || dbData.transactions?.customer?.address, // Try to find address in joined transaction if missing in delivery
+    customerPhone: dbData.customer_phone,
+    driverId: dbData.driver_id,
+    driverName: dbData.driver?.full_name || dbData.driverName, // Map from joined profile
+    helperId: dbData.helper_id,
+    helperName: dbData.helper?.full_name || dbData.helperName, // Map from joined profile
+    deliveryDate: new Date(dbData.delivery_date),
+    status: dbData.status,
+    photoUrl: dbData.photo_url,
+    notes: dbData.notes,
+    transactionTotal: dbData.transactions?.total || 0, // Map total from joined transaction
+    cashierName: dbData.transactions?.cashier_name, // Map cashier name
+    createdAt: new Date(dbData.created_at),
+    updatedAt: dbData.updated_at ? new Date(dbData.updated_at) : new Date(dbData.created_at),
+    items: dbData.delivery_items?.map((item: any) => {
+      const { ordered, remaining } = getTransactionItemInfo(item.product_id, item.is_bonus);
+      return {
+        id: item.id,
+        productId: item.product_id,
+        productName: item.product_name,
+        quantityDelivered: Number(item.quantity_delivered),
+        unit: item.unit,
+        isBonus: item.is_bonus,
+        width: item.width,
+        height: item.height,
+        notes: item.notes,
+        orderedQuantity: ordered > 0 ? ordered : undefined,
+        remainingQuantity: dbData.transactions?.deliveries ? remaining : undefined,
+      };
+    }) || [],
+  };
+};
 
 export const useDeliveries = (transactionId?: string) => {
   const queryClient = useQueryClient();
@@ -322,8 +368,12 @@ export const useDeliveryHistory = () => {
           delivery_items(*),
           transactions(
             total,
+            items,
             cashier_name,
-            customer:customer_id(address)
+            customer:customer_id(address),
+            deliveries (
+               delivery_items (product_id, quantity_delivered, is_bonus)
+            )
           ),
           driver:driver_id(full_name),
           helper:helper_id(full_name)
