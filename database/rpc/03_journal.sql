@@ -194,22 +194,27 @@ BEGIN
       line_number,
       account_id,
       account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
-    ) VALUES (
+    )
+    SELECT
       v_journal_id,
       v_line_number,
-      CASE
-        WHEN v_line.account_id IS NOT NULL THEN v_line.account_id  -- accounts.id is TEXT
-        ELSE (SELECT id FROM accounts WHERE code = v_line.account_code AND branch_id = p_branch_id LIMIT 1)
-      END,
-      COALESCE(v_line.account_code,
-        (SELECT code FROM accounts WHERE id = v_line.account_id LIMIT 1)),
+      a.id,
+      a.code,
+      a.name,
       COALESCE(v_line.description, p_description),
       COALESCE(v_line.debit_amount, 0),
       COALESCE(v_line.credit_amount, 0)
-    );
+    FROM accounts a
+    WHERE a.branch_id = p_branch_id
+      AND (
+        (v_line.account_id IS NOT NULL AND a.id = v_line.account_id)
+        OR (v_line.account_id IS NULL AND a.code = v_line.account_code)
+      )
+    LIMIT 1;
   END LOOP;
 
   -- ==================== POST JOURNAL ====================

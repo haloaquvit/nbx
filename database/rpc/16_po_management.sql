@@ -234,18 +234,21 @@ BEGIN
     v_journal_ids := array_append(v_journal_ids, v_journal_id);
 
     -- Dr. Persediaan Bahan Baku
-    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-    VALUES (v_journal_id, 1, v_acc_persediaan_bahan, 'Persediaan: ' || v_material_names, v_total_material, 0);
-    
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+    SELECT v_journal_id, 1, a.id, a.code, a.name, 'Persediaan: ' || v_material_names, v_total_material, 0
+    FROM accounts a WHERE a.id = v_acc_persediaan_bahan;
+
     -- Dr. Piutang Pajak (PPN Masukan) jika ada
     IF v_material_ppn > 0 AND v_acc_piutang_pajak IS NOT NULL THEN
-      INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 2, v_acc_piutang_pajak, 'PPN Masukan (PO ' || p_po_id || ')', v_material_ppn, 0);
+      INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 2, a.id, a.code, a.name, 'PPN Masukan (PO ' || p_po_id || ')', v_material_ppn, 0
+      FROM accounts a WHERE a.id = v_acc_piutang_pajak;
     END IF;
 
     -- Cr. Hutang Usaha
-    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-    VALUES (v_journal_id, 3, v_acc_hutang_usaha, 'Hutang: ' || v_po.supplier_name, 0, v_total_material + v_material_ppn);
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+    SELECT v_journal_id, 3, a.id, a.code, a.name, 'Hutang: ' || v_po.supplier_name, 0, v_total_material + v_material_ppn
+    FROM accounts a WHERE a.id = v_acc_hutang_usaha;
   END IF;
 
   -- 5. Create Product Journal
@@ -256,26 +259,29 @@ BEGIN
     END IF;
 
     v_entry_number := 'JE-PO-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(FLOOR(RANDOM()*10000)::TEXT, 4, '1');
-    
+
     INSERT INTO journal_entries(entry_number, entry_date, description, reference_type, reference_id, branch_id, status, total_debit, total_credit)
     VALUES (v_entry_number, NOW(), 'Pembelian Produk Jadi: ' || v_po.supplier_name || ' (' || p_po_id || ')', 'purchase_order', p_po_id, p_branch_id, 'posted', v_total_product + v_product_ppn, v_total_product + v_product_ppn)
     RETURNING id INTO v_journal_id;
-    
+
     v_journal_ids := array_append(v_journal_ids, v_journal_id);
 
     -- Dr. Persediaan Produk Jadi
-    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-    VALUES (v_journal_id, 1, v_acc_persediaan_produk, 'Persediaan: ' || v_product_names, v_total_product, 0);
-    
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+    SELECT v_journal_id, 1, a.id, a.code, a.name, 'Persediaan: ' || v_product_names, v_total_product, 0
+    FROM accounts a WHERE a.id = v_acc_persediaan_produk;
+
     -- Dr. Piutang Pajak (PPN Masukan) jika ada
     IF v_product_ppn > 0 AND v_acc_piutang_pajak IS NOT NULL THEN
-      INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 2, v_acc_piutang_pajak, 'PPN Masukan (PO ' || p_po_id || ')', v_product_ppn, 0);
+      INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 2, a.id, a.code, a.name, 'PPN Masukan (PO ' || p_po_id || ')', v_product_ppn, 0
+      FROM accounts a WHERE a.id = v_acc_piutang_pajak;
     END IF;
 
     -- Cr. Hutang Usaha
-    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-    VALUES (v_journal_id, 3, v_acc_hutang_usaha, 'Hutang: ' || v_po.supplier_name, 0, v_total_product + v_product_ppn);
+    INSERT INTO journal_entry_lines(journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+    SELECT v_journal_id, 3, a.id, a.code, a.name, 'Hutang: ' || v_po.supplier_name, 0, v_total_product + v_product_ppn
+    FROM accounts a WHERE a.id = v_acc_hutang_usaha;
   END IF;
 
   -- 6. Create Accounts Payable (AP)

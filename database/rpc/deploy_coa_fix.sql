@@ -408,6 +408,12 @@ BEGIN
   -- 9. Post the journal
   UPDATE journal_entries SET status = 'posted' WHERE id = v_new_journal_id;
 
+  -- 10. UPDATE accounts column (CACHE for Tree/List View)
+  UPDATE accounts 
+  SET initial_balance = p_new_initial_balance,
+      updated_at = NOW()
+  WHERE id = p_account_id;
+
   RETURN QUERY SELECT TRUE, v_new_journal_id, NULL::TEXT;
 
 EXCEPTION WHEN OTHERS THEN

@@ -175,34 +175,44 @@ BEGIN
       journal_entry_id,
       line_number,
       account_id,
+      account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
-    ) VALUES (
+    )
+    SELECT
       v_journal_id,
       1,
-      v_hutang_account_id,
+      a.id,
+      a.code,
+      a.name,
       format('Angsuran #%s - %s', v_installment.installment_number, COALESCE(v_payable.supplier_name, 'Supplier')),
       v_installment.total_amount,
       0
-    );
+    FROM accounts a WHERE a.id = v_hutang_account_id;
 
     -- Cr. Kas/Bank
     INSERT INTO journal_entry_lines (
       journal_entry_id,
       line_number,
       account_id,
+      account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
-    ) VALUES (
+    )
+    SELECT
       v_journal_id,
       2,
-      v_kas_account_id,
+      a.id,
+      a.code,
+      a.name,
       format('Pembayaran angsuran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier')),
       0,
       v_installment.total_amount
-    );
+    FROM accounts a WHERE a.id = v_kas_account_id;
 
     UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
   END IF;

@@ -185,10 +185,15 @@ BEGIN
         END;
       END LOOP;
 
-      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES 
-        (v_journal_id, 1, v_hpp_account_id, format('COGS: %s', v_transaction.ref), v_total_hpp, 0),
-        (v_journal_id, 2, v_persediaan_id, format('Stock keluar: %s', v_transaction.ref), 0, v_total_hpp);
+      -- Dr. HPP
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 1, a.id, a.code, a.name, format('COGS: %s', v_transaction.ref), v_total_hpp, 0
+      FROM accounts a WHERE a.id = v_hpp_account_id;
+
+      -- Cr. Persediaan
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 2, a.id, a.code, a.name, format('Stock keluar: %s', v_transaction.ref), 0, v_total_hpp
+      FROM accounts a WHERE a.id = v_persediaan_id;
     END IF;
   END IF;
 

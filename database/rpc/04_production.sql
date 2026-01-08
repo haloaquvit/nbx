@@ -273,34 +273,44 @@ BEGIN
         journal_entry_id,
         line_number,
         account_id,
+        account_code,
+        account_name,
         description,
         debit_amount,
         credit_amount
-      ) VALUES (
+      )
+      SELECT
         v_journal_id,
         1,
-        v_persediaan_barang_id,
+        a.id,
+        a.code,
+        a.name,
         format('Hasil produksi: %s x%s', v_product.name, p_quantity),
         v_total_material_cost,
         0
-      );
+      FROM accounts a WHERE a.id = v_persediaan_barang_id;
 
       -- Cr. Persediaan Bahan Baku (1320)
       INSERT INTO journal_entry_lines (
         journal_entry_id,
         line_number,
         account_id,
+        account_code,
+        account_name,
         description,
         debit_amount,
         credit_amount
-      ) VALUES (
+      )
+      SELECT
         v_journal_id,
         2,
-        v_persediaan_bahan_id,
+        a.id,
+        a.code,
+        a.name,
         format('Bahan terpakai: %s', RTRIM(v_material_details, ', ')),
         0,
         v_total_material_cost
-      );
+      FROM accounts a WHERE a.id = v_persediaan_bahan_id;
 
       -- Post the journal
       UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
@@ -502,34 +512,44 @@ BEGIN
         journal_entry_id,
         line_number,
         account_id,
+        account_code,
+        account_name,
         description,
         debit_amount,
         credit_amount
-      ) VALUES (
+      )
+      SELECT
         v_journal_id,
         1,
-        v_beban_lain_id,
+        a.id,
+        a.code,
+        a.name,
         format('Bahan rusak: %s x%s', v_material.name, p_quantity),
         v_spoilage_cost,
         0
-      );
+      FROM accounts a WHERE a.id = v_beban_lain_id;
 
       -- Cr. Persediaan Bahan Baku (1320)
       INSERT INTO journal_entry_lines (
         journal_entry_id,
         line_number,
         account_id,
+        account_code,
+        account_name,
         description,
         debit_amount,
         credit_amount
-      ) VALUES (
+      )
+      SELECT
         v_journal_id,
         2,
-        v_persediaan_bahan_id,
+        a.id,
+        a.code,
+        a.name,
         format('Bahan keluar: %s x%s', v_material.name, p_quantity),
         0,
         v_spoilage_cost
-      );
+      FROM accounts a WHERE a.id = v_persediaan_bahan_id;
 
       UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
     END IF;

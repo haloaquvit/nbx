@@ -206,12 +206,14 @@ BEGIN
          END LOOP;
 
          -- Dr. Modal Barang Dagang Tertahan (Mengurangi Hutang Barang)
-         INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-         VALUES (v_journal_id, 1, v_acc_tertahan, 'Realisasi Pengiriman', v_total_hpp_real, 0);
+         INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+         SELECT v_journal_id, 1, a.id, a.code, a.name, 'Realisasi Pengiriman', v_total_hpp_real, 0
+         FROM accounts a WHERE a.id = v_acc_tertahan;
 
          -- Cr. Persediaan Barang Jadi (Stok Fisik Keluar)
-         INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-         VALUES (v_journal_id, 2, v_acc_persediaan, 'Barang Keluar Gudang', 0, v_total_hpp_real);
+         INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+         SELECT v_journal_id, 2, a.id, a.code, a.name, 'Barang Keluar Gudang', 0, v_total_hpp_real
+         FROM accounts a WHERE a.id = v_acc_persediaan;
       END IF;
   END IF;
 

@@ -63,12 +63,19 @@ export const useJournalEntries = () => {
   } = useQuery({
     queryKey: ['journalEntries', currentBranch?.id],
     queryFn: async () => {
-      // Fetch entries with nested lines in ONE query
+      // Fetch entries with nested lines and account info in ONE query
       let query = supabase
         .from('journal_entries')
         .select(`
           *,
-          journal_entry_lines (*)
+          journal_entry_lines (
+            *,
+            accounts (
+              id,
+              code,
+              name
+            )
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -80,11 +87,16 @@ export const useJournalEntries = () => {
 
       if (error) throw error;
 
-      // Transform to app format - lines are already included
+      // Transform to app format - lines are already included with account fallback
       const entries: JournalEntry[] = (data || []).map((entry: any) => {
-        const lines = (entry.journal_entry_lines || []).sort(
-          (a: any, b: any) => a.line_number - b.line_number
-        );
+        const lines = (entry.journal_entry_lines || [])
+          .sort((a: any, b: any) => a.line_number - b.line_number)
+          .map((line: any) => ({
+            ...line,
+            // Fallback to accounts table if account_code/account_name is empty
+            account_code: line.account_code || line.accounts?.code || '',
+            account_name: line.account_name || line.accounts?.name || ''
+          }));
         return fromDbToApp(entry as DbJournalEntry, lines as DbJournalEntryLine[]);
       });
 
@@ -298,7 +310,7 @@ export const useJournalEntries = () => {
   } = useQuery({
     queryKey: ['journalEntryLines', currentBranch?.id],
     queryFn: async () => {
-      // Fetch all lines with their journal entry info
+      // Fetch all lines with their journal entry info AND account info
       const { data, error } = await supabase
         .from('journal_entry_lines')
         .select(`
@@ -312,6 +324,11 @@ export const useJournalEntries = () => {
             is_voided,
             reference_type,
             branch_id
+          ),
+          accounts (
+            id,
+            code,
+            name
           )
         `)
         .order('created_at', { ascending: false });
@@ -335,8 +352,8 @@ export const useJournalEntries = () => {
         referenceType: line.journal_entries?.reference_type || '',
         lineNumber: line.line_number,
         accountId: line.account_id,
-        accountCode: line.account_code,
-        accountName: line.account_name,
+        accountCode: line.account_code || line.accounts?.code || '',
+        accountName: line.account_name || line.accounts?.name || '',
         debitAmount: Number(line.debit_amount) || 0,
         creditAmount: Number(line.credit_amount) || 0,
         description: line.description,

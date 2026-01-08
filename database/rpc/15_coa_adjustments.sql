@@ -128,14 +128,24 @@ BEGIN
   IF p_new_initial_balance > 0 THEN
     -- Account is Debit (Aset/Beban)
     IF v_account.type IN ('Aset', 'Beban') THEN
-      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 1, p_account_id, v_description, p_new_initial_balance, 0),
-             (v_journal_id, 2, v_equity_account_id, v_description, 0, p_new_initial_balance);
+      -- Line 1: Debit target account
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 1, a.id, a.code, a.name, v_description, p_new_initial_balance, 0
+      FROM accounts a WHERE a.id = p_account_id;
+      -- Line 2: Credit equity account
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 2, a.id, a.code, a.name, v_description, 0, p_new_initial_balance
+      FROM accounts a WHERE a.id = v_equity_account_id;
     -- Account is Credit (Liabilitas/Ekuitas/Pendapatan)
     ELSE
-      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 1, p_account_id, v_description, 0, p_new_initial_balance),
-             (v_journal_id, 2, v_equity_account_id, v_description, p_new_initial_balance, 0);
+      -- Line 1: Credit target account
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 1, a.id, a.code, a.name, v_description, 0, p_new_initial_balance
+      FROM accounts a WHERE a.id = p_account_id;
+      -- Line 2: Debit equity account
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 2, a.id, a.code, a.name, v_description, p_new_initial_balance, 0
+      FROM accounts a WHERE a.id = v_equity_account_id;
     END IF;
   END IF;
 

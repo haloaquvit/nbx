@@ -301,6 +301,13 @@ export const useRetasi = (filters?: {
 
       const { items, ...mainData } = retasiData;
 
+      // Auto-generate departure_time if not provided
+      let departureTime = mainData.departure_time;
+      if (!departureTime) {
+        const now = new Date();
+        departureTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      }
+
       const { data: rpcResultRaw, error: rpcError } = await supabase
         .rpc('create_retasi_atomic', {
           p_branch_id: currentBranch.id,
@@ -309,7 +316,7 @@ export const useRetasi = (filters?: {
           p_truck_number: mainData.truck_number || null,
           p_route: mainData.route || null,
           p_departure_date: mainData.departure_date instanceof Date ? mainData.departure_date.toISOString().split('T')[0] : mainData.departure_date,
-          p_departure_time: mainData.departure_time || null,
+          p_departure_time: departureTime,
           p_notes: mainData.notes || '',
           p_items: (items || []).map(item => ({
             product_id: item.product_id,

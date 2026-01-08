@@ -398,7 +398,10 @@ export function ExpenseManagement() {
                   const isDebtPayment = exp.category === 'Pembayaran Hutang';
                   return (
                     <TableRow key={exp.id}>
-                      <TableCell>{format(new Date(exp.date), "d MMM yyyy", { locale: id })}</TableCell>
+                      <TableCell>
+                        <div>{format(new Date(exp.date), "d MMM yyyy", { locale: id })}</div>
+                        <div className="text-xs text-muted-foreground">{format(new Date(exp.date), "HH:mm")}</div>
+                      </TableCell>
                       <TableCell className="font-medium">{exp.description}</TableCell>
                       <TableCell>
                         <Badge

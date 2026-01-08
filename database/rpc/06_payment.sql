@@ -175,34 +175,44 @@ BEGIN
       journal_entry_id,
       line_number,
       account_id,
+      account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
-    ) VALUES (
+    )
+    SELECT
       v_journal_id,
       1,
-      v_kas_account_id,
+      a.id,
+      a.code,
+      a.name,
       format('Terima dari %s', COALESCE(v_receivable.customer_name, 'Customer')),
       p_amount,
       0
-    );
+    FROM accounts a WHERE a.id = v_kas_account_id;
 
     -- Cr. Piutang Usaha
     INSERT INTO journal_entry_lines (
       journal_entry_id,
       line_number,
       account_id,
+      account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
-    ) VALUES (
+    )
+    SELECT
       v_journal_id,
       2,
-      v_piutang_account_id,
+      a.id,
+      a.code,
+      a.name,
       format('Pelunasan piutang: %s', COALESCE(v_receivable.customer_name, 'Customer')),
       0,
       p_amount
-    );
+    FROM accounts a WHERE a.id = v_piutang_account_id;
 
     UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
   END IF;
@@ -365,34 +375,44 @@ BEGIN
       journal_entry_id,
       line_number,
       account_id,
+      account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
-    ) VALUES (
+    )
+    SELECT
       v_journal_id,
       1,
-      v_hutang_account_id,
+      a.id,
+      a.code,
+      a.name,
       format('Bayar ke %s', COALESCE(v_payable.supplier_name, 'Supplier')),
       p_amount,
       0
-    );
+    FROM accounts a WHERE a.id = v_hutang_account_id;
 
     -- Cr. Kas/Bank
     INSERT INTO journal_entry_lines (
       journal_entry_id,
       line_number,
       account_id,
+      account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
-    ) VALUES (
+    )
+    SELECT
       v_journal_id,
       2,
-      v_kas_account_id,
+      a.id,
+      a.code,
+      a.name,
       format('Pembayaran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier')),
       0,
       p_amount
-    );
+    FROM accounts a WHERE a.id = v_kas_account_id;
 
     UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
   END IF;
@@ -541,12 +561,14 @@ BEGIN
       RETURNING id INTO v_journal_id;
 
       -- Dr. Lawan (Expense/Asset)
-      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 1, v_lawan_account_id, COALESCE(p_description, 'Hutang Baru'), p_amount, 0);
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 1, a.id, a.code, a.name, COALESCE(p_description, 'Hutang Baru'), p_amount, 0
+      FROM accounts a WHERE a.id = v_lawan_account_id;
 
       -- Cr. Hutang Usaha
-      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
-      VALUES (v_journal_id, 2, v_hutang_account_id, COALESCE(p_description, 'Hutang Baru'), 0, p_amount);
+      INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
+      SELECT v_journal_id, 2, a.id, a.code, a.name, COALESCE(p_description, 'Hutang Baru'), 0, p_amount
+      FROM accounts a WHERE a.id = v_hutang_account_id;
 
       UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
     END IF;
