@@ -348,7 +348,7 @@ function TreeNodeRow({
 // MAIN COMPONENT
 // ============================================================================
 export default function ChartOfAccountsPage() {
-  const { accounts, isLoading, addAccount, updateAccount, deleteAccount, updateInitialBalance, getOpeningBalance } = useAccounts()
+  const { accounts, isLoading, addAccount, updateAccount, deleteAccount, updateInitialBalance, getOpeningBalance, syncAccountBalances } = useAccounts()
   const { currentBranch } = useBranch()
   const { employees } = useEmployees()
   const { toast } = useToast()
@@ -1370,6 +1370,31 @@ export default function ChartOfAccountsPage() {
 
         {userIsAdminOrOwner && (
           <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() => {
+                syncAccountBalances.mutate(undefined, {
+                  onSuccess: (result) => {
+                    console.log('Sync result:', result.details);
+                    toast({
+                      title: "Sync Berhasil",
+                      description: `${result.updated} akun di-update untuk branch ${result.branchName}`,
+                    });
+                  },
+                  onError: (error) => {
+                    toast({
+                      variant: "destructive",
+                      title: "Sync Gagal",
+                      description: error.message,
+                    });
+                  }
+                });
+              }}
+              disabled={syncAccountBalances.isPending}
+              variant="outline"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncAccountBalances.isPending ? 'animate-spin' : ''}`} />
+              {syncAccountBalances.isPending ? 'Syncing...' : 'Sync Saldo'}
+            </Button>
             <Button
               onClick={handleImportClick}
               disabled={isImporting}
