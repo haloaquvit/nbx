@@ -50,7 +50,7 @@ BEGIN
   END IF;
 
   -- Get transaction to check is_office_sale
-  SELECT * INTO v_transaction FROM transactions WHERE id::TEXT = v_delivery.transaction_id;
+  SELECT * INTO v_transaction FROM transactions WHERE id::TEXT = v_delivery.transaction_id::TEXT;
 
   -- 2. Restore Original Stock (FIFO)
   -- Kita kembalikan stok dari pengiriman lama sebelum memproses yang baru
@@ -58,8 +58,8 @@ BEGIN
   IF NOT COALESCE(v_transaction.is_office_sale, FALSE) THEN
     FOR v_item IN
       SELECT product_id, quantity_delivered as quantity, product_name
-      FROM delivery_items
-      WHERE delivery_id = p_delivery_id AND quantity_delivered > 0
+      FROM delivery_items di
+      WHERE di.delivery_id = p_delivery_id AND di.quantity_delivered > 0
     LOOP
       PERFORM restore_inventory_fifo(
         v_item.product_id,
@@ -84,7 +84,7 @@ BEGIN
   AND branch_id = p_branch_id 
   AND is_voided = FALSE;
 
-  DELETE FROM commission_entries WHERE delivery_id = p_delivery_id;
+  DELETE FROM commission_entries WHERE commission_entries.delivery_id = p_delivery_id;
 
   -- 4. Update Delivery Header
   UPDATE deliveries
@@ -98,7 +98,7 @@ BEGIN
   WHERE id = p_delivery_id;
 
   -- 5. Refresh items: Delete old items and Process new items
-  DELETE FROM delivery_items WHERE delivery_id = p_delivery_id;
+  DELETE FROM delivery_items WHERE delivery_items.delivery_id = p_delivery_id;
 
   FOR v_new_item IN SELECT * FROM jsonb_array_elements(p_items)
   LOOP
@@ -138,7 +138,7 @@ BEGIN
 
   -- 7. Update Transaction Status
   -- Get total ordered from transaction
-  SELECT * INTO v_transaction FROM transactions WHERE id::TEXT = v_delivery.transaction_id;
+  SELECT * INTO v_transaction FROM transactions WHERE id::TEXT = v_delivery.transaction_id::TEXT;
   
   SELECT COALESCE(SUM((item->>'quantity')::NUMERIC), 0) INTO v_total_ordered
   FROM jsonb_array_elements(v_transaction.items) item

@@ -26,28 +26,32 @@ RETURNS TABLE (
   last_updated TIMESTAMPTZ
 ) AS $$
 DECLARE
-  v_account_type TEXT;
+  v_account RECORD;
+  v_journal_balance NUMERIC;
+  v_journal_id UUID;
+  v_journal_date DATE;
+  v_journal_updated TIMESTAMPTZ;
 BEGIN
-  -- Get account type
-  SELECT type INTO v_account_type
+  -- Get account info
+  SELECT id, type, initial_balance, updated_at INTO v_account
   FROM accounts
   WHERE id = p_account_id AND branch_id = p_branch_id;
 
-  IF v_account_type IS NULL THEN
+  IF v_account.id IS NULL THEN
     RETURN QUERY SELECT 0::NUMERIC, NULL::UUID, NULL::DATE, NULL::TIMESTAMPTZ;
     RETURN;
   END IF;
 
-  -- Get opening balance from journal line for this account
-  RETURN QUERY
+  -- Try to get opening balance from journal first (Single Source of Truth)
   SELECT
     CASE
-      WHEN v_account_type IN ('Aset', 'Beban') THEN jel.debit_amount
+      WHEN v_account.type IN ('Aset', 'Beban') THEN jel.debit_amount
       ELSE jel.credit_amount
-    END as opening_balance,
-    je.id as journal_id,
-    je.entry_date as journal_date,
-    je.updated_at as last_updated
+    END,
+    je.id,
+    je.entry_date,
+    je.updated_at
+  INTO v_journal_balance, v_journal_id, v_journal_date, v_journal_updated
   FROM journal_entries je
   INNER JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id
   WHERE je.reference_id = p_account_id
@@ -58,10 +62,21 @@ BEGIN
   ORDER BY je.created_at DESC
   LIMIT 1;
 
-  -- If no result, return 0
-  IF NOT FOUND THEN
-    RETURN QUERY SELECT 0::NUMERIC, NULL::UUID, NULL::DATE, NULL::TIMESTAMPTZ;
+  -- If journal found, return journal data
+  IF v_journal_id IS NOT NULL THEN
+    RETURN QUERY SELECT v_journal_balance, v_journal_id, v_journal_date, v_journal_updated;
+    RETURN;
   END IF;
+
+  -- Fallback: return initial_balance from accounts column (for legacy data)
+  -- This handles accounts that were set before the journal-based system
+  IF COALESCE(v_account.initial_balance, 0) != 0 THEN
+    RETURN QUERY SELECT v_account.initial_balance, NULL::UUID, NULL::DATE, v_account.updated_at;
+    RETURN;
+  END IF;
+
+  -- No opening balance found
+  RETURN QUERY SELECT 0::NUMERIC, NULL::UUID, NULL::DATE, NULL::TIMESTAMPTZ;
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 

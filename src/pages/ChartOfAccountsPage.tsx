@@ -1153,11 +1153,17 @@ export default function ChartOfAccountsPage() {
     // Fetch opening balance from journal (Single Source of Truth)
     let openingBalance = 0
     try {
+      console.log('[handleEdit] Fetching opening balance for account:', existingAccount.id)
       const result = await getOpeningBalance.mutateAsync(existingAccount.id)
+      console.log('[handleEdit] Opening balance result:', result)
       openingBalance = result.openingBalance
-    } catch (error) {
-      console.warn('Could not fetch opening balance from journal, using 0')
+    } catch (error: any) {
+      console.error('[handleEdit] Error fetching opening balance:', error?.message || error)
+      // Fallback: jika RPC error, coba ambil dari kolom accounts (deprecated tapi sebagai backup)
+      openingBalance = existingAccount.initialBalance || 0
     }
+
+    console.log('[handleEdit] Final opening balance:', openingBalance)
 
     // Store original opening balance for comparison during save
     setOriginalOpeningBalance(openingBalance)
