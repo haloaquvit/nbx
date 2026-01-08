@@ -342,10 +342,11 @@ export async function regenerateDeliveryCommission(deliveryId: string) {
 }
 
 /**
- * Recalculate commissions for all deliveries in a date range
- * - Creates new commission entries for deliveries without commissions
+ * Recalculate commissions for all deliveries AND transactions in a date range
+ * Supports ALL roles: sales, driver, helper, operator, supervisor
+ * - Creates new commission entries for items without commissions
  * - Updates commission amounts if rates changed (only for 'pending' status)
- * - Skips deliveries with 'paid' commissions
+ * - Skips entries with 'paid' status
  */
 export async function recalculateCommissionsForPeriod(startDate: Date, endDate: Date) {
   let created = 0;
@@ -353,154 +354,352 @@ export async function recalculateCommissionsForPeriod(startDate: Date, endDate: 
   let skipped = 0;
 
   try {
-    // Get all deliveries in the date range
-    const { data: deliveries, error: deliveriesError } = await supabase
-      .from('deliveries')
-      .select(`
-        id,
-        transaction_id,
-        delivery_date,
-        driver_id,
-        helper_id,
-        branch_id,
-        items:delivery_items(id, product_id, product_name, quantity_delivered, is_bonus),
-        driver:profiles!driver_id(full_name),
-        helper:profiles!helper_id(full_name)
-      `)
-      .gte('delivery_date', startDate.toISOString())
-      .lte('delivery_date', endDate.toISOString())
-      .or('driver_id.not.is.null,helper_id.not.is.null');
-
-    if (deliveriesError) throw deliveriesError;
-
-    if (!deliveries || deliveries.length === 0) {
-      return { created: 0, updated: 0, skipped: 0, message: 'Tidak ada pengantaran dalam periode ini' };
-    }
-
-    // Get all commission rules
-    const { data: rules, error: rulesError } = await supabase
+    // Get ALL commission rules (for all roles)
+    const { data: allRules, error: rulesError } = await supabase
       .from('commission_rules')
-      .select('*')
-      .in('role', ['driver', 'helper']);
+      .select('*');
 
     if (rulesError) throw rulesError;
 
-    if (!rules || rules.length === 0) {
-      return { created: 0, updated: 0, skipped: 0, message: 'Tidak ada aturan komisi untuk driver/helper' };
+    if (!allRules || allRules.length === 0) {
+      return { created: 0, updated: 0, skipped: 0, message: 'Tidak ada aturan komisi yang diatur' };
     }
 
-    // Get existing commission entries for these deliveries
-    const deliveryIds = deliveries.map(d => d.id);
-    const { data: existingCommissions, error: existingError } = await supabase
-      .from('commission_entries')
-      .select('id, delivery_id, product_id, role, status, amount, rate_per_qty')
-      .in('delivery_id', deliveryIds);
+    // Group rules by role
+    const rulesByRole = allRules.reduce((acc, rule) => {
+      if (!acc[rule.role]) acc[rule.role] = [];
+      acc[rule.role].push(rule);
+      return acc;
+    }, {} as Record<string, any[]>);
 
-    if (existingError) throw existingError;
-
-    // Create a map of existing commissions: delivery_id -> product_id -> role -> commission
-    const existingMap = new Map<string, any>();
-    for (const c of (existingCommissions || [])) {
-      const key = `${c.delivery_id}-${c.product_id}-${c.role}`;
-      existingMap.set(key, c);
-    }
+    const availableRoles = Object.keys(rulesByRole);
+    console.log(`📋 Found commission rules for roles: ${availableRoles.join(', ')}`);
 
     const newEntries: any[] = [];
     const updateEntries: { id: string; amount: number; rate_per_qty: number }[] = [];
 
-    // Process each delivery
-    for (const delivery of deliveries) {
-      for (const item of (delivery.items || [])) {
-        // Skip bonus items
-        if (item.is_bonus || item.product_name?.includes('(Bonus)') || item.product_name?.includes('BONUS')) {
-          continue;
+    // ========== PART 1: Process DELIVERIES (driver, helper) ==========
+    if (rulesByRole['driver'] || rulesByRole['helper']) {
+      const { data: deliveries, error: deliveriesError } = await supabase
+        .from('deliveries')
+        .select(`
+          id,
+          transaction_id,
+          delivery_date,
+          driver_id,
+          helper_id,
+          branch_id,
+          items:delivery_items(id, product_id, product_name, quantity_delivered, is_bonus),
+          driver:profiles!driver_id(full_name),
+          helper:profiles!helper_id(full_name)
+        `)
+        .gte('delivery_date', startDate.toISOString())
+        .lte('delivery_date', endDate.toISOString())
+        .or('driver_id.not.is.null,helper_id.not.is.null');
+
+      if (deliveriesError) throw deliveriesError;
+
+      if (deliveries && deliveries.length > 0) {
+        // Get existing commission entries for deliveries
+        const deliveryIds = deliveries.map(d => d.id);
+        const { data: existingDeliveryCommissions } = await supabase
+          .from('commission_entries')
+          .select('id, delivery_id, product_id, role, status, amount, rate_per_qty')
+          .in('delivery_id', deliveryIds);
+
+        const deliveryExistingMap = new Map<string, any>();
+        for (const c of (existingDeliveryCommissions || [])) {
+          const key = `${c.delivery_id}-${c.product_id}-${c.role}`;
+          deliveryExistingMap.set(key, c);
         }
 
-        // Check driver commission
-        if (delivery.driver_id) {
-          const driverRule = rules.find(r => r.product_id === item.product_id && r.role === 'driver');
-          const key = `${delivery.id}-${item.product_id}-driver`;
-          const existing = existingMap.get(key);
-
-          if (driverRule && driverRule.rate_per_qty > 0) {
-            const newAmount = item.quantity_delivered * driverRule.rate_per_qty;
-
-            if (existing) {
-              if (existing.status === 'paid') {
-                skipped++;
-              } else if (existing.amount !== newAmount || existing.rate_per_qty !== driverRule.rate_per_qty) {
-                updateEntries.push({
-                  id: existing.id,
-                  amount: newAmount,
-                  rate_per_qty: driverRule.rate_per_qty
-                });
-                updated++;
-              }
-            } else {
-              newEntries.push({
-                user_id: delivery.driver_id,
-                user_name: (delivery.driver as any)?.full_name || 'Unknown Driver',
-                role: 'driver',
-                product_id: item.product_id,
-                product_name: item.product_name,
-                quantity: item.quantity_delivered,
-                rate_per_qty: driverRule.rate_per_qty,
-                amount: newAmount,
-                transaction_id: delivery.transaction_id,
-                delivery_id: delivery.id,
-                ref: `DEL-${delivery.id}`,
-                status: 'pending',
-                created_at: delivery.delivery_date,
-                branch_id: delivery.branch_id || null
-              });
-              created++;
+        // Process each delivery
+        for (const delivery of deliveries) {
+          for (const item of (delivery.items || [])) {
+            // Skip bonus items
+            if (item.is_bonus || item.product_name?.includes('(Bonus)') || item.product_name?.includes('BONUS')) {
+              continue;
             }
-          }
-        }
 
-        // Check helper commission
-        if (delivery.helper_id) {
-          const helperRule = rules.find(r => r.product_id === item.product_id && r.role === 'helper');
-          const key = `${delivery.id}-${item.product_id}-helper`;
-          const existing = existingMap.get(key);
+            // Check driver commission
+            if (delivery.driver_id && rulesByRole['driver']) {
+              const driverRule = rulesByRole['driver'].find((r: any) => r.product_id === item.product_id);
+              const key = `${delivery.id}-${item.product_id}-driver`;
+              const existing = deliveryExistingMap.get(key);
 
-          if (helperRule && helperRule.rate_per_qty > 0) {
-            const newAmount = item.quantity_delivered * helperRule.rate_per_qty;
+              if (driverRule && driverRule.rate_per_qty > 0) {
+                const newAmount = item.quantity_delivered * driverRule.rate_per_qty;
 
-            if (existing) {
-              if (existing.status === 'paid') {
-                skipped++;
-              } else if (existing.amount !== newAmount || existing.rate_per_qty !== helperRule.rate_per_qty) {
-                updateEntries.push({
-                  id: existing.id,
-                  amount: newAmount,
-                  rate_per_qty: helperRule.rate_per_qty
-                });
-                updated++;
+                if (existing) {
+                  if (existing.status === 'paid') {
+                    skipped++;
+                  } else if (existing.amount !== newAmount || existing.rate_per_qty !== driverRule.rate_per_qty) {
+                    updateEntries.push({ id: existing.id, amount: newAmount, rate_per_qty: driverRule.rate_per_qty });
+                    updated++;
+                  }
+                } else {
+                  newEntries.push({
+                    user_id: delivery.driver_id,
+                    user_name: (delivery.driver as any)?.full_name || 'Unknown Driver',
+                    role: 'driver',
+                    product_id: item.product_id,
+                    product_name: item.product_name,
+                    quantity: item.quantity_delivered,
+                    rate_per_qty: driverRule.rate_per_qty,
+                    amount: newAmount,
+                    transaction_id: delivery.transaction_id,
+                    delivery_id: delivery.id,
+                    ref: `DEL-${delivery.id}`,
+                    status: 'pending',
+                    created_at: delivery.delivery_date,
+                    branch_id: delivery.branch_id || null
+                  });
+                  created++;
+                }
               }
-            } else {
-              newEntries.push({
-                user_id: delivery.helper_id,
-                user_name: (delivery.helper as any)?.full_name || 'Unknown Helper',
-                role: 'helper',
-                product_id: item.product_id,
-                product_name: item.product_name,
-                quantity: item.quantity_delivered,
-                rate_per_qty: helperRule.rate_per_qty,
-                amount: newAmount,
-                transaction_id: delivery.transaction_id,
-                delivery_id: delivery.id,
-                ref: `DEL-${delivery.id}`,
-                status: 'pending',
-                created_at: delivery.delivery_date,
-                branch_id: delivery.branch_id || null
-              });
-              created++;
+            }
+
+            // Check helper commission
+            if (delivery.helper_id && rulesByRole['helper']) {
+              const helperRule = rulesByRole['helper'].find((r: any) => r.product_id === item.product_id);
+              const key = `${delivery.id}-${item.product_id}-helper`;
+              const existing = deliveryExistingMap.get(key);
+
+              if (helperRule && helperRule.rate_per_qty > 0) {
+                const newAmount = item.quantity_delivered * helperRule.rate_per_qty;
+
+                if (existing) {
+                  if (existing.status === 'paid') {
+                    skipped++;
+                  } else if (existing.amount !== newAmount || existing.rate_per_qty !== helperRule.rate_per_qty) {
+                    updateEntries.push({ id: existing.id, amount: newAmount, rate_per_qty: helperRule.rate_per_qty });
+                    updated++;
+                  }
+                } else {
+                  newEntries.push({
+                    user_id: delivery.helper_id,
+                    user_name: (delivery.helper as any)?.full_name || 'Unknown Helper',
+                    role: 'helper',
+                    product_id: item.product_id,
+                    product_name: item.product_name,
+                    quantity: item.quantity_delivered,
+                    rate_per_qty: helperRule.rate_per_qty,
+                    amount: newAmount,
+                    transaction_id: delivery.transaction_id,
+                    delivery_id: delivery.id,
+                    ref: `DEL-${delivery.id}`,
+                    status: 'pending',
+                    created_at: delivery.delivery_date,
+                    branch_id: delivery.branch_id || null
+                  });
+                  created++;
+                }
+              }
             }
           }
         }
       }
     }
+
+    // ========== PART 2: Process TRANSACTIONS (sales, operator, supervisor) ==========
+    if (rulesByRole['sales'] || rulesByRole['operator'] || rulesByRole['supervisor']) {
+      const { data: transactions, error: transactionsError } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          order_date,
+          sales_id,
+          sales_name,
+          operator_id,
+          branch_id,
+          items,
+          sales:profiles!sales_id(full_name),
+          operator:profiles!operator_id(full_name)
+        `)
+        .gte('order_date', startDate.toISOString())
+        .lte('order_date', endDate.toISOString())
+        .eq('is_voided', false)
+        .eq('is_cancelled', false);
+
+      if (transactionsError) throw transactionsError;
+
+      // Get supervisors per branch (for supervisor commission)
+      let supervisorsByBranch: Map<string, any[]> = new Map();
+      if (rulesByRole['supervisor'] && transactions && transactions.length > 0) {
+        const branchIds = [...new Set(transactions.map(t => t.branch_id).filter(Boolean))];
+        if (branchIds.length > 0) {
+          const { data: supervisors } = await supabase
+            .from('profiles')
+            .select('id, full_name, branch_id')
+            .eq('role', 'supervisor')
+            .in('branch_id', branchIds);
+
+          for (const sup of (supervisors || [])) {
+            if (!supervisorsByBranch.has(sup.branch_id)) {
+              supervisorsByBranch.set(sup.branch_id, []);
+            }
+            supervisorsByBranch.get(sup.branch_id)!.push(sup);
+          }
+        }
+      }
+
+      if (transactions && transactions.length > 0) {
+        // Get existing commission entries for transactions
+        const transactionIds = transactions.map(t => t.id);
+        const { data: existingTxnCommissions } = await supabase
+          .from('commission_entries')
+          .select('id, transaction_id, product_id, role, status, amount, rate_per_qty, user_id')
+          .in('transaction_id', transactionIds)
+          .is('delivery_id', null); // Only transaction-based commissions (not delivery)
+
+        const txnExistingMap = new Map<string, any>();
+        for (const c of (existingTxnCommissions || [])) {
+          // For supervisor, include user_id in key since multiple supervisors can get commission
+          const key = c.role === 'supervisor'
+            ? `${c.transaction_id}-${c.product_id}-${c.role}-${c.user_id}`
+            : `${c.transaction_id}-${c.product_id}-${c.role}`;
+          txnExistingMap.set(key, c);
+        }
+
+        // Process each transaction
+        for (const txn of transactions) {
+          const items = txn.items || [];
+
+          for (const item of items) {
+            // Skip bonus items
+            if (item.isBonus || item.product?.name?.includes('(Bonus)') || item.product?.name?.includes('BONUS')) {
+              continue;
+            }
+
+            const productId = item.product?.id || item.productId;
+            const productName = item.product?.name || item.productName;
+            const quantity = item.quantity || 0;
+
+            if (!productId || quantity <= 0) continue;
+
+            // Check sales commission
+            if (txn.sales_id && rulesByRole['sales']) {
+              const salesRule = rulesByRole['sales'].find((r: any) => r.product_id === productId);
+              const key = `${txn.id}-${productId}-sales`;
+              const existing = txnExistingMap.get(key);
+
+              if (salesRule && salesRule.rate_per_qty > 0) {
+                const newAmount = quantity * salesRule.rate_per_qty;
+
+                if (existing) {
+                  if (existing.status === 'paid') {
+                    skipped++;
+                  } else if (existing.amount !== newAmount || existing.rate_per_qty !== salesRule.rate_per_qty) {
+                    updateEntries.push({ id: existing.id, amount: newAmount, rate_per_qty: salesRule.rate_per_qty });
+                    updated++;
+                  }
+                } else {
+                  newEntries.push({
+                    user_id: txn.sales_id,
+                    user_name: (txn.sales as any)?.full_name || txn.sales_name || 'Unknown Sales',
+                    role: 'sales',
+                    product_id: productId,
+                    product_name: productName,
+                    quantity: quantity,
+                    rate_per_qty: salesRule.rate_per_qty,
+                    amount: newAmount,
+                    transaction_id: txn.id,
+                    delivery_id: null,
+                    ref: `TXN-${txn.id}`,
+                    status: 'pending',
+                    created_at: txn.order_date,
+                    branch_id: txn.branch_id || null
+                  });
+                  created++;
+                }
+              }
+            }
+
+            // Check operator commission
+            if (txn.operator_id && rulesByRole['operator']) {
+              const operatorRule = rulesByRole['operator'].find((r: any) => r.product_id === productId);
+              const key = `${txn.id}-${productId}-operator`;
+              const existing = txnExistingMap.get(key);
+
+              if (operatorRule && operatorRule.rate_per_qty > 0) {
+                const newAmount = quantity * operatorRule.rate_per_qty;
+
+                if (existing) {
+                  if (existing.status === 'paid') {
+                    skipped++;
+                  } else if (existing.amount !== newAmount || existing.rate_per_qty !== operatorRule.rate_per_qty) {
+                    updateEntries.push({ id: existing.id, amount: newAmount, rate_per_qty: operatorRule.rate_per_qty });
+                    updated++;
+                  }
+                } else {
+                  newEntries.push({
+                    user_id: txn.operator_id,
+                    user_name: (txn.operator as any)?.full_name || 'Unknown Operator',
+                    role: 'operator',
+                    product_id: productId,
+                    product_name: productName,
+                    quantity: quantity,
+                    rate_per_qty: operatorRule.rate_per_qty,
+                    amount: newAmount,
+                    transaction_id: txn.id,
+                    delivery_id: null,
+                    ref: `TXN-${txn.id}`,
+                    status: 'pending',
+                    created_at: txn.order_date,
+                    branch_id: txn.branch_id || null
+                  });
+                  created++;
+                }
+              }
+            }
+
+            // Check supervisor commission - supervisors in the same branch get commission from all transactions
+            if (rulesByRole['supervisor'] && txn.branch_id) {
+              const branchSupervisors = supervisorsByBranch.get(txn.branch_id) || [];
+              const supervisorRule = rulesByRole['supervisor'].find((r: any) => r.product_id === productId);
+
+              if (supervisorRule && supervisorRule.rate_per_qty > 0) {
+                const newAmount = quantity * supervisorRule.rate_per_qty;
+
+                for (const supervisor of branchSupervisors) {
+                  const key = `${txn.id}-${productId}-supervisor-${supervisor.id}`;
+                  const existing = txnExistingMap.get(key);
+
+                  if (existing) {
+                    if (existing.status === 'paid') {
+                      skipped++;
+                    } else if (existing.amount !== newAmount || existing.rate_per_qty !== supervisorRule.rate_per_qty) {
+                      updateEntries.push({ id: existing.id, amount: newAmount, rate_per_qty: supervisorRule.rate_per_qty });
+                      updated++;
+                    }
+                  } else {
+                    newEntries.push({
+                      user_id: supervisor.id,
+                      user_name: supervisor.full_name || 'Unknown Supervisor',
+                      role: 'supervisor',
+                      product_id: productId,
+                      product_name: productName,
+                      quantity: quantity,
+                      rate_per_qty: supervisorRule.rate_per_qty,
+                      amount: newAmount,
+                      transaction_id: txn.id,
+                      delivery_id: null,
+                      ref: `TXN-${txn.id}`,
+                      status: 'pending',
+                      created_at: txn.order_date,
+                      branch_id: txn.branch_id || null
+                    });
+                    created++;
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // ========== PART 3: Insert and Update ==========
 
     // Insert new entries in batches
     if (newEntries.length > 0) {
