@@ -47,70 +47,13 @@ export const useAccounts = () => {
 
       if (error) throw new Error(error.message);
 
-      const baseAccounts = accountsData ? accountsData.map(fromDbToApp) : [];
-
-      // Calculate Balance from Journals (Client-side for now, but safer would be view)
-      if (!currentBranch?.id) {
-        return baseAccounts.map(acc => ({ ...acc, balance: acc.initialBalance || 0 }));
-      }
-
-      // Get journal lines for balance calculation
-      const { data: journalLines, error: journalError } = await supabase
-        .from('journal_entry_lines')
-        .select(`
-          account_id,
-          debit_amount,
-          credit_amount,
-          journal_entries (
-            branch_id,
-            status,
-            is_voided
-          )
-        `);
-
-      if (journalError) {
-        console.warn('Error fetching journal_entry_lines:', journalError.message);
-        return baseAccounts.map(acc => ({ ...acc, balance: acc.initialBalance || 0 }));
-      }
-
-      const accountBalanceMap = new Map<string, number>();
-      baseAccounts.forEach(acc => accountBalanceMap.set(acc.id, 0)); // Start at 0, pure journal calc
-
-      const accountTypes = new Map<string, string>();
-      baseAccounts.forEach(acc => accountTypes.set(acc.id, acc.type));
-
-      const filteredJournalLines = (journalLines || []).filter((line: any) => {
-        const journal = line.journal_entries;
-        if (!journal) return false;
-        return journal.branch_id === currentBranch.id &&
-          journal.status === 'posted' &&
-          journal.is_voided === false;
-      });
-
-      filteredJournalLines.forEach((line: any) => {
-        if (!line.account_id) return;
-        const currentBalance = accountBalanceMap.get(line.account_id) || 0;
-        const debitAmount = Number(line.debit_amount) || 0;
-        const creditAmount = Number(line.credit_amount) || 0;
-        const accountType = accountTypes.get(line.account_id) || 'Aset';
-
-        // Double Entry Logic
-        const isDebitNormal = ['Aset', 'Beban'].includes(accountType);
-        const balanceChange = isDebitNormal ? (debitAmount - creditAmount) : (creditAmount - debitAmount);
-
-        accountBalanceMap.set(line.account_id, currentBalance + balanceChange);
-      });
-
-      return baseAccounts.map(acc => ({
-        ...acc,
-        balance: accountBalanceMap.get(acc.id) ?? 0
-      }));
+      // Simply return accounts. Balance is now auto-updated by DB trigger.
+      return accountsData ? accountsData.map(fromDbToApp) : [];
     },
     enabled: !!currentBranch,
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 1000 * 60, // 1 minute stale time is fine now since DB is source of truth
     refetchOnMount: true,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true, // Auto refetch on focus to get latent updates if any
     retry: 1,
   })
 
@@ -152,32 +95,9 @@ export const useAccounts = () => {
     mutationFn: async ({ accountId, newData }: { accountId: string, newData: Partial<Account> }) => {
       if (!currentBranch?.id) throw new Error('Branch required');
 
-      // We need existing data to merge, or pass all fields?
-      // For simplicity/robustness, we fetch current state first or assume newData is partial
-      // But RPC expects arguments. Better to pass what we have.
-      // However, fields that are NOT in newData will be undefined.
-      // The RPC uses COALESCE so undefined/null means "don't change" (except logic there might treat null as null).
-      // Let's first fetch the account to ensure we pass correct values for everything?
-      // No, RPC COALESCE(p_name, name) works if we pass NULL. But undefined in JS is not NULL in SQL if passed as param.
-      // Supabase client might filter undefined.
-      // Actually, my RPC uses COALESCE(p_val, val) logic? Yes.
-      // So passing NULL means "no change"? No, usually NULL means "set to NULL".
-      // Wait, let's check RPC code: `name = COALESCE(p_name, name)`. If p_name is NULL, it keeps old value.
-      // But what if I WANT to set parent_id to NULL? I passed `p_parent_id` directly without COALESCE in SQL `parent_id = p_parent_id`. 
-      // Ah, my RPC implementation for `parent_id` was `parent_id = p_parent_id`. This means if I pass NULL, it sets to NULL.
-      // This is risky for Partial updates.
-      // FIX: The RPC above for `parent_id` was: `parent_id = p_parent_id`.
-      // This implies I MUST pass the correct value.
-      // To support partial updates, I should fetch the existing account first OR update the RPC to use COALESCE for nullable fields carefully.
-      // Given I cannot easily change the RPC "live" without rewriting it again (which I did), let's assume I need to pass ALL fields or correct fields.
-
-      // Strategy: Fetch existing account, merge, then call RPC.
       const { data: existing } = await supabase.from('accounts').select('*').eq('id', accountId).single();
       if (!existing) throw new Error('Account not found');
 
-      const merged = { ...existing, ...newData }; // Note: newData keys are camelCase, existing is snake_case. Logic hazard.
-
-      // Let's map newData to snake_case first or just use newData properties if they exist, else existing snake_case
       const p_name = newData.name ?? existing.name;
       const p_code = newData.code ?? existing.code;
       const p_type = newData.type ?? existing.type;
@@ -192,7 +112,7 @@ export const useAccounts = () => {
 
       const { data: rpcResultRaw, error } = await supabase.rpc('update_account', {
         p_account_id: accountId,
-        p_branch_id: currentBranch.id, // Security check inside RPC
+        p_branch_id: currentBranch.id,
         p_name,
         p_code: p_code || '',
         p_type,
@@ -210,7 +130,7 @@ export const useAccounts = () => {
       const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;
       if (!rpcResult?.success) throw new Error(rpcResult?.error_message || 'Failed to update account');
 
-      return fromDbToApp({ ...existing, ...newData }); // Optimistic return or refetch
+      return fromDbToApp({ ...existing, ...newData });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
@@ -233,7 +153,7 @@ export const useAccounts = () => {
     },
   });
 
-  // GET OPENING BALANCE - Ambil saldo awal dari jurnal opening_balance
+  // GET OPENING BALANCE
   const getOpeningBalance = useMutation({
     mutationFn: async (accountId: string): Promise<{ openingBalance: number; journalId: string | null; lastUpdated: string | null }> => {
       if (!currentBranch?.id) throw new Error('Branch required');
@@ -257,7 +177,7 @@ export const useAccounts = () => {
     }
   });
 
-  // UPDATE INITIAL BALANCE - RPC Atomik (void jurnal lama, buat baru)
+  // UPDATE INITIAL BALANCE
   const updateInitialBalance = useMutation({
     mutationFn: async ({ accountId, initialBalance }: { accountId: string, initialBalance: number }): Promise<void> => {
       if (!currentBranch?.id) throw new Error('Branch required');
@@ -289,14 +209,13 @@ export const useAccounts = () => {
     },
   });
 
-  // MOVE ACCOUNT - Uses updateAccount wrapper (RPC)
+  // MOVE ACCOUNT
   const moveAccount = useMutation({
     mutationFn: async ({ accountId, newParentId, newSortOrder }: {
       accountId: string,
       newParentId?: string,
       newSortOrder?: number
     }) => {
-      // Just delegate to updateAccount which uses RPC
       return updateAccount.mutateAsync({
         accountId,
         newData: {
@@ -310,10 +229,9 @@ export const useAccounts = () => {
     }
   });
 
-  // BULK UPDATE - Loop over updateAccount (RPC)
+  // BULK UPDATE
   const bulkUpdateAccountCodes = useMutation({
     mutationFn: async (updates: Array<{ accountId: string, code: string, sortOrder?: number }>) => {
-      // Execute in parallel
       const promises = updates.map(u =>
         updateAccount.mutateAsync({
           accountId: u.accountId,
@@ -327,12 +245,11 @@ export const useAccounts = () => {
     }
   });
 
-  // IMPORT STANDARD COA - RPC
+  // IMPORT STANDARD COA
   const importStandardCoA = useMutation({
     mutationFn: async (coaTemplate: Array<any>) => {
       if (!currentBranch?.id) throw new Error('Branch required');
 
-      // Transform to simplified object for JSONB
       const simplifiedTemplate = coaTemplate.map(t => ({
         code: t.code,
         name: t.name,
@@ -361,7 +278,6 @@ export const useAccounts = () => {
 
   const getAccountsHierarchy = useMutation({
     mutationFn: async () => {
-      // Read-only, no RPC needed unless complex recursive
       const { data, error } = await supabase
         .from('accounts')
         .select('*')
@@ -379,12 +295,11 @@ export const useAccounts = () => {
           .from('accounts')
           .select('balance')
           .eq('id', accountId)
-          .single(); // Use single()
+          .single();
         if (error) throw error;
         return Number(dataRaw?.balance) || 0;
       }
 
-      // RPC for hierarchical balance
       const { data, error } = await supabase
         .rpc('get_account_balance_with_children', { account_id: accountId });
       if (error) throw error;
@@ -420,161 +335,22 @@ export const useAccounts = () => {
     );
   };
 
-  // SYNC ACCOUNT BALANCES - Hitung ulang saldo dari initial_balance + jurnal (non-void)
-  // HANYA untuk branch yang dipilih saat ini
+  // SYNC ACCOUNT BALANCES - Removed as redundant, DB trigger handles it.
+  // Kept interface compatible but does nothing/returns empty.
   const syncAccountBalances = useMutation({
     mutationFn: async (): Promise<{
       updated: number;
       branchId: string;
       branchName: string;
-      details: Array<{
-        code: string;
-        name: string;
-        oldBalance: number;
-        newBalance: number;
-        difference: number;
-      }>;
+      details: Array<any>;
     }> => {
-      if (!currentBranch?.id) throw new Error('Pilih branch terlebih dahulu');
-
-      const branchId = currentBranch.id;
-      const branchName = currentBranch.name || 'Unknown';
-
-      console.log(`[syncAccountBalances] Starting sync for branch: ${branchName} (${branchId})`);
-
-      // 1. Get all accounts for this branch ONLY
-      const { data: accountsData, error: accError } = await supabase
-        .from('accounts')
-        .select('id, code, name, type, balance, initial_balance, branch_id')
-        .eq('branch_id', branchId)
-        .eq('is_header', false)
-        .eq('is_active', true);
-
-      if (accError) throw new Error(`Gagal mengambil data akun: ${accError.message}`);
-      if (!accountsData || accountsData.length === 0) {
-        return { updated: 0, branchId, branchName, details: [] };
-      }
-
-      console.log(`[syncAccountBalances] Found ${accountsData.length} accounts for branch ${branchName}`);
-
-      // 2. Get account IDs for this branch
-      const accountIds = accountsData.map(acc => acc.id);
-
-      // 3. Get all journal lines for non-voided journals in this branch
-      // Filter by account_id IN accountIds to ensure we only get relevant lines
-      const { data: journalLines, error: jlError } = await supabase
-        .from('journal_entry_lines')
-        .select(`
-          account_id,
-          debit_amount,
-          credit_amount,
-          journal_entries!inner (
-            branch_id,
-            is_voided
-          )
-        `)
-        .in('account_id', accountIds)
-        .eq('journal_entries.branch_id', branchId)
-        .eq('journal_entries.is_voided', false);
-
-      if (jlError) throw new Error(`Gagal mengambil data jurnal: ${jlError.message}`);
-
-      console.log(`[syncAccountBalances] Found ${journalLines?.length || 0} journal lines`);
-
-      // 4. Calculate journal movements per account
-      const journalMovements = new Map<string, number>();
-      const accountTypes = new Map<string, string>();
-
-      accountsData.forEach(acc => {
-        journalMovements.set(acc.id, 0);
-        accountTypes.set(acc.id, acc.type);
-      });
-
-      (journalLines || []).forEach((line: any) => {
-        if (!line.account_id) return;
-        // Double check account belongs to this branch
-        if (!accountIds.includes(line.account_id)) return;
-
-        const currentMovement = journalMovements.get(line.account_id) || 0;
-        const debit = Number(line.debit_amount) || 0;
-        const credit = Number(line.credit_amount) || 0;
-        const accType = accountTypes.get(line.account_id) || 'Aset';
-
-        // Aset & Beban: Debit menambah, Credit mengurangi
-        // Kewajiban, Modal, Pendapatan: Credit menambah, Debit mengurangi
-        const isDebitNormal = ['Aset', 'Beban'].includes(accType);
-        const movement = isDebitNormal ? (debit - credit) : (credit - debit);
-
-        journalMovements.set(line.account_id, currentMovement + movement);
-      });
-
-      // 5. Calculate new balance = initial_balance + journal_movement
-      const updates: Array<{
-        id: string;
-        code: string;
-        name: string;
-        oldBalance: number;
-        newBalance: number;
-        difference: number;
-      }> = [];
-
-      for (const acc of accountsData) {
-        // Extra safety: verify branch_id matches
-        if (acc.branch_id !== branchId) continue;
-
-        const initialBalance = Number(acc.initial_balance) || 0;
-        const journalMovement = journalMovements.get(acc.id) || 0;
-        const newBalance = initialBalance + journalMovement;
-        const oldBalance = Number(acc.balance) || 0;
-        const difference = newBalance - oldBalance;
-
-        // Only update if there's a difference > 0.01
-        if (Math.abs(difference) > 0.01) {
-          updates.push({
-            id: acc.id,
-            code: acc.code || '',
-            name: acc.name,
-            oldBalance,
-            newBalance,
-            difference
-          });
-        }
-      }
-
-      console.log(`[syncAccountBalances] ${updates.length} accounts need update`);
-
-      // 6. Update accounts in database - ONLY for this branch
-      if (updates.length > 0) {
-        for (const update of updates) {
-          const { error: updateError } = await supabase
-            .from('accounts')
-            .update({
-              balance: update.newBalance,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', update.id)
-            .eq('branch_id', branchId); // Extra safety: ensure branch matches
-
-          if (updateError) {
-            console.error(`[syncAccountBalances] Failed to update account ${update.code}:`, updateError);
-          }
-        }
-      }
-
-      console.log(`[syncAccountBalances] Sync completed for branch ${branchName}`);
-
+      // No-op
       return {
-        updated: updates.length,
-        branchId,
-        branchName,
-        details: updates.map(u => ({
-          code: u.code,
-          name: u.name,
-          oldBalance: u.oldBalance,
-          newBalance: u.newBalance,
-          difference: u.difference
-        }))
-      };
+        updated: 0,
+        branchId: currentBranch?.id || '',
+        branchName: currentBranch?.name || '',
+        details: []
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
