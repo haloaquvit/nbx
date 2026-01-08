@@ -235,9 +235,16 @@ export const TransactionItemsReport = () => {
             const transactionItems = transaction?.items || []
             const driverName = delivery.driver?.full_name || ''
 
-            // Find retasi by matching driver name and date
+            // Find retasi: Priority 1: Direct link via transaction.retasi_id
             let retasiInfo = null
-            if (driverName && allRetasiList.length > 0) {
+
+            // 1. Try to find by explicit ID first
+            if (transaction?.retasi_id && allRetasiList.length > 0) {
+              retasiInfo = allRetasiList.find(r => r.id === transaction.retasi_id)
+            }
+
+            // 2. Fallback: match by driver name and date if no explicit ID
+            if (!retasiInfo && driverName && allRetasiList.length > 0) {
               const driverNameLower = driverName.toLowerCase().trim()
 
               // Find matching retasi
@@ -255,64 +262,65 @@ export const TransactionItemsReport = () => {
 
                 return nameMatch && dateMatch
               })
-
-              if (!retasiInfo) {
-                console.log('[Report] No retasi match for:', driverName, deliveryDateStr)
-              }
             }
+
+            if (!retasiInfo) {
+              console.log('[Report] No retasi match for:', driverName, deliveryDateStr)
+            }
+          }
 
             // Display just "ke-X" if found
             const retasiNumberDisplay = retasiInfo
-              ? `ke-${retasiInfo.retasi_ke}`
-              : '-'
+            ? `ke-${retasiInfo.retasi_ke}`
+            : '-'
 
-            const driverNameDisplay = driverName
+          const driverNameDisplay = driverName
 
-            delivery.delivery_items?.forEach((item: any) => {
-              const matchingTxItem = transactionItems.find((ti: any) =>
-                ti.product?.id === item.product_id || ti.productId === item.product_id
-              )
+          delivery.delivery_items?.forEach((item: any) => {
+            const matchingTxItem = transactionItems.find((ti: any) =>
+              ti.product?.id === item.product_id || ti.productId === item.product_id
+            )
 
-              const isBonus = item.product_name?.includes('BONUS') ||
-                item.product_name?.includes('(BONUS)') ||
-                Boolean(matchingTxItem?.isBonus)
+            const isBonus = item.product_name?.includes('BONUS') ||
+              item.product_name?.includes('(BONUS)') ||
+              Boolean(matchingTxItem?.isBonus)
 
-              const price = matchingTxItem?.price || matchingTxItem?.product?.basePrice || 0
+            const price = matchingTxItem?.price || matchingTxItem?.product?.basePrice || 0
 
-              // Double check payment account mapping
-              const paymentAcctId = transaction?.payment_account_id
-              const paymentAcct = paymentAccounts.find(a => a.id === paymentAcctId)
+            // Double check payment account mapping
+            const paymentAcctId = transaction?.payment_account_id
+            const paymentAcct = paymentAccounts.find(a => a.id === paymentAcctId)
 
-              items.push({
-                transactionId: delivery.transaction_id,
-                transactionDate: new Date(transaction?.order_date || delivery.delivery_date),
-                soldDate: deliveryDate,
-                customerName: transaction?.customer_name || 'Unknown',
-                productName: item.product_name,
-                quantity: item.quantity_delivered,
-                unit: item.unit || 'pcs',
-                price: price,
-                total: item.quantity_delivered * price,
-                source: 'delivery',
-                driverName: driverNameDisplay,
-                retasiNumber: retasiNumberDisplay,
-                retasiKe: retasiInfo?.retasi_ke,
-                cashierName: transaction?.cashier?.full_name || 'Unknown',
-                isBonus: isBonus,
-                paymentAccountId: paymentAcctId,
-                paymentAccountName: paymentAcct?.name,
-                paymentStatus: transaction?.payment_status || 'Belum Lunas'
-              })
+            items.push({
+              transactionId: delivery.transaction_id,
+              transactionDate: new Date(transaction?.order_date || delivery.delivery_date),
+              soldDate: deliveryDate,
+              customerName: transaction?.customer_name || 'Unknown',
+              productName: item.product_name,
+              quantity: item.quantity_delivered,
+              unit: item.unit || 'pcs',
+              price: price,
+              total: item.quantity_delivered * price,
+              source: 'delivery',
+              driverName: driverNameDisplay,
+              retasiNumber: retasiNumberDisplay,
+              retasiKe: retasiInfo?.retasi_ke,
+              cashierName: transaction?.cashier?.full_name || 'Unknown',
+              isBonus: isBonus,
+              paymentAccountId: paymentAcctId,
+              paymentAccountName: paymentAcct?.name,
+              paymentStatus: transaction?.payment_status || 'Belum Lunas'
             })
           })
-        }
+        })
       }
+    }
 
       // 2. Fetch office sale transactions (laku kantor)
       if (sourceFilter === 'all' || sourceFilter === 'office_sale') {
-        let officeSaleQuery = supabase
-          .from('transactions')
-          .select(`
+      let officeSaleQuery = supabase
+        .from('transactions')
+        .select(`
             id,
             customer_name,
             order_date,
@@ -322,70 +330,70 @@ export const TransactionItemsReport = () => {
             payment_status,
             cashier:profiles!transactions_cashier_id_fkey(full_name)
           `)
-          .eq('is_office_sale', true)
-          .gte('order_date', fromDate.toISOString())
-          .lte('order_date', toDate.toISOString())
+        .eq('is_office_sale', true)
+        .gte('order_date', fromDate.toISOString())
+        .lte('order_date', toDate.toISOString())
 
-        if (currentBranch?.id) {
-          officeSaleQuery = officeSaleQuery.eq('branch_id', currentBranch.id)
-        }
-
-        const { data: officeSaleData, error: officeSaleError } = await officeSaleQuery
-
-        if (officeSaleError) {
-          console.error('Error fetching office sales:', officeSaleError)
-        } else if (officeSaleData) {
-          officeSaleData.forEach((transaction: any) => {
-            const orderDate = new Date(transaction.order_date)
-            const transactionItems = transaction.items || []
-
-            transactionItems.forEach((item: any) => {
-              // Skip metadata items (sales meta, migration meta)
-              if (item._isSalesMeta || item._isMigrationMeta) return
-
-              // Skip items without product info
-              if (!item.product?.name && !item.name) return
-
-              const productName = item.product?.name || item.name
-              const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
-
-              const price = item.price || item.product?.basePrice || 0
-              const quantity = item.quantity || 0
-
-              // Get payment account name
-              const paymentAcct = paymentAccounts.find(a => a.id === transaction.payment_account_id)
-
-              items.push({
-                transactionId: transaction.id,
-                transactionDate: orderDate,
-                soldDate: orderDate, // For office sale, sold date = order date
-                customerName: transaction.customer_name || 'Walk-in Customer',
-                productName: productName,
-                quantity: quantity,
-                unit: item.unit || item.product?.unit || 'pcs',
-                price: price,
-                total: quantity * price,
-                source: 'office_sale',
-                driverName: undefined,
-                cashierName: transaction.cashier?.full_name || 'Unknown',
-                isBonus: isBonus,
-                paymentAccountId: transaction.payment_account_id,
-                paymentAccountName: paymentAcct?.name,
-                paymentStatus: transaction.payment_status || 'Belum Lunas'
-              })
-            })
-          })
-        }
+      if (currentBranch?.id) {
+        officeSaleQuery = officeSaleQuery.eq('branch_id', currentBranch.id)
       }
 
-      // 3. Fetch retasi transactions (from Driver POS - transactions with retasi_id)
-      // Driver POS = MUST have retasi (driver can't sell without active retasi)
-      // Regular POS = NO retasi
-      if (sourceFilter === 'all' || sourceFilter === 'retasi') {
-        // Get transactions that have retasi_id (from Driver POS)
-        let retasiQuery = supabase
-          .from('transactions')
-          .select(`
+      const { data: officeSaleData, error: officeSaleError } = await officeSaleQuery
+
+      if (officeSaleError) {
+        console.error('Error fetching office sales:', officeSaleError)
+      } else if (officeSaleData) {
+        officeSaleData.forEach((transaction: any) => {
+          const orderDate = new Date(transaction.order_date)
+          const transactionItems = transaction.items || []
+
+          transactionItems.forEach((item: any) => {
+            // Skip metadata items (sales meta, migration meta)
+            if (item._isSalesMeta || item._isMigrationMeta) return
+
+            // Skip items without product info
+            if (!item.product?.name && !item.name) return
+
+            const productName = item.product?.name || item.name
+            const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
+
+            const price = item.price || item.product?.basePrice || 0
+            const quantity = item.quantity || 0
+
+            // Get payment account name
+            const paymentAcct = paymentAccounts.find(a => a.id === transaction.payment_account_id)
+
+            items.push({
+              transactionId: transaction.id,
+              transactionDate: orderDate,
+              soldDate: orderDate, // For office sale, sold date = order date
+              customerName: transaction.customer_name || 'Walk-in Customer',
+              productName: productName,
+              quantity: quantity,
+              unit: item.unit || item.product?.unit || 'pcs',
+              price: price,
+              total: quantity * price,
+              source: 'office_sale',
+              driverName: undefined,
+              cashierName: transaction.cashier?.full_name || 'Unknown',
+              isBonus: isBonus,
+              paymentAccountId: transaction.payment_account_id,
+              paymentAccountName: paymentAcct?.name,
+              paymentStatus: transaction.payment_status || 'Belum Lunas'
+            })
+          })
+        })
+      }
+    }
+
+    // 3. Fetch retasi transactions (from Driver POS - transactions with retasi_id)
+    // Driver POS = MUST have retasi (driver can't sell without active retasi)
+    // Regular POS = NO retasi
+    if (sourceFilter === 'all' || sourceFilter === 'retasi') {
+      // Get transactions that have retasi_id (from Driver POS)
+      let retasiQuery = supabase
+        .from('transactions')
+        .select(`
             id,
             customer_name,
             order_date,
@@ -396,738 +404,738 @@ export const TransactionItemsReport = () => {
             payment_account_id,
             payment_status
           `)
-          .not('retasi_id', 'is', null)
-          .gte('order_date', fromDate.toISOString())
-          .lte('order_date', toDate.toISOString())
+        .not('retasi_id', 'is', null)
+        .gte('order_date', fromDate.toISOString())
+        .lte('order_date', toDate.toISOString())
 
-        if (currentBranch?.id) {
-          retasiQuery = retasiQuery.eq('branch_id', currentBranch.id)
+      if (currentBranch?.id) {
+        retasiQuery = retasiQuery.eq('branch_id', currentBranch.id)
+      }
+
+      const { data: retasiTransactions, error: retasiError } = await retasiQuery
+
+      console.log('Retasi Transactions (Driver POS):', { retasiTransactions, retasiError })
+
+      if (retasiError) {
+        console.error('Error fetching retasi transactions:', retasiError)
+      } else if (retasiTransactions && retasiTransactions.length > 0) {
+        // Get retasi details for display
+        const retasiIds = [...new Set(retasiTransactions.map(t => t.retasi_id).filter(Boolean))]
+
+        let retasiDetailsMap: Record<string, any> = {}
+        if (retasiIds.length > 0) {
+          const { data: retasiDetails } = await supabase
+            .from('retasi')
+            .select('id, retasi_number, retasi_ke, driver_name')
+            .in('id', retasiIds)
+
+          if (retasiDetails) {
+            retasiDetails.forEach(r => {
+              retasiDetailsMap[r.id] = r
+            })
+          }
         }
 
-        const { data: retasiTransactions, error: retasiError } = await retasiQuery
+        // Skip transactions already counted in delivery
+        const deliveryTransactionIds = new Set(items.filter(i => i.source === 'delivery').map(i => i.transactionId))
 
-        console.log('Retasi Transactions (Driver POS):', { retasiTransactions, retasiError })
+        retasiTransactions.forEach((transaction: any) => {
+          // Skip if already counted in delivery
+          if (deliveryTransactionIds.has(transaction.id)) return
 
-        if (retasiError) {
-          console.error('Error fetching retasi transactions:', retasiError)
-        } else if (retasiTransactions && retasiTransactions.length > 0) {
-          // Get retasi details for display
-          const retasiIds = [...new Set(retasiTransactions.map(t => t.retasi_id).filter(Boolean))]
+          const orderDate = new Date(transaction.order_date)
+          const transactionItems = transaction.items || []
+          const retasiInfo = retasiDetailsMap[transaction.retasi_id]
 
-          let retasiDetailsMap: Record<string, any> = {}
-          if (retasiIds.length > 0) {
-            const { data: retasiDetails } = await supabase
-              .from('retasi')
-              .select('id, retasi_number, retasi_ke, driver_name')
-              .in('id', retasiIds)
+          transactionItems.forEach((item: any) => {
+            // Skip metadata items (sales meta, migration meta)
+            if (item._isSalesMeta || item._isMigrationMeta) return
 
-            if (retasiDetails) {
-              retasiDetails.forEach(r => {
-                retasiDetailsMap[r.id] = r
-              })
-            }
-          }
+            // Skip items without product info
+            if (!item.product?.name && !item.name) return
 
-          // Skip transactions already counted in delivery
-          const deliveryTransactionIds = new Set(items.filter(i => i.source === 'delivery').map(i => i.transactionId))
+            const productName = item.product?.name || item.name
+            const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
 
-          retasiTransactions.forEach((transaction: any) => {
-            // Skip if already counted in delivery
-            if (deliveryTransactionIds.has(transaction.id)) return
+            const price = item.price || item.product?.basePrice || 0
+            const quantity = item.quantity || 0
 
-            const orderDate = new Date(transaction.order_date)
-            const transactionItems = transaction.items || []
-            const retasiInfo = retasiDetailsMap[transaction.retasi_id]
+            // Format retasi number with "ke-X" suffix
+            const retasiNumberDisplay = retasiInfo
+              ? `${retasiInfo.retasi_number} (ke-${retasiInfo.retasi_ke})`
+              : (transaction.retasi_number || '-')
 
-            transactionItems.forEach((item: any) => {
-              // Skip metadata items (sales meta, migration meta)
-              if (item._isSalesMeta || item._isMigrationMeta) return
+            // Get payment account name
+            const paymentAcct = paymentAccounts.find(a => a.id === transaction.payment_account_id)
 
-              // Skip items without product info
-              if (!item.product?.name && !item.name) return
-
-              const productName = item.product?.name || item.name
-              const isBonus = Boolean(item.isBonus) || productName.includes('BONUS')
-
-              const price = item.price || item.product?.basePrice || 0
-              const quantity = item.quantity || 0
-
-              // Format retasi number with "ke-X" suffix
-              const retasiNumberDisplay = retasiInfo
-                ? `${retasiInfo.retasi_number} (ke-${retasiInfo.retasi_ke})`
-                : (transaction.retasi_number || '-')
-
-              // Get payment account name
-              const paymentAcct = paymentAccounts.find(a => a.id === transaction.payment_account_id)
-
-              items.push({
-                transactionId: transaction.id,
-                transactionDate: orderDate,
-                soldDate: orderDate,
-                customerName: transaction.customer_name || 'Customer Retasi',
-                productName: productName,
-                quantity: quantity,
-                unit: item.unit || item.product?.unit || 'pcs',
-                price: price,
-                total: quantity * price,
-                source: 'retasi',
-                retasiNumber: retasiNumberDisplay,
-                retasiKe: retasiInfo?.retasi_ke,
-                driverName: retasiInfo?.driver_name || transaction.cashier_name,
-                cashierName: transaction.cashier_name || 'Unknown',
-                isBonus: isBonus,
-                paymentAccountId: transaction.payment_account_id,
-                paymentAccountName: paymentAcct?.name,
-                paymentStatus: transaction.payment_status || 'Belum Lunas'
-              })
+            items.push({
+              transactionId: transaction.id,
+              transactionDate: orderDate,
+              soldDate: orderDate,
+              customerName: transaction.customer_name || 'Customer Retasi',
+              productName: productName,
+              quantity: quantity,
+              unit: item.unit || item.product?.unit || 'pcs',
+              price: price,
+              total: quantity * price,
+              source: 'retasi',
+              retasiNumber: retasiNumberDisplay,
+              retasiKe: retasiInfo?.retasi_ke,
+              driverName: retasiInfo?.driver_name || transaction.cashier_name,
+              cashierName: transaction.cashier_name || 'Unknown',
+              isBonus: isBonus,
+              paymentAccountId: transaction.payment_account_id,
+              paymentAccountName: paymentAcct?.name,
+              paymentStatus: transaction.payment_status || 'Belum Lunas'
             })
           })
+        })
+      }
+    }
+
+    // Sort by sold date (newest first)
+    items.sort((a, b) => b.soldDate.getTime() - a.soldDate.getTime())
+
+    // Extract unique product names for filter dropdown
+    const uniqueProducts = [...new Set(
+      items.map(item => item.productName).filter(Boolean)
+    )].sort()
+    setAvailableProducts(uniqueProducts)
+
+    // Extract unique driver/kasir names for filter dropdown
+    const uniqueDriversKasir = [...new Set(
+      items.map(item => {
+        if (item.source === 'delivery' || item.source === 'retasi') {
+          return item.driverName || ''
         }
-      }
+        return item.cashierName || ''
+      }).filter(Boolean)
+    )].sort()
+    setAvailableDriversKasir(uniqueDriversKasir)
 
-      // Sort by sold date (newest first)
-      items.sort((a, b) => b.soldDate.getTime() - a.soldDate.getTime())
+    // Extract unique retasi_ke values for filter dropdown
+    const uniqueRetasiKe = [...new Set(
+      items
+        .filter(item => item.retasiKe !== undefined && item.retasiKe !== null)
+        .map(item => item.retasiKe as number)
+    )].sort((a, b) => a - b)
+    setAvailableRetasiKe(uniqueRetasiKe.map(ke => ({
+      value: ke.toString(),
+      label: `Retasi Ke-${ke}`
+    })))
 
-      // Extract unique product names for filter dropdown
-      const uniqueProducts = [...new Set(
-        items.map(item => item.productName).filter(Boolean)
-      )].sort()
-      setAvailableProducts(uniqueProducts)
+    setAllItems(items) // Store all items for client-side filtering
+  } catch (error) {
+    console.error('Error generating report:', error)
+  } finally {
+    setIsLoading(false)
+  }
+}
 
-      // Extract unique driver/kasir names for filter dropdown
-      const uniqueDriversKasir = [...new Set(
-        items.map(item => {
-          if (item.source === 'delivery' || item.source === 'retasi') {
-            return item.driverName || ''
-          }
-          return item.cashierName || ''
-        }).filter(Boolean)
-      )].sort()
-      setAvailableDriversKasir(uniqueDriversKasir)
+const getReportTitle = () => {
+  const productFilterText = productFilter === 'all' ? '' : ` (${productFilter})`
+  const sourceText = sourceFilter === 'all' ? '' :
+    sourceFilter === 'delivery' ? ' - Pengantaran' :
+      sourceFilter === 'office_sale' ? ' - Laku Kantor' : ' - Retasi'
 
-      // Extract unique retasi_ke values for filter dropdown
-      const uniqueRetasiKe = [...new Set(
-        items
-          .filter(item => item.retasiKe !== undefined && item.retasiKe !== null)
-          .map(item => item.retasiKe as number)
-      )].sort((a, b) => a - b)
-      setAvailableRetasiKe(uniqueRetasiKe.map(ke => ({
-        value: ke.toString(),
-        label: `Retasi Ke-${ke}`
-      })))
+  if (filterType === 'monthly') {
+    const monthName = months.find(m => m.value === selectedMonth)?.label
+    return `Laporan Produk Laku${productFilterText}${sourceText} - ${monthName} ${selectedYear}`
+  } else {
+    return `Laporan Produk Laku${productFilterText}${sourceText} - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
+  }
+}
 
-      setAllItems(items) // Store all items for client-side filtering
-    } catch (error) {
-      console.error('Error generating report:', error)
-    } finally {
-      setIsLoading(false)
+const handlePrintReport = () => {
+  const doc = new jsPDF('landscape')
+  const title = getReportTitle()
+
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'bold')
+  doc.text(title, 14, 22)
+
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Digenerate pada: ${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}`, 14, 30)
+  doc.text(`Sumber: Pengantaran + Laku Kantor + Retasi`, 14, 36)
+
+  const tableData = reportData.map(item => [
+    format(item.soldDate, 'dd/MM/yyyy'),
+    item.transactionId.substring(0, 8) + '...',
+    item.customerName,
+    item.isBonus ? `${item.productName} [BONUS]` : item.productName,
+    item.quantity.toString(),
+    `Rp ${item.price.toLocaleString()}`,
+    `Rp ${item.total.toLocaleString()}`,
+    item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
+    item.retasiNumber || '-',
+    item.source === 'delivery' ? (item.driverName || '-') :
+      item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
+    item.paymentAccountName || '-',
+    item.paymentStatus || 'Belum Lunas'
+  ])
+
+  autoTable(doc, {
+    head: [['Tanggal', 'No. Trx', 'Customer', 'Produk', 'Qty', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir', 'Akun Bayar', 'Status']],
+    body: tableData,
+    startY: 42,
+    styles: { fontSize: 6.5 },
+    headStyles: { fillColor: [66, 139, 202] },
+    columnStyles: {
+      0: { cellWidth: 18 },
+      1: { cellWidth: 18 },
+      2: { cellWidth: 25 },
+      3: { cellWidth: 35 },
+      4: { cellWidth: 10 },
+      5: { cellWidth: 20 },
+      6: { cellWidth: 22 },
+      7: { cellWidth: 15 },
+      8: { cellWidth: 20 }, // Retasi
+      9: { cellWidth: 25 }, // Supir/Kasir
+      10: { cellWidth: 25 }, // Akun Bayar
+      11: { cellWidth: 20 }  // Status
     }
+  })
+
+  const finalY = (doc as any).lastAutoTable.finalY + 10
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Ringkasan:', 14, finalY)
+
+  const totalItems = reportData.length
+  const totalQuantity = reportData.reduce((sum, item) => sum + item.quantity, 0)
+  const totalValue = reportData.reduce((sum, item) => sum + item.total, 0)
+  const uniqueTransactions = new Set(reportData.map(item => item.transactionId)).size
+  const deliveryItems = reportData.filter(item => item.source === 'delivery').length
+  const officeSaleItems = reportData.filter(item => item.source === 'office_sale').length
+  const retasiItems = reportData.filter(item => item.source === 'retasi').length
+  const regularItems = reportData.filter(item => !item.isBonus).length
+  const bonusItems = reportData.filter(item => item.isBonus).length
+
+  doc.setFont('helvetica', 'normal')
+  doc.text(`• Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems})`, 14, finalY + 8)
+  if (productFilter === 'all') {
+    doc.text(`• Produk Reguler: ${regularItems}, Produk Bonus: ${bonusItems}`, 14, finalY + 16)
+    doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 24)
+    doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 32)
+    doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 40)
+  } else {
+    doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 16)
+    doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 24)
+    doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 32)
   }
 
-  const getReportTitle = () => {
-    const productFilterText = productFilter === 'all' ? '' : ` (${productFilter})`
-    const sourceText = sourceFilter === 'all' ? '' :
-      sourceFilter === 'delivery' ? ' - Pengantaran' :
-        sourceFilter === 'office_sale' ? ' - Laku Kantor' : ' - Retasi'
+  const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
+  const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
+    sourceFilter === 'office_sale' ? '-LakuKantor' :
+      sourceFilter === 'retasi' ? '-Retasi' : ''
+  const filename = filterType === 'monthly'
+    ? `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.pdf`
+    : `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.pdf`
+  doc.save(filename)
+}
 
-    if (filterType === 'monthly') {
-      const monthName = months.find(m => m.value === selectedMonth)?.label
-      return `Laporan Produk Laku${productFilterText}${sourceText} - ${monthName} ${selectedYear}`
-    } else {
-      return `Laporan Produk Laku${productFilterText}${sourceText} - ${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
-    }
-  }
+const handleExportExcel = () => {
+  const title = getReportTitle()
 
-  const handlePrintReport = () => {
-    const doc = new jsPDF('landscape')
-    const title = getReportTitle()
+  // Prepare data for Excel
+  const excelData = reportData.map(item => ({
+    'Tanggal Laku': format(item.soldDate, 'dd/MM/yyyy'),
+    'No. Transaksi': item.transactionId.substring(0, 8) + '...',
+    'Customer': item.customerName,
+    'Produk': item.isBonus ? `${item.productName} [BONUS]` : item.productName,
+    'Qty': item.quantity,
+    'Unit': item.unit,
+    'Harga': item.price,
+    'Total': item.total,
+    'Sumber': item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
+    'Retasi': item.retasiNumber || '-',
+    'Supir/Kasir': item.source === 'delivery' || item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
+    'Akun Pembayaran': item.paymentAccountName || '-',
+    'Status': item.paymentStatus || 'Belum Lunas'
+  }))
 
-    doc.setFontSize(16)
-    doc.setFont('helvetica', 'bold')
-    doc.text(title, 14, 22)
+  // Create workbook and worksheet
+  const ws = XLSX.utils.json_to_sheet(excelData)
 
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Digenerate pada: ${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}`, 14, 30)
-    doc.text(`Sumber: Pengantaran + Laku Kantor + Retasi`, 14, 36)
+  // Add title row at the beginning
+  XLSX.utils.sheet_add_aoa(ws, [[title]], { origin: 'A1' })
+  XLSX.utils.sheet_add_aoa(ws, [[`Digenerate pada: ${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}`]], { origin: 'A2' })
+  XLSX.utils.sheet_add_aoa(ws, [['']], { origin: 'A3' })
 
-    const tableData = reportData.map(item => [
-      format(item.soldDate, 'dd/MM/yyyy'),
-      item.transactionId.substring(0, 8) + '...',
-      item.customerName,
-      item.isBonus ? `${item.productName} [BONUS]` : item.productName,
-      item.quantity.toString(),
-      `Rp ${item.price.toLocaleString()}`,
-      `Rp ${item.total.toLocaleString()}`,
-      item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
-      item.retasiNumber || '-',
-      item.source === 'delivery' ? (item.driverName || '-') :
-        item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
-      item.paymentAccountName || '-',
-      item.paymentStatus || 'Belum Lunas'
-    ])
+  // Re-add data with header starting from row 4
+  const headers = ['Tanggal Laku', 'No. Transaksi', 'Customer', 'Produk', 'Qty', 'Unit', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir', 'Akun Pembayaran', 'Status']
+  XLSX.utils.sheet_add_aoa(ws, [headers], { origin: 'A4' })
 
-    autoTable(doc, {
-      head: [['Tanggal', 'No. Trx', 'Customer', 'Produk', 'Qty', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir', 'Akun Bayar', 'Status']],
-      body: tableData,
-      startY: 42,
-      styles: { fontSize: 6.5 },
-      headStyles: { fillColor: [66, 139, 202] },
-      columnStyles: {
-        0: { cellWidth: 18 },
-        1: { cellWidth: 18 },
-        2: { cellWidth: 25 },
-        3: { cellWidth: 35 },
-        4: { cellWidth: 10 },
-        5: { cellWidth: 20 },
-        6: { cellWidth: 22 },
-        7: { cellWidth: 15 },
-        8: { cellWidth: 20 }, // Retasi
-        9: { cellWidth: 25 }, // Supir/Kasir
-        10: { cellWidth: 25 }, // Akun Bayar
-        11: { cellWidth: 20 }  // Status
-      }
-    })
+  // Add data rows starting from row 5
+  const dataRows = excelData.map(item => Object.values(item))
+  XLSX.utils.sheet_add_aoa(ws, dataRows, { origin: 'A5' })
 
-    const finalY = (doc as any).lastAutoTable.finalY + 10
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Ringkasan:', 14, finalY)
+  // Add summary at the end
+  const totalItems = reportData.length
+  const totalQuantity = reportData.reduce((sum, item) => sum + item.quantity, 0)
+  const totalValue = reportData.reduce((sum, item) => sum + item.total, 0)
+  const uniqueTransactions = new Set(reportData.map(item => item.transactionId)).size
+  const deliveryItems = reportData.filter(item => item.source === 'delivery').length
+  const officeSaleItems = reportData.filter(item => item.source === 'office_sale').length
+  const retasiItems = reportData.filter(item => item.source === 'retasi').length
 
-    const totalItems = reportData.length
-    const totalQuantity = reportData.reduce((sum, item) => sum + item.quantity, 0)
-    const totalValue = reportData.reduce((sum, item) => sum + item.total, 0)
-    const uniqueTransactions = new Set(reportData.map(item => item.transactionId)).size
-    const deliveryItems = reportData.filter(item => item.source === 'delivery').length
-    const officeSaleItems = reportData.filter(item => item.source === 'office_sale').length
-    const retasiItems = reportData.filter(item => item.source === 'retasi').length
-    const regularItems = reportData.filter(item => !item.isBonus).length
-    const bonusItems = reportData.filter(item => item.isBonus).length
+  const summaryStartRow = 5 + excelData.length + 2
+  XLSX.utils.sheet_add_aoa(ws, [
+    ['Ringkasan:'],
+    [`Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems})`],
+    [`Total Quantity: ${totalQuantity}`],
+    [`Total Nilai: Rp ${totalValue.toLocaleString()}`],
+    [`Total Transaksi: ${uniqueTransactions}`]
+  ], { origin: `A${summaryStartRow}` })
 
-    doc.setFont('helvetica', 'normal')
-    doc.text(`• Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems})`, 14, finalY + 8)
-    if (productFilter === 'all') {
-      doc.text(`• Produk Reguler: ${regularItems}, Produk Bonus: ${bonusItems}`, 14, finalY + 16)
-      doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 24)
-      doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 32)
-      doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 40)
-    } else {
-      doc.text(`• Total Quantity: ${totalQuantity}`, 14, finalY + 16)
-      doc.text(`• Total Nilai: Rp ${totalValue.toLocaleString()}`, 14, finalY + 24)
-      doc.text(`• Total Transaksi: ${uniqueTransactions}`, 14, finalY + 32)
-    }
+  // Set column widths
+  ws['!cols'] = [
+    { wch: 12 }, // Tanggal
+    { wch: 15 }, // No. Transaksi
+    { wch: 25 }, // Customer
+    { wch: 35 }, // Produk
+    { wch: 8 },  // Qty
+    { wch: 10 }, // Unit
+    { wch: 15 }, // Harga
+    { wch: 18 }, // Total
+    { wch: 15 }, // Sumber
+    { wch: 25 }, // Retasi
+    { wch: 20 }, // Supir/Kasir
+    { wch: 20 }, // Akun Pembayaran
+    { wch: 12 }  // Status
+  ]
 
-    const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
-    const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
-      sourceFilter === 'office_sale' ? '-LakuKantor' :
-        sourceFilter === 'retasi' ? '-Retasi' : ''
-    const filename = filterType === 'monthly'
-      ? `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.pdf`
-      : `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.pdf`
-    doc.save(filename)
-  }
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Produk Laku')
 
-  const handleExportExcel = () => {
-    const title = getReportTitle()
+  // Generate filename
+  const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
+  const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
+    sourceFilter === 'office_sale' ? '-LakuKantor' :
+      sourceFilter === 'retasi' ? '-Retasi' : ''
+  const filename = filterType === 'monthly'
+    ? `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.xlsx`
+    : `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.xlsx`
 
-    // Prepare data for Excel
-    const excelData = reportData.map(item => ({
-      'Tanggal Laku': format(item.soldDate, 'dd/MM/yyyy'),
-      'No. Transaksi': item.transactionId.substring(0, 8) + '...',
-      'Customer': item.customerName,
-      'Produk': item.isBonus ? `${item.productName} [BONUS]` : item.productName,
-      'Qty': item.quantity,
-      'Unit': item.unit,
-      'Harga': item.price,
-      'Total': item.total,
-      'Sumber': item.source === 'delivery' ? 'Diantar' : item.source === 'office_sale' ? 'Laku Kantor' : 'Retasi',
-      'Retasi': item.retasiNumber || '-',
-      'Supir/Kasir': item.source === 'delivery' || item.source === 'retasi' ? (item.driverName || '-') : item.cashierName,
-      'Akun Pembayaran': item.paymentAccountName || '-',
-      'Status': item.paymentStatus || 'Belum Lunas'
-    }))
+  XLSX.writeFile(wb, filename)
+}
 
-    // Create workbook and worksheet
-    const ws = XLSX.utils.json_to_sheet(excelData)
-
-    // Add title row at the beginning
-    XLSX.utils.sheet_add_aoa(ws, [[title]], { origin: 'A1' })
-    XLSX.utils.sheet_add_aoa(ws, [[`Digenerate pada: ${format(new Date(), 'dd MMMM yyyy HH:mm', { locale: id })}`]], { origin: 'A2' })
-    XLSX.utils.sheet_add_aoa(ws, [['']], { origin: 'A3' })
-
-    // Re-add data with header starting from row 4
-    const headers = ['Tanggal Laku', 'No. Transaksi', 'Customer', 'Produk', 'Qty', 'Unit', 'Harga', 'Total', 'Sumber', 'Retasi', 'Supir/Kasir', 'Akun Pembayaran', 'Status']
-    XLSX.utils.sheet_add_aoa(ws, [headers], { origin: 'A4' })
-
-    // Add data rows starting from row 5
-    const dataRows = excelData.map(item => Object.values(item))
-    XLSX.utils.sheet_add_aoa(ws, dataRows, { origin: 'A5' })
-
-    // Add summary at the end
-    const totalItems = reportData.length
-    const totalQuantity = reportData.reduce((sum, item) => sum + item.quantity, 0)
-    const totalValue = reportData.reduce((sum, item) => sum + item.total, 0)
-    const uniqueTransactions = new Set(reportData.map(item => item.transactionId)).size
-    const deliveryItems = reportData.filter(item => item.source === 'delivery').length
-    const officeSaleItems = reportData.filter(item => item.source === 'office_sale').length
-    const retasiItems = reportData.filter(item => item.source === 'retasi').length
-
-    const summaryStartRow = 5 + excelData.length + 2
-    XLSX.utils.sheet_add_aoa(ws, [
-      ['Ringkasan:'],
-      [`Total Produk: ${totalItems} (Diantar: ${deliveryItems}, Laku Kantor: ${officeSaleItems}, Retasi: ${retasiItems})`],
-      [`Total Quantity: ${totalQuantity}`],
-      [`Total Nilai: Rp ${totalValue.toLocaleString()}`],
-      [`Total Transaksi: ${uniqueTransactions}`]
-    ], { origin: `A${summaryStartRow}` })
-
-    // Set column widths
-    ws['!cols'] = [
-      { wch: 12 }, // Tanggal
-      { wch: 15 }, // No. Transaksi
-      { wch: 25 }, // Customer
-      { wch: 35 }, // Produk
-      { wch: 8 },  // Qty
-      { wch: 10 }, // Unit
-      { wch: 15 }, // Harga
-      { wch: 18 }, // Total
-      { wch: 15 }, // Sumber
-      { wch: 25 }, // Retasi
-      { wch: 20 }, // Supir/Kasir
-      { wch: 20 }, // Akun Pembayaran
-      { wch: 12 }  // Status
-    ]
-
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Produk Laku')
-
-    // Generate filename
-    const filterSuffix = productFilter !== 'all' ? `-${productFilter.replace(/\s+/g, '')}` : ''
-    const sourceSuffix = sourceFilter === 'delivery' ? '-Pengantaran' :
-      sourceFilter === 'office_sale' ? '-LakuKantor' :
-        sourceFilter === 'retasi' ? '-Retasi' : ''
-    const filename = filterType === 'monthly'
-      ? `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${months.find(m => m.value === selectedMonth)?.label}-${selectedYear}.xlsx`
-      : `Laporan-Produk-Laku${filterSuffix}${sourceSuffix}-${format(new Date(startDate), 'dd-MM-yyyy')}-to-${format(new Date(endDate), 'dd-MM-yyyy')}.xlsx`
-
-    XLSX.writeFile(wb, filename)
-  }
-
-  const getSourceBadge = (source: 'delivery' | 'office_sale' | 'retasi', retasiNumber?: string) => {
-    if (source === 'delivery') {
-      return (
-        <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-300">
-          <Truck className="h-3 w-3 mr-1" />
-          Diantar
-        </Badge>
-      )
-    }
-    if (source === 'retasi') {
-      return (
-        <Badge variant="secondary" className="bg-purple-100 text-purple-800 border-purple-300">
-          <Navigation className="h-3 w-3 mr-1" />
-          {retasiNumber ? `Retasi ${retasiNumber}` : 'Retasi'}
-        </Badge>
-      )
-    }
+const getSourceBadge = (source: 'delivery' | 'office_sale' | 'retasi', retasiNumber?: string) => {
+  if (source === 'delivery') {
     return (
-      <Badge variant="secondary" className="bg-green-100 text-green-800 border-green-300">
-        <Store className="h-3 w-3 mr-1" />
-        Laku Kantor
+      <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-300">
+        <Truck className="h-3 w-3 mr-1" />
+        Diantar
       </Badge>
     )
   }
-
+  if (source === 'retasi') {
+    return (
+      <Badge variant="secondary" className="bg-purple-100 text-purple-800 border-purple-300">
+        <Navigation className="h-3 w-3 mr-1" />
+        {retasiNumber ? `Retasi ${retasiNumber}` : 'Retasi'}
+      </Badge>
+    )
+  }
   return (
-    <div className="space-y-6">
+    <Badge variant="secondary" className="bg-green-100 text-green-800 border-green-300">
+      <Store className="h-3 w-3 mr-1" />
+      Laku Kantor
+    </Badge>
+  )
+}
+
+return (
+  <div className="space-y-6">
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShoppingCart className="h-5 w-5" />
+          Laporan Produk Laku
+        </CardTitle>
+        <CardDescription>
+          Laporan produk yang sudah laku berdasarkan pengantaran, laku kantor, dan retasi
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-4">
+          {/* Filter Type Selection */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Jenis Filter</Label>
+              <Select value={filterType} onValueChange={(value: 'monthly' | 'dateRange') => setFilterType(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">Bulanan</SelectItem>
+                  <SelectItem value="dateRange">Rentang Tanggal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-1">
+                <Package className="h-3 w-3" />
+                Item Produk
+              </Label>
+              <Select value={productFilter} onValueChange={setProductFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Semua Produk" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Produk</SelectItem>
+                  {availableProducts.map(product => (
+                    <SelectItem key={product} value={product}>
+                      {product}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Sumber</Label>
+              <Select value={sourceFilter} onValueChange={(value: 'all' | 'delivery' | 'office_sale' | 'retasi') => setSourceFilter(value)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Sumber</SelectItem>
+                  <SelectItem value="delivery">Pengantaran</SelectItem>
+                  <SelectItem value="office_sale">Laku Kantor</SelectItem>
+                  <SelectItem value="retasi">Retasi</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-1">
+                <Navigation className="h-3 w-3" />
+                Retasi Ke
+              </Label>
+              <Select value={retasiKeFilter} onValueChange={setRetasiKeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Semua" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Retasi</SelectItem>
+                  {availableRetasiKe.map(item => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-1">
+                <User className="h-3 w-3" />
+                Supir/Kasir
+              </Label>
+              <Select value={driverKasirFilter} onValueChange={setDriverKasirFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Semua" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Supir/Kasir</SelectItem>
+                  {availableDriversKasir.map(name => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Payment Account & Status Filter */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-1">
+                <Wallet className="h-3 w-3" />
+                Akun Pembayaran
+              </Label>
+              <Select value={paymentAccountFilter} onValueChange={setPaymentAccountFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Semua Akun" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Akun Pembayaran</SelectItem>
+                  {paymentAccounts.map(account => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.code ? `${account.code} - ${account.name}` : account.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium flex items-center gap-1">
+                <CreditCard className="h-3 w-3" />
+                Status Pembayaran
+              </Label>
+              <Select value={paymentStatusFilter} onValueChange={(value: 'all' | 'Lunas' | 'Belum Lunas') => setPaymentStatusFilter(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Semua Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                  <SelectItem value="Lunas">Lunas</SelectItem>
+                  <SelectItem value="Belum Lunas">Belum Lunas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Monthly Filter */}
+          {filterType === 'monthly' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Bulan</Label>
+                <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(Number(value))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {months.map(month => (
+                      <SelectItem key={month.value} value={month.value.toString()}>
+                        {month.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Tahun</Label>
+                <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(Number(value))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {years.map(year => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          {/* Date Range Filter */}
+          {filterType === 'dateRange' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  Tanggal Mulai
+                </Label>
+                <Input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4" />
+                  Tanggal Selesai
+                </Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <Button onClick={handleGenerateReport} disabled={isLoading}>
+              <Calendar className="mr-2 h-4 w-4" />
+              {isLoading ? 'Generating...' : 'Generate Laporan'}
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    {isLoading && (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ShoppingCart className="h-5 w-5" />
-            Laporan Produk Laku
-          </CardTitle>
-          <CardDescription>
-            Laporan produk yang sudah laku berdasarkan pengantaran, laku kantor, dan retasi
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-6">
           <div className="space-y-4">
-            {/* Filter Type Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Jenis Filter</Label>
-                <Select value={filterType} onValueChange={(value: 'monthly' | 'dateRange') => setFilterType(value)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="monthly">Bulanan</SelectItem>
-                    <SelectItem value="dateRange">Rentang Tanggal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-1">
-                  <Package className="h-3 w-3" />
-                  Item Produk
-                </Label>
-                <Select value={productFilter} onValueChange={setProductFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Semua Produk" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Produk</SelectItem>
-                    {availableProducts.map(product => (
-                      <SelectItem key={product} value={product}>
-                        {product}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Sumber</Label>
-                <Select value={sourceFilter} onValueChange={(value: 'all' | 'delivery' | 'office_sale' | 'retasi') => setSourceFilter(value)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Sumber</SelectItem>
-                    <SelectItem value="delivery">Pengantaran</SelectItem>
-                    <SelectItem value="office_sale">Laku Kantor</SelectItem>
-                    <SelectItem value="retasi">Retasi</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-1">
-                  <Navigation className="h-3 w-3" />
-                  Retasi Ke
-                </Label>
-                <Select value={retasiKeFilter} onValueChange={setRetasiKeFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Semua" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Retasi</SelectItem>
-                    {availableRetasiKe.map(item => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-1">
-                  <User className="h-3 w-3" />
-                  Supir/Kasir
-                </Label>
-                <Select value={driverKasirFilter} onValueChange={setDriverKasirFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Semua" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Supir/Kasir</SelectItem>
-                    {availableDriversKasir.map(name => (
-                      <SelectItem key={name} value={name}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Payment Account & Status Filter */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-1">
-                  <Wallet className="h-3 w-3" />
-                  Akun Pembayaran
-                </Label>
-                <Select value={paymentAccountFilter} onValueChange={setPaymentAccountFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Semua Akun" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Akun Pembayaran</SelectItem>
-                    {paymentAccounts.map(account => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.code ? `${account.code} - ${account.name}` : account.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-medium flex items-center gap-1">
-                  <CreditCard className="h-3 w-3" />
-                  Status Pembayaran
-                </Label>
-                <Select value={paymentStatusFilter} onValueChange={(value: 'all' | 'Lunas' | 'Belum Lunas') => setPaymentStatusFilter(value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Semua Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Semua Status</SelectItem>
-                    <SelectItem value="Lunas">Lunas</SelectItem>
-                    <SelectItem value="Belum Lunas">Belum Lunas</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Monthly Filter */}
-            {filterType === 'monthly' && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Bulan</Label>
-                  <Select value={selectedMonth.toString()} onValueChange={(value) => setSelectedMonth(Number(value))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {months.map(month => (
-                        <SelectItem key={month.value} value={month.value.toString()}>
-                          {month.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Tahun</Label>
-                  <Select value={selectedYear.toString()} onValueChange={(value) => setSelectedYear(Number(value))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {years.map(year => (
-                        <SelectItem key={year} value={year.toString()}>
-                          {year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-
-            {/* Date Range Filter */}
-            {filterType === 'dateRange' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" />
-                    Tanggal Mulai
-                  </Label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <CalendarDays className="h-4 w-4" />
-                    Tanggal Selesai
-                  </Label>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex gap-2">
-              <Button onClick={handleGenerateReport} disabled={isLoading}>
-                <Calendar className="mr-2 h-4 w-4" />
-                {isLoading ? 'Generating...' : 'Generate Laporan'}
-              </Button>
-            </div>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full" />
+            ))}
           </div>
         </CardContent>
       </Card>
+    )}
 
-      {isLoading && (
-        <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
+    {reportData.length > 0 && !isLoading && (
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Hasil Laporan - {filterType === 'monthly'
+                ? `${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`
+                : `${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
+              }
+            </CardTitle>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handlePrintReport}>
+                <Download className="mr-2 h-4 w-4" />
+                Cetak PDF
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportExcel}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Export Excel
+              </Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </div>
 
-      {reportData.length > 0 && !isLoading && (
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5" />
-                Hasil Laporan - {filterType === 'monthly'
-                  ? `${months.find(m => m.value === selectedMonth)?.label} ${selectedYear}`
-                  : `${format(new Date(startDate), 'dd MMM yyyy', { locale: id })} s/d ${format(new Date(endDate), 'dd MMM yyyy', { locale: id })}`
-                }
-              </CardTitle>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handlePrintReport}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Cetak PDF
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleExportExcel}>
-                  <FileSpreadsheet className="mr-2 h-4 w-4" />
-                  Export Excel
-                </Button>
-              </div>
+          {/* Summary Cards - Moved to Header */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-4">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold">{reportData.length}</div>
+              <div className="text-xs text-muted-foreground">Total Produk</div>
             </div>
-
-            {/* Summary Cards - Moved to Header */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mt-4">
-              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
-                <div className="text-xl font-bold">{reportData.length}</div>
-                <div className="text-xs text-muted-foreground">Total Produk</div>
-              </div>
-              <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3 text-center">
-                <div className="text-xl font-bold text-blue-600">{reportData.filter(item => item.source === 'delivery').length}</div>
-                <div className="text-xs text-muted-foreground">Diantar</div>
-              </div>
-              <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-3 text-center">
-                <div className="text-xl font-bold text-green-600">{reportData.filter(item => item.source === 'office_sale').length}</div>
-                <div className="text-xs text-muted-foreground">Laku Kantor</div>
-              </div>
-              <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3 text-center">
-                <div className="text-xl font-bold text-purple-600">{reportData.filter(item => item.source === 'retasi').length}</div>
-                <div className="text-xs text-muted-foreground">Retasi</div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
-                <div className="text-xl font-bold">{reportData.reduce((sum, item) => sum + item.quantity, 0)}</div>
-                <div className="text-xs text-muted-foreground">Total Qty</div>
-              </div>
-              <div className="bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-3 text-center">
-                <div className="text-lg font-bold text-emerald-600">Rp {reportData.reduce((sum, item) => sum + item.total, 0).toLocaleString()}</div>
-                <div className="text-xs text-muted-foreground">Total Nilai</div>
-              </div>
-              <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
-                <div className="text-xl font-bold">{new Set(reportData.map(item => item.transactionId)).size}</div>
-                <div className="text-xs text-muted-foreground">Transaksi</div>
-              </div>
+            <div className="bg-blue-50 dark:bg-blue-900/30 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-blue-600">{reportData.filter(item => item.source === 'delivery').length}</div>
+              <div className="text-xs text-muted-foreground">Diantar</div>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-2">
-            <h3 className="text-lg font-medium">Detail Produk Laku</h3>
+            <div className="bg-green-50 dark:bg-green-900/30 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-green-600">{reportData.filter(item => item.source === 'office_sale').length}</div>
+              <div className="text-xs text-muted-foreground">Laku Kantor</div>
+            </div>
+            <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-purple-600">{reportData.filter(item => item.source === 'retasi').length}</div>
+              <div className="text-xs text-muted-foreground">Retasi</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold">{reportData.reduce((sum, item) => sum + item.quantity, 0)}</div>
+              <div className="text-xs text-muted-foreground">Total Qty</div>
+            </div>
+            <div className="bg-emerald-50 dark:bg-emerald-900/30 rounded-lg p-3 text-center">
+              <div className="text-lg font-bold text-emerald-600">Rp {reportData.reduce((sum, item) => sum + item.total, 0).toLocaleString()}</div>
+              <div className="text-xs text-muted-foreground">Total Nilai</div>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold">{new Set(reportData.map(item => item.transactionId)).size}</div>
+              <div className="text-xs text-muted-foreground">Transaksi</div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-2">
+          <h3 className="text-lg font-medium">Detail Produk Laku</h3>
 
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tanggal Laku</TableHead>
-                    <TableHead>No. Transaksi</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Produk</TableHead>
-                    <TableHead className="text-center">Qty</TableHead>
-                    <TableHead className="text-center">Harga</TableHead>
-                    <TableHead className="text-center">Total</TableHead>
-                    <TableHead className="text-center">Sumber</TableHead>
-                    <TableHead>Retasi</TableHead>
-                    <TableHead>Supir/Kasir</TableHead>
-                    <TableHead>Akun Bayar</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reportData.map((item, index) => (
-                    <TableRow key={`${item.transactionId}-${index}`}>
-                      <TableCell className="font-mono">
-                        {format(item.soldDate, 'dd/MM/yyyy')}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {item.transactionId.substring(0, 8)}...
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {item.customerName}
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium flex items-center gap-2">
-                            {item.productName}
-                            {item.isBonus && (
-                              <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 border-orange-300">
-                                BONUS
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="text-sm text-muted-foreground">{item.unit}</div>
+          <div className="border rounded-lg overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Tanggal Laku</TableHead>
+                  <TableHead>No. Transaksi</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Produk</TableHead>
+                  <TableHead className="text-center">Qty</TableHead>
+                  <TableHead className="text-center">Harga</TableHead>
+                  <TableHead className="text-center">Total</TableHead>
+                  <TableHead className="text-center">Sumber</TableHead>
+                  <TableHead>Retasi</TableHead>
+                  <TableHead>Supir/Kasir</TableHead>
+                  <TableHead>Akun Bayar</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reportData.map((item, index) => (
+                  <TableRow key={`${item.transactionId}-${index}`}>
+                    <TableCell className="font-mono">
+                      {format(item.soldDate, 'dd/MM/yyyy')}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {item.transactionId.substring(0, 8)}...
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {item.customerName}
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium flex items-center gap-2">
+                          {item.productName}
+                          {item.isBonus && (
+                            <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-800 border-orange-300">
+                              BONUS
+                            </Badge>
+                          )}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-center font-mono">
-                        {item.quantity}
-                      </TableCell>
-                      <TableCell className="text-center font-mono">
-                        Rp {item.price.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-center font-mono font-medium">
-                        Rp {item.total.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {getSourceBadge(item.source, item.retasiNumber)}
-                      </TableCell>
-                      <TableCell className="text-sm font-mono">
-                        {item.retasiNumber || '-'}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {item.source === 'delivery' || item.source === 'retasi'
-                          ? (item.driverName || '-')
-                          : item.cashierName}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {item.paymentAccountName || '-'}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge
-                          variant="secondary"
-                          className={item.paymentStatus === 'Lunas'
-                            ? 'bg-green-100 text-green-800 border-green-300'
-                            : 'bg-yellow-100 text-yellow-800 border-yellow-300'}
-                        >
-                          {item.paymentStatus || 'Belum Lunas'}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                        <div className="text-sm text-muted-foreground">{item.unit}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center font-mono">
+                      {item.quantity}
+                    </TableCell>
+                    <TableCell className="text-center font-mono">
+                      Rp {item.price.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-center font-mono font-medium">
+                      Rp {item.total.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {getSourceBadge(item.source, item.retasiNumber)}
+                    </TableCell>
+                    <TableCell className="text-sm font-mono">
+                      {item.retasiNumber || '-'}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {item.source === 'delivery' || item.source === 'retasi'
+                        ? (item.driverName || '-')
+                        : item.cashierName}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {item.paymentAccountName || '-'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant="secondary"
+                        className={item.paymentStatus === 'Lunas'
+                          ? 'bg-green-100 text-green-800 border-green-300'
+                          : 'bg-yellow-100 text-yellow-800 border-yellow-300'}
+                      >
+                        {item.paymentStatus || 'Belum Lunas'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    )}
 
-      {reportData.length === 0 && !isLoading && (
-        <Card>
-          <CardContent className="text-center py-12">
-            <ShoppingCart className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Belum Ada Data</h3>
-            <p className="text-muted-foreground">
-              Pilih periode dan klik "Generate Laporan" untuk melihat produk yang laku.
-            </p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Laporan ini menampilkan produk dari pengantaran, laku kantor, dan retasi.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
+    {reportData.length === 0 && !isLoading && (
+      <Card>
+        <CardContent className="text-center py-12">
+          <ShoppingCart className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Belum Ada Data</h3>
+          <p className="text-muted-foreground">
+            Pilih periode dan klik "Generate Laporan" untuk melihat produk yang laku.
+          </p>
+          <p className="text-sm text-muted-foreground mt-2">
+            Laporan ini menampilkan produk dari pengantaran, laku kantor, dan retasi.
+          </p>
+        </CardContent>
+      </Card>
+    )}
+  </div>
+)
 }
