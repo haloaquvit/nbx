@@ -500,7 +500,7 @@ export function JournalEntryTable({
                           </>
                         )}
 
-                        {entry.status === 'posted' && !entry.isVoided && (
+                        {entry.status === 'posted' && !entry.isVoided && entry.referenceType !== 'opening' && (
                           <Button
                             variant="ghost"
                             size="icon"

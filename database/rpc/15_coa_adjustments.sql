@@ -104,6 +104,8 @@ DECLARE
   v_entry_number TEXT;
   v_current_journal_amount NUMERIC;
   v_equity_account_id TEXT;
+  v_equity_account_code TEXT;
+  v_equity_account_name TEXT;
   v_description TEXT;
 BEGIN
   -- 1. Validate inputs
@@ -162,7 +164,7 @@ BEGIN
 
   -- 6. Find "Modal Disetor" account (3100) for balancing
   -- Priority: exact code 3100 > name contains 'disetor' > any non-header 3xxx
-  SELECT id INTO v_equity_account_id
+  SELECT id, code, name INTO v_equity_account_id, v_equity_account_code, v_equity_account_name
   FROM accounts
   WHERE branch_id = p_branch_id
     AND is_active = TRUE
@@ -175,7 +177,7 @@ BEGIN
 
   -- Fallback: any non-header equity account (3xxx)
   IF v_equity_account_id IS NULL THEN
-    SELECT id INTO v_equity_account_id
+    SELECT id, code, name INTO v_equity_account_id, v_equity_account_code, v_equity_account_name
     FROM accounts
     WHERE code LIKE '3%'
       AND branch_id = p_branch_id
@@ -192,11 +194,12 @@ BEGIN
 
   -- Prevent self-reference for equity accounts
   IF p_account_id = v_equity_account_id THEN
-    SELECT id INTO v_equity_account_id
+    SELECT id, code, name INTO v_equity_account_id, v_equity_account_code, v_equity_account_name
     FROM accounts
     WHERE code LIKE '3%'
       AND branch_id = p_branch_id
       AND is_active = TRUE
+      AND is_header = FALSE
       AND id != p_account_id
     ORDER BY code ASC
     LIMIT 1;
@@ -239,16 +242,16 @@ BEGIN
   -- 8. Create journal lines based on account type
   IF v_account.type IN ('Aset', 'Beban') THEN
     -- Akun Debit Normal: Debit Akun, Credit Modal
-    INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+    INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
     VALUES
-      (v_new_journal_id, 1, p_account_id, v_description, ABS(p_new_initial_balance), 0),
-      (v_new_journal_id, 2, v_equity_account_id, v_description, 0, ABS(p_new_initial_balance));
+      (v_new_journal_id, 1, p_account_id, v_account.code, v_account.name, v_description, ABS(p_new_initial_balance), 0),
+      (v_new_journal_id, 2, v_equity_account_id, v_equity_account_code, v_equity_account_name, v_description, 0, ABS(p_new_initial_balance));
   ELSE
     -- Akun Credit Normal (Kewajiban/Modal/Pendapatan): Credit Akun, Debit Modal
-    INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, description, debit_amount, credit_amount)
+    INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
     VALUES
-      (v_new_journal_id, 1, p_account_id, v_description, 0, ABS(p_new_initial_balance)),
-      (v_new_journal_id, 2, v_equity_account_id, v_description, ABS(p_new_initial_balance), 0);
+      (v_new_journal_id, 1, p_account_id, v_account.code, v_account.name, v_description, 0, ABS(p_new_initial_balance)),
+      (v_new_journal_id, 2, v_equity_account_id, v_equity_account_code, v_equity_account_name, v_description, ABS(p_new_initial_balance), 0);
   END IF;
 
   -- 9. Post the journal

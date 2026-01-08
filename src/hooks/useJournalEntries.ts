@@ -141,8 +141,8 @@ export const useJournalEntries = () => {
         });
 
       if (rpcError) {
-        console.error('RPC create_journal_atomic error:', rpcError);
-        throw new Error(rpcError.message);
+        console.error('RPC create_journal_atomic error:', JSON.stringify(rpcError, null, 2));
+        throw new Error(rpcError.message || 'Unknown RPC error');
       }
 
       const rpcResult = Array.isArray(rpcResultRaw) ? rpcResultRaw[0] : rpcResultRaw;

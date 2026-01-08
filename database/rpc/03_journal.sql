@@ -96,26 +96,27 @@ BEGIN
   )
   LOOP
     -- Validasi account exists
+    -- Fix: Allow accounts with matching branch_id OR NULL branch_id (shared accounts)
     IF v_line.account_id IS NOT NULL THEN
       IF NOT EXISTS (
         SELECT 1 FROM accounts
         WHERE id = v_line.account_id
-          AND branch_id = p_branch_id
+          AND (branch_id = p_branch_id OR branch_id IS NULL)
           AND is_active = TRUE
       ) THEN
         RETURN QUERY SELECT FALSE AS success, NULL::UUID AS journal_id, NULL::TEXT AS entry_number,
-          format('Account ID %s tidak ditemukan di branch ini', v_line.account_id)::TEXT AS error_message;
+          format('Account ID %s tidak ditemukan atau tidak aktif di branch ini', v_line.account_id)::TEXT AS error_message;
         RETURN;
       END IF;
     ELSIF v_line.account_code IS NOT NULL THEN
       IF NOT EXISTS (
         SELECT 1 FROM accounts
         WHERE code = v_line.account_code
-          AND branch_id = p_branch_id
+          AND (branch_id = p_branch_id OR branch_id IS NULL)
           AND is_active = TRUE
       ) THEN
         RETURN QUERY SELECT FALSE AS success, NULL::UUID AS journal_id, NULL::TEXT AS entry_number,
-          format('Account code %s tidak ditemukan di branch ini', v_line.account_code)::TEXT AS error_message;
+          format('Account code %s tidak ditemukan atau tidak aktif di branch ini', v_line.account_code)::TEXT AS error_message;
         RETURN;
       END IF;
     ELSE
@@ -200,6 +201,7 @@ BEGIN
       line_number,
       account_id,
       account_code,
+      account_name,
       description,
       debit_amount,
       credit_amount
@@ -208,10 +210,17 @@ BEGIN
       v_line_number,
       CASE
         WHEN v_line.account_id IS NOT NULL THEN v_line.account_id  -- accounts.id is TEXT
-        ELSE (SELECT id FROM accounts WHERE code = v_line.account_code AND branch_id = p_branch_id LIMIT 1)
+        ELSE (SELECT id FROM accounts WHERE code = v_line.account_code AND (branch_id = p_branch_id OR branch_id IS NULL) LIMIT 1)
       END,
       COALESCE(v_line.account_code,
         (SELECT code FROM accounts WHERE id = v_line.account_id LIMIT 1)),
+      -- Get account_name from accounts table
+      CASE
+        WHEN v_line.account_id IS NOT NULL THEN
+          (SELECT name FROM accounts WHERE id = v_line.account_id LIMIT 1)
+        ELSE
+          (SELECT name FROM accounts WHERE code = v_line.account_code AND (branch_id = p_branch_id OR branch_id IS NULL) LIMIT 1)
+      END,
       COALESCE(v_line.description, p_description),
       COALESCE(v_line.debit_amount, 0),
       COALESCE(v_line.credit_amount, 0)
