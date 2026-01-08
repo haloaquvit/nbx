@@ -32,7 +32,7 @@ DECLARE
   v_description TEXT;
   v_amount NUMERIC;
   v_category TEXT;
-  v_date TIMESTAMPTZ;  -- Changed from DATE to TIMESTAMPTZ to preserve time
+  v_date TIMESTAMPTZ;
   v_cash_account_id TEXT;  -- accounts.id is TEXT not UUID
   v_expense_account_id TEXT;  -- accounts.id is TEXT not UUID
   v_expense_account_name TEXT;
@@ -58,7 +58,7 @@ BEGIN
   v_description := COALESCE(p_expense->>'description', 'Pengeluaran');
   v_amount := COALESCE((p_expense->>'amount')::NUMERIC, 0);
   v_category := COALESCE(p_expense->>'category', 'Beban Umum');
-  v_date := COALESCE((p_expense->>'date')::TIMESTAMPTZ, NOW());  -- Parse as TIMESTAMPTZ to preserve time
+  v_date := COALESCE((p_expense->>'date')::TIMESTAMPTZ, NOW());
   v_cash_account_id := p_expense->>'account_id';  -- TEXT, no cast needed
   v_expense_account_id := p_expense->>'expense_account_id';  -- TEXT, no cast needed
   v_expense_account_name := p_expense->>'expense_account_name';
@@ -181,7 +181,7 @@ BEGIN
 
   SELECT cja.journal_id INTO v_journal_id FROM create_journal_atomic(
     p_branch_id,
-    v_date,
+    v_date::DATE,  -- Journal only needs DATE
     format('Pengeluaran - %s', v_description),
     'expense',
     v_expense_id,
