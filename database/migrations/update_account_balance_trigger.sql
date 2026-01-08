@@ -37,15 +37,13 @@ DECLARE
     v_delta NUMERIC;
 BEGIN
     -- Check parent journal status first
-    -- If INSERT/UPDATE: Check NEW parent
-    -- If DELETE: Check OLD parent
     IF TG_OP = 'DELETE' THEN
         SELECT is_voided INTO v_is_voided FROM journal_entries WHERE id = OLD.journal_entry_id;
     ELSE
         SELECT is_voided INTO v_is_voided FROM journal_entries WHERE id = NEW.journal_entry_id;
     END IF;
 
-    -- If journal is voided, lines don't affect active balance. Do nothing.
+    -- If journal is voided, lines don't affect active balance.
     IF v_is_voided THEN
         RETURN NULL;
     END IF;
@@ -73,12 +71,11 @@ DECLARE
     r_line RECORD;
     v_delta NUMERIC;
 BEGIN
-    -- Only care if is_voided changed
     IF OLD.is_voided = NEW.is_voided THEN
         RETURN NULL;
     END IF;
 
-    -- If BECOMING VOIDED (False -> True): Remove impact of all lines
+    -- If BECOMING VOIDED (False -> True): Remove impact
     IF NEW.is_voided = TRUE THEN
         FOR r_line IN SELECT * FROM journal_entry_lines WHERE journal_entry_id = NEW.id LOOP
             v_delta := calculate_balance_delta(r_line.account_id, r_line.debit_amount, r_line.credit_amount);
@@ -86,7 +83,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- If BECOMING ACTIVE (True -> False): Add impact of all lines
+    -- If BECOMING ACTIVE (True -> False): Add impact
     IF NEW.is_voided = FALSE THEN
         FOR r_line IN SELECT * FROM journal_entry_lines WHERE journal_entry_id = NEW.id LOOP
             v_delta := calculate_balance_delta(r_line.account_id, r_line.debit_amount, r_line.credit_amount);
@@ -109,33 +106,18 @@ CREATE TRIGGER trg_balance_journal_change
 AFTER UPDATE OF is_voided ON journal_entries
 FOR EACH ROW EXECUTE FUNCTION tf_update_balance_on_journal_change();
 
--- One-time Full Sync to ensure integrity at start
-DO $$
-DECLARE
-    r_acc RECORD;
-    v_calc_balance NUMERIC;
-BEGIN
-    RAISE NOTICE 'Starting One-time Full Balance Sync...';
-    FOR r_acc IN SELECT id FROM accounts LOOP
-        
-        -- Calculate clean balance from non-voided lines (Pure Journal Sum)
-        -- NOTE: initial_balance is ignored because it is already represented by an 'opening_balance' journal entry.
-        SELECT COALESCE(SUM(
-            CASE 
-                WHEN a.type IN ('Aset', 'Beban') THEN (jel.debit_amount - jel.credit_amount)
-                ELSE (jel.credit_amount - jel.debit_amount)
-            END
-        ), 0)
-        INTO v_calc_balance
-        FROM accounts a
-        LEFT JOIN journal_entry_lines jel ON a.id = jel.account_id
-        LEFT JOIN journal_entries je ON jel.journal_entry_id = je.id
-        WHERE a.id = r_acc.id AND (je.is_voided IS FALSE OR je.is_voided IS NULL)
-        GROUP BY a.id, a.type;
-
-        -- Update
-        UPDATE accounts SET balance = v_calc_balance WHERE id = r_acc.id;
-        
-    END LOOP;
-    RAISE NOTICE 'Sync Complete.';
-END $$;
+-- One-time Full Sync (Efficient Bulk Update)
+-- Recalculate ALL balances from scratch to ensure consistency
+UPDATE accounts a
+SET balance = (
+    SELECT COALESCE(SUM(
+        CASE 
+            WHEN a.type IN ('Aset', 'Beban') THEN (jel.debit_amount - jel.credit_amount)
+            ELSE (jel.credit_amount - jel.debit_amount)
+        END
+    ), 0)
+    FROM journal_entry_lines jel
+    JOIN journal_entries je ON jel.journal_entry_id = je.id
+    WHERE jel.account_id = a.id
+    AND je.is_voided IS FALSE
+);
