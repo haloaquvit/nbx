@@ -49,6 +49,7 @@ export function EditDeliveryDialog({ delivery, open, onOpenChange }: EditDeliver
     quantityDelivered: number
     unit: string
     notes: string
+    isBonus?: boolean
   }>>([])
 
   // Reset form when delivery changes
@@ -63,7 +64,8 @@ export function EditDeliveryDialog({ delivery, open, onOpenChange }: EditDeliver
         productName: item.productName,
         quantityDelivered: item.quantityDelivered,
         unit: item.unit,
-        notes: item.notes || ""
+        notes: item.notes || "",
+        isBonus: item.isBonus
       })))
     }
   }, [delivery])
@@ -102,9 +104,12 @@ export function EditDeliveryDialog({ delivery, open, onOpenChange }: EditDeliver
         helperId: (!helperId || helperId === "no-helper") ? undefined : helperId,
         notes,
         items: items.map(item => ({
-          id: item.id,
+          productId: item.productId,
+          productName: item.productName,
           quantityDelivered: item.quantityDelivered,
-          notes: item.notes
+          unit: item.unit,
+          notes: item.notes,
+          isBonus: item.isBonus
         }))
       })
 
