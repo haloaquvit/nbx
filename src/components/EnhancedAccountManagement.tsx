@@ -43,7 +43,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Upload, Download, RefreshCw, TreePine } from "lucide-react"
+import { Plus, Upload, Download, RefreshCw, TreePine, RotateCcw } from "lucide-react"
 
 const accountSchema = z.object({
   name: z.string().min(3, "Nama akun minimal 3 karakter."),
@@ -63,7 +63,7 @@ const accountSchema = z.object({
 type AccountFormData = z.infer<typeof accountSchema>
 
 export function EnhancedAccountManagement() {
-  const { accounts, isLoading, addAccount, deleteAccount, updateAccount, importStandardCoA: importCoAMutation } = useAccounts()
+  const { accounts, isLoading, addAccount, deleteAccount, updateAccount, importStandardCoA: importCoAMutation, syncAccountBalances } = useAccounts()
   const { toast } = useToast()
   const { user } = useAuth()
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null)
@@ -303,6 +303,33 @@ export function EnhancedAccountManagement() {
 
         {userIsAdminOrOwner && (
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                syncAccountBalances.mutate(undefined, {
+                  onSuccess: (result) => {
+                    toast({
+                      title: "Sync Berhasil",
+                      description: `${result.updated} akun di-update untuk branch ${result.branchName}`
+                    });
+                    if (result.details.length > 0) {
+                      console.log('[Sync Details]', result.details);
+                    }
+                  },
+                  onError: (error) => {
+                    toast({
+                      variant: "destructive",
+                      title: "Sync Gagal",
+                      description: error.message
+                    });
+                  }
+                });
+              }}
+              disabled={syncAccountBalances.isPending}
+            >
+              <RotateCcw className={`h-4 w-4 mr-2 ${syncAccountBalances.isPending ? 'animate-spin' : ''}`} />
+              {syncAccountBalances.isPending ? "Syncing..." : "Sync Saldo"}
+            </Button>
             <Button
               variant="outline"
               onClick={importStandardCoA}

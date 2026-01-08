@@ -256,7 +256,7 @@ BEGIN
     description = COALESCE(p_expense->>'description', description),
     amount = v_new_amount,
     category = COALESCE(p_expense->>'category', category),
-    date = COALESCE((p_expense->>'date')::DATE, date),
+    date = COALESCE((p_expense->>'date')::TIMESTAMPTZ, date),
     account_id = v_new_cash_account_id,
     updated_at = NOW()
   WHERE id = p_expense_id;

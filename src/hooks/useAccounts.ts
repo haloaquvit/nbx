@@ -420,6 +420,167 @@ export const useAccounts = () => {
     );
   };
 
+  // SYNC ACCOUNT BALANCES - Hitung ulang saldo dari initial_balance + jurnal (non-void)
+  // HANYA untuk branch yang dipilih saat ini
+  const syncAccountBalances = useMutation({
+    mutationFn: async (): Promise<{
+      updated: number;
+      branchId: string;
+      branchName: string;
+      details: Array<{
+        code: string;
+        name: string;
+        oldBalance: number;
+        newBalance: number;
+        difference: number;
+      }>;
+    }> => {
+      if (!currentBranch?.id) throw new Error('Pilih branch terlebih dahulu');
+
+      const branchId = currentBranch.id;
+      const branchName = currentBranch.name || 'Unknown';
+
+      console.log(`[syncAccountBalances] Starting sync for branch: ${branchName} (${branchId})`);
+
+      // 1. Get all accounts for this branch ONLY
+      const { data: accountsData, error: accError } = await supabase
+        .from('accounts')
+        .select('id, code, name, type, balance, initial_balance, branch_id')
+        .eq('branch_id', branchId)
+        .eq('is_header', false)
+        .eq('is_active', true);
+
+      if (accError) throw new Error(`Gagal mengambil data akun: ${accError.message}`);
+      if (!accountsData || accountsData.length === 0) {
+        return { updated: 0, branchId, branchName, details: [] };
+      }
+
+      console.log(`[syncAccountBalances] Found ${accountsData.length} accounts for branch ${branchName}`);
+
+      // 2. Get account IDs for this branch
+      const accountIds = accountsData.map(acc => acc.id);
+
+      // 3. Get all journal lines for non-voided journals in this branch
+      // Filter by account_id IN accountIds to ensure we only get relevant lines
+      const { data: journalLines, error: jlError } = await supabase
+        .from('journal_entry_lines')
+        .select(`
+          account_id,
+          debit_amount,
+          credit_amount,
+          journal_entries!inner (
+            branch_id,
+            is_voided
+          )
+        `)
+        .in('account_id', accountIds)
+        .eq('journal_entries.branch_id', branchId)
+        .eq('journal_entries.is_voided', false);
+
+      if (jlError) throw new Error(`Gagal mengambil data jurnal: ${jlError.message}`);
+
+      console.log(`[syncAccountBalances] Found ${journalLines?.length || 0} journal lines`);
+
+      // 4. Calculate journal movements per account
+      const journalMovements = new Map<string, number>();
+      const accountTypes = new Map<string, string>();
+
+      accountsData.forEach(acc => {
+        journalMovements.set(acc.id, 0);
+        accountTypes.set(acc.id, acc.type);
+      });
+
+      (journalLines || []).forEach((line: any) => {
+        if (!line.account_id) return;
+        // Double check account belongs to this branch
+        if (!accountIds.includes(line.account_id)) return;
+
+        const currentMovement = journalMovements.get(line.account_id) || 0;
+        const debit = Number(line.debit_amount) || 0;
+        const credit = Number(line.credit_amount) || 0;
+        const accType = accountTypes.get(line.account_id) || 'Aset';
+
+        // Aset & Beban: Debit menambah, Credit mengurangi
+        // Kewajiban, Modal, Pendapatan: Credit menambah, Debit mengurangi
+        const isDebitNormal = ['Aset', 'Beban'].includes(accType);
+        const movement = isDebitNormal ? (debit - credit) : (credit - debit);
+
+        journalMovements.set(line.account_id, currentMovement + movement);
+      });
+
+      // 5. Calculate new balance = initial_balance + journal_movement
+      const updates: Array<{
+        id: string;
+        code: string;
+        name: string;
+        oldBalance: number;
+        newBalance: number;
+        difference: number;
+      }> = [];
+
+      for (const acc of accountsData) {
+        // Extra safety: verify branch_id matches
+        if (acc.branch_id !== branchId) continue;
+
+        const initialBalance = Number(acc.initial_balance) || 0;
+        const journalMovement = journalMovements.get(acc.id) || 0;
+        const newBalance = initialBalance + journalMovement;
+        const oldBalance = Number(acc.balance) || 0;
+        const difference = newBalance - oldBalance;
+
+        // Only update if there's a difference > 0.01
+        if (Math.abs(difference) > 0.01) {
+          updates.push({
+            id: acc.id,
+            code: acc.code || '',
+            name: acc.name,
+            oldBalance,
+            newBalance,
+            difference
+          });
+        }
+      }
+
+      console.log(`[syncAccountBalances] ${updates.length} accounts need update`);
+
+      // 6. Update accounts in database - ONLY for this branch
+      if (updates.length > 0) {
+        for (const update of updates) {
+          const { error: updateError } = await supabase
+            .from('accounts')
+            .update({
+              balance: update.newBalance,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', update.id)
+            .eq('branch_id', branchId); // Extra safety: ensure branch matches
+
+          if (updateError) {
+            console.error(`[syncAccountBalances] Failed to update account ${update.code}:`, updateError);
+          }
+        }
+      }
+
+      console.log(`[syncAccountBalances] Sync completed for branch ${branchName}`);
+
+      return {
+        updated: updates.length,
+        branchId,
+        branchName,
+        details: updates.map(u => ({
+          code: u.code,
+          name: u.name,
+          oldBalance: u.oldBalance,
+          newBalance: u.newBalance,
+          difference: u.difference
+        }))
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    }
+  });
+
   return {
     accounts,
     isLoading,
@@ -436,5 +597,6 @@ export const useAccounts = () => {
     getEmployeeCashAccount,
     getCashAccountsWithEmployees,
     getUnassignedCashAccounts,
+    syncAccountBalances,
   }
 }
