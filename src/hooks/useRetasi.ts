@@ -356,24 +356,34 @@ export const useRetasi = (filters?: {
   });
 
   // Mark retasi as returned - atomic via RPC
+  // Perhitungan HANYA di RPC (Single Source of Truth)
   const markRetasiReturned = useMutation({
     mutationFn: async ({ retasiId, ...returnData }: ReturnItemsData & { retasiId: string }): Promise<void> => {
       if (!currentBranch?.id) throw new Error('Branch ID is required');
 
       console.log('🏁 Processing Retasi Return via RPC...', retasiId);
 
+      const hasItemDetails = returnData.item_returns && returnData.item_returns.length > 0;
+
       const { data: rpcResultRaw, error: rpcError } = await supabase
         .rpc('mark_retasi_returned_atomic', {
           p_branch_id: currentBranch.id,
           p_retasi_id: retasiId,
           p_return_notes: returnData.return_notes || '',
-          p_item_returns: (returnData.item_returns || []).map(ir => ({
-            item_id: ir.item_id,
-            returned_qty: ir.returned_quantity,
-            sold_qty: ir.sold_quantity,
-            error_qty: ir.error_quantity,
-            unsold_qty: ir.unsold_quantity
-          }))
+          p_item_returns: hasItemDetails
+            ? returnData.item_returns!.map(ir => ({
+                item_id: ir.item_id,
+                returned_qty: ir.returned_quantity,
+                sold_qty: ir.sold_quantity,
+                error_qty: ir.error_quantity,
+                unsold_qty: ir.unsold_quantity
+              }))
+            : [],
+          // Untuk data lama tanpa item details, kirim manual totals
+          p_manual_kembali: hasItemDetails ? null : returnData.returned_items_count,
+          p_manual_laku: hasItemDetails ? null : returnData.barang_laku,
+          p_manual_tidak_laku: hasItemDetails ? null : returnData.barang_tidak_laku,
+          p_manual_error: hasItemDetails ? null : returnData.error_items_count,
         });
 
       if (rpcError) {
@@ -386,7 +396,7 @@ export const useRetasi = (filters?: {
         throw new Error(rpcResult?.error_message || 'Gagal memproses pengembalian retasi');
       }
 
-      console.log('✅ Retasi Return Success via RPC. Sold:', rpcResult.barang_laku);
+      console.log('✅ Retasi Return Success via RPC. Kembali:', rpcResult.returned_items_count, 'Laku:', rpcResult.barang_laku);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['retasi'] });

@@ -135,77 +135,106 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- ============================================================================
 -- 2. MARK RETASI RETURNED ATOMIC
 -- ============================================================================
+-- Perhitungan HANYA di RPC ini (Single Source of Truth)
+-- Frontend cukup kirim data per-item, RPC yang hitung total
+-- Untuk data lama tanpa items, frontend kirim manual_totals
 
 CREATE OR REPLACE FUNCTION mark_retasi_returned_atomic(
   p_branch_id UUID,
   p_retasi_id UUID,
   p_return_notes TEXT,
-  p_item_returns JSONB -- Array of {item_id, returned_qty, sold_qty, error_qty, unsold_qty}
+  p_item_returns JSONB, -- Array of {item_id, returned_qty, sold_qty, error_qty, unsold_qty}
+  -- Optional: untuk data lama tanpa item details
+  p_manual_kembali NUMERIC DEFAULT NULL,
+  p_manual_laku NUMERIC DEFAULT NULL,
+  p_manual_tidak_laku NUMERIC DEFAULT NULL,
+  p_manual_error NUMERIC DEFAULT NULL
 )
 RETURNS TABLE (
   success BOOLEAN,
   barang_laku NUMERIC,
   barang_tidak_laku NUMERIC,
+  returned_items_count NUMERIC,
+  error_items_count NUMERIC,
   error_message TEXT
 ) AS $$
 DECLARE
   v_item RECORD;
-  v_total_laku NUMERIC := 0;
-  v_total_tidak_laku NUMERIC := 0;
-  v_returned_count INTEGER := 0;
-  v_error_count INTEGER := 0;
+  v_total_kembali NUMERIC := 0;    -- SUM of returned_qty (barang kembali utuh)
+  v_total_laku NUMERIC := 0;       -- SUM of sold_qty (barang terjual)
+  v_total_tidak_laku NUMERIC := 0; -- SUM of unsold_qty (barang tidak laku)
+  v_total_error NUMERIC := 0;      -- SUM of error_qty (barang rusak/error)
+  v_has_items BOOLEAN := FALSE;
 BEGIN
   -- ==================== VALIDASI ====================
-  
+
   IF NOT EXISTS (SELECT 1 FROM retasi WHERE id = p_retasi_id AND is_returned = FALSE) THEN
-    RETURN QUERY SELECT FALSE, 0::NUMERIC, 0::NUMERIC, 'Retasi tidak ditemukan atau sudah dikembalikan'::TEXT;
+    RETURN QUERY SELECT FALSE, 0::NUMERIC, 0::NUMERIC, 0::NUMERIC, 0::NUMERIC,
+      'Retasi tidak ditemukan atau sudah dikembalikan'::TEXT;
     RETURN;
   END IF;
 
-  -- ==================== UPDATE ITEMS ====================
-  
-  FOR v_item IN SELECT * FROM jsonb_to_recordset(p_item_returns) AS x(
-    item_id UUID, 
-    returned_qty NUMERIC, 
-    sold_qty NUMERIC, 
-    error_qty NUMERIC, 
-    unsold_qty NUMERIC
-  ) LOOP
-    UPDATE retasi_items
-    SET
-      returned_qty = v_item.returned_qty,
-      sold_qty = v_item.sold_qty,
-      error_qty = v_item.error_qty,
-      unsold_qty = v_item.unsold_qty
-    WHERE id = v_item.item_id AND retasi_id = p_retasi_id;
+  -- ==================== CEK APAKAH ADA ITEM DETAILS ====================
 
-    v_total_laku := v_total_laku + v_item.sold_qty;
-    v_total_tidak_laku := v_total_tidak_laku + v_item.unsold_qty + v_item.returned_qty;
-    
-    IF v_item.returned_qty > 0 THEN v_returned_count := v_returned_count + 1; END IF;
-    IF v_item.error_qty > 0 THEN v_error_count := v_error_count + 1; END IF;
-  END LOOP;
+  -- Cek apakah p_item_returns memiliki data
+  IF p_item_returns IS NOT NULL AND jsonb_array_length(p_item_returns) > 0 THEN
+    v_has_items := TRUE;
+  END IF;
+
+  -- ==================== UPDATE ITEMS & HITUNG TOTAL ====================
+
+  IF v_has_items THEN
+    -- Ada item details: hitung dari item_returns
+    FOR v_item IN SELECT * FROM jsonb_to_recordset(p_item_returns) AS x(
+      item_id UUID,
+      returned_qty NUMERIC,
+      sold_qty NUMERIC,
+      error_qty NUMERIC,
+      unsold_qty NUMERIC
+    ) LOOP
+      -- Update item dengan nilai yang dikirim
+      UPDATE retasi_items
+      SET
+        returned_qty = COALESCE(v_item.returned_qty, 0),
+        sold_qty = COALESCE(v_item.sold_qty, 0),
+        error_qty = COALESCE(v_item.error_qty, 0),
+        unsold_qty = COALESCE(v_item.unsold_qty, 0)
+      WHERE id = v_item.item_id AND retasi_id = p_retasi_id;
+
+      -- Hitung total (SUM, bukan COUNT)
+      v_total_kembali := v_total_kembali + COALESCE(v_item.returned_qty, 0);
+      v_total_laku := v_total_laku + COALESCE(v_item.sold_qty, 0);
+      v_total_tidak_laku := v_total_tidak_laku + COALESCE(v_item.unsold_qty, 0);
+      v_total_error := v_total_error + COALESCE(v_item.error_qty, 0);
+    END LOOP;
+  ELSE
+    -- Tidak ada item details (data lama): gunakan manual totals
+    v_total_kembali := COALESCE(p_manual_kembali, 0);
+    v_total_laku := COALESCE(p_manual_laku, 0);
+    v_total_tidak_laku := COALESCE(p_manual_tidak_laku, 0);
+    v_total_error := COALESCE(p_manual_error, 0);
+  END IF;
 
   -- ==================== UPDATE RETASI ====================
-  
+  -- Rumus: Bawa = Kembali + Laku + Tidak Laku + Error + Selisih
+  -- returned_items_count = total qty kembali (bukan count produk)
+  -- error_items_count = total qty error (bukan count produk)
+
   UPDATE retasi
   SET
     is_returned = TRUE,
     return_notes = p_return_notes,
+    returned_items_count = v_total_kembali,
     barang_laku = v_total_laku,
     barang_tidak_laku = v_total_tidak_laku,
-    returned_items_count = v_returned_count,
-    error_items_count = v_error_count,
+    error_items_count = v_total_error,
     updated_at = NOW()
   WHERE id = p_retasi_id;
 
-  -- NOTE: Integrasi Jurnal untuk 'error_qty' (Barang Rusak) bisa ditambahkan di sini 
-  -- jika sudah ada akun Beban Kerusakan Barang. Untuk saat ini kita simpan datanya dulu.
-
-  RETURN QUERY SELECT TRUE, v_total_laku, v_total_tidak_laku, NULL::TEXT;
+  RETURN QUERY SELECT TRUE, v_total_laku, v_total_tidak_laku, v_total_kembali, v_total_error, NULL::TEXT;
 
 EXCEPTION WHEN OTHERS THEN
-  RETURN QUERY SELECT FALSE, 0::NUMERIC, 0::NUMERIC, SQLERRM::TEXT;
+  RETURN QUERY SELECT FALSE, 0::NUMERIC, 0::NUMERIC, 0::NUMERIC, 0::NUMERIC, SQLERRM::TEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -214,7 +243,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- ============================================================================
 
 GRANT EXECUTE ON FUNCTION create_retasi_atomic(UUID, TEXT, TEXT, TEXT, TEXT, DATE, TEXT, TEXT, JSONB, UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION mark_retasi_returned_atomic(UUID, UUID, TEXT, JSONB) TO authenticated;
+GRANT EXECUTE ON FUNCTION mark_retasi_returned_atomic(UUID, UUID, TEXT, JSONB, NUMERIC, NUMERIC, NUMERIC, NUMERIC) TO authenticated;
 
 COMMENT ON FUNCTION create_retasi_atomic IS 'Membuat keberangkatan retasi (loading truck) secara atomik.';
 COMMENT ON FUNCTION mark_retasi_returned_atomic IS 'Memproses pengembalian retasi secara atomik.';

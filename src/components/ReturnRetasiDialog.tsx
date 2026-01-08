@@ -283,11 +283,12 @@ export function ReturnRetasiDialog({
       return;
     }
 
+    // Kirim data per-item saja, RPC yang hitung total (Single Source of Truth)
     const returnData = {
-      returned_items_count: totals.kembali,
-      error_items_count: totals.error,
-      barang_laku: totals.laku,
-      barang_tidak_laku: totals.tidakLaku,
+      returned_items_count: 0, // Akan dihitung oleh RPC
+      error_items_count: 0,    // Akan dihitung oleh RPC
+      barang_laku: 0,          // Akan dihitung oleh RPC
+      barang_tidak_laku: 0,    // Akan dihitung oleh RPC
       return_notes: notes.trim() || undefined,
       item_returns: itemReturns,
     };
