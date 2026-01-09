@@ -983,10 +983,10 @@ BEGIN
     v_line_number := v_line_number + 1;
 
     DECLARE
-      v_resolved_id UUID;
+      v_resolved_id TEXT;
     BEGIN
        IF v_line.account_id IS NOT NULL THEN
-          v_resolved_id := v_line.account_id::UUID;
+          v_resolved_id := v_line.account_id;
        ELSE
           SELECT id INTO v_resolved_id FROM accounts WHERE code = v_line.account_code AND branch_id = p_branch_id LIMIT 1;
           
