@@ -33,7 +33,7 @@ export function PayrollRecordDialog({
   const { toast } = useToast()
   const { employees } = useEmployees()
   const { accounts } = useAccounts()
-  const { calculatePayrollWithAdvances, createPayrollRecord } = usePayrollRecords()
+  const { calculatePayroll, createPayrollRecord } = usePayrollRecords()
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
   const [calculation, setCalculation] = useState<PayrollCalculation | null>(null)
@@ -66,7 +66,7 @@ export function PayrollRecordDialog({
     setIsCalculating(true)
 
     try {
-      const result = await calculatePayrollWithAdvances.mutateAsync({
+      const result = await calculatePayroll.mutateAsync({
         employeeId: selectedEmployeeId,
         year: selectedYear,
         month: selectedMonth

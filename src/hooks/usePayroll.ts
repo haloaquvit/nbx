@@ -261,7 +261,98 @@ export const usePayrollRecords = (filters?: PayrollFilters) => {
     },
   });
 
-  return { payrollRecords, isLoading, createPayrollRecord, updatePayrollRecord, approvePayrollRecord, processPayment, deletePayrollRecord };
+  // Calculate payroll with advances for an employee
+  const calculatePayroll = useMutation({
+    mutationFn: async ({ employeeId, year, month }: { employeeId: string; year: number; month: number }) => {
+      if (!currentBranch?.id) throw new Error('Branch tidak dipilih');
+
+      // Get employee salary config
+      const { data: salaryConfig, error: salaryError } = await supabase
+        .from('employee_salaries')
+        .select('*, profiles:employee_id(full_name, role)')
+        .eq('employee_id', employeeId)
+        .eq('is_active', true)
+        .single();
+
+      if (salaryError || !salaryConfig) {
+        throw new Error('Konfigurasi gaji karyawan tidak ditemukan');
+      }
+
+      // Get outstanding advances
+      const { data: advances, error: advanceError } = await supabase
+        .from('employee_advances')
+        .select('*')
+        .eq('employee_id', employeeId)
+        .eq('branch_id', currentBranch.id)
+        .eq('status', 'active')
+        .gt('remaining_amount', 0);
+
+      if (advanceError) {
+        console.error('Error fetching advances:', advanceError);
+      }
+
+      const totalOutstandingAdvances = (advances || []).reduce((sum, adv) => sum + Number(adv.remaining_amount || 0), 0);
+
+      // Get commissions for the period
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0, 23, 59, 59, 999); // End of last day
+
+      console.log('📊 Fetching commissions for payroll:', {
+        employeeId,
+        branchId: currentBranch.id,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
+      });
+
+      const { data: commissions, error: commError } = await supabase
+        .from('commission_entries')
+        .select('*')
+        .eq('user_id', employeeId)
+        .eq('branch_id', currentBranch.id)
+        .eq('status', 'pending')
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString());
+
+      if (commError) {
+        console.error('Error fetching commissions:', commError);
+      }
+
+      console.log('📊 Commission query result:', {
+        count: commissions?.length || 0,
+        commissions: commissions?.map(c => ({ id: c.id, amount: c.amount, status: c.status, user_id: c.user_id }))
+      });
+
+      const totalCommission = (commissions || []).reduce((sum, c) => sum + Number(c.amount || 0), 0);
+
+      const baseSalary = Number(salaryConfig.base_salary) || 0;
+      const grossSalary = baseSalary + totalCommission;
+
+      return {
+        employeeId,
+        employeeName: salaryConfig.profiles?.full_name || 'Unknown',
+        employeeRole: salaryConfig.profiles?.role || 'Unknown',
+        periodYear: year,
+        periodMonth: month,
+        baseSalary,
+        commissionAmount: totalCommission,
+        bonusAmount: 0,
+        outstandingAdvances: totalOutstandingAdvances,
+        grossSalary,
+        netSalary: grossSalary,
+      };
+    },
+  });
+
+  return {
+    payrollRecords,
+    isLoading,
+    createPayrollRecord,
+    updatePayrollRecord,
+    approvePayrollRecord,
+    processPayment,
+    deletePayrollRecord,
+    calculatePayroll
+  };
 };
 
 // Hook to get payroll summary for a specific period
