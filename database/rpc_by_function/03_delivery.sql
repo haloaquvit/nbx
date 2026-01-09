@@ -324,10 +324,14 @@ BEGIN
   SELECT COALESCE(MAX(delivery_number), 0) + 1 INTO v_delivery_number FROM deliveries WHERE transaction_id = p_transaction_id;
 
   SELECT id INTO v_acc_tertahan FROM accounts WHERE code = '2140' AND branch_id = p_branch_id;
+  -- Fallback by name if code not found
+  IF v_acc_tertahan IS NULL THEN
+    SELECT id INTO v_acc_tertahan FROM accounts WHERE name ILIKE '%Hutang Barang%' AND branch_id = p_branch_id LIMIT 1;
+  END IF;
   SELECT id INTO v_acc_persediaan FROM accounts WHERE code = '1310' AND branch_id = p_branch_id;
 
   IF v_acc_tertahan IS NULL OR v_acc_persediaan IS NULL THEN
-    RETURN QUERY SELECT FALSE, NULL::UUID, NULL::INT, NULL::UUID, 'Akun 2140 atau 1310 tidak ditemukan'::TEXT;
+    RETURN QUERY SELECT FALSE, NULL::UUID, NULL::INT, NULL::UUID, 'Akun 2140/Hutang Barang atau 1310 tidak ditemukan'::TEXT;
     RETURN;
   END IF;
 
@@ -531,6 +535,10 @@ BEGIN
   
   IF NOT v_transaction.is_office_sale AND v_total_hpp_real > 0 THEN
       SELECT id INTO v_acc_tertahan FROM accounts WHERE code = '2140' AND branch_id = p_branch_id LIMIT 1;
+      -- Fallback by name if code not found
+      IF v_acc_tertahan IS NULL THEN
+        SELECT id INTO v_acc_tertahan FROM accounts WHERE name ILIKE '%Hutang Barang%' AND branch_id = p_branch_id LIMIT 1;
+      END IF;
       SELECT id INTO v_acc_persediaan FROM accounts WHERE code = '1310' AND branch_id = p_branch_id LIMIT 1;
 
       IF v_acc_tertahan IS NOT NULL AND v_acc_persediaan IS NOT NULL THEN

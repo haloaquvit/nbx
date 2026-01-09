@@ -899,9 +899,17 @@ BEGIN
           AND branch_id = p_branch_id
           AND is_active = TRUE
       ) THEN
-        RETURN QUERY SELECT FALSE AS success, NULL::UUID AS journal_id, NULL::TEXT AS entry_number,
-          format('Account code %s tidak ditemukan di branch ini', v_line.account_code)::TEXT AS error_message;
-        RETURN;
+         -- Fallback validation for 2140
+         IF v_line.account_code = '2140' AND EXISTS (
+            SELECT 1 FROM accounts WHERE name ILIKE '%Hutang Barang%' AND branch_id = p_branch_id AND is_active = TRUE
+         ) THEN
+            -- Valid by fallback
+            NULL;
+         ELSE
+            RETURN QUERY SELECT FALSE AS success, NULL::UUID AS journal_id, NULL::TEXT AS entry_number,
+              format('Account code %s tidak ditemukan di branch ini', v_line.account_code)::TEXT AS error_message;
+            RETURN;
+         END IF;
       END IF;
     ELSE
       RETURN QUERY SELECT FALSE AS success, NULL::UUID AS journal_id, NULL::TEXT AS entry_number,
@@ -974,27 +982,39 @@ BEGIN
   LOOP
     v_line_number := v_line_number + 1;
 
-    INSERT INTO journal_entry_lines (
-      journal_entry_id,
-      line_number,
-      account_id,
-      account_code,
-      description,
-      debit_amount,
-      credit_amount
-    ) VALUES (
-      v_journal_id,
-      v_line_number,
-      CASE
-        WHEN v_line.account_id IS NOT NULL THEN v_line.account_id  -- accounts.id is TEXT
-        ELSE (SELECT id FROM accounts WHERE code = v_line.account_code AND branch_id = p_branch_id LIMIT 1)
-      END,
-      COALESCE(v_line.account_code,
-        (SELECT code FROM accounts WHERE id = v_line.account_id LIMIT 1)),
-      COALESCE(v_line.description, p_description),
-      COALESCE(v_line.debit_amount, 0),
-      COALESCE(v_line.credit_amount, 0)
-    );
+    DECLARE
+      v_resolved_id UUID;
+    BEGIN
+       IF v_line.account_id IS NOT NULL THEN
+          v_resolved_id := v_line.account_id::UUID;
+       ELSE
+          SELECT id INTO v_resolved_id FROM accounts WHERE code = v_line.account_code AND branch_id = p_branch_id LIMIT 1;
+          
+          -- Fallback
+          IF v_resolved_id IS NULL AND v_line.account_code = '2140' THEN
+             SELECT id INTO v_resolved_id FROM accounts WHERE name ILIKE '%Hutang Barang%' AND branch_id = p_branch_id LIMIT 1;
+          END IF;
+       END IF;
+
+       INSERT INTO journal_entry_lines (
+         journal_entry_id,
+         line_number,
+         account_id,
+         account_code,
+         description,
+         debit_amount,
+         credit_amount
+       ) VALUES (
+         v_journal_id,
+         v_line_number,
+         v_resolved_id,
+         COALESCE(v_line.account_code,
+           (SELECT code FROM accounts WHERE id = v_resolved_id LIMIT 1)),
+         COALESCE(v_line.description, p_description),
+         COALESCE(v_line.debit_amount, 0),
+         COALESCE(v_line.credit_amount, 0)
+       );
+    END;
   END LOOP;
 
   -- ==================== POST JOURNAL ====================
@@ -1555,6 +1575,13 @@ BEGIN
   WHERE branch_id = p_branch_id AND code = '1310' AND is_active = TRUE LIMIT 1;
   SELECT id INTO v_hutang_bd_account_id FROM accounts
   WHERE branch_id = p_branch_id AND code = '2140' AND is_active = TRUE LIMIT 1;
+  
+  -- Fallback for 2140
+  IF v_hutang_bd_account_id IS NULL THEN
+    SELECT id INTO v_hutang_bd_account_id FROM accounts
+    WHERE branch_id = p_branch_id AND name ILIKE '%Hutang Barang%' AND is_active = TRUE LIMIT 1;
+  END IF;
+
   SELECT id INTO v_ppn_account_id FROM accounts
   WHERE branch_id = p_branch_id AND code = '2130' AND is_active = TRUE LIMIT 1;
   -- Generate entry number

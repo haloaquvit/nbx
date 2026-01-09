@@ -757,6 +757,15 @@ BEGIN
   v_retasi_id := (p_transaction->>'retasi_id')::UUID;
   v_retasi_number := p_transaction->>'retasi_number';
 
+  -- ==================== VALIDASI AKUN PEMBAYARAN ====================
+
+  -- Jika ada pembayaran, akun pembayaran WAJIB dipilih
+  IF v_paid_amount > 0 AND (v_payment_account_id IS NULL OR v_payment_account_id = '') THEN
+    RETURN QUERY SELECT FALSE, NULL::TEXT, 0::NUMERIC, 0::NUMERIC, NULL::UUID, 0,
+      'Akun pembayaran wajib dipilih jika ada pembayaran'::TEXT;
+    RETURN;
+  END IF;
+
   -- ==================== GET ACCOUNT IDS ====================
 
   SELECT id INTO v_kas_account_id FROM accounts
@@ -1001,17 +1010,17 @@ BEGIN
 
     -- Debit: Kas atau Piutang
     IF v_paid_amount >= v_total THEN
-      -- Lunas: Debit Kas
+      -- Lunas: Debit Kas (akun yang dipilih user)
       v_journal_lines := v_journal_lines || jsonb_build_object(
-        'account_code', '1110',
+        'account_id', v_payment_account_id,
         'debit_amount', v_total,
         'credit_amount', 0,
         'description', 'Penerimaan kas dari penjualan'
       );
     ELSIF v_paid_amount > 0 THEN
-      -- Bayar sebagian: Debit Kas + Piutang
+      -- Bayar sebagian: Debit Kas (akun yang dipilih user) + Piutang
       v_journal_lines := v_journal_lines || jsonb_build_object(
-        'account_code', '1110',
+        'account_id', v_payment_account_id,
         'debit_amount', v_paid_amount,
         'credit_amount', 0,
         'description', 'Penerimaan kas dari penjualan'
