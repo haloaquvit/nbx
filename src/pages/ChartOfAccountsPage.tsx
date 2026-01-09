@@ -1319,7 +1319,6 @@ export default function ChartOfAccountsPage() {
           code: formData.code,
           type: formData.type,
           isHeader: formData.isHeader,
-          isHeader: formData.isHeader,
           isPaymentAccount: formData.isPaymentAccount,
           parentId: formData.parentId || null,
           // Only include employeeId for payment accounts (cash/bank)
