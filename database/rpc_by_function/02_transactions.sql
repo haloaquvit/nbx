@@ -1369,14 +1369,14 @@ BEGIN
     -- Debit: Kas atau Piutang
     IF v_new_paid_amount >= v_new_total THEN
       v_journal_lines := v_journal_lines || jsonb_build_object(
-        'account_code', '1110',
+        'account_id', v_old_transaction.payment_account_id,
         'debit_amount', v_new_total,
         'credit_amount', 0,
         'description', 'Penerimaan kas dari penjualan'
       );
     ELSIF v_new_paid_amount > 0 THEN
       v_journal_lines := v_journal_lines || jsonb_build_object(
-        'account_code', '1110',
+        'account_id', v_old_transaction.payment_account_id,
         'debit_amount', v_new_paid_amount,
         'credit_amount', 0,
         'description', 'Penerimaan kas dari penjualan'

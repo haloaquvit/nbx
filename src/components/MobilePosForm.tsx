@@ -54,7 +54,7 @@ export const MobilePosForm = () => {
   const { timezone } = useTimezone()
   const { products, isLoading: isLoadingProducts } = useProducts()
   const { users } = useUsers();
-  const { accounts } = useAccounts();
+  const { accounts, getEmployeeCashAccount } = useAccounts();
   const { addTransaction } = useTransactions();
   const { customers } = useCustomers();
   const { data: salesEmployees } = useSalesEmployees();
@@ -115,6 +115,17 @@ export const MobilePosForm = () => {
       }
     }
   }, [currentUser, salesEmployees]);
+
+  // Auto-select akun pembayaran berdasarkan user yang login (supir/driver)
+  useEffect(() => {
+    if (currentUser?.id && accounts && accounts.length > 0 && !paymentAccountId) {
+      const employeeCashAccount = getEmployeeCashAccount(currentUser.id);
+      if (employeeCashAccount) {
+        setPaymentAccountId(employeeCashAccount.id);
+        console.log(`[MobilePOS] Auto-selected cash account "${employeeCashAccount.name}" for user ${currentUser.name}`);
+      }
+    }
+  }, [currentUser?.id, accounts, paymentAccountId, getEmployeeCashAccount]);
 
   // Auto focus search when product sheet opens
   useEffect(() => {

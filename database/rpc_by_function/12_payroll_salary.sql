@@ -558,28 +558,74 @@ $function$
 -- =====================================================
 -- Function: void_payroll_record
 -- =====================================================
+-- UPDATED: Added rollback for commissions and advances
 CREATE OR REPLACE FUNCTION public.void_payroll_record(p_payroll_id uuid, p_branch_id uuid, p_reason text DEFAULT 'Cancelled'::text)
- RETURNS TABLE(success boolean, journals_voided integer, error_message text)
+ RETURNS TABLE(success boolean, journals_voided integer, commissions_restored integer, advances_restored numeric, error_message text)
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$
 DECLARE
   v_payroll RECORD;
   v_journals_voided INTEGER := 0;
+  v_commissions_restored INTEGER := 0;
+  v_advances_restored NUMERIC := 0;
+  v_advance_record RECORD;
 BEGIN
   -- ==================== VALIDASI ====================
   IF p_branch_id IS NULL THEN
-    RETURN QUERY SELECT FALSE, 0, 'Branch ID is REQUIRED!'::TEXT;
+    RETURN QUERY SELECT FALSE, 0, 0, 0::NUMERIC, 'Branch ID is REQUIRED!'::TEXT;
     RETURN;
   END IF;
+
   -- Get payroll
   SELECT * INTO v_payroll
   FROM payroll_records
   WHERE id = p_payroll_id AND branch_id = p_branch_id;
+
   IF v_payroll.id IS NULL THEN
-    RETURN QUERY SELECT FALSE, 0, 'Payroll record not found'::TEXT;
+    RETURN QUERY SELECT FALSE, 0, 0, 0::NUMERIC, 'Payroll record not found'::TEXT;
     RETURN;
   END IF;
+
+  -- ==================== ROLLBACK COMMISSIONS ====================
+  -- Reset commission status from 'paid' back to 'pending'
+  UPDATE commission_entries
+  SET
+    status = 'pending',
+    paid_at = NULL,
+    paid_via = NULL,
+    updated_at = NOW()
+  WHERE payroll_id = p_payroll_id
+    AND branch_id = p_branch_id
+    AND status = 'paid';
+  GET DIAGNOSTICS v_commissions_restored = ROW_COUNT;
+
+  -- ==================== ROLLBACK ADVANCE DEDUCTIONS ====================
+  -- If payroll had advance deduction, restore the remaining_amount in employee_advances
+  IF v_payroll.advance_deduction > 0 THEN
+    -- Find advances that were deducted for this payroll and restore them
+    -- We need to track which advances were deducted - check if there's a reference
+    -- For now, we'll restore to the most recent active advance for this employee
+    FOR v_advance_record IN
+      SELECT ea.id, ea.remaining_amount, ea.amount
+      FROM employee_advances ea
+      WHERE ea.employee_id = v_payroll.employee_id
+        AND ea.branch_id = p_branch_id
+        AND ea.status = 'active'
+      ORDER BY ea.created_at DESC
+      LIMIT 1
+    LOOP
+      -- Restore the deducted amount back to remaining_amount
+      UPDATE employee_advances
+      SET
+        remaining_amount = remaining_amount + v_payroll.advance_deduction,
+        updated_at = NOW()
+      WHERE id = v_advance_record.id;
+
+      v_advances_restored := v_payroll.advance_deduction;
+    END LOOP;
+  END IF;
+
   -- ==================== VOID JOURNALS ====================
   UPDATE journal_entries
   SET
@@ -592,13 +638,16 @@ BEGIN
     AND branch_id = p_branch_id
     AND is_voided = FALSE;
   GET DIAGNOSTICS v_journals_voided = ROW_COUNT;
+
   -- ==================== DELETE PAYROLL RECORD ====================
   -- Note: This will cascade delete related records if FK is set
   DELETE FROM payroll_records WHERE id = p_payroll_id;
+
   -- ==================== SUCCESS ====================
-  RETURN QUERY SELECT TRUE, v_journals_voided, NULL::TEXT;
+  RETURN QUERY SELECT TRUE, v_journals_voided, v_commissions_restored, v_advances_restored, NULL::TEXT;
+
 EXCEPTION WHEN OTHERS THEN
-  RETURN QUERY SELECT FALSE, 0, SQLERRM::TEXT;
+  RETURN QUERY SELECT FALSE, 0, 0, 0::NUMERIC, SQLERRM::TEXT;
 END;
 $function$
 ;

@@ -1,7 +1,8 @@
 -- =====================================================
 -- 13 COMMISSION
 -- Generated: 2026-01-09T00:29:07.863Z
--- Total functions: 6
+-- Updated: Added void_commission_payment function
+-- Total functions: 7
 -- =====================================================
 
 -- Functions in this file:
@@ -11,6 +12,7 @@
 --   get_pending_commissions
 --   pay_commission_atomic
 --   populate_commission_product_info
+--   void_commission_payment (NEW)
 
 -- =====================================================
 -- Function: calculate_commission_amount
@@ -112,7 +114,18 @@ $function$
 -- =====================================================
 -- Function: pay_commission_atomic
 -- =====================================================
-CREATE OR REPLACE FUNCTION public.pay_commission_atomic(p_employee_id uuid, p_branch_id uuid, p_amount numeric, p_payment_date date DEFAULT CURRENT_DATE, p_payment_method text DEFAULT 'cash'::text, p_commission_ids uuid[] DEFAULT NULL::uuid[], p_notes text DEFAULT NULL::text, p_paid_by uuid DEFAULT NULL::uuid)
+-- UPDATED: Added p_payment_account_id parameter to support user-selected payment account
+CREATE OR REPLACE FUNCTION public.pay_commission_atomic(
+  p_employee_id uuid,
+  p_branch_id uuid,
+  p_amount numeric,
+  p_payment_date date DEFAULT CURRENT_DATE,
+  p_payment_account_id uuid DEFAULT NULL,
+  p_payment_method text DEFAULT 'cash'::text,
+  p_commission_ids uuid[] DEFAULT NULL::uuid[],
+  p_notes text DEFAULT NULL::text,
+  p_paid_by uuid DEFAULT NULL::uuid
+)
  RETURNS TABLE(success boolean, payment_id uuid, journal_id uuid, commissions_paid integer, error_message text)
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -158,8 +171,13 @@ BEGIN
     RETURN;
   END IF;
   -- ==================== GET ACCOUNT IDS ====================
-  SELECT id INTO v_kas_account_id FROM accounts
-  WHERE branch_id = p_branch_id AND code = '1110' AND is_active = TRUE LIMIT 1;
+  -- Use provided payment account ID, or fallback to default 1110
+  IF p_payment_account_id IS NOT NULL THEN
+    v_kas_account_id := p_payment_account_id;
+  ELSE
+    SELECT id INTO v_kas_account_id FROM accounts
+    WHERE branch_id = p_branch_id AND code = '1110' AND is_active = TRUE LIMIT 1;
+  END IF;
   -- Beban Komisi (biasanya 6200 atau sesuai chart of accounts)
   SELECT id INTO v_beban_komisi_id FROM accounts
   WHERE branch_id = p_branch_id AND code = '6200' AND is_active = TRUE LIMIT 1;
@@ -319,8 +337,86 @@ BEGIN
   END IF;
   
   NEW.updated_at = NOW();
-  
+
   RETURN NEW;
+END;
+$function$
+;
+
+
+-- =====================================================
+-- Function: void_commission_payment
+-- =====================================================
+-- Void/Cancel a commission payment and restore commission entries to pending
+CREATE OR REPLACE FUNCTION public.void_commission_payment(
+  p_payment_id uuid,
+  p_branch_id uuid,
+  p_reason text DEFAULT 'Cancelled'::text
+)
+ RETURNS TABLE(success boolean, journals_voided integer, commissions_restored integer, error_message text)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_payment RECORD;
+  v_journals_voided INTEGER := 0;
+  v_commissions_restored INTEGER := 0;
+BEGIN
+  -- ==================== VALIDASI ====================
+  IF p_branch_id IS NULL THEN
+    RETURN QUERY SELECT FALSE, 0, 0, 'Branch ID is REQUIRED!'::TEXT;
+    RETURN;
+  END IF;
+
+  IF p_payment_id IS NULL THEN
+    RETURN QUERY SELECT FALSE, 0, 0, 'Payment ID is required'::TEXT;
+    RETURN;
+  END IF;
+
+  -- Get payment record
+  SELECT * INTO v_payment
+  FROM commission_payments
+  WHERE id = p_payment_id AND branch_id = p_branch_id;
+
+  IF v_payment.id IS NULL THEN
+    RETURN QUERY SELECT FALSE, 0, 0, 'Commission payment not found'::TEXT;
+    RETURN;
+  END IF;
+
+  -- ==================== RESTORE COMMISSION ENTRIES ====================
+  -- Reset commission status from 'paid' back to 'pending'
+  UPDATE commission_entries
+  SET
+    status = 'pending',
+    paid_at = NULL,
+    payment_id = NULL,
+    updated_at = NOW()
+  WHERE payment_id = p_payment_id
+    AND branch_id = p_branch_id
+    AND status = 'paid';
+  GET DIAGNOSTICS v_commissions_restored = ROW_COUNT;
+
+  -- ==================== VOID JOURNALS ====================
+  UPDATE journal_entries
+  SET
+    is_voided = TRUE,
+    voided_at = NOW(),
+    voided_reason = p_reason,
+    updated_at = NOW()
+  WHERE reference_type = 'commission_payment'
+    AND reference_id = p_payment_id::TEXT
+    AND branch_id = p_branch_id
+    AND is_voided = FALSE;
+  GET DIAGNOSTICS v_journals_voided = ROW_COUNT;
+
+  -- ==================== DELETE PAYMENT RECORD ====================
+  DELETE FROM commission_payments WHERE id = p_payment_id;
+
+  -- ==================== SUCCESS ====================
+  RETURN QUERY SELECT TRUE, v_journals_voided, v_commissions_restored, NULL::TEXT;
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN QUERY SELECT FALSE, 0, 0, SQLERRM::TEXT;
 END;
 $function$
 ;

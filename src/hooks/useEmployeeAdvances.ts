@@ -208,12 +208,13 @@ export const useEmployeeAdvances = () => {
 
       const { data: rpcResultRaw, error: rpcError } = await supabase
         .rpc('repay_employee_advance_atomic', {
-          p_branch_id: currentBranch.id,
           p_advance_id: advanceId,
+          p_branch_id: currentBranch.id,
           p_amount: repaymentData.amount,
-          p_date: repaymentData.date instanceof Date ? repaymentData.date.toISOString().split('T')[0] : repaymentData.date,
+          p_payment_date: repaymentData.date instanceof Date ? repaymentData.date.toISOString().split('T')[0] : repaymentData.date,
           p_payment_account_id: accountId,
-          p_recorded_by: 'User'
+          p_payment_method: 'cash',
+          p_notes: null
         });
 
       if (rpcError) {

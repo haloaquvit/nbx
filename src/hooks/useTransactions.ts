@@ -344,12 +344,13 @@ export const useTransactions = (filters?: {
 
       console.log('💸 Processing Receivable Payment via RPC...', { transactionId, amount });
 
-      // Use receive_payment_atomic from 06_payment.sql
+      // Use receive_payment_atomic from 08_purchase_order.sql
       const { data: rpcResultRaw, error: rpcError } = await supabase
         .rpc('receive_payment_atomic', {
           p_receivable_id: transactionId, // Transaction ID acting as receivable ID
           p_branch_id: currentBranch.id,
           p_amount: amount,
+          p_payment_account_id: accountId, // User-selected payment account
           p_payment_method: 'cash', // Default to cash/transfer based on account
           p_payment_date: getOfficeDateString(timezone),
           p_notes: notes || `Pelunasan Piutang by ${recordedBy || 'User'}`

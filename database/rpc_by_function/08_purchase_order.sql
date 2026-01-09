@@ -237,10 +237,10 @@ BEGIN
   v_ap_id := 'AP-PO-' || p_po_id;
 
   INSERT INTO accounts_payable (
-    id, purchase_order_id, supplier_id, supplier_name, amount, due_date,
+    id, purchase_order_id, supplier_name, amount, due_date,
     description, status, paid_amount, branch_id, created_at
   ) VALUES (
-    v_ap_id, p_po_id, v_po.supplier_id, v_po.supplier_name, v_po.total_cost, v_due_date,
+    v_ap_id, p_po_id, v_po.supplier_name, v_po.total_cost, v_due_date,
     'Purchase Order ' || p_po_id || ' - ' || COALESCE(v_material_names, '') || COALESCE(v_product_names, ''), 
     'Outstanding', 0, p_branch_id, NOW()
   );
@@ -250,8 +250,7 @@ BEGIN
   SET
     status = 'Approved',
     approved_at = NOW(),
-    approved_by = p_user_name,
-    updated_at = NOW()
+    approved_by = p_user_name
   WHERE id = p_po_id;
 
   RETURN QUERY SELECT TRUE, v_journal_ids, v_ap_id, NULL::TEXT;
@@ -1166,8 +1165,7 @@ BEGIN
   UPDATE purchase_orders
   SET
     status = 'Diterima',
-    received_date = p_received_date,
-    updated_at = NOW()
+    received_date = p_received_date
   WHERE id = p_po_id;
 
   RETURN QUERY SELECT

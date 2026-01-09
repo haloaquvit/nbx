@@ -169,12 +169,13 @@ export const useAccountsPayable = () => {
       const paymentDateStr = getOfficeDateString(timezone)
 
       // Try atomic RPC first - pay_supplier_atomic
-      // Signature: pay_supplier_atomic(p_payable_id, p_branch_id, p_amount, p_payment_method, p_payment_date, p_notes)
+      // Signature: pay_supplier_atomic(p_payable_id, p_branch_id, p_amount, p_payment_account_id, p_payment_method, p_payment_date, p_notes)
       const { data: rpcResultRaw, error: rpcError } = await supabase
         .rpc('pay_supplier_atomic', {
           p_payable_id: payableId,
           p_branch_id: currentBranch.id,
           p_amount: amount,
+          p_payment_account_id: paymentAccountId, // User-selected payment account
           p_payment_method: paymentMethod,
           p_payment_date: paymentDateStr, // DATE format from office timezone
           p_notes: notes || null

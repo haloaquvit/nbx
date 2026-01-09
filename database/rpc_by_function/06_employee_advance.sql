@@ -374,7 +374,16 @@ $function$
 -- =====================================================
 -- Function: repay_employee_advance_atomic
 -- =====================================================
-CREATE OR REPLACE FUNCTION public.repay_employee_advance_atomic(p_advance_id uuid, p_branch_id uuid, p_amount numeric, p_payment_date date DEFAULT CURRENT_DATE, p_payment_method text DEFAULT 'cash'::text, p_notes text DEFAULT NULL::text)
+-- UPDATED: Added p_payment_account_id parameter to support user-selected payment account
+CREATE OR REPLACE FUNCTION public.repay_employee_advance_atomic(
+  p_advance_id uuid,
+  p_branch_id uuid,
+  p_amount numeric,
+  p_payment_date date DEFAULT CURRENT_DATE,
+  p_payment_account_id uuid DEFAULT NULL,
+  p_payment_method text DEFAULT 'cash'::text,
+  p_notes text DEFAULT NULL::text
+)
  RETURNS TABLE(success boolean, payment_id uuid, journal_id uuid, remaining_amount numeric, is_fully_paid boolean, error_message text)
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -424,8 +433,13 @@ BEGIN
 
   -- ==================== GET ACCOUNT IDS ====================
 
-  SELECT id INTO v_kas_account_id FROM accounts
-  WHERE branch_id = p_branch_id AND code = '1110' AND is_active = TRUE LIMIT 1;
+  -- Use provided payment account ID, or fallback to default 1110
+  IF p_payment_account_id IS NOT NULL THEN
+    v_kas_account_id := p_payment_account_id::TEXT;
+  ELSE
+    SELECT id INTO v_kas_account_id FROM accounts
+    WHERE branch_id = p_branch_id AND code = '1110' AND is_active = TRUE LIMIT 1;
+  END IF;
 
   SELECT id INTO v_piutang_karyawan_id FROM accounts
   WHERE branch_id = p_branch_id AND code = '1230' AND is_active = TRUE LIMIT 1;
