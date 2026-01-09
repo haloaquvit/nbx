@@ -1,7 +1,8 @@
 -- =====================================================
 -- 08 PURCHASE ORDER
 -- Generated: 2026-01-09T00:29:07.861Z
--- Total functions: 8
+-- Updated: 2026-01-09 - Removed duplicate pay_supplier_atomic
+-- Total functions: 7
 -- =====================================================
 
 -- Functions in this file:
@@ -9,7 +10,6 @@
 --   create_purchase_order_atomic
 --   delete_po_atomic
 --   notify_purchase_order_created
---   pay_supplier_atomic
 --   pay_supplier_atomic
 --   receive_payment_atomic
 --   receive_po_atomic
@@ -29,10 +29,10 @@ DECLARE
   v_journal_ids UUID[] := ARRAY[]::UUID[];
   v_ap_id TEXT;
   v_entry_number TEXT;
-  v_acc_persediaan_bahan UUID;
-  v_acc_persediaan_produk UUID;
-  v_acc_hutang_usaha UUID;
-  v_acc_piutang_pajak UUID;
+  v_acc_persediaan_bahan TEXT;
+  v_acc_persediaan_produk TEXT;
+  v_acc_hutang_usaha TEXT;
+  v_acc_piutang_pajak TEXT;
   v_total_material NUMERIC := 0;
   v_total_product NUMERIC := 0;
   v_material_ppn NUMERIC := 0;
@@ -544,7 +544,16 @@ $function$
 -- =====================================================
 -- Function: pay_supplier_atomic
 -- =====================================================
-CREATE OR REPLACE FUNCTION public.pay_supplier_atomic(p_payable_id text, p_branch_id uuid, p_amount numeric, p_payment_method text DEFAULT 'cash'::text, p_payment_date date DEFAULT CURRENT_DATE, p_notes text DEFAULT NULL::text)
+-- UPDATED: Added p_payment_account_id parameter to support user-selected payment account
+CREATE OR REPLACE FUNCTION public.pay_supplier_atomic(
+  p_payable_id text,
+  p_branch_id uuid,
+  p_amount numeric,
+  p_payment_account_id text DEFAULT NULL,
+  p_payment_method text DEFAULT 'cash'::text,
+  p_payment_date date DEFAULT CURRENT_DATE,
+  p_notes text DEFAULT NULL::text
+)
  RETURNS TABLE(success boolean, payment_id uuid, remaining_amount numeric, journal_id uuid, error_message text)
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -622,7 +631,10 @@ BEGIN
   -- ==================== CREATE JOURNAL ENTRY ====================
 
   -- Get account IDs
-  IF p_payment_method = 'transfer' THEN
+  -- Use provided payment account ID, or fallback based on payment method
+  IF p_payment_account_id IS NOT NULL THEN
+    v_kas_account_id := p_payment_account_id;
+  ELSIF p_payment_method = 'transfer' THEN
     SELECT id INTO v_kas_account_id
     FROM accounts
     WHERE code = '1120' AND branch_id = p_branch_id AND is_active = TRUE
@@ -694,80 +706,18 @@ $function$
 
 
 -- =====================================================
--- Function: pay_supplier_atomic
--- =====================================================
-CREATE OR REPLACE FUNCTION public.pay_supplier_atomic(p_branch_id uuid, p_payable_id uuid, p_amount numeric, p_payment_method text DEFAULT 'cash'::text, p_payment_account_id text DEFAULT NULL::text, p_notes text DEFAULT NULL::text, p_created_by uuid DEFAULT NULL::uuid)
- RETURNS TABLE(success boolean, payment_id uuid, journal_id uuid, error_message text)
- LANGUAGE plpgsql
- SECURITY DEFINER
-AS $function$
-DECLARE
-  v_payment_id UUID := gen_random_uuid();
-  v_journal_id UUID := gen_random_uuid();
-  v_journal_number TEXT;
-  v_payable RECORD;
-  v_kas_account_id TEXT;
-  v_hutang_account_id TEXT;
-BEGIN
-  IF p_branch_id IS NULL THEN
-    RETURN QUERY SELECT FALSE, NULL::UUID, NULL::UUID, 'Branch ID wajib diisi'::TEXT;
-    RETURN;
-  END IF;
-
-  SELECT ap.*, s.name as supplier_name INTO v_payable
-  FROM accounts_payable ap LEFT JOIN suppliers s ON ap.supplier_id = s.id
-  WHERE ap.id = p_payable_id AND ap.branch_id = p_branch_id;
-
-  IF NOT FOUND THEN
-    RETURN QUERY SELECT FALSE, NULL::UUID, NULL::UUID, 'Hutang tidak ditemukan'::TEXT;
-    RETURN;
-  END IF;
-
-  IF p_payment_account_id IS NOT NULL THEN
-    v_kas_account_id := p_payment_account_id;
-  ELSE
-    SELECT id INTO v_kas_account_id FROM accounts WHERE code = '1110' AND branch_id = p_branch_id;
-  END IF;
-
-  SELECT id INTO v_hutang_account_id FROM accounts WHERE code = '2110' AND branch_id = p_branch_id;
-
-  IF v_kas_account_id IS NULL OR v_hutang_account_id IS NULL THEN
-    RETURN QUERY SELECT FALSE, NULL::UUID, NULL::UUID, 'Akun kas atau hutang tidak ditemukan'::TEXT;
-    RETURN;
-  END IF;
-
-  v_journal_number := 'JE-SUP-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || LPAD(FLOOR(RANDOM()*10000)::TEXT, 4, '0');
-
-  INSERT INTO journal_entries (id, entry_number, entry_date, description, reference_type, reference_id, status, total_debit, total_credit, branch_id, created_by, created_at, is_voided)
-  VALUES (v_journal_id, v_journal_number, CURRENT_DATE, format('Pembayaran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier')), 'supplier_payment', v_payment_id::TEXT, 'posted', p_amount, p_amount, p_branch_id, p_created_by, NOW(), FALSE);
-
-  INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
-  SELECT v_journal_id, 1, a.id, a.code, a.name, format('Bayar ke %s', COALESCE(v_payable.supplier_name, 'Supplier')), p_amount, 0
-  FROM accounts a WHERE a.id = v_hutang_account_id;
-
-  INSERT INTO journal_entry_lines (journal_entry_id, line_number, account_id, account_code, account_name, description, debit_amount, credit_amount)
-  SELECT v_journal_id, 2, a.id, a.code, a.name, format('Pembayaran hutang: %s', COALESCE(v_payable.supplier_name, 'Supplier')), 0, p_amount
-  FROM accounts a WHERE a.id = v_kas_account_id;
-
-  UPDATE journal_entries SET status = 'posted' WHERE id = v_journal_id;
-
-  INSERT INTO supplier_payments (id, payable_id, amount, payment_method, payment_date, notes, journal_id, created_by, created_at)
-  VALUES (v_payment_id, p_payable_id, p_amount, p_payment_method, CURRENT_DATE, p_notes, v_journal_id, p_created_by, NOW());
-
-  UPDATE accounts_payable SET paid_amount = paid_amount + p_amount, status = CASE WHEN paid_amount + p_amount >= total_amount THEN 'paid' ELSE 'partial' END WHERE id = p_payable_id;
-
-  RETURN QUERY SELECT TRUE, v_payment_id, v_journal_id, NULL::TEXT;
-EXCEPTION WHEN OTHERS THEN
-  RETURN QUERY SELECT FALSE, NULL::UUID, NULL::UUID, SQLERRM::TEXT;
-END;
-$function$
-;
-
-
--- =====================================================
 -- Function: receive_payment_atomic
 -- =====================================================
-CREATE OR REPLACE FUNCTION public.receive_payment_atomic(p_receivable_id text, p_branch_id uuid, p_amount numeric, p_payment_method text DEFAULT 'cash'::text, p_payment_date date DEFAULT CURRENT_DATE, p_notes text DEFAULT NULL::text)
+-- UPDATED: Added p_payment_account_id parameter to support user-selected payment account
+CREATE OR REPLACE FUNCTION public.receive_payment_atomic(
+  p_receivable_id text,
+  p_branch_id uuid,
+  p_amount numeric,
+  p_payment_account_id text DEFAULT NULL,
+  p_payment_method text DEFAULT 'cash'::text,
+  p_payment_date date DEFAULT CURRENT_DATE,
+  p_notes text DEFAULT NULL::text
+)
  RETURNS TABLE(success boolean, payment_id uuid, remaining_amount numeric, journal_id uuid, error_message text)
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -863,8 +813,11 @@ BEGIN
 
   -- ==================== CREATE JOURNAL ENTRY ====================
 
-  -- Get account IDs based on payment method
-  IF p_payment_method = 'transfer' THEN
+  -- Get account IDs
+  -- Use provided payment account ID, or fallback based on payment method
+  IF p_payment_account_id IS NOT NULL THEN
+    v_kas_account_id := p_payment_account_id;
+  ELSIF p_payment_method = 'transfer' THEN
     SELECT id INTO v_kas_account_id
     FROM accounts
     WHERE code = '1120' AND branch_id = p_branch_id AND is_active = TRUE
@@ -994,9 +947,9 @@ BEGIN
     RETURN;
   END IF;
 
-  IF v_po.status NOT IN ('Approved', 'Pending') THEN
+  IF v_po.status NOT IN ('Approved', 'Pending', 'Dikirim') THEN
     RETURN QUERY SELECT FALSE, 0, 0, 0,
-      format('Status PO harus Approved atau Pending, status saat ini: %s', v_po.status)::TEXT;
+      format('Status PO harus Approved, Pending, atau Dikirim, status saat ini: %s', v_po.status)::TEXT;
     RETURN;
   END IF;
 
