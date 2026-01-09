@@ -19,7 +19,8 @@ import { format } from "date-fns"
 import { id } from "date-fns/locale/id"
 import { useAuth } from "@/hooks/useAuth"
 import { canManageCash } from '@/utils/roleUtils'
-import { Trash2, Check, ChevronsUpDown, Filter, X } from "lucide-react"
+import { Trash2, Check, ChevronsUpDown, Filter, X, Search, FileDown } from "lucide-react"
+import * as XLSX from "xlsx"
 import { ExpenseReceiptPDF } from "./ExpenseReceiptPDF"
 import { Badge } from "./ui/badge"
 import { cn } from "@/lib/utils"
@@ -106,6 +107,7 @@ export function ExpenseManagement() {
   const [filterExpenseAccountId, setFilterExpenseAccountId] = useState<string>("all");
   const [filterPaymentAccountId, setFilterPaymentAccountId] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Filter akun beban (type = 'Beban') yang bukan header
   const expenseAccounts = accounts?.filter(a => a.type === 'Beban' && !a.isHeader) || [];
@@ -160,6 +162,14 @@ export function ExpenseManagement() {
 
   // Filter expenses
   const filteredExpenses = expenses?.filter(exp => {
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchDescription = exp.description?.toLowerCase().includes(query);
+      const matchAccount = exp.expenseAccountName?.toLowerCase().includes(query) || exp.category?.toLowerCase().includes(query);
+      const matchSource = exp.accountName?.toLowerCase().includes(query);
+      if (!matchDescription && !matchAccount && !matchSource) return false;
+    }
     // Date filter
     if (filterStartDate) {
       const expDate = new Date(exp.date);
@@ -182,14 +192,60 @@ export function ExpenseManagement() {
     return true;
   }) || [];
 
+  // Calculate total amount
+  const totalFilteredAmount = filteredExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+  const totalAllAmount = expenses?.reduce((sum, exp) => sum + (exp.amount || 0), 0) || 0;
+
   const clearFilters = () => {
     setFilterStartDate(undefined);
     setFilterEndDate(undefined);
     setFilterExpenseAccountId("all");
     setFilterPaymentAccountId("all");
+    setSearchQuery("");
   };
 
-  const hasActiveFilters = filterStartDate || filterEndDate || (filterExpenseAccountId && filterExpenseAccountId !== "all") || (filterPaymentAccountId && filterPaymentAccountId !== "all");
+  const hasActiveFilters = searchQuery || filterStartDate || filterEndDate || (filterExpenseAccountId && filterExpenseAccountId !== "all") || (filterPaymentAccountId && filterPaymentAccountId !== "all");
+
+  // Export to Excel function
+  const exportToExcel = () => {
+    const dataToExport = filteredExpenses.map(exp => {
+      const sumberDana = exp.accountName || paymentAccounts.find(a => a.id === exp.accountId)?.name || '-';
+      return {
+        'Tanggal': format(new Date(exp.date), "dd/MM/yyyy HH:mm", { locale: id }),
+        'Deskripsi': exp.description,
+        'Akun Beban': exp.expenseAccountName || exp.category,
+        'Sumber Dana': sumberDana,
+        'Jumlah': exp.amount,
+      };
+    });
+
+    // Add total row
+    dataToExport.push({
+      'Tanggal': '',
+      'Deskripsi': 'TOTAL',
+      'Akun Beban': '',
+      'Sumber Dana': '',
+      'Jumlah': totalFilteredAmount,
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 18 }, // Tanggal
+      { wch: 40 }, // Deskripsi
+      { wch: 25 }, // Akun Beban
+      { wch: 20 }, // Sumber Dana
+      { wch: 15 }, // Jumlah
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pengeluaran");
+
+    const dateStr = format(new Date(), "yyyy-MM-dd");
+    const filterStr = hasActiveFilters ? "_filtered" : "";
+    XLSX.writeFile(wb, `Pengeluaran${filterStr}_${dateStr}.xlsx`);
+  };
 
   return (
     <div className="space-y-6">
@@ -297,17 +353,59 @@ export function ExpenseManagement() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Riwayat Pengeluaran</CardTitle>
-          <Button
-            variant={showFilters ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-            <Filter className="h-4 w-4 mr-2" />
-            Filter
-            {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[filterStartDate, filterEndDate, filterExpenseAccountId, filterPaymentAccountId].filter(Boolean).length}</Badge>}
-          </Button>
+        <CardHeader className="flex flex-col gap-4">
+          <div className="flex flex-row items-center justify-between">
+            <CardTitle>Riwayat Pengeluaran</CardTitle>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={exportToExcel}
+                disabled={filteredExpenses.length === 0}
+              >
+                <FileDown className="h-4 w-4 mr-2" />
+                Export Excel
+              </Button>
+              <Button
+                variant={showFilters ? "default" : "outline"}
+                size="sm"
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                Filter
+                {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[searchQuery, filterStartDate, filterEndDate, filterExpenseAccountId !== "all" ? filterExpenseAccountId : null, filterPaymentAccountId !== "all" ? filterPaymentAccountId : null].filter(Boolean).length}</Badge>}
+              </Button>
+            </div>
+          </div>
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari pengeluaran (deskripsi, akun, sumber dana)..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          {/* Total Summary */}
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div className="bg-muted/50 rounded-lg px-4 py-2">
+              <span className="text-muted-foreground">Total {hasActiveFilters ? 'Filter' : 'Semua'}: </span>
+              <span className="font-semibold text-foreground">
+                {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(totalFilteredAmount)}
+              </span>
+              <span className="text-muted-foreground ml-1">({filteredExpenses.length} transaksi)</span>
+            </div>
+            {hasActiveFilters && (
+              <div className="bg-muted/30 rounded-lg px-4 py-2">
+                <span className="text-muted-foreground">Total Keseluruhan: </span>
+                <span className="font-medium text-muted-foreground">
+                  {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(totalAllAmount)}
+                </span>
+                <span className="text-muted-foreground ml-1">({expenses?.length || 0} transaksi)</span>
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {/* Filter Section */}
@@ -396,6 +494,8 @@ export function ExpenseManagement() {
                 ) :
                 filteredExpenses.map(exp => {
                   const isDebtPayment = exp.category === 'Pembayaran Hutang';
+                  // Lookup sumber dana dari accounts jika accountName tidak ada
+                  const sumberDana = exp.accountName || paymentAccounts.find(a => a.id === exp.accountId)?.name || '-';
                   return (
                     <TableRow key={exp.id}>
                       <TableCell>
@@ -411,7 +511,7 @@ export function ExpenseManagement() {
                           {exp.expenseAccountName || exp.category}
                         </Badge>
                       </TableCell>
-                      <TableCell>{exp.accountName || '-'}</TableCell>
+                      <TableCell>{sumberDana}</TableCell>
                       <TableCell className="text-right">{new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(exp.amount)}</TableCell>
                       <TableCell className="text-center">
                         {!isDebtPayment && <ExpenseReceiptPDF expense={exp} />}
